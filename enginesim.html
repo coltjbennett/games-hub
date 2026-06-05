@@ -1,0 +1,1324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Engine Simulator v11 — Realistic Physics & Sound</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap');
+
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#04040a;--panel:#08080f;--border:#151525;--accent:#00e5b0;--red:#ff2255;--amber:#ffaa00;--blue:#0088ff;
+  --text:#ccccdd;--dim:#556;--hot:#ff6600;
+}
+body{background:var(--bg);color:var(--text);font-family:'Rajdhani',sans-serif;display:flex;height:100vh;overflow:hidden}
+
+/* ======= CONTROLS PANEL ======= */
+#controls{
+  width:340px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--border);
+  overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:0;
+  scrollbar-width:thin;scrollbar-color:var(--border) transparent;z-index:10;
+}
+#controls::-webkit-scrollbar{width:4px}
+#controls::-webkit-scrollbar-thumb{background:var(--border)}
+
+.panel-section{padding:14px 16px;border-bottom:1px solid var(--border)}
+.panel-section h2{
+  font-size:0.68rem;letter-spacing:3px;text-transform:uppercase;color:var(--dim);
+  margin-bottom:10px;font-family:'Share Tech Mono',monospace
+}
+
+/* Dashboard readout */
+#dashboard{padding:14px 16px;background:#030308;border-bottom:2px solid var(--accent)}
+.db-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+.db-label{font-size:0.7rem;color:var(--dim);letter-spacing:1px;text-transform:uppercase;font-family:'Share Tech Mono',monospace}
+.db-val{font-family:'Share Tech Mono',monospace;font-size:1rem;color:var(--text)}
+.db-val.rpm{font-size:1.7rem;color:var(--amber);text-shadow:0 0 12px rgba(255,170,0,.4)}
+.db-val.torq{color:var(--red)}
+.db-val.neg{color:var(--accent)}
+.db-val.phase{color:#aaa}
+.db-val.temp{color:var(--hot)}
+.gauge-wrap{height:6px;background:#0a0a12;border-radius:3px;overflow:hidden;margin:4px 0 8px;border:1px solid #1a1a2a}
+.gauge-fill{height:100%;width:0%;border-radius:3px;background:linear-gradient(90deg,var(--accent),var(--amber),var(--red));transition:width .05s}
+.knock-indicator{font-family:'Share Tech Mono',monospace;font-size:0.75rem;padding:3px 8px;border-radius:3px;display:inline-block;background:#1a0010;color:#ff004488;border:1px solid #33001a;transition:all .1s}
+.knock-indicator.active{background:#330010;color:#ff2255;border-color:#ff2255;box-shadow:0 0 8px rgba(255,34,85,.3)}
+
+/* Engine config selector */
+.config-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px}
+.cfg-btn{
+  padding:8px 4px;border:1px solid var(--border);background:#0a0a14;color:var(--dim);
+  font-family:'Rajdhani',sans-serif;font-size:0.8rem;font-weight:600;cursor:pointer;
+  border-radius:3px;transition:all .15s;text-align:center;letter-spacing:1px
+}
+.cfg-btn:hover{border-color:var(--accent);color:var(--accent)}
+.cfg-btn.active{border-color:var(--accent);color:#000;background:var(--accent)}
+
+.cyl-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:6px}
+.cyl-btn{
+  padding:6px 2px;border:1px solid var(--border);background:#0a0a14;color:var(--dim);
+  font-family:'Share Tech Mono',monospace;font-size:0.75rem;cursor:pointer;
+  border-radius:3px;transition:all .15s;text-align:center
+}
+.cyl-btn:hover{border-color:var(--accent);color:var(--accent)}
+.cyl-btn.active{border-color:var(--accent);color:#000;background:var(--accent)}
+.cyl-btn.disabled{opacity:.3;cursor:not-allowed}
+
+/* Sliders */
+.ctrl-row{margin-bottom:10px}
+.ctrl-row label{
+  display:flex;justify-content:space-between;font-size:0.8rem;font-weight:600;
+  color:#99aabb;margin-bottom:4px;letter-spacing:.5px
+}
+.ctrl-row label span{color:#fff;font-family:'Share Tech Mono',monospace;font-size:0.85rem}
+input[type=range]{
+  width:100%;accent-color:var(--accent);cursor:pointer;height:5px;
+  border-radius:2px;appearance:none;background:#131320
+}
+input[type=range]::-webkit-slider-thumb{appearance:none;width:14px;height:14px;background:var(--accent);border-radius:50%;box-shadow:0 0 8px rgba(0,229,176,.4)}
+input[type=range]:active{accent-color:var(--red)}
+
+/* Multi-cylinder status row */
+#cyl-status{display:flex;gap:4px;flex-wrap:wrap;padding:8px 0}
+.cyl-led{
+  width:28px;height:28px;border-radius:3px;border:1px solid #1a1a2a;background:#0a0a12;
+  display:flex;align-items:center;justify-content:center;font-size:0.6rem;
+  font-family:'Share Tech Mono',monospace;color:var(--dim);transition:all .1s;position:relative
+}
+.cyl-led.power{background:rgba(255,100,20,.25);border-color:#ff6400;color:#ff8800;box-shadow:0 0 6px rgba(255,100,0,.3)}
+.cyl-led.intake{background:rgba(0,100,255,.15);border-color:#0055ff;color:#4488ff}
+.cyl-led.compression{background:rgba(80,80,80,.2);border-color:#444;color:#888}
+.cyl-led.exhaust{background:rgba(150,80,0,.15);border-color:#664400;color:#aa6600}
+
+/* Firing order display */
+#firing-order{font-family:'Share Tech Mono',monospace;font-size:0.75rem;color:var(--dim);letter-spacing:2px}
+
+/* Start button */
+#start-overlay{position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(2,2,8,.95);display:flex;justify-content:center;align-items:center;z-index:100;flex-direction:column;gap:20px}
+.start-btn{
+  padding:18px 60px;font-size:1.3rem;background:transparent;color:var(--accent);
+  border:1px solid var(--accent);cursor:pointer;font-family:'Rajdhani',sans-serif;
+  font-weight:700;text-transform:uppercase;letter-spacing:6px;transition:all .2s;
+  clip-path:polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)
+}
+.start-btn:hover{background:var(--accent);color:#000;box-shadow:0 0 40px rgba(0,229,176,.5)}
+.start-subtitle{color:var(--dim);font-size:0.8rem;letter-spacing:3px;text-transform:uppercase;font-family:'Share Tech Mono',monospace}
+
+/* Canvas container */
+#sim-container{flex:1;min-width:0;display:flex;justify-content:center;align-items:center;position:relative;overflow:hidden;background:radial-gradient(ellipse at 50% 60%,#0a0a18 0%,#020208 100%)}
+canvas{display:block}
+
+/* Boost / Turbo indicator */
+.boost-bar-wrap{display:flex;align-items:center;gap:8px}
+.boost-label{font-size:0.7rem;color:var(--dim);font-family:'Share Tech Mono',monospace;width:60px}
+.boost-track{flex:1;height:8px;background:#0a0a12;border-radius:2px;border:1px solid #151525;overflow:hidden}
+.boost-fill{height:100%;width:0%;background:linear-gradient(90deg,#0055ff,#00aaff);transition:width .1s}
+
+/* Scrollbar tooltip on cyl count */
+#cyl-note{font-size:0.7rem;color:var(--dim);font-family:'Share Tech Mono',monospace;margin-top:4px}
+</style>
+</head>
+<body>
+
+<div id="controls">
+  <div id="dashboard">
+    <div class="db-row"><span class="db-label">RPM</span><span class="db-val rpm" id="ui-rpm">0</span></div>
+    <div class="gauge-wrap"><div class="gauge-fill" id="rpm-gauge"></div></div>
+    <div class="db-row"><span class="db-label">Avg Torque</span><span class="db-val torq" id="ui-torque">0 Nm</span></div>
+    <div class="db-row"><span class="db-label">Phase (Cyl 1)</span><span class="db-val phase" id="ui-phase">IDLE</span></div>
+    <div class="db-row"><span class="db-label">Vol. Eff.</span><span class="db-val" id="ui-ve" style="color:#777">0%</span></div>
+    <div class="db-row"><span class="db-label">Cyl Temp</span><span class="db-val temp" id="ui-temp">20°C</span></div>
+    <div class="db-row"><span class="db-label">Oil Temp</span><span class="db-val" id="ui-oiltemp" style="color:#aa8844">20°C</span></div>
+    <div class="db-row"><span class="db-label">Knock</span><span class="knock-indicator" id="ui-knock">NOMINAL</span></div>
+    <div class="db-row"><span class="db-label">Boost</span><span class="db-val" id="ui-boost" style="color:var(--blue)">0.0 bar</span></div>
+    <div class="boost-bar-wrap"><span class="boost-label">MANIFOLD</span><div class="boost-track"><div class="boost-fill" id="boost-gauge"></div></div></div>
+  </div>
+
+  <div class="panel-section">
+    <h2>Engine Layout</h2>
+    <div class="config-grid">
+      <button class="cfg-btn active" data-cfg="inline" onclick="setConfig('inline')">INLINE</button>
+      <button class="cfg-btn" data-cfg="v" onclick="setConfig('v')">V-ENGINE</button>
+      <button class="cfg-btn" data-cfg="flat" onclick="setConfig('flat')">FLAT/BOXER</button>
+    </div>
+    <h2>Cylinder Count</h2>
+    <div class="cyl-grid" id="cyl-btns">
+      <button class="cyl-btn" data-n="1" onclick="setCylinders(1)">1</button>
+      <button class="cyl-btn active" data-n="2" onclick="setCylinders(2)">2</button>
+      <button class="cyl-btn" data-n="3" onclick="setCylinders(3)">3</button>
+      <button class="cyl-btn" data-n="4" onclick="setCylinders(4)">4</button>
+      <button class="cyl-btn" data-n="5" onclick="setCylinders(5)">5</button>
+      <button class="cyl-btn" data-n="6" onclick="setCylinders(6)">6</button>
+      <button class="cyl-btn" data-n="8" onclick="setCylinders(8)">8</button>
+      <button class="cyl-btn" data-n="12" onclick="setCylinders(12)">12</button>
+    </div>
+    <div id="cyl-note">Firing order: <span id="firing-order">1</span></div>
+    <div class="db-row" style="margin-top:8px"><span class="db-label">Cylinders Active</span></div>
+    <div id="cyl-status"></div>
+  </div>
+
+  <div class="panel-section">
+    <h2>Driver</h2>
+    <div class="ctrl-row">
+      <label>Throttle <span id="val-throttle">0%</span></label>
+      <input type="range" id="throttle" min="0" max="100" step="1" value="0">
+    </div>
+    <div class="ctrl-row">
+      <label>Turbo / Forced Induction <span id="val-turbo">OFF</span></label>
+      <input type="range" id="turbo" min="0" max="30" step="1" value="0">
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <h2>Mechanical Tuning</h2>
+    <div class="ctrl-row">
+      <label>Cam Lift <span id="val-lift" style="color:var(--accent)">22 mm</span></label>
+      <input type="range" id="lift" min="8" max="32" step="0.5" value="22">
+    </div>
+    <div class="ctrl-row">
+      <label>Cam Duration <span id="val-camdur">240°</span></label>
+      <input type="range" id="camdur" min="180" max="310" step="5" value="240">
+    </div>
+    <div class="ctrl-row">
+      <label>Compression Ratio <span id="val-comp">10.0:1</span></label>
+      <input type="range" id="comp" min="7.0" max="15.0" step="0.1" value="10.0">
+    </div>
+    <div class="ctrl-row">
+      <label>Stroke / Bore Ratio <span id="val-sbr">1.0</span></label>
+      <input type="range" id="sbr" min="0.7" max="1.5" step="0.05" value="1.0">
+    </div>
+    <div class="ctrl-row">
+      <label>Oil Viscosity <span id="val-oil">Medium</span></label>
+      <input type="range" id="oil" min="1" max="15" step="1" value="8">
+    </div>
+    <div class="ctrl-row">
+      <label>Flywheel Inertia <span id="val-mass">2 kg</span></label>
+      <input type="range" id="mass" min="1" max="30" step="1" value="2">
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <h2>ECU Maps</h2>
+    <div class="ctrl-row">
+      <label>Air/Fuel Ratio <span id="val-afr">14.7</span></label>
+      <input type="range" id="afr" min="9.0" max="18.0" step="0.1" value="14.7">
+    </div>
+    <div class="ctrl-row">
+      <label>Spark Advance <span id="val-spark">15° BTDC</span></label>
+      <input type="range" id="spark" min="-10" max="50" step="1" value="15">
+    </div>
+    <div class="ctrl-row">
+      <label>Rev Limiter <span id="val-revlim">9500 RPM</span></label>
+      <input type="range" id="revlim" min="3000" max="12000" step="100" value="9500">
+    </div>
+    <div class="ctrl-row">
+      <label>Variable Valve Timing <span id="val-vvt">0°</span></label>
+      <input type="range" id="vvt" min="-20" max="40" step="1" value="0">
+    </div>
+  </div>
+
+  <div class="panel-section" id="vangle-section" style="display:none">
+    <h2>V-Angle</h2>
+    <div class="ctrl-row">
+      <label>Bank Angle <span id="val-vangle">90°</span></label>
+      <input type="range" id="vangle" min="45" max="180" step="15" value="90">
+    </div>
+  </div>
+</div>
+
+<div id="sim-container">
+  <canvas id="engine-canvas"></canvas>
+  <div id="start-overlay">
+    <div class="start-subtitle">Multi-Cylinder Engine Simulator v11</div>
+    <button class="start-btn" id="start-btn">IGNITE</button>
+  </div>
+</div>
+
+<script>
+// ============================
+//  GLOBAL STATE
+// ============================
+let engineConfig = 'inline';
+let numCylinders = 2;
+let isRunning = false;
+
+let cylStates = [];
+let angularVelocity = 0;
+let trueRPM = 0;
+let lastDisplayedTorque = 0;
+let cycleTorqueSum = 0;
+let cycleTicks = 0;
+let prevMasterAngle = 0;
+let cylinderTemp = 20;
+let oilTemp = 20;
+let boostPressure = 0;
+let lastBoostPressure = 0;
+let turboFlutterPhase = 0;
+
+const PHYSICS_SUBSTEPS = 180;
+const MAX_RPM_HARD = 14000;
+
+const FIRING_ORDERS = {
+  1: [0],
+  2: [0, 1],
+  3: [0, 2, 1],
+  4: [0, 2, 3, 1],
+  5: [0, 4, 3, 1, 2],
+  6: [0, 5, 4, 3, 2, 1],
+  8: [0, 4, 7, 3, 6, 2, 5, 1],
+  12: [0, 6, 4, 10, 2, 8, 3, 9, 5, 11, 1, 7]
+};
+
+function getFiringOrder() {
+  return FIRING_ORDERS[numCylinders] || Array.from({length:numCylinders},(_,i)=>i);
+}
+
+function getCylPhaseOffset(idx) {
+  const fo = getFiringOrder();
+  const pos = fo.indexOf(idx);
+  return (pos / numCylinders) * 4 * Math.PI;
+}
+
+function initCylinders() {
+  cylStates = [];
+  for (let i = 0; i < numCylinders; i++) {
+    cylStates.push({
+      theta: getCylPhaseOffset(i),
+      charge: 0.0,
+      iLift: 0,
+      eLift: 0,
+      phase: 'IDLE',
+      sparking: false,
+      combustion: 0,
+      oilSmoke: 0,
+    });
+  }
+}
+
+// ============================
+//  CANVAS SETUP
+// ============================
+const canvas = document.getElementById('engine-canvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  const cont = document.getElementById('sim-container');
+  canvas.width = cont.clientWidth;
+  canvas.height = cont.clientHeight;
+}
+window.addEventListener('resize', () => { resizeCanvas(); });
+resizeCanvas();
+
+// ============================
+//  AUDIO
+// ============================
+let audioCtx, oscSaw, oscSquare, oscSine, oscSub, oscNoise, mainGain, filterNode, compressor;
+let noiseBuffer, noiseSource;
+
+function initAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  compressor = audioCtx.createDynamicsCompressor();
+  compressor.threshold.value = -18;
+  compressor.ratio.value = 4;
+
+  oscSaw = audioCtx.createOscillator(); oscSaw.type = 'sawtooth';
+  oscSquare = audioCtx.createOscillator(); oscSquare.type = 'square';
+  oscSine = audioCtx.createOscillator(); oscSine.type = 'sine';
+  oscSub = audioCtx.createOscillator(); oscSub.type = 'sine';
+
+  // Create white noise for turbo flutter
+  const bufferSize = audioCtx.sampleRate * 2;
+  noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const output = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) {
+    output[i] = Math.random() * 2 - 1;
+  }
+
+  filterNode = audioCtx.createBiquadFilter();
+  filterNode.type = 'lowpass';
+  filterNode.frequency.value = 800;
+  filterNode.Q.value = 1.2;
+
+  const gainSaw = audioCtx.createGain(); gainSaw.gain.value = 0.4;
+  const gainSq = audioCtx.createGain(); gainSq.gain.value = 0.2;
+  const gainSin = audioCtx.createGain(); gainSin.gain.value = 0.15;
+
+  mainGain = audioCtx.createGain(); mainGain.gain.value = 0;
+  oscSaw.connect(gainSaw); gainSaw.connect(mainGain);
+  oscSquare.connect(gainSq); gainSq.connect(mainGain);
+  oscSine.connect(gainSin); gainSin.connect(mainGain);
+  oscSub.connect(filterNode); filterNode.connect(mainGain);
+  mainGain.connect(compressor); compressor.connect(audioCtx.destination);
+
+  oscSaw.start(); oscSquare.start(); oscSine.start(); oscSub.start();
+}
+
+function updateAudio(rpm, isPower, torque, tuning) {
+  if (!audioCtx) return;
+  
+  const { sbr, turboTarget } = tuning;
+  const vAngle = parseFloat(ui.vangle.value);
+  
+  // Determine effective config (180° V = flat)
+  const effectiveConfig = (engineConfig === 'v' && vAngle === 180) ? 'flat' : engineConfig;
+  
+  // Base frequency should be RPM-based, not firing frequency
+  // This keeps the sound grounded to actual engine speed
+  const fundamentalFreq = rpm / 60; // Hz - this is the actual engine rotation rate
+  const firingFreq = fundamentalFreq * (numCylinders / 2);
+  
+  // Instead of multiplying pitch by cylinder count, use it for harmonics and complexity
+  const cylComplexity = Math.log2(numCylinders / 2 + 1); // 1-cyl=0, 2-cyl=0.58, 4-cyl=1, 8-cyl=1.58, 12-cyl=1.87
+  
+  // Bore:stroke affects pitch - wider bore (lower sbr) = slightly higher pitch
+  const borePitchFactor = 0.9 + (1 - sbr) * 0.25; // Less extreme than before
+  
+  // Engine layout sound characteristics
+  let harmonicSpread = 1.0;
+  let bassiness = 1.0;
+  let smoothness = 1.0;
+  let pitchBase = 1.0;
+  
+  if (effectiveConfig === 'inline') {
+    // Inline: smooth, even firing, cleaner tone
+    harmonicSpread = 0.9 + cylComplexity * 0.15; // More cylinders = more harmonics
+    bassiness = 1.0 - cylComplexity * 0.1;
+    smoothness = 1.2 + cylComplexity * 0.2;
+    pitchBase = 0.98; // Slightly below neutral - not higher pitched
+  } else if (effectiveConfig === 'v') {
+    // V-engine: deeper, more irregular, aggressive rumble
+    const vAngleEffect = Math.abs(vAngle - 90) / 90; // 0 at 90°, 1 at extremes
+    harmonicSpread = 1.2 + vAngleEffect * 0.5 + cylComplexity * 0.2;
+    bassiness = 1.3 + vAngleEffect * 0.3;
+    smoothness = 0.8 - vAngleEffect * 0.15;
+    pitchBase = 0.95 - vAngleEffect * 0.1; // Deeper with more extreme angles
+  } else if (effectiveConfig === 'flat') {
+    // Flat/Boxer: deep, throaty, symmetrical, distinct growl
+    harmonicSpread = 1.15 + cylComplexity * 0.15;
+    bassiness = 1.4 + cylComplexity * 0.1;
+    smoothness = 1.0;
+    pitchBase = 0.85; // Distinctly lower fundamental
+  }
+  
+  // Base frequency is now more directly tied to RPM, with layout affecting the base pitch
+  const baseFreq = Math.max(15, fundamentalFreq * pitchBase * borePitchFactor * smoothness * (1 + cylComplexity * 0.3));
+  
+  const t = audioCtx.currentTime;
+  
+  // Apply sound characteristics to oscillators - more varied by layout now
+  oscSaw.frequency.setTargetAtTime(baseFreq * harmonicSpread, t, 0.04);
+  oscSquare.frequency.setTargetAtTime(baseFreq * 0.5 * bassiness, t, 0.04);
+  oscSine.frequency.setTargetAtTime(baseFreq * 0.9, t, 0.04);
+  oscSub.frequency.setTargetAtTime(baseFreq * 0.3 * bassiness, t, 0.08);
+  
+  // Filter frequency affected by RPM, boost, and bore:stroke
+  const filterFreq = 250 + (rpm / MAX_RPM_HARD) * 1500 * borePitchFactor + boostPressure * 180;
+  filterNode.frequency.setTargetAtTime(filterFreq, t, 0.1);
+  
+  const loadF = Math.max(0, torque) / 250;
+  let vol = 0.03 + (rpm / MAX_RPM_HARD) * 0.12 + loadF * 0.1;
+  if (isPower) vol *= 1.5;
+  
+  // Cylinder count affects volume more subtly
+  vol *= Math.pow(numCylinders / 4, 0.4); // Gentler scaling
+  
+  mainGain.gain.setTargetAtTime(Math.min(0.35, vol), t, 0.02);
+  
+  // Turbo flutter effect when boost drops rapidly
+  if (turboTarget > 0) {
+    const boostDrop = lastBoostPressure - boostPressure;
+    if (boostDrop > 0.02 && rpm > 2000) {
+      // Create flutter sound
+      if (!noiseSource || noiseSource.playbackState === noiseSource.FINISHED_STATE) {
+        noiseSource = audioCtx.createBufferSource();
+        noiseSource.buffer = noiseBuffer;
+        const flutterGain = audioCtx.createGain();
+        const flutterFilter = audioCtx.createBiquadFilter();
+        flutterFilter.type = 'bandpass';
+        flutterFilter.frequency.value = 2000 + rpm * 0.3;
+        flutterFilter.Q.value = 8;
+        
+        noiseSource.connect(flutterFilter);
+        flutterFilter.connect(flutterGain);
+        flutterGain.connect(compressor);
+        
+        flutterGain.gain.setValueAtTime(0.15 * Math.min(1, boostDrop * 10), t);
+        flutterGain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+        
+        noiseSource.start(t);
+        noiseSource.stop(t + 0.3);
+      }
+    }
+  }
+  
+  lastBoostPressure = boostPressure;
+}
+
+// ============================
+//  UI WIRING
+// ============================
+function getUI(id) { return document.getElementById(id); }
+const ui = {
+  throttle: getUI('throttle'), lift: getUI('lift'), comp: getUI('comp'),
+  oil: getUI('oil'), afr: getUI('afr'), spark: getUI('spark'), mass: getUI('mass'),
+  revlim: getUI('revlim'), vvt: getUI('vvt'), camdur: getUI('camdur'),
+  sbr: getUI('sbr'), turbo: getUI('turbo'), vangle: getUI('vangle')
+};
+
+const oilLabels = v => v < 5 ? '0W-16' : v > 11 ? '20W-50' : 'Medium';
+
+ui.throttle.addEventListener('input', () => getUI('val-throttle').textContent = ui.throttle.value + '%');
+ui.throttle.addEventListener('pointerup', () => { ui.throttle.value = 0; getUI('val-throttle').textContent = '0%'; });
+ui.throttle.addEventListener('touchend', () => { ui.throttle.value = 0; getUI('val-throttle').textContent = '0%'; });
+ui.lift.addEventListener('input', () => getUI('val-lift').textContent = ui.lift.value + ' mm');
+ui.comp.addEventListener('input', () => getUI('val-comp').textContent = parseFloat(ui.comp.value).toFixed(1) + ':1');
+ui.oil.addEventListener('input', () => getUI('val-oil').textContent = oilLabels(parseInt(ui.oil.value)));
+ui.afr.addEventListener('input', () => getUI('val-afr').textContent = parseFloat(ui.afr.value).toFixed(1));
+ui.spark.addEventListener('input', () => getUI('val-spark').textContent = ui.spark.value + '° BTDC');
+ui.mass.addEventListener('input', () => getUI('val-mass').textContent = ui.mass.value + ' kg');
+ui.revlim.addEventListener('input', () => getUI('val-revlim').textContent = ui.revlim.value + ' RPM');
+ui.vvt.addEventListener('input', () => getUI('val-vvt').textContent = ui.vvt.value + '°');
+ui.camdur.addEventListener('input', () => getUI('val-camdur').textContent = ui.camdur.value + '°');
+ui.sbr.addEventListener('input', () => getUI('val-sbr').textContent = parseFloat(ui.sbr.value).toFixed(2));
+ui.turbo.addEventListener('input', () => getUI('val-turbo').textContent = parseInt(ui.turbo.value) === 0 ? 'OFF' : parseInt(ui.turbo.value) + ' psi');
+ui.vangle.addEventListener('input', () => getUI('val-vangle').textContent = ui.vangle.value + '°');
+
+function setConfig(cfg) {
+  engineConfig = cfg;
+  document.querySelectorAll('.cfg-btn').forEach(b => b.classList.toggle('active', b.dataset.cfg === cfg));
+  getUI('vangle-section').style.display = cfg === 'v' ? '' : 'none';
+  updateCylButtons();
+  if (isRunning) initCylinders();
+}
+
+function setCylinders(n) {
+  numCylinders = n;
+  document.querySelectorAll('.cyl-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.n) === n));
+  const fo = getFiringOrder().map(i => i + 1).join('-');
+  getUI('firing-order').textContent = fo;
+  updateCylStatusLEDs();
+  if (isRunning) initCylinders();
+}
+
+function updateCylButtons() {
+  document.querySelectorAll('.cyl-btn').forEach(b => {
+    const n = parseInt(b.dataset.n);
+    
+    // Logic: Permanently disable 1, or odd numbers if engine is 'flat'
+    const invalid = (n === 1) || (engineConfig === 'flat' && n % 2 !== 0);
+    
+    // 1. Visual: Toggle the class for CSS styling
+    b.classList.toggle('disabled', invalid);
+    
+    // 2. Functional: Physically disable the button so it can't be clicked
+    b.disabled = invalid;
+  });
+
+  // 3. Cleanup: If the current selection is now invalid, force it to 2
+  if (numCylinders === 1 || (engineConfig === 'flat' && numCylinders % 2 !== 0)) {
+    setCylinders(2);
+  }
+}
+
+function updateCylStatusLEDs() {
+  const wrap = getUI('cyl-status');
+  wrap.innerHTML = '';
+  for (let i = 0; i < numCylinders; i++) {
+    const d = document.createElement('div');
+    d.className = 'cyl-led';
+    d.id = 'cyl-led-' + i;
+    d.textContent = i + 1;
+    wrap.appendChild(d);
+  }
+}
+
+setCylinders(2);
+updateCylButtons();
+
+// ============================
+//  PHYSICS
+// ============================
+function getTuning() {
+  return {
+    throttle: parseFloat(ui.throttle.value) / 100, // LINEAR throttle response
+    maxLift: parseFloat(ui.lift.value),
+    compRatio: parseFloat(ui.comp.value),
+    oilFriction: parseFloat(ui.oil.value),
+    inertia: parseFloat(ui.mass.value) * 0.1 + numCylinders * 0.03,
+    sparkAdv: parseFloat(ui.spark.value),
+    afr: parseFloat(ui.afr.value),
+    revLim: parseFloat(ui.revlim.value),
+    vvt: parseFloat(ui.vvt.value),
+    camDur: parseFloat(ui.camdur.value),
+    sbr: parseFloat(ui.sbr.value),
+    turboTarget: parseFloat(ui.turbo.value) * 0.0689476
+  };
+}
+
+let currentVE = 0;
+let knockActive = false;
+
+function simStep(dt, tuning) {
+  const { throttle, maxLift, compRatio, oilFriction, inertia, sparkAdv, afr,
+          revLim, vvt, camDur, sbr, turboTarget } = tuning;
+
+  const targetBoost = turboTarget * Math.min(1, (trueRPM / 3500)) * throttle;
+  boostPressure += (targetBoost - boostPressure) * Math.min(1, dt * 3);
+  boostPressure = Math.max(0, boostPressure);
+
+  const rpmK = trueRPM / 1000;
+  const baseVE = Math.max(0.15, 1 - Math.pow((rpmK - 5.2) / 4.8, 2));
+  const liftF = 0.5 + (maxLift / 48) * 0.5;
+  const tempF = 1 - Math.max(0, (cylinderTemp - 400) / 900);
+  const durF = 0.7 + (camDur - 180) / (310 - 180) * 0.5;
+  const vvtF = 1 + Math.max(0, vvt) * 0.005;
+  const boostF = 1 + boostPressure * 0.3;
+  currentVE = Math.max(0.08, Math.min(1.4, baseVE * liftF * tempF * durF * vvtF * boostF));
+
+  const afrEff = Math.max(0.15, 1 - Math.pow((afr - 12.8) / 5.2, 2));
+  const optTiming = Math.min(42, 10 + trueRPM * 0.004 - vvt * 0.3);
+  const timingEff = Math.max(0.05, 1 - Math.abs(sparkAdv - optTiming) * 0.028);
+
+  knockActive = compRatio > 11.5 && afr > 14.2 && sparkAdv > 32 && cylinderTemp > 420;
+  const knockPenalty = knockActive ? 0.65 : 1.0;
+
+  const heatGen = throttle * trueRPM * 0.003 * numCylinders * 0.4 + boostPressure * 20;
+  const coolRate = (cylinderTemp - 50) * 0.013;
+  cylinderTemp += (heatGen - coolRate) * dt;
+  cylinderTemp = Math.max(20, Math.min(900, cylinderTemp));
+  oilTemp += (cylinderTemp - oilTemp) * 0.04 * dt;
+
+  const tempFricMult = 1 + Math.max(0, 90 - oilTemp) * 0.007;
+  
+  // Stronger friction and losses - engines naturally want to slow down
+  const baseFriction = oilFriction * tempFricMult * 1.8;
+  const compressionFriction = compRatio * 0.35 * Math.sqrt(numCylinders);
+  const liftFriction = maxLift * 0.18;
+  // Much stronger RPM-dependent friction (quadratic)
+  const rpmFriction = (trueRPM * trueRPM * 0.0000045) * Math.sqrt(numCylinders);
+  const pumpingLoss = trueRPM * 0.005 * numCylinders * 0.35;
+  
+  const mechFric = baseFriction + compressionFriction + liftFriction + rpmFriction + pumpingLoss;
+
+  let netTorque = -mechFric;
+  
+  // Aggressive idle control - target 850 RPM
+  const idleTarget = 850;
+  const idleWindow = 100; // ±100 RPM oscillation band
+  
+  if (throttle < 0.05) {
+    // Closed throttle - idle control active
+    if (trueRPM > idleTarget + idleWindow) {
+      // Way above idle - cut fuel completely and add strong braking
+      netTorque -= (trueRPM - idleTarget) * 0.15;
+    } else if (trueRPM > idleTarget + 20) {
+      // Slightly above idle - gentle braking
+      netTorque -= (trueRPM - idleTarget) * 0.08;
+    } else if (trueRPM < idleTarget - 50) {
+      // Below idle - add power to bring it up
+      const idleBoost = (idleTarget - trueRPM) * 0.12 * numCylinders;
+      netTorque += idleBoost;
+      
+      // Add idle roughness/oscillation
+      const roughness = Math.sin(Date.now() * 0.008) * 3 * numCylinders;
+      netTorque += roughness;
+    } else {
+      // In the sweet spot - add subtle oscillation for realism
+      const subtleRough = Math.sin(Date.now() * 0.006) * 2 * Math.sqrt(numCylinders);
+      netTorque += subtleRough;
+    }
+  } else if (throttle < 0.15 && trueRPM > 1500) {
+    // Low throttle at higher RPM - some engine braking
+    netTorque -= trueRPM * 0.025;
+  }
+
+  // Engine layout characteristics
+  const vAngle = parseFloat(ui.vangle.value);
+  const effectiveConfig = (engineConfig === 'v' && vAngle === 180) ? 'flat' : engineConfig;
+  
+  let layoutTorqueMult = 1.0;
+  let layoutBalanceFactor = 1.0;
+  
+  if (effectiveConfig === 'inline') {
+    // Inline: smooth power delivery, slightly less peak torque
+    layoutTorqueMult = 0.98;
+    layoutBalanceFactor = 1.1; // Better balanced = less vibration losses
+  } else if (effectiveConfig === 'v') {
+    // V-engine: more torque, efficiency varies with angle
+    const angleOptimality = 1 - Math.abs(vAngle - 90) / 180; // Optimal at 90°
+    layoutTorqueMult = 1.05 + angleOptimality * 0.05;
+    layoutBalanceFactor = 0.95 + angleOptimality * 0.1;
+  } else if (effectiveConfig === 'flat') {
+    // Flat/Boxer: low center of gravity, good balance, strong low-end
+    layoutTorqueMult = 1.08;
+    layoutBalanceFactor = 1.05;
+  }
+
+  let anyPower = false;
+  for (let i = 0; i < numCylinders; i++) {
+    const cs = cylStates[i];
+    cs.theta += angularVelocity * dt;
+    const cycleAngle = cs.theta % (4 * Math.PI);
+
+    cs.sparking = false;
+    cs.combustion = Math.max(0, cs.combustion - dt * 6);
+
+    if (cycleAngle < Math.PI) {
+      cs.phase = 'INTAKE';
+      const targetCharge = 0.06 + throttle * 0.94 * currentVE;
+      cs.charge += (targetCharge - cs.charge) * Math.min(1, dt * 160);
+      const t = cycleAngle / Math.PI;
+      cs.iLift = Math.max(0, Math.sin(Math.PI * t)) * maxLift;
+      cs.eLift = 0;
+    } else if (cycleAngle < 2 * Math.PI) {
+      cs.phase = 'COMPRESSION';
+      netTorque -= (compRatio * 0.5 / numCylinders);
+      cs.iLift = 0; cs.eLift = 0;
+    } else if (cycleAngle < 3 * Math.PI) {
+      cs.phase = 'POWER';
+      
+      // FUEL CUT: Completely cut fuel if throttle closed and above 900 RPM
+      const fuelCut = (throttle < 0.05 && trueRPM > 900);
+      
+      if (!fuelCut) {
+        anyPower = true;
+        const powerCenter = 2.35 * Math.PI; // Peak slightly after TDC
+        const powerPhase = (cycleAngle - 2 * Math.PI) / Math.PI; // 0 to 1 through power stroke
+        
+        // More realistic power curve - sharp rise, gradual fall (like actual combustion)
+        const pw = Math.max(0, Math.pow(Math.sin(powerPhase * Math.PI), 1.5));
+        
+        const compMult = 1 + (compRatio - 8) * 0.12;
+        
+        // Bore:stroke ratio effects
+        // Higher SBR (longer stroke) = more low-end torque, lower revs
+        // Lower SBR (wider bore) = higher revs, less torque
+        const sbrTorqueFactor = 0.85 + sbr * 0.3;
+        const sbrRpmPenalty = Math.max(0, (sbr - 1.0) * (trueRPM / MAX_RPM_HARD) * 0.25);
+        
+        // More realistic power scaling - not purely linear
+        const cylinderPowerScale = Math.sqrt(numCylinders) * 0.7;
+        
+        // Reduced and more stable power multiplier
+        const strokeTorque = cs.charge * 1800 * afrEff * timingEff * compMult * 
+                            knockPenalty * pw * sbrTorqueFactor * layoutTorqueMult *
+                            layoutBalanceFactor * cylinderPowerScale * (1 - sbrRpmPenalty);
+        
+        netTorque += strokeTorque;
+        cs.combustion = pw;
+        if (cycleAngle < 2 * Math.PI + 0.18) cs.sparking = true;
+      } else {
+        // Fuel cut active - no combustion, just compression braking
+        cs.combustion = 0;
+      }
+      cs.iLift = 0; cs.eLift = 0;
+    } else {
+      cs.phase = 'EXHAUST';
+      netTorque -= (1.1 + throttle * 1.5) / numCylinders;
+      const t = (cycleAngle - 3 * Math.PI) / Math.PI;
+      cs.eLift = Math.max(0, Math.sin(Math.PI * t)) * maxLift;
+      cs.iLift = 0;
+    }
+  }
+
+  cycleTorqueSum += netTorque;
+  cycleTicks++;
+
+  const masterAngle = cylStates[0].theta % (4 * Math.PI);
+  if (masterAngle < prevMasterAngle) {
+    lastDisplayedTorque = cycleTicks > 0 ? (cycleTorqueSum / cycleTicks) * 0.18 : 0;
+    cycleTorqueSum = 0; cycleTicks = 0;
+  }
+  prevMasterAngle = masterAngle;
+
+  angularVelocity += (netTorque / inertia) * dt;
+  if (angularVelocity < 0) angularVelocity = 0;
+
+  const revLimRad = (revLim * 2 * Math.PI) / 60;
+  if (angularVelocity > revLimRad) {
+    angularVelocity = revLimRad * 0.97;
+  }
+
+  trueRPM = (angularVelocity * 60) / (2 * Math.PI);
+  return anyPower;
+}
+
+// ============================
+//  TELEMETRY UPDATE
+// ============================
+function syncTelemetry() {
+  getUI('ui-rpm').textContent = Math.floor(trueRPM).toLocaleString();
+  getUI('rpm-gauge').style.width = Math.min(100, (trueRPM / parseFloat(ui.revlim.value)) * 100) + '%';
+  const tUI = getUI('ui-torque');
+  tUI.textContent = Math.round(lastDisplayedTorque) + ' Nm';
+  tUI.className = 'db-val ' + (lastDisplayedTorque < 0 ? 'neg' : 'torq');
+  getUI('ui-phase').textContent = cylStates.length ? cylStates[0].phase : 'IDLE';
+  getUI('ui-ve').textContent = Math.round(currentVE * 100) + '%';
+  getUI('ui-temp').textContent = Math.round(cylinderTemp) + '°C';
+  getUI('ui-oiltemp').textContent = Math.round(oilTemp) + '°C';
+  const kn = getUI('ui-knock');
+  kn.textContent = knockActive ? '⚡ KNOCK' : 'NOMINAL';
+  kn.className = 'knock-indicator' + (knockActive ? ' active' : '');
+  getUI('ui-boost').textContent = boostPressure.toFixed(2) + ' bar';
+  getUI('boost-gauge').style.width = Math.min(100, (boostPressure / 2.5) * 100) + '%';
+
+  for (let i = 0; i < numCylinders; i++) {
+    const led = getUI('cyl-led-' + i);
+    if (!led) continue;
+    led.className = 'cyl-led ' + (cylStates[i] ? cylStates[i].phase.toLowerCase() : '');
+  }
+}
+
+// ============================
+//  RENDER GEOMETRY HELPERS
+// ============================
+function getCylinderScale() {
+  if (engineConfig === 'v') return 0.95;
+  if (engineConfig === 'flat') return 0.96;
+  return 1.0;
+}
+
+function getCylinderGeom(cs) {
+  const scale = getCylinderScale();
+  const sbr = parseFloat(ui.sbr.value);
+  
+  // Stroke affects crank radius, bore affects cylinder width
+  const baseStroke = 110; // Base stroke length
+  const strokeLength = baseStroke * sbr; // Higher SBR = longer stroke
+  const R_crank = (strokeLength / 2) * scale; // Crank radius is half stroke
+  
+  const baseBore = 104; // Base bore width
+  const boreWidth = baseBore / Math.sqrt(sbr); // Lower SBR = wider bore
+  const boreH = (boreWidth / 2) * scale;
+  
+  const L_rod = 185 * scale;
+  const theta = cs.theta;
+  const yDist = R_crank * Math.cos(theta) + Math.sqrt(Math.max(0, L_rod * L_rod - Math.pow(R_crank * Math.sin(theta), 2)));
+  const pistonY = -yDist;
+  const pinX = R_crank * Math.sin(theta);
+  const pinY = -(R_crank * Math.cos(theta));
+
+  const blockTop = -215 * 1.45 * scale;
+  const blockH = 428 * scale;
+  const linerTop = -195 * 1.45 * scale;
+
+  return { scale, R_crank, L_rod, boreH, theta, yDist, pistonY, pinX, pinY, blockTop, blockH, linerTop };
+}
+
+function getCylinderLayouts(W, H) {
+  const layouts = [];
+  const vAngleDeg = parseFloat(ui.vangle.value);
+  const vAngleRad = (vAngleDeg / 2) * Math.PI / 180;
+
+  const baseCy = engineConfig === 'flat' ? H * 0.55 : H * 0.64;
+  const baseCx = W / 2;
+
+  for (let i = 0; i < numCylinders; i++) {
+    let angle = 0;
+    if (engineConfig === 'v') {
+      angle = (i % 2 === 0) ? -vAngleRad : vAngleRad;
+    } else if (engineConfig === 'flat') {
+      angle = (i % 2 === 0) ? -Math.PI / 2 : Math.PI / 2;
+    }
+    layouts.push({ cx: baseCx, cy: baseCy, angle });
+  }
+  return layouts;
+}
+
+function drawCylinderBackLayer(ctx, cs, idx, W, H) {
+  const { scale, boreH, blockTop, blockH, linerTop } = getCylinderGeom(cs);
+
+  ctx.fillStyle = '#0c0c14';
+  ctx.fillRect(-boreH - 40 * scale, blockTop, 35 * scale, blockH);
+  ctx.fillRect(boreH + 5 * scale, blockTop, 35 * scale, blockH);
+
+  ctx.strokeStyle = '#003355';
+  ctx.lineWidth = 2 * scale;
+  for (let j = 0; j < 6; j++) {
+    ctx.beginPath();
+    ctx.arc(-boreH - 22 * scale, blockTop + 30 + j * 40 * scale, 7 * scale, 0, 2 * Math.PI);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(boreH + 22 * scale, blockTop + 30 + j * 40 * scale, 7 * scale, 0, 2 * Math.PI);
+    ctx.stroke();
+  }
+
+  const linerGrad = ctx.createLinearGradient(-boreH, 0, boreH, 0);
+  linerGrad.addColorStop(0, '#222230');
+  linerGrad.addColorStop(0.5, '#2e2e3e');
+  linerGrad.addColorStop(1, '#222230');
+  ctx.fillStyle = linerGrad;
+  ctx.fillRect(-boreH, linerTop, boreH * 2, 350 * scale);
+
+  ctx.strokeStyle = 'rgba(60,60,80,0.25)';
+  ctx.lineWidth = 0.5;
+  for (let j = 0; j < 20; j++) {
+    ctx.beginPath();
+    ctx.moveTo(-boreH + j * 6 * scale, linerTop);
+    ctx.lineTo(-boreH + j * 6 * scale + 14 * scale, linerTop + 300 * scale);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-boreH + j * 6 * scale, linerTop);
+    ctx.lineTo(-boreH + j * 6 * scale - 14 * scale, linerTop + 300 * scale);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = '#09090f';
+  ctx.fillRect(-105 * scale, blockTop - 120 * scale, 210 * scale, 125 * scale);
+  ctx.fillStyle = '#141420';
+  ctx.fillRect(-95 * scale, blockTop - 115 * scale, 190 * scale, 40 * scale);
+
+  ctx.strokeStyle = '#886644';
+  ctx.lineWidth = 3 * scale;
+  ctx.strokeRect(-boreH - 4, linerTop - 6, (boreH + 4) * 2, 10 * scale);
+
+  ctx.fillStyle = '#1a1800';
+  ctx.fillRect(-75 * scale, blockTop - 100 * scale, 6 * scale, 80 * scale);
+  ctx.fillRect(69 * scale, blockTop - 100 * scale, 6 * scale, 80 * scale);
+}
+
+// ============================
+//  MAIN DRAW ROUTINE
+// ============================
+let animFrame;
+let lastTime = performance.now();
+const SMOKE_PARTICLES = [];
+
+function spawnSmoke(x, y, vx, vy, life, col) {
+  SMOKE_PARTICLES.push({ x, y, vx, vy, life, maxLife: life, col });
+}
+
+function drawFrame(now) {
+  animFrame = requestAnimationFrame(drawFrame);
+  const dt = Math.min(0.05, (now - lastTime) / 1000);
+  lastTime = now;
+
+  if (!isRunning) { ctx.clearRect(0, 0, canvas.width, canvas.height); return; }
+
+  const tuning = getTuning();
+  const subDt = dt / PHYSICS_SUBSTEPS;
+  let anyPower = false;
+  for (let s = 0; s < PHYSICS_SUBSTEPS; s++) anyPower = simStep(subDt, tuning) || anyPower;
+  updateAudio(trueRPM, anyPower, lastDisplayedTorque, tuning);
+  syncTelemetry();
+
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const layouts = getCylinderLayouts(W, H);
+
+  const cylOpacity = engineConfig === 'flat' || engineConfig === 'v'
+    ? Math.min(1, (2 / numCylinders))
+    : Math.min(1, (1 / numCylinders));
+
+  for (let i = numCylinders - 1; i >= 0; i--) {
+    const lay = layouts[i];
+    const cs = cylStates[i];
+    ctx.save();
+    ctx.translate(lay.cx, lay.cy);
+    ctx.rotate(lay.angle);
+    drawCylinderBackLayer(ctx, cs, i, W, H);
+    ctx.restore();
+  }
+
+  for (let i = numCylinders - 1; i >= 0; i--) {
+    const lay = layouts[i];
+    const cs = cylStates[i];
+    ctx.save();
+    ctx.globalAlpha = cylOpacity;
+    ctx.translate(lay.cx, lay.cy);
+    ctx.rotate(lay.angle);
+    drawOneCylinder(ctx, cs, i, W, H);
+    ctx.restore();
+  }
+
+  for (let p of SMOKE_PARTICLES) {
+    p.x += p.vx; p.y += p.vy;
+    p.vx *= 0.97; p.vy *= 0.98;
+    p.life -= dt * 60;
+    const t = p.life / p.maxLife;
+    ctx.globalAlpha = t * 0.25;
+    ctx.fillStyle = p.col;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, (1 - t) * 14 + 2, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  if (Math.random() < 0.3 * numCylinders && trueRPM > 200) {
+    for (const lay of layouts) {
+      if (Math.random() < 0.15) {
+        spawnSmoke(
+          lay.cx + Math.sin(lay.angle) * 180 + (Math.random() - 0.5) * 20,
+          lay.cy + Math.cos(lay.angle + Math.PI) * 180,
+          (Math.random() - 0.5) * 1.2,
+          -(0.4 + Math.random() * 0.8),
+          40 + Math.random() * 30,
+          cylinderTemp > 500 ? '#553322' : '#444455'
+        );
+      }
+    }
+  }
+  while (SMOKE_PARTICLES.length > 200) SMOKE_PARTICLES.shift();
+  SMOKE_PARTICLES.splice(0, SMOKE_PARTICLES.filter(p => p.life <= 0).length);
+}
+
+// ============================
+//  SINGLE CYLINDER DRAW
+// ============================
+function drawOneCylinder(ctx, cs, idx, W, H) {
+  const { scale, R_crank, L_rod, boreH, theta, pistonY, pinX, pinY, blockTop, linerTop } = getCylinderGeom(cs);
+
+  if (cs.phase === 'POWER' && cs.combustion > 0.01) {
+    const fi = cs.combustion;
+    const fireGrad = ctx.createRadialGradient(0, linerTop, 0, 0, linerTop, boreH * 1.2);
+    fireGrad.addColorStop(0, `rgba(255,255,200,${fi * 0.75})`);
+    fireGrad.addColorStop(0.25, `rgba(255,160,40,${fi * 0.65})`);
+    fireGrad.addColorStop(0.65, `rgba(200,60,10,${fi * 0.45})`);
+    fireGrad.addColorStop(1, `rgba(40,15,0,${fi * 0.15})`);
+    ctx.fillStyle = fireGrad;
+    ctx.fillRect(-boreH, linerTop, boreH * 2, pistonY - linerTop + 20 * scale);
+
+    ctx.shadowBlur = 18;
+    ctx.shadowColor = 'rgba(255,130,0,0.7)';
+    const flickerGrad = ctx.createLinearGradient(0, linerTop, 0, pistonY);
+    flickerGrad.addColorStop(0, `rgba(255,200,100,${fi * 0.5 * (0.8 + Math.random() * 0.4)})`);
+    flickerGrad.addColorStop(1, `rgba(255,80,0,0)`);
+    ctx.fillStyle = flickerGrad;
+    ctx.fillRect(-boreH + 4, linerTop, (boreH - 4) * 2, pistonY - linerTop);
+    ctx.shadowBlur = 0;
+  }
+
+  if (cs.iLift > 1 && cs.phase === 'INTAKE') {
+    const rawT = parseFloat(ui.throttle.value) / 100;
+    const flowInt = Math.min(1, rawT * 1.5 + 0.3);
+    const iGrad = ctx.createLinearGradient(-105 * scale, blockTop - 80 * scale, -38 * scale, linerTop + 20 * scale);
+    iGrad.addColorStop(0, `rgba(0,170,255,${flowInt * 0.85})`);
+    iGrad.addColorStop(1, `rgba(0,100,255,0.05)`);
+    ctx.fillStyle = iGrad;
+    ctx.beginPath();
+    ctx.moveTo(-105 * scale, blockTop - 60 * scale);
+    ctx.lineTo(-65 * scale, blockTop - 30 * scale);
+    ctx.lineTo(-30 * scale, linerTop + cs.iLift * scale * 0.5);
+    ctx.lineTo(-15 * scale, linerTop + 15 * scale);
+    ctx.lineTo(-15 * scale, blockTop - 30 * scale);
+    ctx.lineTo(-65 * scale, blockTop - 60 * scale);
+    ctx.fill();
+    for (let j = 0; j < 5; j++) {
+      ctx.fillStyle = `rgba(80,190,255,${Math.random() * 0.55})`;
+      ctx.fillRect(-90 * scale + Math.random() * 50 * scale, blockTop - 55 * scale + Math.random() * 70 * scale, 2 * scale, 2 * scale);
+    }
+  }
+
+  if (cs.eLift > 1) {
+    const exT = cylinderTemp / 900;
+    const eGrad = ctx.createLinearGradient(30 * scale, linerTop, 105 * scale, blockTop - 80 * scale);
+    eGrad.addColorStop(0, `rgba(255,100,30,${0.35 + exT * 0.5})`);
+    eGrad.addColorStop(1, `rgba(180,30,0,0.05)`);
+    ctx.fillStyle = eGrad;
+    ctx.beginPath();
+    ctx.moveTo(15 * scale, linerTop + cs.eLift * scale * 0.4);
+    ctx.lineTo(30 * scale, linerTop + cs.eLift * scale * 0.3);
+    ctx.lineTo(65 * scale, blockTop - 30 * scale);
+    ctx.lineTo(105 * scale, blockTop - 60 * scale);
+    ctx.lineTo(65 * scale, blockTop - 60 * scale);
+    ctx.lineTo(15 * scale, blockTop - 30 * scale);
+    ctx.fill();
+  }
+
+  const camY = blockTop - 75 * scale;
+  ctx.save();
+  ctx.translate(0, camY);
+  ctx.rotate(cs.theta * 0.5);
+  ctx.fillStyle = '#2a2a3a';
+  ctx.fillRect(-70 * scale, -8 * scale, 140 * scale, 16 * scale);
+  ctx.fillStyle = '#3e3e50';
+  ctx.beginPath();
+  ctx.ellipse(-32 * scale, 0, 14 * scale, 9 * scale, 0, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(32 * scale, 0, 14 * scale, 9 * scale, 0, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.restore();
+
+  const drawRocker = (rx, ry, ang) => {
+    ctx.save();
+    ctx.translate(rx, ry);
+    ctx.rotate(ang);
+    ctx.fillStyle = '#555566';
+    ctx.fillRect(-32 * scale, -6 * scale, 64 * scale, 12 * scale);
+    ctx.fillStyle = '#333344';
+    ctx.beginPath();
+    ctx.arc(0, 0, 9 * scale, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.fillStyle = '#667788';
+    ctx.beginPath();
+    ctx.arc(-28 * scale, 0, 6 * scale, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(28 * scale, 0, 5 * scale, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.restore();
+  };
+  const rRy = blockTop - 40 * scale;
+  const rIA = -cs.iLift * 0.012;
+  const rEA = cs.eLift * 0.012;
+  drawRocker(-40 * scale, rRy, rIA);
+  drawRocker(40 * scale, rRy, rEA);
+
+  const drawValve = (vx, vy, lift, isIntake) => {
+    ctx.fillStyle = '#282835';
+    ctx.fillRect(vx - 4 * scale, blockTop - 110 * scale, 8 * scale, vy - (blockTop - 110 * scale));
+    ctx.strokeStyle = '#444455';
+    ctx.lineWidth = 2 * scale;
+    const springBase = vy - 70 * scale;
+    for (let j = 0; j < 6; j++) {
+      const sy = springBase + j * 10 * scale;
+      ctx.beginPath();
+      ctx.arc(vx - 7 * scale, sy, 7 * scale, 0, Math.PI);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(vx + 7 * scale, sy + 5 * scale, 7 * scale, Math.PI, 2 * Math.PI);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#333344';
+    ctx.fillRect(vx - 10 * scale, vy - 74 * scale, 20 * scale, 5 * scale);
+    ctx.fillStyle = isIntake ? '#aabbcc' : '#8899aa';
+    ctx.fillRect(vx - 3 * scale, vy - 70 * scale, 6 * scale, 70 * scale);
+    ctx.fillStyle = isIntake ? '#ccdde0' : '#aabbbb';
+    ctx.beginPath();
+    ctx.moveTo(vx - 3 * scale, vy);
+    ctx.lineTo(vx - 22 * scale, vy + 7 * scale);
+    ctx.quadraticCurveTo(vx - 24 * scale, vy + 11 * scale, vx - 22 * scale, vy + 13 * scale);
+    ctx.lineTo(vx + 22 * scale, vy + 13 * scale);
+    ctx.quadraticCurveTo(vx + 24 * scale, vy + 11 * scale, vx + 22 * scale, vy + 7 * scale);
+    ctx.lineTo(vx + 3 * scale, vy);
+    ctx.fill();
+    ctx.strokeStyle = '#556677';
+    ctx.lineWidth = 1.5 * scale;
+    ctx.beginPath();
+    ctx.moveTo(vx - 22 * scale, vy + 9 * scale);
+    ctx.lineTo(vx + 22 * scale, vy + 9 * scale);
+    ctx.stroke();
+  };
+  const iValveY = linerTop - 10 * scale + cs.iLift * scale;
+  const eValveY = linerTop - 10 * scale + cs.eLift * scale;
+  drawValve(-37 * scale, iValveY, cs.iLift, true);
+  drawValve(37 * scale, eValveY, cs.eLift, false);
+
+  ctx.fillStyle = '#445566';
+  ctx.fillRect(-60 * scale, linerTop - 5 * scale, 44 * scale, 5 * scale);
+  ctx.fillRect(16 * scale, linerTop - 5 * scale, 44 * scale, 5 * scale);
+
+  ctx.fillStyle = '#777788';
+  ctx.fillRect(-6 * scale, blockTop - 100 * scale, 12 * scale, 50 * scale);
+  ctx.fillStyle = '#ddddc8';
+  ctx.fillRect(-4.5 * scale, blockTop - 93 * scale, 9 * scale, 38 * scale);
+  ctx.fillStyle = '#999aaa';
+  ctx.fillRect(-2 * scale, linerTop - 8 * scale, 4 * scale, 10 * scale);
+  ctx.fillStyle = '#888899';
+  ctx.fillRect(4 * scale, linerTop - 3 * scale, 9 * scale, 2.5 * scale);
+  ctx.fillRect(13 * scale, linerTop - 5 * scale, 2.5 * scale, 5 * scale);
+
+  if (cs.sparking) {
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = '#00ffff';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2 * scale;
+    ctx.beginPath();
+    ctx.moveTo(0, linerTop + 2 * scale);
+    ctx.lineTo(4 * scale + Math.random() * 4 * scale, linerTop - 2 * scale);
+    ctx.lineTo(9 * scale + Math.random() * 3 * scale, linerTop);
+    ctx.lineTo(13.5 * scale, linerTop - 3 * scale);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(0,255,255,0.5)';
+    ctx.lineWidth = 1 * scale;
+    ctx.beginPath();
+    ctx.moveTo(5 * scale, linerTop - 1 * scale);
+    ctx.lineTo(7 * scale + Math.random() * 3 * scale, linerTop + 3 * scale);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  const speedScale = Math.min(1, trueRPM / 4500);
+  if (speedScale > 0.04) {
+    const numGhosts = Math.floor(18 + speedScale * 14);
+    for (let g = 1; g <= numGhosts; g++) {
+      const t = g / numGhosts;
+      const gTheta = cs.theta - t * speedScale * 0.1;
+      const gPinX = R_crank * Math.sin(gTheta);
+      const gPinY = -(R_crank * Math.cos(gTheta));
+      const gYDist = R_crank * Math.cos(gTheta) + Math.sqrt(Math.max(0, L_rod * L_rod - Math.pow(R_crank * Math.sin(gTheta), 2)));
+      const gPistonY = -gYDist;
+      const op = 0.11 * Math.exp(-t * 3.8);
+      ctx.strokeStyle = `rgba(180,195,220,${op})`;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(gPinX, gPinY);
+      ctx.lineTo(0, gPistonY);
+      ctx.stroke();
+      ctx.strokeRect(-boreH + 2, gPistonY - 24 * scale, (boreH - 2) * 2, 40 * scale);
+      ctx.beginPath();
+      ctx.arc(0, 0, R_crank - 4, gTheta - 0.12, gTheta + 0.12);
+      ctx.stroke();
+    }
+  }
+
+  ctx.fillStyle = '#111118';
+  ctx.fillRect(-42 * scale, 20 * scale, 84 * scale, 20 * scale);
+  ctx.fillStyle = '#202028';
+  ctx.fillRect(-32 * scale, -8 * scale, 64 * scale, 18 * scale);
+
+  ctx.fillStyle = '#383845';
+  ctx.beginPath();
+  ctx.arc(0, 0, 28 * scale, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.strokeStyle = '#997733';
+  ctx.lineWidth = 2.5 * scale;
+  ctx.beginPath();
+  ctx.arc(0, 0, 25 * scale, 0, 2 * Math.PI);
+  ctx.stroke();
+
+  ctx.save();
+  ctx.rotate(theta);
+  ctx.fillStyle = '#2c2c38';
+  ctx.beginPath();
+  ctx.arc(0, 0, R_crank + 20 * scale, Math.PI - 0.55, Math.PI + 0.55);
+  ctx.lineTo(0, 0);
+  ctx.fill();
+  ctx.strokeStyle = '#1a1a25';
+  ctx.lineWidth = 1.5;
+  for (let j = 0; j < 3; j++) {
+    ctx.beginPath();
+    ctx.arc(0, 0, R_crank + 8 * scale + j * 4 * scale, Math.PI - 0.45, Math.PI + 0.45);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#444455';
+  ctx.fillRect(-6 * scale, -R_crank - 4 * scale, 12 * scale, R_crank + 4 * scale);
+  ctx.strokeStyle = '#ffaa00';
+  ctx.lineWidth = 2.5 * scale;
+  ctx.beginPath();
+  ctx.moveTo(R_crank + 16 * scale, 0);
+  ctx.lineTo(R_crank + 24 * scale, 0);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.strokeStyle = '#ff2255';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(-4 * scale, -(R_crank + 12 * scale));
+  ctx.lineTo(4 * scale, -(R_crank + 12 * scale));
+  ctx.stroke();
+
+  ctx.fillStyle = '#555566';
+  ctx.beginPath();
+  ctx.arc(pinX, pinY, 18 * scale, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.strokeStyle = '#997733';
+  ctx.lineWidth = 2 * scale;
+  ctx.beginPath();
+  ctx.arc(pinX, pinY, 16 * scale, 0, 2 * Math.PI);
+  ctx.stroke();
+
+  const rodAngle = Math.atan2(pistonY - pinY, -pinX);
+  const rodLen = Math.hypot(pinX, pistonY - pinY);
+  ctx.save();
+  ctx.translate(pinX, pinY);
+  ctx.rotate(rodAngle);
+  const rodGrad = ctx.createLinearGradient(0, 0, rodLen, 0);
+  rodGrad.addColorStop(0, '#777788');
+  rodGrad.addColorStop(0.5, '#8a8a9a');
+  rodGrad.addColorStop(1, '#777788');
+  ctx.fillStyle = rodGrad;
+  ctx.fillRect(0, -13 * scale, rodLen, 5 * scale);
+  ctx.fillRect(0, -4 * scale, rodLen, 8 * scale);
+  ctx.fillRect(0, 8 * scale, rodLen, 5 * scale);
+  ctx.fillStyle = '#222230';
+  for (const bx of [0, rodLen - 8 * scale]) {
+    ctx.fillRect(bx, -17 * scale, 3.5 * scale, 7 * scale);
+    ctx.fillRect(bx, 10 * scale, 3.5 * scale, 7 * scale);
+  }
+  ctx.fillStyle = '#555566';
+  ctx.beginPath();
+  ctx.arc(0, 0, 18 * scale, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.fillStyle = '#111118';
+  ctx.beginPath();
+  ctx.arc(0, 0, 8 * scale, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = '#666677';
+  ctx.beginPath();
+  ctx.arc(0, pistonY, 12 * scale, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.fillStyle = '#222230';
+  ctx.beginPath();
+  ctx.arc(0, pistonY, 6 * scale, 0, 2 * Math.PI);
+  ctx.fill();
+
+  const pistonGrad = ctx.createLinearGradient(-boreH, pistonY, boreH, pistonY);
+  pistonGrad.addColorStop(0, '#888898');
+  pistonGrad.addColorStop(0.5, '#aaaabb');
+  pistonGrad.addColorStop(1, '#888898');
+  ctx.fillStyle = pistonGrad;
+  ctx.fillRect(-boreH + 2, pistonY - 8 * scale, (boreH - 2) * 2, 34 * scale);
+
+  ctx.fillStyle = '#444455';
+  ctx.fillRect(-boreH + 13 * scale, pistonY + 13 * scale, 2.5 * scale, 10 * scale);
+  ctx.fillRect(boreH - 16 * scale, pistonY + 13 * scale, 2.5 * scale, 10 * scale);
+
+  ctx.fillStyle = '#aaaabc';
+  ctx.beginPath();
+  ctx.moveTo(-boreH + 2, pistonY - 8 * scale);
+  ctx.quadraticCurveTo(-16 * scale, pistonY - 28 * scale, 0, pistonY - 32 * scale);
+  ctx.quadraticCurveTo(16 * scale, pistonY - 28 * scale, boreH - 2, pistonY - 8 * scale);
+  ctx.fill();
+
+  ctx.fillStyle = '#777788';
+  ctx.beginPath();
+  ctx.ellipse(-20 * scale, pistonY - 22 * scale, 9 * scale, 6 * scale, 0, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(20 * scale, pistonY - 22 * scale, 9 * scale, 6 * scale, 0, 0, 2 * Math.PI);
+  ctx.fill();
+
+  ctx.strokeStyle = '#111118';
+  ctx.lineWidth = 2 * scale;
+  for (const ry of [-14 * scale, -8 * scale, -3 * scale]) {
+    ctx.beginPath();
+    ctx.moveTo(-boreH + 3, pistonY + ry);
+    ctx.lineTo(boreH - 3, pistonY + ry);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = '#333344';
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(-boreH + 7 * scale, pistonY - 14 * scale);
+  ctx.lineTo(-boreH + 4 * scale, pistonY - 14 * scale);
+  ctx.stroke();
+
+  if (knockActive) {
+    ctx.fillStyle = `rgba(255,34,85,${0.2 + Math.random() * 0.15})`;
+    ctx.fillRect(-boreH + 2, pistonY - 32 * scale, (boreH - 2) * 2, 32 * scale);
+  }
+}
+
+// ============================
+//  START
+// ============================
+document.getElementById('start-btn').addEventListener('click', () => {
+  initAudio();
+  isRunning = true;
+  angularVelocity = (850 * 2 * Math.PI) / 60;
+  initCylinders();
+  document.getElementById('start-overlay').style.display = 'none';
+  requestAnimationFrame(drawFrame);
+});
+
+requestAnimationFrame(function loop(t) {
+  if (!isRunning) requestAnimationFrame(loop);
+});
+</script>
+</body>
+</html>
