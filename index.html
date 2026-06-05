@@ -1,0 +1,1559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#007aff" />
+<meta name="description" content="Colton Bennett's Project Launcher — a catalog of current projects, classic games, and updates." />
+<meta property="og:title" content="Colton's Project Launcher" />
+<meta property="og:description" content="A catalog of current projects, classic games, and updates." />
+<meta property="og:type" content="website" />
+<title>Colton's Project Launcher</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --page-max: 1180px;
+  --glass-blur: 24px;
+  --radius-xl: 28px;
+  --radius-lg: 22px;
+  --radius-md: 18px;
+
+  --bg-core: #fafafa;
+  --bg-gradient: linear-gradient(180deg, #ffffff 0%, #f4f5f8 100%);
+  --bg-overlay: radial-gradient(circle at top, rgba(0, 122, 255, 0.09), transparent 42%),
+                radial-gradient(circle at right, rgba(0, 204, 204, 0.08), transparent 32%),
+                radial-gradient(circle at left bottom, rgba(255, 159, 67, 0.08), transparent 34%);
+
+  --panel-bg: rgba(255, 255, 255, 0.42);
+  --panel-border-top: rgba(255, 255, 255, 0.82);
+  --panel-border-bottom: rgba(0, 0, 0, 0.06);
+  --shadow-soft: 0 8px 18px rgba(15, 23, 42, 0.08), 0 24px 60px rgba(15, 23, 42, 0.10);
+  --shadow-strong: 0 16px 30px rgba(15, 23, 42, 0.14), 0 34px 80px rgba(15, 23, 42, 0.12);
+
+  --text-primary: #17171b;
+  --text-muted: #6d7078;
+  --text-soft: #858995;
+
+  --accent-1: #007aff;
+  --accent-2: #00cccc;
+  --accent-3: #ff9f43;
+  --accent-4: #14b8a6;
+  --accent-5: #60a5fa;
+
+  --hero-grad: linear-gradient(135deg, rgba(0, 122, 255, 0.14), rgba(0, 204, 204, 0.12));
+  --hero-border: rgba(0, 122, 255, 0.14);
+
+  --btn-primary: linear-gradient(180deg, #007aff 0%, #0066d1 100%);
+  --btn-text: #ffffff;
+
+  --chip-bg: rgba(0, 0, 0, 0.04);
+  --chip-border: rgba(0, 0, 0, 0.06);
+
+  --card-status-bg: rgba(0, 122, 255, 0.10);
+  --card-status-text: #007aff;
+
+  --dev-bg: rgba(239, 68, 68, 0.10);
+  --dev-text: #ef4444;
+  --dev-border: rgba(239, 68, 68, 0.18);
+
+  --featured-bg: rgba(20, 184, 166, 0.10);
+  --featured-text: #0f766e;
+  --featured-border: rgba(20, 184, 166, 0.18);
+
+  --new-bg: rgba(16, 185, 129, 0.10);
+  --new-text: #059669;
+  --new-border: rgba(16, 185, 129, 0.18);
+
+  --legacy-bg: rgba(128, 128, 128, 0.10);
+  --legacy-text: #6e6e73;
+  --legacy-border: rgba(128, 128, 128, 0.18);
+
+  --wip-bg: rgba(168, 85, 247, 0.10);
+  --wip-text: #9333ea;
+  --wip-border: rgba(168, 85, 247, 0.18);
+
+  --buggy-bg: rgba(251, 113, 133, 0.10);
+  --buggy-text: #e11d48;
+  --buggy-border: rgba(251, 113, 133, 0.18);
+
+  --complete-bg: rgba(16, 129, 185, 0.10);
+  --complete-text: #0f749d;
+  --complete-border: rgba(16, 129, 185, 0.18);
+
+  --alpha-bg: rgba(245, 158, 11, 0.10);
+  --alpha-text: #b45309;
+  --alpha-border: rgba(245, 158, 11, 0.18);
+
+  --abandoned-bg: rgba(107, 114, 128, 0.10);
+  --abandoned-text: #4b5563;
+  --abandoned-border: rgba(107, 114, 128, 0.18);
+
+  --blob-opacity: 0.78;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  color: var(--text-primary);
+  background: var(--bg-core);
+  background-image: var(--bg-gradient);
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background-image: var(--bg-overlay);
+  pointer-events: none;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image: radial-gradient(rgba(127, 127, 127, 0.05) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+#blob-container {
+  position: fixed;
+  inset: 0;
+  z-index: -3;
+  pointer-events: none;
+  opacity: var(--blob-opacity);
+  overflow: hidden;
+  contain: strict;
+  isolation: isolate;
+}
+
+#blob-container svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#blob-container .blob {
+  will-change: transform;
+  backface-visibility: hidden;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+#blob-container .blob path {
+  shape-rendering: geometricPrecision;
+}
+
+.blob-1 {
+  animation: blob-one 20s linear infinite;
+}
+
+.blob-2 {
+  animation: blob-two 24s linear infinite;
+}
+
+.blob-3 {
+  animation: blob-three 22s linear infinite;
+}
+
+@keyframes blob-one {
+  0% { transform: translate3d(0, 0, 0); }
+  33.333% { transform: translate3d(600px, 100px, 0); }
+  66.666% { transform: translate3d(-100px, 500px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes blob-two {
+  0% { transform: translate3d(0, 0, 0); }
+  33.333% { transform: translate3d(-600px, 500px, 0); }
+  66.666% { transform: translate3d(100px, -200px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes blob-three {
+  0% { transform: translate3d(0, 0, 0); }
+  33.333% { transform: translate3d(500px, -200px, 0); }
+  66.666% { transform: translate3d(-100px, -500px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+.glass-panel {
+  background: var(--panel-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  border-top: 1px solid var(--panel-border-top);
+  border-left: 1px solid var(--panel-border-top);
+  border-right: 1px solid var(--panel-border-bottom);
+  border-bottom: 1px solid var(--panel-border-bottom);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08), var(--shadow-soft);
+  border-radius: var(--radius-xl);
+}
+
+.page-shell {
+  width: min(var(--page-max), calc(100% - 32px));
+  padding-bottom: 90px;
+}
+
+header {
+  margin-top: 32px;
+  padding: 40px 28px;
+  text-align: center;
+}
+
+.header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.08);
+  border: 1px solid rgba(127, 127, 127, 0.12);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+header h1 {
+  margin-top: 18px;
+  font-size: clamp(2.6rem, 7vw, 4.3rem);
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+  font-weight: 800;
+}
+
+header .hero-copy {
+  margin-top: 14px;
+  font-size: 1.06rem;
+  line-height: 1.65;
+  color: var(--text-primary);
+}
+
+header .hero-note {
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: 0.98rem;
+  line-height: 1.6;
+}
+
+.header-grid {
+  margin-top: 26px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.stat {
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid rgba(127, 127, 127, 0.12);
+  text-align: left;
+}
+
+.stat span {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.stat strong {
+  font-size: 1.2rem;
+  letter-spacing: -0.03em;
+}
+
+section {
+  width: min(var(--page-max), calc(100% - 32px));
+  margin-top: 18px;
+}
+
+section.glass-panel {
+  padding: 26px 28px;
+}
+
+.section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.section-title h2 {
+  font-size: clamp(1.35rem, 2.3vw, 1.8rem);
+  letter-spacing: -0.04em;
+}
+
+.section-title p {
+  color: var(--text-muted);
+  font-size: 0.96rem;
+  line-height: 1.55;
+}
+
+.announcement-list {
+  display: grid;
+  gap: 12px;
+}
+
+.announcement-item {
+  padding: 16px 16px 15px;
+  border-radius: 18px;
+  border: 1px solid rgba(127, 127, 127, 0.12);
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.announcement-item h3 {
+  font-size: 1rem;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.announcement-item p,
+.announcement-note {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.announcement-note {
+  margin-top: 16px;
+}
+
+.inline-link {
+  color: var(--accent-1);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.inline-link:hover {
+  text-decoration: underline;
+}
+
+.featured-wrap {
+  margin-top: 20px;
+}
+
+.featured-card {
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 1.2fr 0.9fr;
+  min-height: 390px;
+  background: linear-gradient(135deg, rgba(0, 122, 255, 0.05), rgba(20, 184, 166, 0.05));
+}
+
+.featured-media {
+  position: relative;
+  min-height: 320px;
+  background: var(--hero-grad);
+  border-right: 1px solid var(--hero-border);
+}
+
+.featured-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.10) 100%);
+  pointer-events: none;
+}
+
+.featured-media img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center center;
+}
+
+.featured-content {
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  align-self: flex-start;
+  margin-bottom: 14px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid rgba(127, 127, 127, 0.14);
+  background: var(--card-status-bg);
+  color: var(--card-status-text);
+}
+
+.status--new { background: var(--new-bg); color: var(--new-text); border-color: var(--new-border); }
+.status--complete { background: var(--complete-bg); color: var(--complete-text); border-color: var(--complete-border); }
+.status--legacy { background: var(--legacy-bg); color: var(--legacy-text); border-color: var(--legacy-border); }
+.status--unfinished { background: rgba(239, 68, 68, 0.10); color: #dc2626; border-color: rgba(239, 68, 68, 0.18); }
+.status--alpha { background: var(--alpha-bg); color: var(--alpha-text); border-color: var(--alpha-border); }
+.status--beta { background: var(--card-status-bg); color: var(--card-status-text); border-color: rgba(0, 122, 255, 0.18); }
+.status--wip { background: var(--wip-bg); color: var(--wip-text); border-color: var(--wip-border); }
+.status--buggy { background: var(--buggy-bg); color: var(--buggy-text); border-color: var(--buggy-border); }
+.status--abandoned { background: var(--abandoned-bg); color: var(--abandoned-text); border-color: var(--abandoned-border); }
+
+.featured-content h3 {
+  font-size: clamp(1.9rem, 3vw, 2.6rem);
+  letter-spacing: -0.05em;
+  line-height: 1;
+  margin-bottom: 10px;
+}
+
+.featured-content p {
+  color: var(--text-muted);
+  line-height: 1.65;
+  font-size: 1rem;
+}
+
+.featured-meta {
+  margin: 18px 0 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 20px;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 11px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+  background: var(--chip-bg);
+  color: var(--text-muted);
+  border: 1px solid var(--chip-border);
+}
+
+.tag--featured {
+  color: var(--featured-text);
+  background: var(--featured-bg);
+  border-color: var(--featured-border);
+}
+
+.tag--dev {
+  color: var(--dev-text);
+  background: var(--dev-bg);
+  border-color: var(--dev-border);
+}
+
+.controls {
+  margin-top: 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.controls .hint {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.search-input,
+.filter-select {
+  appearance: none;
+  border: 1px solid rgba(127, 127, 127, 0.18);
+  background: rgba(0, 0, 0, 0.02);
+  color: var(--text-primary);
+  border-radius: 999px;
+  padding: 12px 16px;
+  font: inherit;
+  min-width: 220px;
+  outline: none;
+}
+
+.search-input::placeholder {
+  color: var(--text-soft);
+}
+
+.search-input:focus,
+.filter-select:focus {
+  border-color: rgba(0, 122, 255, 0.42);
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.12);
+}
+
+.sort-btn {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  padding: 11px 16px;
+  border-radius: 999px;
+  color: var(--btn-text);
+  background: var(--btn-primary);
+  box-shadow: 0 10px 26px rgba(0, 122, 255, 0.28);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+
+.sort-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+  box-shadow: 0 14px 30px rgba(0, 122, 255, 0.34);
+}
+
+.sort-btn:active {
+  transform: translateY(0);
+}
+
+.grid-wrap {
+  margin-top: 18px;
+}
+
+.project-grid {
+  display: grid;
+  gap: clamp(1rem, 1vw, 2rem);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.project-card {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  transition: transform 0.24s ease, box-shadow 0.24s ease, background 0.24s ease;
+}
+
+.project-card:hover {
+  transform: translateY(-6px);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08), var(--shadow-strong);
+}
+
+.card-image {
+  border-bottom: 1px solid rgba(127, 127, 127, 0.12);
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+  background: linear-gradient(135deg, rgba(0, 122, 255, 0.08), rgba(255, 159, 67, 0.06));
+}
+
+.card-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center center;
+  display: block;
+  transition: transform 0.55s ease, filter 0.55s ease;
+}
+
+.project-card:hover .card-image img {
+  transform: scale(1.04);
+  filter: saturate(1.05) contrast(1.03);
+}
+
+.card-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.card-body h3 {
+  font-size: 1.35rem;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  margin-bottom: 8px;
+}
+
+.card-body p {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin-bottom: 18px;
+  flex: 1;
+}
+
+.card-actions {
+  margin-top: auto;
+}
+
+.play-btn,
+.classic-item {
+  text-decoration: none;
+}
+
+.play-btn {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-radius: 999px;
+  color: var(--btn-text);
+  background: var(--btn-primary);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  box-shadow: 0 10px 24px rgba(0, 122, 255, 0.28);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+
+.play-btn:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+  box-shadow: 0 14px 30px rgba(0, 122, 255, 0.34);
+}
+
+.play-btn:active {
+  transform: translateY(0);
+}
+
+.classic-games-wrapper {
+  width: min(var(--page-max), calc(100% - 32px));
+  margin-top: 18px;
+}
+
+details.classic-dropdown {
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  background: var(--panel-bg);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border-top: 1px solid var(--panel-border-top);
+  border-left: 1px solid var(--panel-border-top);
+  border-right: 1px solid var(--panel-border-bottom);
+  border-bottom: 1px solid var(--panel-border-bottom);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08), var(--shadow-soft);
+}
+
+summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  padding: 20px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1.1rem;
+  font-weight: 800;
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
+
+.chevron {
+  color: var(--text-muted);
+  transition: transform 0.25s ease;
+}
+
+details[open] .chevron {
+  transform: rotate(180deg);
+}
+
+.dropdown-content {
+  border-top: 1px solid rgba(127, 127, 127, 0.12);
+  padding: 0 24px 24px;
+}
+
+.classic-list {
+  margin-top: 18px;
+  display: grid;
+  gap: 14px;
+}
+
+.classic-item {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 15px;
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.02);
+  border: 1px solid rgba(127, 127, 127, 0.12);
+  color: inherit;
+  transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.classic-item:hover {
+  transform: translateX(4px);
+  border-color: rgba(0, 122, 255, 0.20);
+  background: rgba(0, 122, 255, 0.05);
+}
+
+.classic-item img {
+  width: 84px;
+  height: 84px;
+  border-radius: 14px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.classic-info h3 {
+  font-size: 1.12rem;
+  margin-bottom: 4px;
+}
+
+.classic-info p {
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+footer {
+  width: min(var(--page-max), calc(100% - 32px));
+  margin-top: 24px;
+  padding: 28px 20px 94px;
+  text-align: center;
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.footer-stack {
+  display: grid;
+  gap: 10px;
+}
+
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid var(--accent-1);
+  outline-offset: 4px;
+  border-radius: 14px;
+}
+
+@media (max-width: 920px) {
+  .featured-card {
+    grid-template-columns: 1fr;
+  }
+
+  .featured-media {
+    min-height: 280px;
+    border-right: none;
+    border-bottom: 1px solid var(--hero-border);
+  }
+
+  .header-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  header {
+    padding: 28px 18px;
+  }
+
+  section.glass-panel {
+    padding: 22px 18px;
+  }
+
+  .section-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .controls {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .toolbar {
+    width: 100%;
+  }
+
+  .search-input,
+  .filter-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .classic-item {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .dropdown-content {
+    padding: 0 18px 18px;
+  }
+
+  .header-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  #blob-container {
+    display: none;
+  }
+}
+</style>
+</head>
+<body>
+  <div id="blob-container" aria-hidden="true">
+    <svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <filter id="blurFilter" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation="30" />
+        </filter>
+        <linearGradient id="g1" x1="0%" x2="100%" y1="0%" y2="100%">
+          <stop offset="0%" style="stop-color: var(--accent-1);" />
+          <stop offset="100%" style="stop-color: #60a5fa; stop-opacity: 0.8;" />
+        </linearGradient>
+        
+        <linearGradient id="g2" x1="0%" x2="100%" y1="0%" y2="100%">
+          <stop offset="0%" style="stop-color: var(--accent-3);" />
+          <stop offset="100%" style="stop-color: #f9d65c; stop-opacity: 0.8;" />
+        </linearGradient>
+        
+        <linearGradient id="g3" x1="0%" x2="100%" y1="0%" y2="100%">
+          <stop offset="0%" style="stop-color: var(--accent-2);" />
+          <stop offset="100%" style="stop-color: #86efac; stop-opacity: 0.8;" />
+        </linearGradient>
+      </defs>
+
+      <g filter="url(#blurFilter)" opacity="0.92">
+        <g class="blob blob-1">
+          <path fill="url(#g1)" d="M190,260 C240,120 400,85 510,150 C610,208 674,324 640,412 C602,508 468,560 357,515 C241,466 147,383 190,260 Z"></path>
+        </g>
+        <g class="blob blob-2">
+          <path fill="url(#g2)" d="M740,190 C850,170 942,260 952,383 C962,511 873,610 744,612 C612,615 512,524 515,402 C519,286 619,207 740,190 Z"></path>
+        </g>
+        <g class="blob blob-3">
+          <path fill="url(#g3)" d="M260,720 C335,620 470,605 565,655 C671,711 725,835 671,910 C615,988 480,988 365,941 C243,891 190,818 260,720 Z"></path>
+        </g>
+      </g>
+    </svg>
+  </div>
+
+  <div class="page-shell">
+    <header class="glass-panel">
+      <div class="header-top">
+        <div class="kicker">MADE BY COLTON BENNETT</div>
+      </div>
+      <h1>Project Launcher</h1>
+      <p class="hero-copy"><strong>Welcome to my catalog!</strong> These are the projects I have been building lately.</p>
+      <p class="hero-note">Feel free to browse the current lineup, see what's there, and if anything's changed. Please excuse any bugs you find; I am still learning.</p>
+      <div class="header-grid" id="stats-row" aria-label="Project statistics"></div>
+    </header>
+
+    <main>
+      <section class="glass-panel" aria-labelledby="announcements-title">
+        <div class="section-title">
+          <div>
+            <h2 id="announcements-title">Announcements</h2>
+            <p>What is new, what changed, and where to send ideas.</p>
+          </div>
+        </div>
+        <div class="announcement-list">
+          <article class="announcement-item">
+            <h3>New releases</h3>
+            <p>City Striker and Labyrinthine are out now! They are both in the current lineup below.</p>
+          </article>
+          <article class="announcement-item">
+            <h3>Game updates</h3>
+            <p>MEGALITH got a pretty nice visual refresh, plus more accessibility settings, difficulty modes (impacts obstacles, crystals, and score), and a 3D skin preview. The factory stamper also reaches the ground now.</p>
+            <p>City Striker also has had minor tweaks to cop speed, damage from buildings, NPCs, and cops, as well as changes to the player car color.</p>
+            <p>Pixel Ops has had a MAJOR overhaul; new maps, weapons, enemies, hit detection, achievements, more detailed maps, and much more!</p>
+          </article>
+          <article class="announcement-item">
+            <h3>Site updates</h3>
+            <p>The launcher now changes "moods" every ten minutes, with six different color schemes.</p>
+            <p>I <i>still</i> can't fix the weird gitchiness with the blob background; everything I've tried hasn't helped it, so it might just have to be that way.</p>
+          </article>
+        </div>
+        <p class="announcement-note">Got suggestions or ideas? I'd love to hear them! Send them <a class="inline-link" href="mailto:cbennett002@stu.waukesha.k12.wi.us">here</a>.</p>
+      </section>
+
+      <section class="featured-wrap" aria-labelledby="featured-title">
+        <div class="section-title">
+          <div>
+            <h2 id="featured-title">Developer's Pick</h2>
+            <p>The current favorite.</p>
+          </div>
+        </div>
+        <article class="featured-card glass-panel" id="featured-card"></article>
+      </section>
+
+      <section aria-labelledby="projects-title" class="grid-wrap">
+        <div class="section-title controls">
+          <div>
+            <h2 id="projects-title">Project library</h2>
+            <p id="project-helper">Sorted by your curated order. Use search and filters to narrow things down.</p>
+          </div>
+          <div class="toolbar" aria-label="Project tools">
+            <input id="search-input" class="search-input" type="search" placeholder="Search projects..." aria-label="Search projects" />
+            <select id="status-filter" class="filter-select" aria-label="Filter by status">
+              <option value="all">All statuses</option>
+              <option value="complete">Complete</option>
+              <option value="beta">Beta Release</option>
+              <option value="new">New</option>
+              <option value="wipPlayable">WIP-Playable</option>
+              <option value="wipBuggy">WIP - Buggy</option>
+              <option value="unfinished">Unfinished</option>
+              <option value="legacy">Legacy</option>
+              <option value="abandoned">Abandoned</option>
+            </select>
+            <button id="sort-toggle" class="sort-btn" type="button" aria-pressed="false">Sort by type</button>
+          </div>
+        </div>
+        <div id="project-grid" class="project-grid" aria-live="polite"></div>
+      </section>
+
+      <div class="classic-games-wrapper">
+        <details class="classic-dropdown">
+          <summary> <!--THIS NEEDS TO GO BUT WHEN I REMOVE IT EVERYTHING BREAKS-->
+            <span>IGNORE THIS DROPDOWN, IT NEEDS TO BE REMOVED FROM THE SITE!</span>
+            <span class="chevron">▼</span>
+          </summary>
+          <div class="dropdown-content">
+            <div class="classic-list" id="classic-list"></div>
+          </div>
+        </details>
+      </div>
+    </main>
+
+    <footer>
+      <div class="footer-stack">
+        <p>© 2026 Colton Bennett</p>
+        <p>Last updated: June 2, 2026</p>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    const root = document.documentElement;
+    const sortToggle = document.getElementById('sort-toggle');
+    const featuredCard = document.getElementById('featured-card');
+    const projectGrid = document.getElementById('project-grid');
+    const classicList = document.getElementById('classic-list');
+    const statsRow = document.getElementById('stats-row');
+    const projectHelper = document.getElementById('project-helper');
+    const searchInput = document.getElementById('search-input');
+    const statusFilter = document.getElementById('status-filter');
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+
+    const SORT_KEY = 'project-launcher-sort';
+    const SEARCH_KEY = 'project-launcher-search';
+    const STATUS_KEY = 'project-launcher-status';
+
+    const STATUS_META = {
+      complete: { label: 'Complete', className: 'status--complete', bucket: 'complete' },
+      beta: { label: 'Beta Release', className: 'status--beta', bucket: 'progress' },
+      new: { label: 'NEW!!!', className: 'status--new', bucket: 'progress' },
+      wipPlayable: { label: 'WIP-Playable', className: 'status--wip', bucket: 'progress' },
+      wipBuggy: { label: 'WIP - Buggy', className: 'status--buggy', bucket: 'progress' },
+      unfinished: { label: 'Unfinished', className: 'status--unfinished', bucket: 'progress' },
+      legacy: { label: 'Legacy', className: 'status--legacy', bucket: 'legacy' },
+      abandoned: { label: 'Abandoned', className: 'status--abandoned', bucket: 'legacy' }
+    };
+
+    const moods = [
+      {
+        id: 'neon',
+        label: 'Neon Drift',
+        note: 'arcade glow and extra charge',
+        themeColor: '#00d7ff',
+        blobOpacity: '0.92',
+        vars: {
+          '--bg-core': '#05111a',
+          '--bg-gradient': 'linear-gradient(180deg, #09141f 0%, #03070c 100%)',
+          '--bg-overlay': 'radial-gradient(circle at top, rgba(0, 231, 255, 0.14), transparent 38%), radial-gradient(circle at right, rgba(34, 197, 94, 0.08), transparent 34%), radial-gradient(circle at left bottom, rgba(244, 114, 182, 0.10), transparent 34%)',
+          '--panel-bg': 'rgba(10, 20, 33, 0.66)',
+          '--panel-border-top': 'rgba(255, 255, 255, 0.10)',
+          '--panel-border-bottom': 'rgba(0, 0, 0, 0.28)',
+          '--shadow-soft': '0 12px 26px rgba(0, 0, 0, 0.34), 0 36px 80px rgba(0, 0, 0, 0.30)',
+          '--shadow-strong': '0 18px 38px rgba(0, 0, 0, 0.40), 0 46px 110px rgba(0, 0, 0, 0.30)',
+          '--text-primary': '#f4fbff',
+          '--text-muted': '#a0b7c7',
+          '--text-soft': '#7f97a8',
+          '--accent-1': '#00e5ff',
+          '--accent-2': '#22c55e',
+          '--accent-3': '#f472b6',
+          '--accent-4': '#7c3aed',
+          '--accent-5': '#38bdf8',
+          '--hero-grad': 'linear-gradient(135deg, rgba(0, 229, 255, 0.18), rgba(124, 58, 237, 0.12))',
+          '--hero-border': 'rgba(255, 255, 255, 0.10)',
+          '--btn-primary': 'linear-gradient(180deg, #00d7ff 0%, #7c3aed 100%)',
+          '--btn-text': '#061019',
+          '--chip-bg': 'rgba(255, 255, 255, 0.06)',
+          '--chip-border': 'rgba(255, 255, 255, 0.10)',
+          '--card-status-bg': 'rgba(0, 231, 255, 0.10)',
+          '--card-status-text': '#00e5ff',
+          '--blob-opacity': '0.92'
+        }
+      },
+      {
+        id: 'dusk',
+        label: 'Dusk Shift',
+        note: 'warm sky and late-night calm',
+        themeColor: '#8b5cf6',
+        blobOpacity: '0.82',
+        vars: {
+          '--bg-core': '#0c1020',
+          '--bg-gradient': 'linear-gradient(180deg, #16142b 0%, #080b16 100%)',
+          '--bg-overlay': 'radial-gradient(circle at top, rgba(139, 92, 246, 0.16), transparent 40%), radial-gradient(circle at right, rgba(245, 158, 11, 0.12), transparent 30%), radial-gradient(circle at left bottom, rgba(251, 113, 133, 0.10), transparent 32%)',
+          '--panel-bg': 'rgba(18, 19, 33, 0.64)',
+          '--panel-border-top': 'rgba(255, 255, 255, 0.08)',
+          '--panel-border-bottom': 'rgba(0, 0, 0, 0.28)',
+          '--shadow-soft': '0 12px 26px rgba(0, 0, 0, 0.32), 0 38px 90px rgba(0, 0, 0, 0.28)',
+          '--shadow-strong': '0 18px 38px rgba(0, 0, 0, 0.38), 0 46px 110px rgba(0, 0, 0, 0.30)',
+          '--text-primary': '#f7f3ff',
+          '--text-muted': '#c2b7de',
+          '--text-soft': '#958db1',
+          '--accent-1': '#8b5cf6',
+          '--accent-2': '#f59e0b',
+          '--accent-3': '#fb7185',
+          '--accent-4': '#22c55e',
+          '--accent-5': '#60a5fa',
+          '--hero-grad': 'linear-gradient(135deg, rgba(139, 92, 246, 0.18), rgba(245, 158, 11, 0.12))',
+          '--hero-border': 'rgba(255, 255, 255, 0.08)',
+          '--btn-primary': 'linear-gradient(180deg, #8b5cf6 0%, #f59e0b 100%)',
+          '--btn-text': '#ffffff',
+          '--chip-bg': 'rgba(255, 255, 255, 0.05)',
+          '--chip-border': 'rgba(255, 255, 255, 0.08)',
+          '--card-status-bg': 'rgba(139, 92, 246, 0.10)',
+          '--card-status-text': '#c4b5fd',
+          '--blob-opacity': '0.82'
+        }
+      },
+      {
+        id: 'glitch',
+        label: 'Glitch Pulse',
+        note: 'a little unstable on purpose',
+        themeColor: '#fb7185',
+        blobOpacity: '0.86',
+        vars: {
+          '--bg-core': '#09060a',
+          '--bg-gradient': 'linear-gradient(180deg, #13080d 0%, #050406 100%)',
+          '--bg-overlay': 'radial-gradient(circle at top, rgba(244, 114, 182, 0.14), transparent 38%), radial-gradient(circle at right, rgba(34, 211, 238, 0.12), transparent 34%), radial-gradient(circle at left bottom, rgba(167, 139, 250, 0.10), transparent 34%)',
+          '--panel-bg': 'rgba(19, 11, 16, 0.68)',
+          '--panel-border-top': 'rgba(255, 255, 255, 0.10)',
+          '--panel-border-bottom': 'rgba(0, 0, 0, 0.30)',
+          '--shadow-soft': '0 12px 26px rgba(0, 0, 0, 0.36), 0 38px 88px rgba(0, 0, 0, 0.30)',
+          '--shadow-strong': '0 18px 38px rgba(0, 0, 0, 0.42), 0 46px 110px rgba(0, 0, 0, 0.32)',
+          '--text-primary': '#fff6fa',
+          '--text-muted': '#cda9b7',
+          '--text-soft': '#9f7f8d',
+          '--accent-1': '#fb7185',
+          '--accent-2': '#22d3ee',
+          '--accent-3': '#a78bfa',
+          '--accent-4': '#f59e0b',
+          '--accent-5': '#60a5fa',
+          '--hero-grad': 'linear-gradient(135deg, rgba(251, 113, 133, 0.16), rgba(34, 211, 238, 0.10))',
+          '--hero-border': 'rgba(255, 255, 255, 0.10)',
+          '--btn-primary': 'linear-gradient(180deg, #fb7185 0%, #22d3ee 100%)',
+          '--btn-text': '#10070b',
+          '--chip-bg': 'rgba(255, 255, 255, 0.06)',
+          '--chip-border': 'rgba(255, 255, 255, 0.10)',
+          '--card-status-bg': 'rgba(251, 113, 133, 0.12)',
+          '--card-status-text': '#fb7185',
+          '--blob-opacity': '0.88'
+        }
+      },
+      {
+        id: 'storm',
+        label: 'Storm Mode',
+        note: 'colder light, heavier contrast',
+        themeColor: '#60a5fa',
+        blobOpacity: '0.74',
+        vars: {
+          '--bg-core': '#05070c',
+          '--bg-gradient': 'linear-gradient(180deg, #0b1220 0%, #040507 100%)',
+          '--bg-overlay': 'radial-gradient(circle at top, rgba(96, 165, 250, 0.14), transparent 40%), radial-gradient(circle at right, rgba(148, 163, 184, 0.10), transparent 32%), radial-gradient(circle at left bottom, rgba(56, 189, 248, 0.10), transparent 34%)',
+          '--panel-bg': 'rgba(13, 17, 28, 0.66)',
+          '--panel-border-top': 'rgba(255, 255, 255, 0.08)',
+          '--panel-border-bottom': 'rgba(0, 0, 0, 0.28)',
+          '--shadow-soft': '0 12px 26px rgba(0, 0, 0, 0.34), 0 38px 88px rgba(0, 0, 0, 0.28)',
+          '--shadow-strong': '0 18px 38px rgba(0, 0, 0, 0.42), 0 46px 110px rgba(0, 0, 0, 0.32)',
+          '--text-primary': '#f5f7fb',
+          '--text-muted': '#a8b6c7',
+          '--text-soft': '#8793a4',
+          '--accent-1': '#93c5fd',
+          '--accent-2': '#38bdf8',
+          '--accent-3': '#94a3b8',
+          '--accent-4': '#60a5fa',
+          '--accent-5': '#c084fc',
+          '--hero-grad': 'linear-gradient(135deg, rgba(96, 165, 250, 0.16), rgba(56, 189, 248, 0.10))',
+          '--hero-border': 'rgba(255, 255, 255, 0.08)',
+          '--btn-primary': 'linear-gradient(180deg, #93c5fd 0%, #38bdf8 100%)',
+          '--btn-text': '#06111b',
+          '--chip-bg': 'rgba(255, 255, 255, 0.05)',
+          '--chip-border': 'rgba(255, 255, 255, 0.08)',
+          '--card-status-bg': 'rgba(96, 165, 250, 0.10)',
+          '--card-status-text': '#93c5fd',
+          '--blob-opacity': '0.74'
+        }
+      },
+      {
+        id: 'aurora',
+        label: 'Aurora Bloom',
+        note: 'soft gradients and fresh air',
+        themeColor: '#22c55e',
+        blobOpacity: '0.80',
+        vars: {
+          '--bg-core': '#06110d',
+          '--bg-gradient': 'linear-gradient(180deg, #0d1a17 0%, #040706 100%)',
+          '--bg-overlay': 'radial-gradient(circle at top, rgba(34, 197, 94, 0.14), transparent 40%), radial-gradient(circle at right, rgba(34, 211, 238, 0.10), transparent 32%), radial-gradient(circle at left bottom, rgba(168, 85, 247, 0.10), transparent 34%)',
+          '--panel-bg': 'rgba(11, 20, 18, 0.66)',
+          '--panel-border-top': 'rgba(255, 255, 255, 0.09)',
+          '--panel-border-bottom': 'rgba(0, 0, 0, 0.26)',
+          '--shadow-soft': '0 12px 26px rgba(0, 0, 0, 0.32), 0 38px 88px rgba(0, 0, 0, 0.26)',
+          '--shadow-strong': '0 18px 38px rgba(0, 0, 0, 0.38), 0 46px 110px rgba(0, 0, 0, 0.30)',
+          '--text-primary': '#f4fff7',
+          '--text-muted': '#a8c9b4',
+          '--text-soft': '#84a694',
+          '--accent-1': '#22c55e',
+          '--accent-2': '#34d399',
+          '--accent-3': '#a78bfa',
+          '--accent-4': '#14b8a6',
+          '--accent-5': '#86efac',
+          '--hero-grad': 'linear-gradient(135deg, rgba(34, 197, 94, 0.18), rgba(34, 211, 238, 0.10))',
+          '--hero-border': 'rgba(255, 255, 255, 0.09)',
+          '--btn-primary': 'linear-gradient(180deg, #22c55e 0%, #14b8a6 100%)',
+          '--btn-text': '#06110a',
+          '--chip-bg': 'rgba(255, 255, 255, 0.05)',
+          '--chip-border': 'rgba(255, 255, 255, 0.08)',
+          '--card-status-bg': 'rgba(34, 197, 94, 0.10)',
+          '--card-status-text': '#34d399',
+          '--blob-opacity': '0.80'
+        }
+      },
+      {
+        id: 'sunset',
+        label: 'Sunset Shift',
+        note: 'warm edge light and bright contrast',
+        themeColor: '#f59e0b',
+        blobOpacity: '0.84',
+        vars: {
+          '--bg-core': '#120a05',
+          '--bg-gradient': 'linear-gradient(180deg, #1e1208 0%, #090503 100%)',
+          '--bg-overlay': 'radial-gradient(circle at top, rgba(245, 158, 11, 0.16), transparent 40%), radial-gradient(circle at right, rgba(251, 113, 133, 0.10), transparent 32%), radial-gradient(circle at left bottom, rgba(96, 165, 250, 0.10), transparent 34%)',
+          '--panel-bg': 'rgba(26, 16, 11, 0.66)',
+          '--panel-border-top': 'rgba(255, 255, 255, 0.09)',
+          '--panel-border-bottom': 'rgba(0, 0, 0, 0.26)',
+          '--shadow-soft': '0 12px 26px rgba(0, 0, 0, 0.34), 0 38px 88px rgba(0, 0, 0, 0.28)',
+          '--shadow-strong': '0 18px 38px rgba(0, 0, 0, 0.40), 0 46px 110px rgba(0, 0, 0, 0.32)',
+          '--text-primary': '#fff8f0',
+          '--text-muted': '#cbb39a',
+          '--text-soft': '#a38973',
+          '--accent-1': '#f59e0b',
+          '--accent-2': '#fb7185',
+          '--accent-3': '#60a5fa',
+          '--accent-4': '#f97316',
+          '--accent-5': '#facc15',
+          '--hero-grad': 'linear-gradient(135deg, rgba(245, 158, 11, 0.18), rgba(251, 113, 133, 0.10))',
+          '--hero-border': 'rgba(255, 255, 255, 0.09)',
+          '--btn-primary': 'linear-gradient(180deg, #f59e0b 0%, #fb7185 100%)',
+          '--btn-text': '#1a0b03',
+          '--chip-bg': 'rgba(255, 255, 255, 0.05)',
+          '--chip-border': 'rgba(255, 255, 255, 0.08)',
+          '--card-status-bg': 'rgba(245, 158, 11, 0.10)',
+          '--card-status-text': '#fbbf24',
+          '--blob-opacity': '0.84'
+        }
+      }
+    ];
+
+    const projects = [
+      {
+        title: 'Pixel Ops',
+        url: 'https://pixel_ops.oneapp.dev',
+        image: 'https://uploads.onecompiler.io/424a6v3xr/44mtc8fnn/IMG_1944.jpeg',
+        alt: 'Pixel Ops',
+        statusKey: 'complete',
+        type: 'FPS',
+        tags: ['FPS', 'Military'],
+        description: 'A shoot-em-up FPS across conquered lands. Pick your deployment location and take out as many hostiles as possible using your vast arsenal!',
+        featured: false
+      },
+      {
+        title: 'Labyrinthine',
+        url: 'https://labyrinthine.oneapp.dev',
+        image: 'https://uploads.onecompiler.io/424a6v3xr/44mtc8fnn/IMG_1922.jpeg',
+        alt: 'Labyrinthine',
+        statusKey: 'new',
+        type: 'Horror',
+        tags: ['Horror', 'Survival', 'Under development'],
+        description: 'You are trapped in a maze with entities that want only one thing: your head... on a plate! Shine your flashlight to freeze them, and use your weapons to survive.',
+        featured: false
+      },
+      {
+        title: 'MEGALITH',
+        url: 'https://megalith.oneapp.dev',
+        image: 'https://uploads.onecompiler.io/424a6v3xr/44mtc8fnn/IMG_1923.jpeg',
+        alt: 'MEGALITH',
+        statusKey: 'complete',
+        type: 'Endless',
+        tags: ['Endless', 'Mobile', 'Top Pick'],
+        description: 'Roll through a void of platforms, collect crystals, navigate changing sectors, and go for high scores in this fast-paced endless runner!',
+        featured: true
+      },
+      {
+        title: 'City Striker',
+        url: 'https://citystriker.oneapp.dev',
+        image: 'https://uploads.onecompiler.io/424a6v3xr/44mtc8fnn/IMG_1891.jpeg',
+        alt: 'City Striker',
+        statusKey: 'new',
+        type: 'Driving',
+        tags: ['Driving', 'Chase'],
+        description: 'The police are after you! Weave through traffic and between buildings to make them crash! Keep driving for as long as possible and your score will skyrocket!.',
+        featured: false
+      },
+      {
+        title: 'Chronostrike',
+        url: 'https://chronostrike_arsenal.oneapp.dev',
+        image: 'https://uploads.onecompiler.io/424a6v3xr/44mtc8fnn/IMG_1605.jpeg',
+        alt: 'Chronostrike',
+        statusKey: 'complete',
+        type: 'FPS',
+        tags: ['FPS', 'Time Control'],
+        description: 'Time only moves when you move! Use it to dodge, weave, or just line up a shot in this (definetly not a clone of another game that I can\'t name due to copyright) unique game!',
+        featured: false
+      },
+      {
+        title: 'Goblin Hut Clicker',
+        url: 'https://gh_on_me_gh_on_3.oneapp.dev',
+        image: 'https://uploads.onecompiler.io/424a6v3xr/44mtc8fnn/IMG_1677.jpeg',
+        alt: 'Goblin Hut Clicker',
+        statusKey: 'complete',
+        type: 'Clicker',
+        tags: ['Clicker', 'Idle'],
+        description: 'Click to get goblins and grow your tribe! Buy buildings, sacrifice goblins to science, and conquer the universe! Note: Progress saves to your browser automatically.',
+        featured: false
+      },
+      {
+        title: 'Legacy Racing Sim',
+        url: 'https://legacysim.oneapp.dev',
+        image: 'https://uploads.onecompiler.io/424a6v3xr/44mtc8fnn/IMG_1669.jpeg',
+        alt: 'Legacy Racing Sim',
+        statusKey: 'legacy',
+        type: 'Racing',
+        tags: ['Racing', 'Tracks', 'Sim'],
+        description: 'Playable racing sim with classic arcade physics, a real track, and timing. The graphics are mimicking 3d using 2d (this was made before i knew about three.js)',
+        featured: false
+      },
+      {
+        title: 'Engine Sim',
+        url: 'https://enginesim.oneapp.dev',
+        image: 'https://uploads.onecompiler.io/424a6v3xr/44mtc8fnn/IMG_1691.jpeg',
+        alt: 'Engine Sim',
+        statusKey: 'beta',
+        type: 'Sim',
+        tags: ['Sim', 'Physics'],
+        description: 'You can tune anything, from the shape and cylinder count down to the turbo tuning (yes, there is turbo flutter!), and it will all affect your engine! Warning: the engine DOES have sound effects, be mindful of your device\'s volume.',
+        featured: false
+      },
+      {
+        title: 'Warzone',
+        url: 'https://warzone.oneapp.dev',
+        image: 'https://uploads.onecompiler.io/424a6v3xr/44mtc8fnn/IMG_1723.jpeg',
+        alt: 'Warzone',
+        statusKey: 'wipBuggy',
+        type: 'Military',
+        tags: ['Military', 'Vehicles'],
+        description: 'Pick a famous wartime vehicle, get a target lock and destroy enemies, and use maneuvers and flares to avoid missiles in this action-packed military sim!',
+        featured: false
+      },
+      {
+        title: 'Gang Wars',
+        url: 'https://gangwars.oneapp.dev',
+        image: 'https://uploads.onecompiler.io/424a6v3xr/44mtc8fnn/IMG_1625.jpeg',
+        alt: 'Gang Wars',
+        statusKey: 'wipBuggy',
+        type: 'Arcade',
+        tags: ['Arcade', 'Top-Down'],
+        description: 'Your gang has sent you on a mission: clear out the rivals. Drop all the thugs, take their straps, and make your way to the bottom right to advance!',
+        featured: false
+      },
+      {
+        title: 'Racing Sim',
+        url: 'https://coltons_racing_sim.oneapp.dev',
+        image: 'https://uploads.onecompiler.io/424a6v3xr/44mtc8fnn/IMG_1604.jpeg',
+        alt: 'Racing Sim',
+        statusKey: 'abandoned',
+        type: 'Driving',
+        tags: ['Driving', 'Physics'],
+        description: 'Not much to talk about here: It\'s extremely incomplete. If you want a playable racing game, play the legacy one.',
+        featured: false
+      }
+    ];
+
+    const classics = [
+    
+    ];
+
+    function esc(value) {
+      return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function safeGet(key) {
+      try { return localStorage.getItem(key); } catch { return null; }
+    }
+
+    function safeSet(key, value) {
+      try { localStorage.setItem(key, value); } catch {}
+    }
+
+    function getStatusMeta(statusKey) {
+      return STATUS_META[statusKey] || { label: statusKey, className: 'status--legacy', bucket: 'legacy' };
+    }
+
+    let activeMoodId = null;
+    function applyMood(mood) {
+      if (!mood || mood.id === activeMoodId) return;
+      for (const [property, value] of Object.entries(mood.vars)) {
+        root.style.setProperty(property, value);
+      }
+      root.dataset.mood = mood.id;
+      if (themeColorMeta) themeColorMeta.setAttribute('content', mood.themeColor);
+      root.style.setProperty('--blob-opacity', mood.blobOpacity);
+      activeMoodId = mood.id;
+    }
+
+    const CHANGE_EVERY_MINUTES = 10;
+    let moodTimer = null;
+
+    function getCurrentMood() {
+      const now = new Date();
+      const totalMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+      const slot = Math.floor(totalMinutes / CHANGE_EVERY_MINUTES);
+      return moods[slot % moods.length];
+    }
+
+    function minutesUntilNextMoodChange(now = new Date()) {
+      const totalMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+      const minutesIntoSlot = totalMinutes % CHANGE_EVERY_MINUTES;
+      const secondsIntoMinute = now.getUTCSeconds();
+      const msIntoSecond = now.getUTCMilliseconds();
+      const remainingMinutes = CHANGE_EVERY_MINUTES - minutesIntoSlot - 1;
+      const remainingMs = (remainingMinutes * 60 * 1000) + ((59 - secondsIntoMinute) * 1000) + (1000 - msIntoSecond);
+      return Math.max(1000, remainingMs);
+    }
+
+    function scheduleMoodSync() {
+      clearTimeout(moodTimer);
+      applyMood(getCurrentMood());
+      moodTimer = setTimeout(scheduleMoodSync, minutesUntilNextMoodChange());
+    }
+
+    let sortMode = safeGet(SORT_KEY) || 'default';
+    let searchTerm = safeGet(SEARCH_KEY) || '';
+    let statusValue = safeGet(STATUS_KEY) || 'all';
+
+    searchInput.value = searchTerm;
+    statusFilter.value = statusValue;
+
+    function renderStats() {
+      const complete = projects.filter(p => p.statusKey === 'complete').length;
+      const inProgress = projects.filter(p => ['beta', 'new', 'wipPlayable', 'wipBuggy', 'unfinished'].includes(p.statusKey)).length;
+      statsRow.innerHTML = `
+        <div class="stat"><span>Projects</span><strong>${projects.length}</strong></div>
+        <div class="stat"><span>Complete</span><strong>${complete}</strong></div>
+        <div class="stat"><span>In progress</span><strong>${inProgress}</strong></div>
+        <div class="stat"><span>Classics</span><strong>${classics.length}</strong></div>
+      `;
+    }
+
+    function renderFeatured() {
+      const featured = projects.find(project => project.featured) || projects[0];
+      const status = getStatusMeta(featured.statusKey);
+      featuredCard.innerHTML = `
+        <div class="featured-media">
+          <img src="${featured.image}" alt="${esc(featured.alt)} featured preview" loading="eager" decoding="async" fetchpriority="high" style="object-position: center center;" />
+        </div>
+        <div class="featured-content">
+          <span class="status ${status.className}">${esc(status.label)}</span>
+          <h3>${esc(featured.title)}</h3>
+          <p>${esc(featured.description)}</p>
+          <div class="featured-meta">${featured.tags.map(tag => `<span class="tag ${tag.includes('Top Pick') ? 'tag--featured' : ''}">${esc(tag)}</span>`).join('')}</div>
+          <a class="play-btn" href="${featured.url}" target="_blank" rel="noopener noreferrer" aria-label="Play ${esc(featured.title)}">Play now</a>
+        </div>
+      `;
+    }
+
+    function sortedProjects() {
+      const featured = projects.find(project => project.featured);
+      const others = projects.filter(project => !project.featured);
+      if (sortMode === 'type') {
+        others.sort((a, b) => a.type.localeCompare(b.type) || a.title.localeCompare(b.title));
+      }
+      return featured ? [featured, ...others] : others;
+    }
+
+    function projectMatches(project) {
+      const term = searchTerm.trim().toLowerCase();
+      const statusMatch = statusValue === 'all' || project.statusKey === statusValue;
+      const searchMatch = !term || [project.title, project.type, getStatusMeta(project.statusKey).label, project.description, ...(project.tags || [])].join(' ').toLowerCase().includes(term);
+      return statusMatch && searchMatch;
+    }
+
+    function filteredProjects() {
+      return sortedProjects().filter(project => !project.featured && projectMatches(project));
+    }
+
+    function featuredMatchesFilters() {
+      const featured = projects.find(project => project.featured);
+      return featured ? projectMatches(featured) : false;
+    }
+
+    function updateHelperText(count) {
+      const total = projects.filter(p => !p.featured).length;
+      const modeText = sortMode === 'type' ? 'Sorted alphabetically by project type.' : 'Kept in curated order.';
+      const filterText = [];
+      if (searchTerm.trim()) filterText.push(`Search: ${searchTerm.trim()}`);
+      if (statusValue !== 'all') filterText.push(`Status: ${getStatusMeta(statusValue).label}`);
+      const featuredNote = featuredMatchesFilters() ? ' Featured project matches your current search and filter and is shown above.' : '';
+      projectHelper.textContent = `${modeText} ${filterText.length ? filterText.join(' · ') + ' · ' : ''}${count} of ${total} projects shown.${featuredNote}`;
+    }
+
+    function renderProjects() {
+      const items = filteredProjects();
+      projectGrid.innerHTML = items.length ? items.map(project => {
+        const status = getStatusMeta(project.statusKey);
+        return `
+          <article class="project-card glass-panel">
+            <div class="card-image">
+              <img src="${project.image}" alt="${esc(project.alt)}" loading="lazy" decoding="async" style="object-position: center center;" />
+            </div>
+            <div class="card-body">
+              <div class="card-top">
+                <span class="status ${status.className}">${esc(status.label)}</span>
+                <span class="tag">${esc(project.type)}</span>
+              </div>
+              <h3>${esc(project.title)}</h3>
+              <div class="tags">${project.tags.map(tag => `<span class="tag ${tag.includes('Top Pick') ? 'tag--featured' : tag === 'Under development' ? 'tag--dev' : ''}">${esc(tag)}</span>`).join('')}</div>
+              <p>${esc(project.description)}</p>
+              <div class="card-actions">
+                <a class="play-btn" href="${project.url}" target="_blank" rel="noopener noreferrer" aria-label="Play ${esc(project.title)}">Play now</a>
+              </div>
+            </div>
+          </article>
+        `;
+      }).join('') : `
+        <div class="announcement-item" style="grid-column: 1 / -1;">
+          <h3>No matches</h3>
+          <p>Try a different search term or clear the status filter.</p>
+        </div>
+      `;
+
+      sortToggle.textContent = sortMode === 'type' ? 'Sort: type' : 'Sort by type';
+      sortToggle.setAttribute('aria-pressed', sortMode === 'type' ? 'true' : 'false');
+      updateHelperText(items.length);
+    }
+
+    function renderClassics() {
+      classicList.innerHTML = classics.map(item => `
+        <a href="${item.url}" class="classic-item" target="_blank" rel="noopener noreferrer" aria-label="Play ${esc(item.title)}">
+          <img src="${item.image}" alt="${esc(item.title)} preview" loading="lazy" decoding="async" />
+          <div class="classic-info">
+            <h3>${esc(item.title)}</h3>
+            <p>${esc(item.description)}</p>
+          </div>
+        </a>
+      `).join('');
+    }
+
+    renderStats();
+    renderFeatured();
+    renderProjects();
+    renderClassics();
+    scheduleMoodSync();
+
+    sortToggle.addEventListener('click', () => {
+      sortMode = sortMode === 'type' ? 'default' : 'type';
+      safeSet(SORT_KEY, sortMode);
+      renderProjects();
+    });
+
+    searchInput.addEventListener('input', () => {
+      searchTerm = searchInput.value;
+      safeSet(SEARCH_KEY, searchTerm);
+      renderProjects();
+    });
+
+    statusFilter.addEventListener('change', () => {
+      statusValue = statusFilter.value;
+      safeSet(STATUS_KEY, statusValue);
+      renderProjects();
+    });
+
+    window.addEventListener('focus', scheduleMoodSync);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) scheduleMoodSync();
+    });
+  </script>
+</body>
+</html>
