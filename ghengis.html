@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no">
-    <title>Genghis Khan Simulator: Tengri's Mandate</title>
+    <title>Ghengis Khan Simulator</title>
     <style>
         * { box-sizing: border-box; user-select: none; -webkit-user-select: none; margin: 0; padding: 0; }
         body, html { width: 100%; height: 100%; overflow: hidden; background-color: #050805; font-family: 'Georgia', serif; touch-action: none; }
@@ -11,10 +11,7 @@
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; display: flex; flex-direction: column; justify-content: space-between; padding: 12px; }
         .interactive { pointer-events: auto; }
         
-        #header-panel { background: linear-gradient(180deg, rgba(25, 20, 15, 0.95) 0%, rgba(15, 10, 5, 0.9) 100%); border: 3px double #d4af37; border-radius: 6px; padding: 6px 12px; color: #fff; text-align: center; align-self: center; box-shadow: 0 6px 25px rgba(0,0,0,0.85); max-width: 90%; display: flex; flex-direction: column; gap: 2px; position: relative; transition: all 0.5s ease; }
-        #header-panel.mythic-theme { border-color: #00ffff; box-shadow: 0 0 30px rgba(0, 255, 255, 0.4); background: linear-gradient(180deg, rgba(10, 25, 35, 0.95) 0%, rgba(5, 10, 20, 0.9) 100%); }
-        #header-panel.mythic-theme h1 { color: #00ffff; text-shadow: 0 0 10px rgba(0, 255, 255, 0.8); }
-        
+        #header-panel { background: linear-gradient(180deg, rgba(25, 20, 15, 0.95) 0%, rgba(15, 10, 5, 0.9) 100%); border: 3px double #d4af37; border-radius: 6px; padding: 6px 12px; color: #fff; text-align: center; align-self: center; box-shadow: 0 6px 25px rgba(0,0,0,0.85); max-width: 90%; display: flex; flex-direction: column; gap: 2px; position: relative; }
         #header-panel h1 { font-size: 16px; letter-spacing: 2px; color: #ffd700; text-transform: uppercase; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); margin-bottom: 2px; }
         #biome-display { font-size: 10px; color: #a8dadc; text-transform: uppercase; letter-spacing: 1px; font-style: italic; }
         .stats-row { display: flex; justify-content: center; font-size: 13px; font-weight: bold; color: #f4f1de; gap: 15px; padding: 2px 0; border-bottom: 1px dashed #5c4033; }
@@ -25,19 +22,25 @@
         #unit-counters { position: absolute; bottom: -25px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); border: 1px solid #d4af37; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: bold; color: #fff; white-space: nowrap; box-shadow: 0 2px 10px rgba(0,0,0,0.5); }
         #counter-horde { color: #52b788; } #counter-dynasty { color: #e63946; }
 
-        #action-panel { display: flex; flex-direction: column; width: 100%; gap: 8px; }
-        .action-row { display: flex; justify-content: space-between; align-items: flex-end; width: 100%; gap: 8px; }
+        /* PART 2: Bottom panel re-layout */
+        #bottom-panel { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+
+        /* Row 1: Draw Path + Target Flag (left) + Start/Next (center) */
+        #control-row { display: flex; align-items: center; gap: 8px; width: 100%; }
+        #placement-tools-group { background: rgba(20, 16, 12, 0.95); border: 2px solid #5c4033; padding: 6px; border-radius: 10px; display: flex; gap: 6px; box-shadow: 0 6px 20px rgba(0,0,0,0.9); flex-shrink: 0; }
+        #battle-controls-group { background: rgba(20, 16, 12, 0.95); border: 2px solid #5c4033; padding: 6px; border-radius: 10px; display: flex; gap: 6px; box-shadow: 0 6px 20px rgba(0,0,0,0.9); flex-shrink: 0; margin: 0 auto; }
+
+        /* Row 2: Unit selector + History + System */
+        #action-panel { display: flex; justify-content: space-between; align-items: flex-end; width: 100%; gap: 8px; }
+        .button-group { background: rgba(20, 16, 12, 0.95); border: 2px solid #5c4033; padding: 6px; border-radius: 10px; display: flex; gap: 6px; box-shadow: 0 6px 20px rgba(0,0,0,0.9); }
         
-        .button-group { background: rgba(20, 16, 12, 0.95); border: 2px solid #5c4033; padding: 6px; border-radius: 10px; display: flex; gap: 6px; box-shadow: 0 6px 20px rgba(0,0,0,0.9); align-items: center; }
-        
-        #unit-selector-group { max-width: 75%; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding-bottom: 4px; justify-content: flex-start; scrollbar-width: thin; scrollbar-color: #d4af37 #241c14; flex-grow: 1; }
+        #unit-selector-group { max-width: 65%; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding-bottom: 4px; justify-content: flex-start; scrollbar-width: thin; scrollbar-color: #d4af37 #241c14; }
         #unit-selector-group::-webkit-scrollbar { height: 6px; }
         #unit-selector-group::-webkit-scrollbar-track { background: #241c14; border-radius: 4px; }
         #unit-selector-group::-webkit-scrollbar-thumb { background-color: #d4af37; border-radius: 4px; }
         
-        #system-group { flex-direction: row; margin: 0 auto; }
+        #system-group { flex-direction: column; min-width: 120px; }
         #history-group { flex-direction: row; }
-        #tools-group { flex-direction: row; }
         
         .btn { background: linear-gradient(135deg, #403225 0%, #241c14 100%); border: 2px solid #8b7355; color: #f4f1de; padding: 8px; font-size: 10px; font-weight: bold; border-radius: 6px; cursor: pointer; transition: all 0.15s ease-in-out; display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 85px; flex: 0 0 auto; box-shadow: inset 0 1px 2px rgba(255,255,255,0.15); position: relative; overflow: hidden; }
         .btn:active { transform: scale(0.96); }
@@ -46,42 +49,45 @@
         .btn.locked { background: #1a1a1a; border-color: #333; color: #555; pointer-events: none; }
         .btn.locked::after { content: '🔒 Lvl ' attr(data-unlock); position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.8); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #ff5555; font-weight: bold; }
         
-        .btn-system { padding: 8px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; min-width: auto; }
-        .btn-tool { min-width: 60px; background: linear-gradient(135deg, #1b3a4b 0%, #0d1b2a 100%); border-color: #3e5c76; }
-        .btn-tool.selected { background: linear-gradient(135deg, #0077b6 0%, #023e8a 100%); border-color: #00ffff; box-shadow: 0 0 12px rgba(0, 255, 255, 0.5); }
+        .btn-system { width: 100%; padding: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; min-width: auto; }
         .btn-hist { min-width: 40px; background: linear-gradient(135deg, #2b4162 0%, #111a26 100%); border-color: #6385b5; padding: 6px; }
-        
-        #btn-start { background: linear-gradient(135deg, #137547 0%, #054a29 100%); border-color: #38b000; color: #fff; }
-        #btn-next { background: linear-gradient(135deg, #b8860b 0%, #735104 100%); border-color: #ffd700; color: #fff; display: none; }
+        #btn-start { background: linear-gradient(135deg, #137547 0%, #054a29 100%); border-color: #38b000; color: #fff; min-width: 110px; }
+        #btn-next { background: linear-gradient(135deg, #b8860b 0%, #735104 100%); border-color: #ffd700; color: #fff; display: none; min-width: 110px; }
         .btn span.count { font-size: 8px; color: #ccc; margin-top: 3px; }
+
+        /* Placement tool buttons (Draw Path, Target Flag) in the top control row */
+        .btn-tool { min-width: 80px; background: linear-gradient(135deg, #2a1f4a 0%, #16102e 100%); border-color: #7a5fbf; }
+        .btn-tool.selected { background: linear-gradient(135deg, #5a2e8c 0%, #2e1660 100%); border-color: #c39ef0; box-shadow: 0 0 12px rgba(195, 158, 240, 0.5); }
         
-        select.formation-select { background: #1a1a1a; color: #ffd700; border: 1px solid #d4af37; padding: 4px; border-radius: 4px; font-size: 10px; font-family: 'Georgia', serif; font-weight: bold; outline: none; margin-left: 5px; }
-
-        #tengri-panel { position: absolute; right: 15px; top: 90px; display: none; flex-direction: column; gap: 8px; }
-        .btn-mythic { background: linear-gradient(135deg, #3c096c 0%, #10002b 100%); border-color: #9d4edd; color: #e0aaff; text-shadow: 0 0 5px rgba(157, 78, 221, 0.8); }
-
+        #instruction-overlay { position: absolute; top: 90px; left: 50%; transform: translateX(-50%); background: rgba(10,8,6,0.85); color: #f4f1de; padding: 6px 14px; border-radius: 15px; font-size: 11px; text-align: center; pointer-events: none; border: 1px solid #8b7355; white-space: nowrap; letter-spacing: 0.5px; }
         #unlock-toast { position: absolute; top: 40%; left: 50%; transform: translate(-50%, -50%); background: linear-gradient(135deg, #7400b8 0%, #480ca8 100%); border: 3px dashed #ffd700; padding: 20px 40px; color: white; font-weight: bold; font-size: 24px; border-radius: 12px; text-align: center; display: none; z-index: 100; box-shadow: 0 10px 40px rgba(0,0,0,0.8); animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         @keyframes popIn { 0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
 
+        /* Ghost path preview canvas overlay */
+        #ghost-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+
         @media (max-width: 800px) { 
-            .action-row { flex-wrap: wrap; justify-content: center; } 
-            #unit-selector-group { max-width: 100%; order: 3; } 
-            #system-group { order: 1; width: 100%; justify-content: center; }
-            #tools-group { order: 2; }
-            #history-group { order: 4; }
+            #action-panel { flex-wrap: wrap; justify-content: center; } 
+            #unit-selector-group { max-width: 100%; flex: 1 1 100%; order: 3; } 
+            #system-group { flex-direction: row; flex: 1; justify-content: center; order: 1; min-width: auto; } 
+            #history-group { flex: 0; order: 2; }
+            .btn-system { flex: 1; padding: 10px 4px; } 
+            #instruction-overlay { top: 115px; font-size: 10px; white-space: normal; width: 90%; }
+            #control-row { flex-wrap: wrap; }
+            #battle-controls-group { margin: 0; }
         }
     </style>
 </head>
 <body>
 
     <div id="canvas-container"></div>
-    <div id="unlock-toast">TENGRI'S MANDATE UNLOCKED!</div>
+    <div id="unlock-toast">⚡ TENGRI'S MANDATE UNLOCKED! ⚡</div>
 
     <div id="ui-layer">
         <div id="header-panel">
             <h1>Genghis Khan Simulator</h1>
             <div id="biome-display">REGION: STEPPE</div>
-            <div id="info-display">Left Click: Place | Shift+LClick: Pan | Space+LClick: Rotate | Scroll: Zoom</div>
+            <div id="info-display">Space+Drag: Rotate | Shift+Drag: Pan | Scroll: Zoom</div>
             <div class="stats-row">
                 <span class="level-text" id="level-display">Campaign: Level 1 / 100</span>
                 <span class="budget-text" id="budget-display">Budget: 400</span>
@@ -90,37 +96,34 @@
             <div id="unit-counters">HORDE: <span id="counter-horde">0</span> | DYNASTY: <span id="counter-dynasty">0</span></div>
         </div>
 
-        <div id="tengri-panel" class="button-group interactive">
-            <div style="font-size:10px; color:#00ffff; text-align:center; font-weight:bold; letter-spacing:1px; width:100%;">TENGRI'S SANDBOX</div>
-            <button class="btn btn-mythic" id="btn-god-mode">God Mode: Terrain</button>
-            <button class="btn btn-mythic" id="btn-visual-toggle">Mythic Overhaul</button>
-        </div>
-
-        <div id="action-panel">
-            <div class="action-row">
-                <div id="tools-group" class="button-group interactive">
-                    <div class="btn btn-tool" data-unit-type="WAYPOINT">Draw Path</div>
-                    <div class="btn btn-tool" data-unit-type="TARGET_MARK">Target Mark</div>
-                    <select id="formation-select" class="formation-select interactive">
-                        <option value="LINE">Line</option>
-                        <option value="WEDGE">Wedge</option>
-                        <option value="CIRCLE">Circle</option>
-                    </select>
+        <!-- PART 2: New bottom panel layout -->
+        <div id="bottom-panel">
+            <!-- Row 1: Placement tools (left) + Battle controls (center) -->
+            <div id="control-row">
+                <!-- Draw Path and Target Flag pinned to the left -->
+                <div id="placement-tools-group" class="interactive">
+                    <div class="btn btn-tool interactive" id="btn-tool-waypoint" data-unit-type="WAYPOINT">Draw Path<span class="count">FREE</span></div>
+                    <div class="btn btn-tool interactive" id="btn-tool-target" data-unit-type="TARGET_MARK">Target Flag<span class="count">FREE</span></div>
                 </div>
-
-                <div id="system-group" class="button-group interactive">
-                    <button class="btn btn-system" id="btn-start">Start Battle</button>
-                    <button class="btn btn-system" id="btn-next">Next Level</button>
-                    <button class="btn btn-system" id="btn-clear">Reset Map</button>
-                    <button class="btn btn-system" id="btn-wipe" style="background:#540b0e; font-size:9px; padding:3px;">Wipe Progress</button>
+                <!-- Start/Next Battle sandwiched in the center -->
+                <div id="battle-controls-group" class="interactive">
+                    <button class="btn" id="btn-start">Start Battle</button>
+                    <button class="btn" id="btn-next">Next Level</button>
                 </div>
             </div>
 
-            <div class="action-row">
+            <!-- Row 2: Unit selector + History + System -->
+            <div id="action-panel">
                 <div id="unit-selector-group" class="button-group interactive"></div>
+
                 <div id="history-group" class="button-group interactive">
                     <button class="btn btn-hist" id="btn-undo">↶ Undo</button>
                     <button class="btn btn-hist" id="btn-redo">↷ Redo</button>
+                </div>
+
+                <div id="system-group" class="button-group interactive">
+                    <button class="btn btn-system" id="btn-clear">Reset Map</button>
+                    <button class="btn btn-system" id="btn-wipe" style="background:#540b0e; font-size:9px; padding:3px;">Wipe Progress</button>
                 </div>
             </div>
         </div>
@@ -142,7 +145,8 @@
             RIVERLANDS: { name: "Yellow River Banks", groundColor: 0x6e6833, altGroundColor: 0x5c572a, fogColor: 0x9ba685, skyColor: 0x8fa37d, roughness: 0.7, flatShading: true },
             STEPPE_WINTER: { name: "Winter Steppe", groundColor: 0xdce6eb, altGroundColor: 0xc1d4de, fogColor: 0xb5c5cf, skyColor: 0x9fb4c2, roughness: 0.7, flatShading: true }
         };
-
+        
+        // Use "enabled: false" to instantly strip units from the interface & enemy generation pools
         const UNIT_TYPES = {
             SWORD: { enabled: true, name: 'Swordsman', unlock: 1, cost: 10, hp: 130, range: 2.75, damage: 18, speed: 0.085, attackSpeed: 1000, color: 0x2e52b2, enemyColor: 0xb22e2e },
             SPEAR: { enabled: true, name: 'Spearman', unlock: 2, cost: 14, hp: 110, range: 5, damage: 20, speed: 0.07, attackSpeed: 1100, color: 0x1b7337, enemyColor: 0x8f2323 },
@@ -156,7 +160,6 @@
             CAVALRY: { enabled: true, name: 'Horse Rider', unlock: 35, cost: 35, hp: 240, range: 3.2, damage: 32, speed: 0.17, attackSpeed: 950, color: 0x107acc, enemyColor: 0x7a1010 },
             FIRELANCE: { enabled: true, name: 'Fire Lance', unlock: 40, cost: 45, hp: 120, range: 9.0, damage: 40, speed: 0.08, attackSpeed: 2500, color: 0xd62828, enemyColor: 0xb51717 },
             WAR_ELEPHANT: { enabled: true, name: 'War Elephant', unlock: 75, cost: 140, hp: 650, range: 4.5, damage: 65, speed: 0.05, attackSpeed: 2200, color: 0x75685c, enemyColor: 0x594f46 },
-            MYTHIC_SPIRIT: { enabled: true, name: 'Mythic Ancestor', unlock: 100, cost: 200, hp: 1500, range: 25.0, damage: 150, speed: 0.12, attackSpeed: 1800, color: 0x00ffff, enemyColor: 0x444444 },
             GENGHIS: { enabled: true, name: 'Genghis Khan', unlock: 1, cost: 0, hp: 850, range: 4.0, damage: 60, speed: 0.12, attackSpeed: 750, color: 0xd4af37, enemyColor: 0xd64527 },
             TARGET_MARK: { enabled: true, name: 'Target Mark', unlock: 1, cost: 0, hp: 1, range: 8.0, damage: 0, speed: 0, attackSpeed: 9999, color: 0xbb0000, enemyColor: 0xbb0000 },
             WAYPOINT: { enabled: true, name: 'Draw Path', unlock: 1, cost: 0, hp: 1, range: 0, damage: 0, speed: 0, attackSpeed: 9999, color: 0x00ffff, enemyColor: 0x00ffff }
@@ -210,46 +213,51 @@
         let selectedUnitType = 'SWORD';
         let currentLevelIdx = 0;
         let currentBudget = 0;
-        let engineFrame = 0; // For distributed AI updates
-        let isMythicTheme = false;
-        let godModeEditor = false;
 
         let actionHistory = []; let redoHistory = [];
+
         let units = []; let projectiles = []; let particles = []; let floatTexts = []; let environmentProps = [];
-        let treePositions = []; // For cover mechanics
         let scene, camera, renderer, terrainMesh, gridHelper, centerDivider;
-        let instancedGrass, instancedRocks;
-        let sunLight;
-        let ghostLine; // Ghost Path Preview
+        let cameraTarget = new THREE.Vector3(0, 0, 0); let camRadius = 55.0; let camTheta = Math.PI / 2; let camPhi = Math.PI / 3.2;
 
-        let cameraTarget = new THREE.Vector3(0, 0, 0); let camRadius = 55.0;
-        let camTheta = Math.PI / 2; let camPhi = Math.PI / 3.2;
+        let activeTouches = {}; let touchStartCenter = new THREE.Vector2(); let touchStartTarget = new THREE.Vector3();
+        let touchStartRadius = 55.0; let touchStartTheta = 0; let touchStartAngle = 0; let touchStartDist = 0;
 
-        let activeTouches = {};
-        let isLeftDragging = false; let isRightDragging = false; let isPanningDrag = false;
-        let rightDragStart = new THREE.Vector2(); let panDragStart = new THREE.Vector2();
-        let touchStartTheta = 0; let touchStartPhi = 0;
-        let keysPressed = { Space: false, Shift: false };
+        // PART 3: Revised mouse camera state
+        // Space + LeftDrag = Rotate | Shift + LeftDrag = Pan
+        // isLeftDragging = any left button held
+        // mouseCameraMode: null | 'rotate' | 'pan'
+        let isLeftDragging = false;
+        let isRightDragging = false; // kept for legacy, not used for camera now
+        let mouseDragStart = new THREE.Vector2();
+        let mouseCameraMode = null; // 'rotate' | 'pan' | null
         let lastPlacedPosition = new THREE.Vector3(999,999,999);
         let currentPathLastWaypoint = null;
 
-        const deltaClock = new THREE.Clock();
+        // Track which special keys are currently held
+        const keysPressed = {};
+
+        // --- AI TIME-SLICING (Performance Optimization) ---
+        let aiFrameToggle = false;
+
+        // --- FRUSTUM for FX culling ---
+        let frustum = new THREE.Frustum();
+        let frustumMatrix = new THREE.Matrix4();
+
+        // --- GHOST PATH PREVIEW ---
+        let ghostPathPoints = []; // 3D world points for ghost trail
+        let mouseWorldPos = new THREE.Vector3(); // current mouse world pos
 
         // --- INITIALIZATION ---
         function init() {
-            loadProgressFromBrowser();
-            buildUI(); setupThreeJS(); setupLights(); setupInteractionHandlers(); setupUIListeners(); loadLevel(currentLevelIdx); animate();
-            
-            // Check Level 100 unlock
-            if (currentLevelIdx >= 99 || localStorage.getItem('gk_tengri_unlocked') === 'true') {
-                document.getElementById('tengri-panel').style.display = 'flex';
-                localStorage.setItem('gk_tengri_unlocked', 'true');
-            }
+            loadProgressFromBrowser(); buildUI(); setupThreeJS(); setupLights(); setupInteractionHandlers(); setupKeyboardHandlers(); setupUIListeners(); loadLevel(currentLevelIdx); animate();
         }
 
         function buildUI() {
-            const container = document.getElementById('unit-selector-group'); container.innerHTML = '';
+            const container = document.getElementById('unit-selector-group');
+            container.innerHTML = '';
             for (const [key, conf] of Object.entries(UNIT_TYPES)) {
+                // WAYPOINT and TARGET_MARK are now in the permanent tool row — skip them here
                 if (key === 'GENGHIS' || key === 'WAYPOINT' || key === 'TARGET_MARK' || conf.enabled === false) continue;
                 const btn = document.createElement('div');
                 btn.className = 'btn interactive'; btn.setAttribute('data-unit-type', key); btn.setAttribute('data-unlock', conf.unlock);
@@ -262,9 +270,9 @@
         }
 
         function updateUnlockUI() {
-            document.querySelectorAll('.btn[data-unit-type]').forEach(btn => {
+            document.querySelectorAll('#unit-selector-group .btn').forEach(btn => {
                 let reqLvl = parseInt(btn.getAttribute('data-unlock'));
-                if ((currentLevelIdx + 1) < reqLvl && !godModeEditor) btn.classList.add('locked'); else btn.classList.remove('locked');
+                if ((currentLevelIdx + 1) < reqLvl) btn.classList.add('locked'); else btn.classList.remove('locked');
             });
         }
 
@@ -277,16 +285,11 @@
             renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             document.getElementById('canvas-container').appendChild(renderer.domElement);
             window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }, false);
-
-            const ghostMat = new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.3, dashSize: 0.5, gapSize: 0.5 });
-            const ghostGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
-            ghostLine = new THREE.Line(ghostGeo, ghostMat); ghostLine.computeLineDistances(); ghostLine.visible = false;
-            scene.add(ghostLine);
         }
 
         function setupLights() {
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.45); scene.add(ambientLight);
-            sunLight = new THREE.DirectionalLight(0xfffdf4, 1.1); sunLight.position.set(60, 100, 40);
+            const sunLight = new THREE.DirectionalLight(0xfffdf4, 1.1); sunLight.position.set(60, 100, 40);
             sunLight.castShadow = true; sunLight.shadow.mapSize.width = 2048; sunLight.shadow.mapSize.height = 2048;
             sunLight.shadow.camera.near = 10; sunLight.shadow.camera.far = 300; const d = 75;
             sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d; sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
@@ -301,50 +304,38 @@
 
         function generateCampaignLevelDefinition(idx) {
             const humanLvl = idx + 1; const bKey = getBiomeKeyForLevel(idx);
-            const baseBudget = godModeEditor ? 99999 : 100 + (idx * 40) + (Math.floor(idx/10)*250);
+            const baseBudget = 100 + (idx * 40) + (Math.floor(idx/10)*250);
             
             let allEnemies = [];
             let namesPrefix = ["Skirmish at", "Siege of", "Ambush in", "Passage of", "Defiance at", "The Gates of"];
             let namesLocation = ["Karakorum", "Bactria", "Dunhuang", "Khotan", "Tianshan", "The Hexi Corridor", "Samarkand", "Lhasa Ridge", "Kaifeng", "Yumen Pass", "Siberian Outpost", "Khwarazm"];
             const generatedName = namesPrefix[idx % namesPrefix.length] + " " + namesLocation[Math.floor(idx * 0.73) % namesLocation.length] + ` (${Math.floor((idx)/5)+1}-${(idx%5)+1})`;
             
-            if (!godModeEditor) {
-                let infCount = Math.floor(6 + idx * 1.5);
-                allEnemies.push({type: (idx % 2 === 0)? 'SWORD':'SPEAR', count: infCount, x: 14 + Math.random()*4, zSpread: 18 + Math.min(idx, 20)});
-                if (idx >= 4) allEnemies.push({type: 'BOW', count: Math.floor(2 + idx * 0.5), x: 20 + Math.random()*3, zSpread: 15 + Math.min(idx, 15)});
-                if (idx >= 9) allEnemies.push({type: 'ASSASSIN', count: Math.floor(2 + idx * 0.3), x: 10 + Math.random()*6, zSpread: 30});
-                if (idx >= 14) allEnemies.push({type: 'CANNON', count: Math.floor(1 + idx * 0.1), x: 28 + Math.random()*2, zSpread: 12});
-                if (idx >= 19) allEnemies.push({type: 'SHAMAN', count: Math.floor(2 + idx * 0.2), x: 18, zSpread: 20});
-                if (idx >= 24) allEnemies.push({type: 'SHAOLIN', count: Math.floor(2 + idx * 0.4), x: 8, zSpread: 35});
-                if (idx >= 34) allEnemies.push({type: 'CAVALRY', count: Math.floor(2 + (idx - 34) * 0.5), x: 12 + Math.random()*2, zSpread: 25});
-                if (idx >= 39) allEnemies.push({type: 'FIRELANCE', count: Math.floor(2 + (idx - 39) * 0.3), x: 17, zSpread: 20});
-                if (idx >= 74) allEnemies.push({type: 'WAR_ELEPHANT', count: Math.floor(1 + (idx - 74) * 0.1), x: 11, zSpread: 30});
-            }
+            let infCount = Math.floor(6 + idx * 1.5);
+            allEnemies.push({type: (idx % 2 === 0)? 'SWORD':'SPEAR', count: infCount, x: 14 + Math.random()*4, zSpread: 18 + Math.min(idx, 20)});
+            if (idx >= 4) allEnemies.push({type: 'BOW', count: Math.floor(2 + idx * 0.5), x: 20 + Math.random()*3, zSpread: 15 + Math.min(idx, 15)});
+            if (idx >= 9) allEnemies.push({type: 'ASSASSIN', count: Math.floor(2 + idx * 0.3), x: 10 + Math.random()*6, zSpread: 30});
+            if (idx >= 14) allEnemies.push({type: 'CANNON', count: Math.floor(1 + idx * 0.1), x: 28 + Math.random()*2, zSpread: 12});
+            if (idx >= 19) allEnemies.push({type: 'SHAMAN', count: Math.floor(2 + idx * 0.2), x: 18, zSpread: 20});
+            if (idx >= 24) allEnemies.push({type: 'SHAOLIN', count: Math.floor(2 + idx * 0.4), x: 8, zSpread: 35});
+            if (idx >= 34) allEnemies.push({type: 'CAVALRY', count: Math.floor(2 + (idx - 34) * 0.5), x: 12 + Math.random()*2, zSpread: 25});
+            if (idx >= 39) allEnemies.push({type: 'FIRELANCE', count: Math.floor(2 + (idx - 39) * 0.3), x: 17, zSpread: 20});
+            if (idx >= 74) allEnemies.push({type: 'WAR_ELEPHANT', count: Math.floor(1 + (idx - 74) * 0.1), x: 11, zSpread: 30});
+            
             let activeEnemies = allEnemies.filter(g => UNIT_TYPES[g.type] && UNIT_TYPES[g.type].enabled !== false);
             return { id: humanLvl, budget: baseBudget, name: generatedName, biome: bKey, enemies: activeEnemies };
         }
 
         // --- ENVIRONMENT BUILDER ---
         function buildProceduralEnvironment(biomeKey) {
-            if(terrainMesh) scene.remove(terrainMesh);
-            environmentProps.forEach(p => scene.remove(p)); environmentProps = []; treePositions = [];
-            if(instancedGrass) scene.remove(instancedGrass); if(instancedRocks) scene.remove(instancedRocks);
-
+            if(terrainMesh) scene.remove(terrainMesh); environmentProps.forEach(p => scene.remove(p)); environmentProps = [];
             const conf = BIOMES[biomeKey]; document.getElementById('biome-display').innerText = `REGION: ${conf.name}`;
-            
-            if(isMythicTheme) {
-                scene.background = new THREE.Color(0x050a14); scene.fog = new THREE.FogExp2(0x0a1528, 0.007);
-                sunLight.color.setHex(0x00ffff); sunLight.intensity = 0.8;
-            } else {
-                scene.background = new THREE.Color(conf.skyColor); scene.fog = new THREE.FogExp2(conf.fogColor, 0.005);
-                sunLight.color.setHex(0xfffdf4); sunLight.intensity = 1.1;
-            }
+            scene.background = new THREE.Color(conf.skyColor); scene.fog = new THREE.FogExp2(conf.fogColor, 0.005);
 
             const terrainGeo = new THREE.PlaneGeometry(160, 110, 64, 64); const pos = terrainGeo.attributes.position;
             for (let i = 0; i < pos.count; i++) {
                 let vx = pos.getX(i); let vy = pos.getY(i); let distFromCenterX = Math.abs(vx); let distFromCenterY = Math.abs(vy);
-                let heightVal = (distFromCenterX > 46 || distFromCenterY > 32) ?
-                    (Math.sin(vx * 0.15) + Math.cos(vy * 0.18)) * 3 + (Math.sin(vx * 0.4) * Math.cos(vy * 0.35)) * 2 : (Math.sin(vx*0.5) * Math.cos(vy*0.5)) * 0.15;
+                let heightVal = (distFromCenterX > 46 || distFromCenterY > 32) ? (Math.sin(vx * 0.15) + Math.cos(vy * 0.18)) * 3 + (Math.sin(vx * 0.4) * Math.cos(vy * 0.35)) * 2 : (Math.sin(vx*0.5) * Math.cos(vy*0.5)) * 0.15;
                 if (distFromCenterX > 52) heightVal += (distFromCenterX - 52) * 2.0;
                 if (distFromCenterY > 36) heightVal += (distFromCenterY - 36) * 2.0;
                 pos.setZ(i, heightVal);
@@ -357,52 +348,23 @@
             if(centerDivider) scene.remove(centerDivider); centerDivider = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.15, 64), new THREE.MeshBasicMaterial({ color: 0xffd700, transparent: true, opacity: 0.35 }));
             centerDivider.position.set(0, 0.05, 0); scene.add(centerDivider);
 
-            // PERFORMANCE: Instanced Grass & Rocks
-            const instancedPropDensity = 150;
-            const rockGeo = new THREE.DodecahedronGeometry(1.0); const rockMat = new THREE.MeshStandardMaterial({color: 0x6e6860, roughness: 1.0, flatShading: true});
-            const grassGeo = new THREE.PlaneGeometry(0.4, 1.2); const grassMat = new THREE.MeshBasicMaterial({color: 0x4a5d23, side: THREE.DoubleSide});
-            instancedRocks = new THREE.InstancedMesh(rockGeo, rockMat, instancedPropDensity); instancedRocks.castShadow = true;
-            instancedGrass = new THREE.InstancedMesh(grassGeo, grassMat, instancedPropDensity * 3);
-            
-            let dummy = new THREE.Object3D(); let rockIdx = 0; let grassIdx = 0;
-
-            const propDensity = (biomeKey === 'GOBI' || biomeKey === 'OASIS') ? 25 : 55;
+            const propDensity = (biomeKey === 'GOBI' || biomeKey === 'OASIS') ? 25 : 65;
             for(let i=0; i < propDensity; i++) {
                 let px = (Math.random() - 0.5) * 140; let pz = (Math.random() - 0.5) * 95;
                 if(Math.abs(px) < 48 && Math.abs(pz) < 34) continue;
                 let py = 2 + (Math.abs(px) > 52 ? (Math.abs(px) - 52) * 2 : 0);
-                
-                let p = null;
-                if(biomeKey === 'STEPPE') p = (Math.random() > 0.4) ? createPineTree(0x2a4d2a) : null;
-                else if(biomeKey === 'HIMALAYA') p = (Math.random() > 0.4) ? createPineTree(0xe2f0f7, true) : null;
-                else if(biomeKey === 'HIGHLANDS') p = (Math.random() > 0.4) ? createPineTree((Math.random() > 0.5) ? 0x9e2a2b : 0xcc7722) : createPagodaStructure();
-                else if(biomeKey === 'TAIGA') p = (Math.random() > 0.3) ? createPineTree(0x1d3621) : null;
-                else if(biomeKey === 'OASIS') p = (Math.random() > 0.5) ? createDesertCactus() : createPagodaStructure();
-                else if(biomeKey === 'RIVERLANDS') p = (Math.random() > 0.6) ? createPagodaStructure() : null;
-                else if(biomeKey === 'STEPPE_WINTER') p = (Math.random() > 0.35) ? createPineTree(0x3a4f3e, true) : null;
+                let p;
+                if(biomeKey === 'STEPPE') p = (Math.random() > 0.4) ? createPineTree(0x2a4d2a) : ((Math.random() > 0.5) ? createGrassPatch() : createRockElement());
+                else if(biomeKey === 'GOBI') p = (Math.random() > 0.5) ? createDesertCactus() : createRockElement();
+                else if(biomeKey === 'HIMALAYA') p = (Math.random() > 0.4) ? createPineTree(0xe2f0f7, true) : createRockElement(0xd0dee6);
+                else if(biomeKey === 'HIGHLANDS') p = (Math.random() > 0.4) ? createPineTree((Math.random() > 0.5) ? 0x9e2a2b : 0xcc7722) : ((Math.random() > 0.5) ? createGrassPatch(0xd4a373) : createPagodaStructure());
+                else if(biomeKey === 'TAIGA') p = (Math.random() > 0.3) ? createPineTree(0x1d3621) : createRockElement();
+                else if(biomeKey === 'OASIS') p = (Math.random() > 0.5) ? createGrassPatch(0x4a7c59) : ((Math.random() > 0.5) ? createDesertCactus() : createPagodaStructure());
+                else if(biomeKey === 'RIVERLANDS') p = (Math.random() > 0.6) ? createPagodaStructure() : ((Math.random() > 0.5) ? createGrassPatch(0x5c572a) : createRockElement(0x5c572a));
+                else if(biomeKey === 'STEPPE_WINTER') p = (Math.random() > 0.35) ? createPineTree(0x3a4f3e, true) : createRockElement(0xb5c5cf);
 
-                if (p) {
-                    p.position.set(px, py - 1.5, pz); scene.add(p); environmentProps.push(p);
-                    treePositions.push(p.position.clone()); // Store for cover mechanics
-                } else {
-                    // Feed Instanced Meshes instead of heavy groups
-                    if(Math.random() > 0.5 && rockIdx < instancedPropDensity) {
-                        dummy.position.set(px, py - 1.3, pz); dummy.scale.set(0.6 + Math.random()*0.8, 0.4 + Math.random()*0.5, 0.6 + Math.random()*0.8);
-                        dummy.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, 0); dummy.updateMatrix();
-                        instancedRocks.setMatrixAt(rockIdx++, dummy.matrix);
-                    } else {
-                        for(let g=0; g<3; g++) {
-                            if(grassIdx >= instancedPropDensity*3) break;
-                            dummy.position.set(px + (Math.random()-0.5)*2, py - 1.5, pz + (Math.random()-0.5)*2);
-                            dummy.scale.set(1, 0.5 + Math.random(), 1); dummy.rotation.set(0.1, Math.random()*Math.PI, 0); dummy.updateMatrix();
-                            instancedGrass.setMatrixAt(grassIdx++, dummy.matrix);
-                        }
-                    }
-                }
+                p.position.set(px, py - 1.5, pz); scene.add(p); environmentProps.push(p);
             }
-            instancedRocks.count = rockIdx; instancedGrass.count = grassIdx;
-            instancedRocks.instanceMatrix.needsUpdate = true; instancedGrass.instanceMatrix.needsUpdate = true;
-            scene.add(instancedRocks); scene.add(instancedGrass);
         }
 
         function createPineTree(color, snow=false) { 
@@ -412,10 +374,13 @@
             if(snow) { const s=new THREE.Mesh(new THREE.ConeGeometry(0.8,2.0,5), new THREE.MeshStandardMaterial({color:0xffffff})); s.position.y=5.3; g.add(s); } return g;
         }
         function createDesertCactus() { 
-            const g=new THREE.Group();
-            const m=new THREE.MeshStandardMaterial({color:0x3f5e3d, roughness:1.0, flatShading:true});
+            const g=new THREE.Group(); const m=new THREE.MeshStandardMaterial({color:0x3f5e3d, roughness:1.0, flatShading:true});
             const main=new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.25,3), m); main.position.y=1.5; main.castShadow=true; g.add(main); 
             const arm=new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,1.2), m); arm.position.set(0.5,1.8,0); arm.rotation.z=Math.PI/2; g.add(arm); return g;
+        }
+        function createRockElement(col=0x6e6860) { 
+            const m=new THREE.Mesh(new THREE.DodecahedronGeometry(0.6+Math.random()*1.4), new THREE.MeshStandardMaterial({color:col, roughness:1.0, flatShading:true})); m.scale.set(1.5,0.6+Math.random(),1);
+            m.position.y=0.2; m.castShadow=true; return m; 
         }
         function createPagodaStructure() { 
             const g=new THREE.Group();
@@ -423,11 +388,22 @@
             for(let i=0;i<3;i++){ let s=2.2-(i*0.6); let h=1.3; let b=new THREE.Mesh(new THREE.BoxGeometry(s,h,s), bM); b.position.y=(i*h)+(h/2); b.castShadow=true;
             let r=new THREE.Mesh(new THREE.ConeGeometry(s*1.1,0.8,4), rM); r.rotation.y=Math.PI/4; r.position.y=(i*h)+h+0.4; r.castShadow=true; g.add(b,r); } return g;
         }
+        function createGrassPatch(color=0x4a5d23) {
+            const g = new THREE.Group();
+            for(let i=0; i<8; i++){
+                const blade = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.8+Math.random()*0.5), new THREE.MeshBasicMaterial({color: color, side:THREE.DoubleSide}));
+                blade.position.set((Math.random()-0.5)*1.5, 0.4, (Math.random()-0.5)*1.5);
+                blade.rotation.y = Math.random()*Math.PI; blade.rotation.x = 0.1;
+                g.add(blade);
+            }
+            return g;
+        }
 
         // --- MODEL ATTACHMENT AND GRAPHIC BUILDERS ---
         function createUnitGraphic(type, team) {
             const group = new THREE.Group();
             const config = UNIT_TYPES[type]; const isEnemy = (team === TEAMS.CHINESE);
+            
             if (type === 'TARGET_MARK') {
                 const woodMat = new THREE.MeshStandardMaterial({ map: TextureFactory.getFabric(0x61442b) });
                 const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3.5), woodMat); pole.position.y = 1.75; pole.castShadow = true;
@@ -435,12 +411,15 @@
                 const ringGeo = new THREE.RingGeometry(config.range - 0.4, config.range, 32);
                 const ringMat = new THREE.MeshBasicMaterial({color: 0xff0000, side: THREE.DoubleSide, transparent: true, opacity: 0.6});
                 const ring = new THREE.Mesh(ringGeo, ringMat); ring.rotation.x = Math.PI / 2; ring.position.y = 0.05;
-                group.add(pole, flag, ring); return group;
+                group.add(pole, flag, ring);
+                return group;
             }
             if (type === 'WAYPOINT') {
                 const orbGeo = new THREE.SphereGeometry(0.4, 8, 8);
                 const orbMat = new THREE.MeshBasicMaterial({color: 0x00ffff, transparent: true, opacity: 0.7});
-                const orb = new THREE.Mesh(orbGeo, orbMat); orb.position.y = 0.4; group.add(orb); return group;
+                const orb = new THREE.Mesh(orbGeo, orbMat); orb.position.y = 0.4;
+                group.add(orb);
+                return group;
             }
 
             const fabricTex = TextureFactory.getFabric(isEnemy ? config.enemyColor : config.color);
@@ -448,11 +427,12 @@
             const darkMat = new THREE.MeshStandardMaterial({ map: TextureFactory.getFabric(0x1a1a1a), roughness: 0.9 });
             const metalMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 0.85, roughness: 0.15 });
             const woodMat = new THREE.MeshStandardMaterial({ map: TextureFactory.getFabric(0x61442b) });
+            
             let bHeight = (type === 'WAR_ELEPHANT') ? 2.6 : 1.3; let bWidth = (type === 'WAR_ELEPHANT') ? 4.5 : 0.9;
             let bDepth = (type === 'WAR_ELEPHANT') ? 2.6 : 0.9;
             let bodyGeo = (type === 'CANNON') ? new THREE.CylinderGeometry(0.75, 0.9, 1.5, 8) : new THREE.BoxGeometry(bWidth, bHeight, bDepth);
             const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
-            bodyMesh.position.y = (type==='CAVALRY'||type==='MYTHIC_SPIRIT') ? 2.25 : (type==='WAR_ELEPHANT') ? 2.2 : bHeight/2;
+            bodyMesh.position.y = (type==='CAVALRY') ? 2.25 : (type==='WAR_ELEPHANT') ? 2.2 : bHeight/2;
             bodyMesh.castShadow = true; bodyMesh.receiveShadow = true; bodyMesh.name = "body"; group.add(bodyMesh);
             
             const auraGeo = new THREE.TorusGeometry(1.2, 0.1, 4, 16);
@@ -470,27 +450,24 @@
             if (type !== 'CANNON' && type !== 'WAR_ELEPHANT') {
                 const headMat = new THREE.MeshStandardMaterial({ map: TextureFactory.getFace('#ffe3c2', isEnemy), roughness: 0.6 });
                 const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.36, 12, 12), headMat);
-                headMesh.position.set(0, bodyMesh.position.y + (bHeight/2) + 0.22, 0);
-                headMesh.rotation.y = Math.PI / 2; headMesh.castShadow = true; headMesh.name = "head"; group.add(headMesh);
+                headMesh.position.set(0, bodyMesh.position.y + (bHeight/2) + 0.22, 0); headMesh.rotation.y = Math.PI / 2; headMesh.castShadow = true; headMesh.name = "head"; group.add(headMesh);
+
                 if(type === 'ASSASSIN') { const hood = new THREE.Mesh(new THREE.SphereGeometry(0.39, 8, 8, 0, Math.PI*2, 0, Math.PI*0.65), darkMat); hood.position.copy(headMesh.position); group.add(hood); } 
                 else if(type === 'SHAOLIN') { const beads = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.06, 7, 12), new THREE.MeshStandardMaterial({color:0x201000})); beads.position.set(0, headMesh.position.y - 0.25, 0); beads.rotation.x = Math.PI/2; group.add(beads); } 
                 else if(type === 'SHAMAN') { const antlers = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.05, 4, 8, Math.PI), woodMat); antlers.position.set(0, headMesh.position.y + 0.75, 0); antlers.rotation.set(Math.PI, Math.PI/2, 0); group.add(antlers); }
-                else if(type === 'MYTHIC_SPIRIT') { const halo = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.7, 16), new THREE.MeshBasicMaterial({color: 0x00ffff, side:THREE.DoubleSide})); halo.position.set(0, headMesh.position.y + 0.5, -0.2); group.add(halo); }
                 else if(team === TEAMS.MONGOL) { const helm = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.45, 8), darkMat); helm.position.set(0, headMesh.position.y + 0.425, 0); group.add(helm); } 
                 else { const coneHat = new THREE.Mesh(new THREE.ConeGeometry(0.6, 0.3, 10), new THREE.MeshStandardMaterial({color: 0x94231b})); coneHat.position.set(0, headMesh.position.y + 0.48, 0); group.add(coneHat); }
             }
 
-            if (type === 'CAVALRY' || type === 'MYTHIC_SPIRIT') {
-                const mount = new THREE.Group(); mount.name = "mount"; 
-                const hMat = new THREE.MeshStandardMaterial({map: TextureFactory.getFabric(type==='MYTHIC_SPIRIT'? 0x334455 : (isEnemy? 0x5c4033 : 0x9c7a5f))});
+            if (type === 'CAVALRY') {
+                const mount = new THREE.Group(); mount.name = "mount"; const hMat = new THREE.MeshStandardMaterial({map: TextureFactory.getFabric(isEnemy? 0x5c4033 : 0x9c7a5f)});
                 const hBody = new THREE.Mesh(new THREE.BoxGeometry(2.5, 1.1, 1.1), hMat); hBody.position.y = 1.05; hBody.castShadow = true;
                 const hHead = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.1, 0.55), hMat); hHead.position.set(1.1, 1.8, 0); hHead.rotation.z = -0.4; hHead.castShadow = true; mount.add(hBody, hHead);
                 for(let k=0; k<4; k++) { let leg = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.0, 0.25), darkMat); leg.position.set((k<2?0.8:-0.8), 0.5, (k%2===0?-0.4:0.4)); mount.add(leg); }
                 group.add(mount);
             }
             if(type === 'WAR_ELEPHANT') {
-                bodyMesh.position.y = 1.8;
-                const eMat = new THREE.MeshStandardMaterial({map: TextureFactory.getFabric(0x6e6e6e), roughness:0.9});
+                bodyMesh.position.y = 1.8; const eMat = new THREE.MeshStandardMaterial({map: TextureFactory.getFabric(0x6e6e6e), roughness:0.9});
                 const head = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), eMat); head.position.set(2.6, 2.2, 0);
                 const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 2.0), eMat); trunk.position.set(3.4, 1.2, 0); trunk.rotation.z = -0.3;
                 const tMat = new THREE.MeshStandardMaterial({color: 0xfffff0});
@@ -516,10 +493,9 @@
                 if (team === TEAMS.MONGOL) { const tip = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.6, 6), metalMat); tip.position.y = 1.8; tip.rotation.z = 0; shaft.add(tip); } 
                 else { const tip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.8, 0.2), metalMat); tip.position.y = 1.8; tip.position.z = 0.1; shaft.add(tip); }
                 weaponGroup.add(shaft);
-            } else if (type === 'BOW' || type === 'MYTHIC_SPIRIT') {
-                if (team === TEAMS.MONGOL || type === 'MYTHIC_SPIRIT') { const bow = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.05, 6, 12, Math.PI), woodMat); weaponGroup.add(bow); } 
-                else { const stock = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.1, 0.1), woodMat); stock.position.x = 0.4; const prod = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.8), woodMat); prod.position.set(0.8, 0, 0);
-                const mag = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.15), woodMat); mag.position.set(0.5, 0.2, 0); weaponGroup.add(stock, prod, mag); }
+            } else if (type === 'BOW') {
+                if (team === TEAMS.MONGOL) { const bow = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.05, 6, 12, Math.PI), woodMat); weaponGroup.add(bow); } 
+                else { const stock = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.1, 0.1), woodMat); stock.position.x = 0.4; const prod = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.8), woodMat); prod.position.set(0.8, 0, 0); const mag = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.15), woodMat); mag.position.set(0.5, 0.2, 0); weaponGroup.add(stock, prod, mag); }
             } else if(type === 'SHAOLIN' || type === 'SHAMAN') {
                 const staff = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.0, 6), woodMat); staff.rotation.z = -Math.PI / 3; weaponGroup.add(staff);
             } else if(type === 'FIRELANCE') {
@@ -528,7 +504,8 @@
             } else if (type === 'ASSASSIN') {
                 const kris = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.8, 0.07), metalMat); kris.position.y = 0.3; kris.rotation.z = -Math.PI/2; weaponGroup.add(kris);
             } else if (type === 'CANNON') {
-                weaponGroup.position.set(0.4, 0.8, 0); const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.46, 2.2, 12), darkMat); tube.rotation.z = -Math.PI / 2; tube.castShadow = true;
+                weaponGroup.position.set(0.4, 0.8, 0);
+                const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.46, 2.2, 12), darkMat); tube.rotation.z = -Math.PI / 2; tube.castShadow = true;
                 const wheelW = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.65, 0.22, 12), woodMat); wheelW.rotation.x = Math.PI/2; wheelW.position.set(-0.2, -0.3, -0.9); wheelW.castShadow = true;
                 const wheelR = wheelW.clone(); wheelR.position.z = 0.9; weaponGroup.add(tube, wheelW, wheelR);
             } else if(type === 'THROATSINGER') {
@@ -540,9 +517,12 @@
             }
             group.add(weaponGroup);
 
-            let hpY = (type === 'CAVALRY' || type === 'MYTHIC_SPIRIT') ? 3.7 : (type==='WAR_ELEPHANT') ? 4.8 : (type==='CANNON') ? 2.3 : 2.1;
-            const hpBg = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.14), new THREE.MeshBasicMaterial({ color: 0x1a1a1a, side: THREE.DoubleSide })); hpBg.position.set(0, hpY, 0); hpBg.name = "hpBg"; hpBg.visible = false;
-            const hpFg = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.14), new THREE.MeshBasicMaterial({ color: 0x2ec4b6, side: THREE.DoubleSide })); hpFg.position.set(0, hpY, 0.005); hpFg.name = "hpFg"; hpFg.visible = false;
+            let hpY = (type === 'CAVALRY') ? 3.7 : (type==='WAR_ELEPHANT') ? 4.8 : (type==='CANNON') ? 2.3 : 2.1;
+            const hpBg = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.14), new THREE.MeshBasicMaterial({ color: 0x1a1a1a, side: THREE.DoubleSide })); hpBg.position.set(0, hpY, 0); hpBg.name = "hpBg";
+            // Contextual status: start invisible
+            hpBg.visible = false;
+            const hpFg = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.14), new THREE.MeshBasicMaterial({ color: 0x2ec4b6, side: THREE.DoubleSide })); hpFg.position.set(0, hpY, 0.005); hpFg.name = "hpFg";
+            hpFg.visible = false;
             group.add(hpBg, hpFg);
 
             return group;
@@ -551,45 +531,67 @@
         // --- CORE UNIT COMBAT AND AI ---
         class Unit {
             constructor(type, team, x, z) {
-                this.id = Math.floor(Math.random() * 1000000);
                 this.type = type; this.team = team; this.config = UNIT_TYPES[type];
                 this.hp = this.config.hp; this.maxHp = this.config.hp;
                 this.range = this.config.range; this.damage = this.config.damage;
                 this.speed = this.config.speed; this.attackSpeed = this.config.attackSpeed;
 
-                this.kills = 0; this.isVeteran = false;
                 this.isBuffed = false; this.isInvisible = false; this.invisTimer = 0; this.lastAttackTime = 0;
                 this.alive = true; this.target = null; this.isMoving = false; this.assignedCommander = null;
+                
                 this.targetable = (type !== 'TARGET_MARK' && type !== 'WAYPOINT');
                 this.isTargetMarked = false;
-                this.nextWaypoint = null; this.currentWaypoint = null; this.incomingLine = null;
+                this.nextWaypoint = null;
+                this.currentWaypoint = null;
+                this.incomingLine = null;
+
+                // Unit Veterancy
+                this.kills = 0;
+                this.veteranRank = 0; // 0=rookie, 1=veteran, 2=elite
+                this.veteranFlag = null;
 
                 this.mesh = createUnitGraphic(type, team); this.mesh.position.set(x, 0, z);
                 this.mesh.rotation.y = (team === TEAMS.MONGOL) ? 0 : Math.PI; scene.add(this.mesh);
+
                 this.animTime = Math.random() * 50; this.isAttackingAnim = false; this.attackAnimProgress = 0;
                 this.genghisHomeTarget = new THREE.Vector3(-35, 0, 0);
+            }
+
+            promoteVeteranRank() {
+                if (this.veteranRank >= 2) return;
+                this.veteranRank++;
+                // Stat boost
+                this.damage = Math.floor(this.damage * 1.12);
+                this.maxHp = Math.floor(this.maxHp * 1.08);
+                this.hp = Math.min(this.hp + 20, this.maxHp);
+                // Add veteran flag to mesh
+                if (this.veteranFlag) this.mesh.remove(this.veteranFlag);
+                const flagColors = [0xffcc00, 0xff6600];
+                const flagColor = flagColors[this.veteranRank - 1];
+                const woodMat = new THREE.MeshStandardMaterial({ map: TextureFactory.getFabric(0x61442b) });
+                const flagGroup = new THREE.Group();
+                const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.2), woodMat);
+                pole.position.y = 0.6;
+                const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.45, 0.32), new THREE.MeshBasicMaterial({ color: flagColor, side: THREE.DoubleSide }));
+                flag.position.set(0.22, 1.2, 0);
+                flagGroup.add(pole, flag);
+                let flagYOffset = (this.type === 'CAVALRY') ? 3.8 : (this.type === 'WAR_ELEPHANT') ? 4.9 : 2.5;
+                flagGroup.position.set(0.3, flagYOffset, 0);
+                this.mesh.add(flagGroup);
+                this.veteranFlag = flagGroup;
             }
 
             update(delta, time) {
                 if (!this.alive) return;
                 const hpBg = this.mesh.getObjectByName("hpBg"); const hpFg = this.mesh.getObjectByName("hpFg");
-                if (hpBg && hpFg) { 
-                    hpBg.quaternion.copy(camera.quaternion); hpFg.quaternion.copy(camera.quaternion); 
-                    // Contextual HP Bar
-                    let showHp = this.hp < this.maxHp * 0.95;
-                    hpBg.visible = showHp; hpFg.visible = showHp;
-                }
+                if (hpBg && hpFg) { hpBg.quaternion.copy(camera.quaternion); hpFg.quaternion.copy(camera.quaternion); }
 
                 if (gameState !== GAME_STATES.SIMULATION || this.type === 'TARGET_MARK' || this.type === 'WAYPOINT') return;
+                
                 if(this.isInvisible) { this.invisTimer -= delta; if(this.invisTimer <= 0) { this.isInvisible = false; this.mesh.getObjectByName("body").material.opacity = 1.0; this.mesh.getObjectByName("body").material.transparent = false; } }
                 if(this.isBuffed) { let aura = this.mesh.getObjectByName("aura"); if(aura) { aura.visible = true; aura.rotation.z += delta * 2; } }
-                if(this.type === 'MYTHIC_SPIRIT') { createExplosionEffect(this.mesh.position.clone().add(new THREE.Vector3(0,0.5,0)), 0x00ffff, 1, false, 0.05); }
 
-                // Performance: Distributed AI updates. Process AI every other frame based on unit ID parity
-                if (engineFrame % 2 === this.id % 2) {
-                    this.executeBehaviorAI(time, delta * 2); 
-                }
-                
+                this.executeBehaviorAI(time, delta);
                 this.processAnimations(delta, time);
             }
 
@@ -611,13 +613,17 @@
                     const dx = this.currentWaypoint.mesh.position.x - this.mesh.position.x;
                     const dz = this.currentWaypoint.mesh.position.z - this.mesh.position.z;
                     const dist = Math.sqrt(dx*dx + dz*dz);
-                    if (dist < 2.5) { // Snaps to the next waypoint smoothly
+                    
+                    if (dist < 2.5) {
                         this.currentWaypoint = this.currentWaypoint.nextWaypoint;
-                        if (!this.currentWaypoint) return; // Resume normal AI on next frame if path ends
+                        if (!this.currentWaypoint) return;
                     }
 
                     if (this.currentWaypoint) {
-                        let movementVector = new THREE.Vector3(this.currentWaypoint.mesh.position.x - this.mesh.position.x, 0, this.currentWaypoint.mesh.position.z - this.mesh.position.z).normalize();
+                        let movementVector = new THREE.Vector3(
+                            this.currentWaypoint.mesh.position.x - this.mesh.position.x, 0, this.currentWaypoint.mesh.position.z - this.mesh.position.z
+                        ).normalize();
+
                         let separationForce = new THREE.Vector3(0,0,0); let sepCount = 0;
                         let personalSpaceBound = (this.type === 'WAR_ELEPHANT') ? 4.0 : 1.4;
                         for(let i=0; i<units.length; i++) {
@@ -639,7 +645,7 @@
 
                         let activeSpeed = this.isBuffed ? (this.speed * 1.2) : this.speed;
                         this.mesh.position.x += movementVector.x * activeSpeed; this.mesh.position.z += movementVector.z * activeSpeed; this.isMoving = true;
-                        
+
                         if (this.type === 'THROATSINGER') {
                             if (time - this.lastAttackTime > this.attackSpeed) { this.lastAttackTime = time; this.triggerThroatSingingAura(); }
                         } else if (this.type === 'SHAMAN') {
@@ -657,7 +663,7 @@
                         }
 
                         this.mesh.position.x = Math.max(-54, Math.min(54, this.mesh.position.x)); this.mesh.position.z = Math.max(-34, Math.min(34, this.mesh.position.z));
-                        return; // Bypass normal AI
+                        return;
                     }
                 }
                 // --- END PATH OVERRIDE ---
@@ -679,7 +685,8 @@
                     this.isMoving = false;
                     if (this.target && this.target.alive) {
                         const dx = this.target.mesh.position.x - this.mesh.position.x; const dz = this.target.mesh.position.z - this.mesh.position.z;
-                        const dist = Math.sqrt(dx*dx + dz*dz); const desiredAngle = Math.atan2(-dz, dx);
+                        const dist = Math.sqrt(dx*dx + dz*dz);
+                        const desiredAngle = Math.atan2(-dz, dx);
                         let diff = desiredAngle - this.mesh.rotation.y; while (diff <= -Math.PI) diff += Math.PI * 2; while (diff > Math.PI) diff -= Math.PI * 2;
                         this.mesh.rotation.y += diff * 0.16;
 
@@ -717,10 +724,9 @@
                 this.mesh.rotation.y += diff * 0.16;
 
                 let currentMaxRange = this.isBuffed ? (this.range * 1.25) : this.range; let activeSpeed = this.isBuffed ? (this.speed * 1.2) : this.speed;
-                if (this.type === 'BOW' || this.type === 'MYTHIC_SPIRIT') {
-                    if (distanceToTarget < 6.0 && this.target.type !== 'BOW' && this.target.type !== 'MYTHIC_SPIRIT') {
-                        movementVector.negate();
-                        this.mesh.position.x += movementVector.x * (activeSpeed * 0.5); this.mesh.position.z += movementVector.z * (activeSpeed * 0.5); this.isMoving = true;
+                if (this.type === 'BOW') {
+                    if (distanceToTarget < 6.0 && this.target.type !== 'BOW') {
+                        movementVector.negate(); this.mesh.position.x += movementVector.x * (activeSpeed * 0.5); this.mesh.position.z += movementVector.z * (activeSpeed * 0.5); this.isMoving = true;
                     } else if (distanceToTarget <= currentMaxRange) {
                         this.mesh.position.x += movementVector.x * (activeSpeed * 0.3); this.mesh.position.z += movementVector.z * (activeSpeed * 0.3); this.isMoving = true;
                     } else { this.mesh.position.x += movementVector.x * activeSpeed; this.mesh.position.z += movementVector.z * activeSpeed; this.isMoving = true; }
@@ -732,8 +738,7 @@
                 } else {
                     if (distanceToTarget > currentMaxRange) { this.mesh.position.x += movementVector.x * activeSpeed; this.mesh.position.z += movementVector.z * activeSpeed; this.isMoving = true; } 
                     else {
-                        this.isMoving = false;
-                        let activeAtkSpd = this.isBuffed ? (this.attackSpeed * 0.75) : this.attackSpeed;
+                        this.isMoving = false; let activeAtkSpd = this.isBuffed ? (this.attackSpeed * 0.75) : this.attackSpeed;
                         if (time - this.lastAttackTime > activeAtkSpd) { this.lastAttackTime = time; this.fireAttackRoutine(); }
                     }
                 }
@@ -743,8 +748,7 @@
             executeGenghisGuardianAI(time) {
                 let aggroRange = 15.0; let enemyNearby = null; let shortest = Infinity;
                 for(let i=0; i<units.length; i++) {
-                    let u = units[i];
-                    if(!u.alive || u.team === this.team || !u.targetable) continue;
+                    let u = units[i]; if(!u.alive || u.team === this.team || !u.targetable) continue;
                     let d = this.mesh.position.distanceTo(u.mesh.position);
                     if(d < shortest) { shortest = d; enemyNearby = u; }
                 }
@@ -752,8 +756,7 @@
                 if((this.hp < this.maxHp || shortest < aggroRange) && enemyNearby) {
                     this.target = enemyNearby;
                     const dx = this.target.mesh.position.x - this.mesh.position.x; const dz = this.target.mesh.position.z - this.mesh.position.z;
-                    const distanceToTarget = Math.sqrt(dx*dx + dz*dz);
-                    let movementVector = new THREE.Vector3(dx, 0, dz).normalize();
+                    const distanceToTarget = Math.sqrt(dx*dx + dz*dz); let movementVector = new THREE.Vector3(dx, 0, dz).normalize();
                     const desiredAngle = Math.atan2(-movementVector.z, movementVector.x);
                     let diff = desiredAngle - this.mesh.rotation.y; while (diff <= -Math.PI) diff += Math.PI * 2; while (diff > Math.PI) diff -= Math.PI * 2;
                     this.mesh.rotation.y += diff * 0.16;
@@ -761,8 +764,7 @@
                     else { this.isMoving = false; if (time - this.lastAttackTime > this.attackSpeed) { this.lastAttackTime = time; this.fireAttackRoutine(); } }
                 } else {
                     let dx = this.genghisHomeTarget.x - this.mesh.position.x; let dz = this.genghisHomeTarget.z - this.mesh.position.z; let dHome = Math.sqrt(dx*dx + dz*dz);
-                    if(dHome > 1.0) { let movementVector = new THREE.Vector3(dx, 0, dz).normalize(); const desiredAngle = Math.atan2(-movementVector.z, movementVector.x);
-                    let diff = desiredAngle - this.mesh.rotation.y; while (diff <= -Math.PI) diff += Math.PI * 2; while (diff > Math.PI) diff -= Math.PI * 2; this.mesh.rotation.y += diff * 0.16; this.mesh.position.x += movementVector.x * this.speed; this.mesh.position.z += movementVector.z * this.speed; this.isMoving = true; } 
+                    if(dHome > 1.0) { let movementVector = new THREE.Vector3(dx, 0, dz).normalize(); const desiredAngle = Math.atan2(-movementVector.z, movementVector.x); let diff = desiredAngle - this.mesh.rotation.y; while (diff <= -Math.PI) diff += Math.PI * 2; while (diff > Math.PI) diff -= Math.PI * 2; this.mesh.rotation.y += diff * 0.16; this.mesh.position.x += movementVector.x * this.speed; this.mesh.position.z += movementVector.z * this.speed; this.isMoving = true; } 
                     else { this.isMoving = false; }
                 }
             }
@@ -773,20 +775,25 @@
                     if (genghis && this.mesh.position.distanceTo(genghis.mesh.position) <= this.range) return genghis;
                     let lowest = null; let minHp = Infinity;
                     for (let i = 0; i < units.length; i++) {
-                        let u = units[i];
-                        if (!u.alive || u.team !== this.team || u === this || u.hp >= u.maxHp) continue;
+                        let u = units[i]; if (!u.alive || u.team !== this.team || u === this || u.hp >= u.maxHp) continue;
                         if (this.mesh.position.distanceTo(u.mesh.position) <= this.range) { if (u.hp < minHp) { minHp = u.hp; lowest = u; } }
                     }
                     return lowest;
                 }
                 
-                let enemiesList = []; let markedList = []; let rangeQuarterList = []; let rangeFullList = [];
-                let isRanged = (this.type === 'BOW' || this.type === 'CANNON' || this.type === 'FIRELANCE' || this.type === 'MYTHIC_SPIRIT');
+                let enemiesList = [];
+                let markedList = [];
+                let rangeQuarterList = [];
+                let rangeFullList = [];
+                let isRanged = (this.type === 'BOW' || this.type === 'CANNON' || this.type === 'FIRELANCE');
+
                 for (let i = 0; i < units.length; i++) {
-                    let u = units[i];
+                    let u = units[i]; 
                     if (!u.alive || !u.targetable || u.team === this.team || (u.isInvisible && this.type !== 'SWORD')) continue;
+                    
                     let dist = this.mesh.position.distanceTo(u.mesh.position);
                     let entry = { unit: u, dist: dist };
+                    
                     enemiesList.push(entry);
                     if (u.isTargetMarked) markedList.push(entry);
                     if (isRanged && dist <= this.range * 0.25) rangeQuarterList.push(entry);
@@ -794,12 +801,17 @@
                 }
 
                 if (enemiesList.length === 0) return null;
-                enemiesList.sort((a,b) => a.dist - b.dist); markedList.sort((a,b) => a.dist - b.dist);
+
+                enemiesList.sort((a,b) => a.dist - b.dist);
+                markedList.sort((a,b) => a.dist - b.dist);
+                
                 if (isRanged) {
                     if (rangeQuarterList.length > 0) { rangeQuarterList.sort((a,b) => a.dist - b.dist); return rangeQuarterList[0].unit; }
                     if (markedList.length > 0) {
                         let bestMarked = markedList[0];
-                        if (holdPosition && bestMarked.dist > this.range) { let inRange = enemiesList.filter(e => e.dist <= this.range); if (inRange.length > 0) return inRange[0].unit; }
+                        if (holdPosition && bestMarked.dist > this.range) {
+                            let inRange = enemiesList.filter(e => e.dist <= this.range); if (inRange.length > 0) return inRange[0].unit;
+                        }
                         return bestMarked.unit;
                     }
                     return enemiesList[0].unit;
@@ -807,7 +819,9 @@
                     if (rangeFullList.length > 0) { rangeFullList.sort((a,b) => a.dist - b.dist); return rangeFullList[0].unit; }
                     if (markedList.length > 0) {
                         let bestMarked = markedList[0];
-                        if (holdPosition && bestMarked.dist > this.range) { let inRange = enemiesList.filter(e => e.dist <= this.range); if (inRange.length > 0) return inRange[0].unit; }
+                        if (holdPosition && bestMarked.dist > this.range) {
+                            let inRange = enemiesList.filter(e => e.dist <= this.range); if (inRange.length > 0) return inRange[0].unit;
+                        }
                         return bestMarked.unit;
                     }
                     return enemiesList[0].unit;
@@ -818,9 +832,7 @@
                 let avgPos = new THREE.Vector3(0,0,0); let c = 0;
                 for(let i=0; i<units.length; i++) { if(units[i].team === this.team && units[i].type !== 'THROATSINGER' && units[i].alive) { avgPos.add(units[i].mesh.position); c++; } }
                 if(c > 0) {
-                    avgPos.divideScalar(c);
-                    let offsetTargetX = avgPos.x + (this.team === TEAMS.MONGOL ? -4 : 4);
-                    let dir = new THREE.Vector3(offsetTargetX - this.mesh.position.x, 0, avgPos.z - this.mesh.position.z);
+                    avgPos.divideScalar(c); let offsetTargetX = avgPos.x + (this.team === TEAMS.MONGOL ? -4 : 4); let dir = new THREE.Vector3(offsetTargetX - this.mesh.position.x, 0, avgPos.z - this.mesh.position.z);
                     if(dir.length() > 1.5) { dir.normalize(); this.mesh.position.x += dir.x * this.speed; this.mesh.position.z += dir.z * this.speed; this.isMoving = true; this.mesh.rotation.y = Math.atan2(-dir.z, dir.x); return; }
                 }
                 this.isMoving = false;
@@ -833,43 +845,23 @@
 
             fireAttackRoutine() {
                 this.isAttackingAnim = true; this.attackAnimProgress = 0;
-                let origin = this.mesh.position.clone().add(new THREE.Vector3(0, (this.type==='CAVALRY'||this.type==='WAR_ELEPHANT'||this.type==='MYTHIC_SPIRIT')? 2.3 : 0.9, 0));
+                let origin = this.mesh.position.clone().add(new THREE.Vector3(0, (this.type==='CAVALRY'||this.type==='WAR_ELEPHANT')? 2.3 : 0.9, 0));
                 let baseDmg = this.isBuffed ? (this.damage * 1.3) : this.damage;
-                
-                // Mechanics: Elevation Bonus
-                if (this.target) {
-                    let heightDiff = this.mesh.position.y - this.target.mesh.position.y;
-                    if (heightDiff > 1.0) baseDmg *= 1.25; // High ground advantage
-                }
 
-                // Mechanics: Forest Cover for Ranged
-                let isRanged = (this.type === 'BOW' || this.type === 'CANNON');
-                if (isRanged && this.target) {
-                    for(let p of treePositions) {
-                        if (this.target.mesh.position.distanceTo(p) < 2.5) { baseDmg *= 0.5; spawnFloatingCombatText(this.target.mesh.position, "COVER", 0xaaaaaa); break; }
-                    }
-                }
-
-                // Critical hits
-                let isCrit = Math.random() < 0.15;
-                if (isCrit) baseDmg *= 1.5;
-
-                if (this.type === 'BOW') projectiles.push(new Projectile(origin, this.target, baseDmg, 'ARROW', this.team, this));
-                else if (this.type === 'MYTHIC_SPIRIT') projectiles.push(new Projectile(origin, this.target, baseDmg, 'MYTHIC_BOLT', this.team, this));
-                else if (this.type === 'CANNON') { projectiles.push(new Projectile(origin, this.target, baseDmg, 'CANNONBALL', this.team, this)); createExplosionEffect(origin, 0x999999, 8); }
+                if (this.type === 'BOW') projectiles.push(new Projectile(origin, this.target, baseDmg, 'ARROW', this.team));
+                else if (this.type === 'CANNON') { projectiles.push(new Projectile(origin, this.target, baseDmg, 'CANNONBALL', this.team)); createExplosionEffect(origin, 0x999999, 8); }
                 else if(this.type === 'FIRELANCE') this.executeConeStrike(origin, baseDmg, 0xff5500);
                 else if(this.type === 'WAR_ELEPHANT') this.executeElephantStompStrike(baseDmg);
                 else if (this.type === 'SHAMAN') {
                     if(this.target && this.target.team === this.team) {
-                        spawnFloatingCombatText(this.target.mesh.position, "+30", 0x2a9d8f);
-                        this.target.hp = Math.min(this.target.hp + 30, this.target.maxHp);
+                        spawnFloatingCombatText(this.target.mesh.position, "+30", 0x2a9d8f); this.target.hp = Math.min(this.target.hp + 30, this.target.maxHp);
                         createExplosionEffect(this.target.mesh.position.clone().add(new THREE.Vector3(0,1,0)), 0x2a9d8f, 5, true);
                     }
                 }
                 else {
                     if (this.target && this.target.alive) {
                         if(this.target.type === 'SHAOLIN' && Math.random() < 0.28) spawnFloatingCombatText(this.target.mesh.position, "DODGE", 0xffaa00);
-                        else this.target.takeDamage(baseDmg, this, isCrit);
+                        else this.target.takeDamage(baseDmg, this);
                     }
                 }
             }
@@ -878,8 +870,7 @@
                 createExplosionEffect(origin.clone().add(new THREE.Vector3(1.2,0,0).applyQuaternion(this.mesh.quaternion)), color, 15);
                 let lookDir = new THREE.Vector3(1,0,0).applyQuaternion(this.mesh.quaternion).normalize();
                 for(let i=0; i<units.length; i++) {
-                    let u = units[i];
-                    if(u.alive && u.targetable && u.team !== this.team) {
+                    let u = units[i]; if(u.alive && u.targetable && u.team !== this.team) {
                         let toTarget = new THREE.Vector3().subVectors(u.mesh.position, this.mesh.position); let d = toTarget.length();
                         if(d <= this.range) { toTarget.normalize(); let dot = lookDir.dot(toTarget); if(dot > angleDot) u.takeDamage(dmg, this); }
                     }
@@ -890,33 +881,37 @@
                 let stompPos = this.mesh.position.clone().add(new THREE.Vector3(1.8,0,0).applyQuaternion(this.mesh.quaternion));
                 createExplosionEffect(stompPos, 0x5c5146, 20);
                 for(let i=0; i<units.length; i++) {
-                    let u = units[i];
-                    if(u.alive && u.targetable && u.team !== this.team && stompPos.distanceTo(u.mesh.position) < 5.0) { u.takeDamage(dmg, this); let kDir = new THREE.Vector3().subVectors(u.mesh.position, this.mesh.position).normalize(); u.mesh.position.addScaledVector(kDir, 0.6); }
+                    let u = units[i]; if(u.alive && u.targetable && u.team !== this.team && stompPos.distanceTo(u.mesh.position) < 5.0) { u.takeDamage(dmg, this); let kDir = new THREE.Vector3().subVectors(u.mesh.position, this.mesh.position).normalize(); u.mesh.position.addScaledVector(kDir, 0.6); }
                 }
             }
 
-            takeDamage(amount, attacker = null, isCrit = false) {
+            takeDamage(amount, attacker) {
                 if (!this.alive) return;
                 let finalDmg = Math.floor(amount); this.hp -= finalDmg;
-                let txtColor = this.team === TEAMS.MONGOL ? 0xff3333 : 0xffffff;
-                if(isCrit) txtColor = 0xffa500;
-                spawnFloatingCombatText(this.mesh.position, isCrit? `CRIT -${finalDmg}` : `-${finalDmg}`, txtColor);
-                
+
+                // Contextual health bars: show only when below 90% hp
+                const pct = Math.max(0, this.hp / this.maxHp);
+                const hpBg = this.mesh.getObjectByName("hpBg");
                 const hpFg = this.mesh.getObjectByName("hpFg");
-                if (hpFg) { const pct = Math.max(0, this.hp / this.maxHp); hpFg.scale.x = pct; hpFg.position.x = - (1.5 * (1 - pct)) / 2; if(pct < 0.3) hpFg.material.color.setHex(0xe63946); }
-                
+                if (hpBg && hpFg) {
+                    if (pct < 0.9) {
+                        hpBg.visible = true; hpFg.visible = true;
+                    }
+                    hpFg.scale.x = pct; hpFg.position.x = - (1.5 * (1 - pct)) / 2;
+                    if(pct < 0.5) hpFg.material.color.setHex(0xf1c40f);
+                    if(pct < 0.3) hpFg.material.color.setHex(0xe63946);
+                }
+
+                // Floating damage number
+                spawnFloatingCombatText(this.mesh.position, `-${finalDmg}`, this.team === TEAMS.MONGOL ? 0xff3333 : 0xffffff);
+
                 if (this.hp <= 0) {
                     this.terminateUnitSequence();
-                    // Mechanics: Veterancy
-                    if(attacker && attacker.alive && !attacker.isVeteran && attacker.type !== 'TARGET_MARK' && attacker.type !== 'WAYPOINT') {
+                    // Veterancy: credit the attacker
+                    if (attacker && attacker.alive && attacker.team !== this.team) {
                         attacker.kills++;
-                        if(attacker.kills >= 3) {
-                            attacker.isVeteran = true;
-                            attacker.mesh.scale.set(1.15, 1.15, 1.15);
-                            attacker.maxHp *= 1.25; attacker.hp = attacker.maxHp; attacker.damage *= 1.25;
-                            spawnFloatingCombatText(attacker.mesh.position, "VETERAN!", 0xffd700);
-                            createExplosionEffect(attacker.mesh.position, 0xffd700, 15, true);
-                        }
+                        if (attacker.kills === 2 && attacker.veteranRank < 1) attacker.promoteVeteranRank();
+                        else if (attacker.kills === 5 && attacker.veteranRank < 2) attacker.promoteVeteranRank();
                     }
                 }
             }
@@ -948,7 +943,7 @@
                         if (weaponGroup) { weaponGroup.rotation.y = 0; weaponGroup.position.x = 0.6; } if (this.type === 'CANNON' && body) body.position.x = 0;
                     } else {
                         if (weaponGroup) {
-                            if (this.type === 'SWORD' || this.type === 'GENGHIS' || this.type === 'CAVALRY' || this.type==='SHAOLIN' || this.type==='SHAMAN' || this.type==='COMMANDER' || this.type==='MYTHIC_SPIRIT') weaponGroup.rotation.y = Math.sin(this.attackAnimProgress) * 1.3;
+                            if (this.type === 'SWORD' || this.type === 'GENGHIS' || this.type === 'CAVALRY' || this.type==='SHAOLIN' || this.type==='SHAMAN' || this.type==='COMMANDER') weaponGroup.rotation.y = Math.sin(this.attackAnimProgress) * 1.3;
                             else if (this.type === 'SPEAR' || this.type === 'ASSASSIN' || this.type === 'FIRELANCE') weaponGroup.position.x = 0.6 + Math.sin(this.attackAnimProgress) * 0.9;
                         }
                         if (this.type === 'CANNON' && body) body.position.x = -Math.sin(this.attackAnimProgress) * 0.45;
@@ -959,27 +954,25 @@
 
         // --- PROJECTILES ---
         class Projectile {
-            constructor(startPos, targetUnit, damage, type, team, attackerSource = null) {
-                this.position = startPos.clone(); this.targetUnit = targetUnit; this.damage = damage; this.type = type; this.alive = true; this.team = team; this.attackerSource = attackerSource;
-                let offY = (targetUnit.type === 'CAVALRY' || targetUnit.type === 'MYTHIC_SPIRIT') ? 1.4 : (targetUnit.type==='WAR_ELEPHANT')? 2.2 : 0.6;
+            constructor(startPos, targetUnit, damage, type, team) {
+                this.position = startPos.clone(); this.targetUnit = targetUnit; this.damage = damage; this.type = type; this.alive = true; this.team = team;
+                let offY = (targetUnit.type === 'CAVALRY') ? 1.4 : (targetUnit.type==='WAR_ELEPHANT')? 2.2 : 0.6;
                 this.targetLastPos = targetUnit.mesh.position.clone().add(new THREE.Vector3(0, offY, 0));
                 this.startPos = startPos.clone();
-                this.totalDistance = this.position.distanceTo(this.targetLastPos); this.progress = 0; this.speed = (type === 'ARROW') ? 0.55 : (type === 'MYTHIC_BOLT') ? 0.8 : 0.32;
+                this.totalDistance = this.position.distanceTo(this.targetLastPos); this.progress = 0; this.speed = (type === 'ARROW') ? 0.55 : 0.32;
                 let geo, mat;
                 if (type === 'ARROW') { geo = new THREE.BoxGeometry(0.9, 0.03, 0.03, 4); mat = new THREE.MeshBasicMaterial({ color: 0xd6bca2 }); this.mesh = new THREE.Mesh(geo, mat); this.mesh.rotation.z = 0; }
-                else if (type === 'MYTHIC_BOLT') { geo = new THREE.BoxGeometry(1.5, 0.1, 0.1, 4); mat = new THREE.MeshBasicMaterial({ color: 0x00ffff }); this.mesh = new THREE.Mesh(geo, mat); }
                 else { geo = new THREE.SphereGeometry(0.38, 8, 8); mat = new THREE.MeshStandardMaterial({ map: TextureFactory.getFabric(0x222222), roughness:0.7 }); this.mesh = new THREE.Mesh(geo, mat); }
                 this.mesh.position.copy(this.position); this.mesh.castShadow = true; scene.add(this.mesh);
             }
             update() {
                 if (!this.alive) return;
                 if (this.targetUnit && this.targetUnit.alive) { let offY = (this.targetUnit.type === 'CAVALRY') ? 1.4 : (this.targetUnit.type==='WAR_ELEPHANT')? 2.2 : 0.6; this.targetLastPos.copy(this.targetUnit.mesh.position).add(new THREE.Vector3(0, offY, 0)); }
-                this.progress += this.speed;
-                const d = this.position.distanceTo(this.targetLastPos);
+                this.progress += this.speed; const d = this.position.distanceTo(this.targetLastPos);
                 if (d < 0.9 || this.progress >= this.totalDistance * 1.8) { this.resolveImpact(); return; }
                 const dir = new THREE.Vector3().subVectors(this.targetLastPos, this.position).normalize();
                 this.position.addScaledVector(dir, this.speed);
-                if (this.type === 'ARROW' || this.type === 'MYTHIC_BOLT') { this.mesh.position.copy(this.position); this.mesh.lookAt(this.targetLastPos); this.mesh.rotateY(Math.PI/2); } 
+                if (this.type === 'ARROW') { this.mesh.position.copy(this.position); this.mesh.lookAt(this.targetLastPos); this.mesh.rotateY(Math.PI/2); } 
                 else { const stepsTotal = this.totalDistance / this.speed; const stepsCurrent = this.position.distanceTo(this.startPos) / this.speed; const arc = Math.sin((stepsCurrent / stepsTotal) * Math.PI) * 7.5; this.mesh.position.copy(this.position); this.mesh.position.y += arc; }
             }
             resolveImpact() {
@@ -990,66 +983,86 @@
                         let u = units[i];
                         if (u.alive && u.targetable && u.team !== this.team) { 
                             let dist = this.mesh.position.distanceTo(u.mesh.position);
-                            if (dist <= radius) { let damageScale = 1.0 - (dist / radius); let dmg = this.damage * damageScale; if(dmg > 5) u.takeDamage(dmg, this.attackerSource); } 
+                            if (dist <= radius) { let damageScale = 1.0 - (dist / radius); let dmg = this.damage * damageScale; if(dmg > 5) u.takeDamage(dmg, null); } 
                         }
                     }
-                } else if (this.type === 'MYTHIC_BOLT') {
-                    createExplosionEffect(this.mesh.position, 0x00ffff, 15);
-                    if (this.targetUnit && this.targetUnit.alive) this.targetUnit.takeDamage(this.damage, this.attackerSource);
-                    // Chain lighting effect
-                    let chainTarget = null; let shortest = 8.0;
-                    for(let u of units) {
-                        if(u.alive && u.targetable && u.team !== this.team && u !== this.targetUnit) {
-                            let dist = this.mesh.position.distanceTo(u.mesh.position);
-                            if(dist < shortest) { shortest = dist; chainTarget = u; }
-                        }
-                    }
-                    if(chainTarget) chainTarget.takeDamage(this.damage * 0.5, this.attackerSource);
-                } else { 
-                    if (this.targetUnit && this.targetUnit.alive) { this.targetUnit.takeDamage(this.damage, this.attackerSource); } 
-                }
+                } else { if (this.targetUnit && this.targetUnit.alive) { this.targetUnit.takeDamage(this.damage, null); } }
             }
         }
 
         // --- FX SUITE ---
         function spawnFloatingCombatText(pos, string, colorHex) {
-            const canvas = document.createElement('canvas'); canvas.width = 150; canvas.height = 48; const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#' + colorHex.toString(16).padStart(6,'0'); ctx.font = 'bold 22px Georgia';
-            ctx.textAlign = 'center'; ctx.fillText(string, 75, 30);
-            ctx.strokeStyle = '#000000'; ctx.lineWidth = 2; ctx.strokeText(string, 75, 30);
+            // Frustum culling: skip if off-screen
+            frustumMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+            frustum.setFromProjectionMatrix(frustumMatrix);
+            const checkSphere = new THREE.Sphere(pos, 2.0);
+            if (!frustum.intersectsSphere(checkSphere)) return;
+
+            const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 48; const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#' + colorHex.toString(16).padStart(6,'0'); ctx.font = 'bold 24px Georgia'; ctx.textAlign = 'center'; ctx.fillText(string, 64, 30);
             const tex = new THREE.CanvasTexture(canvas); const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: tex, transparent: true}));
             sprite.position.copy(pos).add(new THREE.Vector3((Math.random()-0.5)*1, 2.0 + Math.random()*0.5, 0)); sprite.scale.set(3, 1.2, 1); scene.add(sprite); floatTexts.push({ sprite: sprite, age: 0, maxAge: 45 });
         }
-        function createExplosionEffect(position, colVal, count, isAuraRing=false, speedMultiplier=1.0) {
+        function createExplosionEffect(position, colVal, count, isAuraRing=false) {
+            // Frustum culling for particles
+            frustumMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+            frustum.setFromProjectionMatrix(frustumMatrix);
+            const checkSphere = new THREE.Sphere(position, 3.0);
+            if (!frustum.intersectsSphere(checkSphere)) return;
+
             for (let i = 0; i < count; i++) {
                 const mesh = new THREE.Mesh(isAuraRing ? new THREE.BoxGeometry(0.4, 0.08, 0.4) : new THREE.BoxGeometry(0.18+Math.random()*0.25, 0.18+Math.random()*0.25, 0.18+Math.random()*0.25), new THREE.MeshBasicMaterial({ color: colVal, transparent: true, opacity: 1.0 }));
                 mesh.position.copy(position); scene.add(mesh);
                 let vel = isAuraRing ? new THREE.Vector3(Math.cos((i / count) * Math.PI * 2)*0.24, 0.02, Math.sin((i / count) * Math.PI * 2)*0.24) : new THREE.Vector3((Math.random()-0.5)*0.35, (Math.random()*0.4)+0.15, (Math.random()-0.5)*0.35);
-                vel.multiplyScalar(speedMultiplier);
                 particles.push({ mesh: mesh, velocity: vel, life: 1.0, decay: 0.015 + Math.random() * 0.03, gravity: isAuraRing ? 0 : 0.012 });
             }
         }
         function updateFXSystems() {
-            // Frustum check setup
-            camera.updateMatrixWorld();
-            const frustum = new THREE.Frustum();
-            frustum.setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+            for(let i = floatTexts.length-1; i>=0; i--) { let f = floatTexts[i]; f.age++; f.sprite.position.y += 0.03; f.sprite.material.opacity = 1.0 - (f.age / f.maxAge); if(f.age >= f.maxAge) { scene.remove(f.sprite); floatTexts.splice(i, 1); } }
+            for (let i = particles.length - 1; i >= 0; i--) { let p = particles[i]; p.mesh.position.add(p.velocity); p.velocity.y -= p.gravity; p.life -= p.decay; p.mesh.material.opacity = p.life; if (p.life <= 0) { scene.remove(p.mesh); particles.splice(i, 1); } }
+        }
 
-            for(let i = floatTexts.length-1; i>=0; i--) { 
-                let f = floatTexts[i]; f.age++; f.sprite.position.y += 0.03; f.sprite.material.opacity = 1.0 - (f.age / f.maxAge); 
-                if(f.age >= f.maxAge) { scene.remove(f.sprite); floatTexts.splice(i, 1); } 
-            }
-            for (let i = particles.length - 1; i >= 0; i--) { 
-                let p = particles[i];
-                // Frustum Culling Check
-                if (!frustum.intersectsObject(p.mesh)) {
-                    // Update math but don't force render updates as strictly
-                    p.life -= p.decay; p.velocity.y -= p.gravity; p.mesh.position.add(p.velocity);
-                } else {
-                    p.mesh.position.add(p.velocity); p.velocity.y -= p.gravity; p.life -= p.decay; p.mesh.material.opacity = p.life; 
-                }
-                if (p.life <= 0) { scene.remove(p.mesh); particles.splice(i, 1); } 
-            }
+        // --- GHOST PATH PREVIEW ---
+        // Projects a 3D world point to 2D screen coordinates
+        function worldToScreen(worldPos) {
+            const v = worldPos.clone().project(camera);
+            return {
+                x: (v.x * 0.5 + 0.5) * window.innerWidth,
+                y: (-v.y * 0.5 + 0.5) * window.innerHeight
+            };
+        }
+
+        function drawGhostPathPreview(canvas2d, ctx2d) {
+            ctx2d.clearRect(0, 0, canvas2d.width, canvas2d.height);
+            if (gameState !== GAME_STATES.PLACEMENT) return;
+            if (selectedUnitType !== 'WAYPOINT') return;
+            if (!currentPathLastWaypoint) return;
+
+            // Draw a ghost dashed line from last waypoint to current mouse world position
+            const startWorldPos = currentPathLastWaypoint.mesh.position.clone().add(new THREE.Vector3(0, 0.4, 0));
+            const endWorldPos = mouseWorldPos.clone().add(new THREE.Vector3(0, 0.4, 0));
+
+            const start2d = worldToScreen(startWorldPos);
+            const end2d = worldToScreen(endWorldPos);
+
+            ctx2d.save();
+            ctx2d.strokeStyle = 'rgba(0, 255, 255, 0.45)';
+            ctx2d.lineWidth = 2;
+            ctx2d.setLineDash([8, 6]);
+            ctx2d.beginPath();
+            ctx2d.moveTo(start2d.x, start2d.y);
+            ctx2d.lineTo(end2d.x, end2d.y);
+            ctx2d.stroke();
+            // Draw a small ghost orb at destination
+            ctx2d.setLineDash([]);
+            ctx2d.beginPath();
+            ctx2d.arc(end2d.x, end2d.y, 6, 0, Math.PI * 2);
+            ctx2d.fillStyle = 'rgba(0, 255, 255, 0.3)';
+            ctx2d.fill();
+            ctx2d.strokeStyle = 'rgba(0, 255, 255, 0.7)';
+            ctx2d.lineWidth = 1.5;
+            ctx2d.stroke();
+            ctx2d.restore();
         }
 
         // --- LEVEL TRANSITIONS ---
@@ -1063,19 +1076,27 @@
             levelData.enemies.forEach(g => { for(let i=0; i<g.count; i++) { let zP = (Math.random() - 0.5) * g.zSpread; let xP = g.x + (Math.random() * 5.0 - 2.5); units.push(new Unit(g.type, TEAMS.CHINESE, xP, zP)); } });
             units.push(new Unit('GENGHIS', TEAMS.MONGOL, -35, 0));
 
+            // Level 100 unlock toast
+            if (idx === 99) {
+                const toast = document.getElementById('unlock-toast');
+                toast.style.display = 'block';
+                setTimeout(() => { toast.style.display = 'none'; }, 6000);
+            }
+
             updateBudgetUI(); updateUnlockUI(); updateHistoryUI();
         }
 
         function updateBudgetUI() {
             document.getElementById('budget-display').innerText = `Budget: ${currentBudget}`;
-            document.querySelectorAll('.btn[data-unit-type]').forEach(b => {
+            document.querySelectorAll('#unit-selector-group .btn').forEach(b => {
                 let t = b.getAttribute('data-unit-type'); let cost = UNIT_TYPES[t].cost;
-                if(cost > currentBudget && !godModeEditor) b.classList.add('disabled'); else b.classList.remove('disabled');
+                if(cost > currentBudget) b.classList.add('disabled'); else b.classList.remove('disabled');
             });
         }
         
         function updateHistoryUI() {
-            const undoBtn = document.getElementById('btn-undo'); const redoBtn = document.getElementById('btn-redo');
+            const undoBtn = document.getElementById('btn-undo');
+            const redoBtn = document.getElementById('btn-redo');
             if (actionHistory.length > 0) undoBtn.classList.remove('disabled'); else undoBtn.classList.add('disabled');
             if (redoHistory.length > 0) redoBtn.classList.remove('disabled'); else redoBtn.classList.add('disabled');
         }
@@ -1083,181 +1104,202 @@
         function resetBoardState() {
             units.forEach(u => scene.remove(u.mesh)); projectiles.forEach(p => scene.remove(p.mesh)); particles.forEach(pt => scene.remove(pt.mesh)); floatTexts.forEach(f => scene.remove(f.sprite));
             units.forEach(u => { if (u.incomingLine) scene.remove(u.incomingLine); });
-            units = []; projectiles = []; particles = []; floatTexts = []; actionHistory = []; redoHistory = []; currentPathLastWaypoint = null;
-            if (ghostLine) ghostLine.visible = false;
+            units = []; projectiles = []; particles = []; floatTexts = []; actionHistory = []; redoHistory = [];
+            currentPathLastWaypoint = null;
             cameraTarget.set(0, 0, 0); updateCameraPositionReal(); gameState = GAME_STATES.PLACEMENT;
             document.getElementById('game-status').innerText = "PHASE: PLACEMENT"; document.getElementById('game-status').style.color = '#52b788';
             document.getElementById('btn-start').style.display = 'block'; document.getElementById('btn-next').style.display = 'none';
             if(centerDivider) scene.add(centerDivider);
         }
 
+        // --- PART 3: KEYBOARD HANDLERS ---
+        function setupKeyboardHandlers() {
+            window.addEventListener('keydown', (e) => {
+                keysPressed[e.code] = true;
+                // If pressing Space or Shift while dragging, cancel any placement drag
+                if (e.code === 'Space' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+                    // Stop left drag from placing
+                    isLeftDragging = false;
+                    lastPlacedPosition.set(999, 999, 999);
+                }
+            });
+            window.addEventListener('keyup', (e) => {
+                keysPressed[e.code] = false;
+            });
+        }
+
         // --- INTERACTION & INPUT ---
         function setupInteractionHandlers() {
             const c = document.getElementById('canvas-container');
-            c.addEventListener('touchstart', handlePointerDown, { passive: false }); c.addEventListener('touchmove', handlePointerMove, { passive: false }); c.addEventListener('touchend', handlePointerUp, { passive: false });
-            c.addEventListener('mousedown', handlePointerDown, false); window.addEventListener('mousemove', handlePointerMove, false); window.addEventListener('mouseup', handlePointerUp, false); c.addEventListener('wheel', handleMouseWheel, { passive: false });
-            
-            window.addEventListener('keydown', e => {
-                if(e.code === 'Space') keysPressed.Space = true;
-                if(e.key === 'Shift') keysPressed.Shift = true;
-            });
-            window.addEventListener('keyup', e => {
-                if(e.code === 'Space') keysPressed.Space = false;
-                if(e.key === 'Shift') keysPressed.Shift = false;
-            });
+            // Touch events (mobile — unchanged)
+            c.addEventListener('touchstart', handlePointerDown, { passive: false });
+            c.addEventListener('touchmove', handlePointerMove, { passive: false });
+            c.addEventListener('touchend', handlePointerUp, { passive: false });
+            // Mouse events
+            c.addEventListener('mousedown', handlePointerDown, false);
+            window.addEventListener('mousemove', handlePointerMove, false);
+            window.addEventListener('mouseup', handlePointerUp, false);
+            c.addEventListener('wheel', handleMouseWheel, { passive: false });
         }
+
         function updateCameraPositionReal() {
             let xOffset = camRadius * Math.sin(camPhi) * Math.cos(camTheta); let zOffset = camRadius * Math.sin(camPhi) * Math.sin(camTheta); let yOffset = camRadius * Math.cos(camPhi);
             camera.position.set(cameraTarget.x + xOffset, cameraTarget.y + yOffset, cameraTarget.z + zOffset); camera.lookAt(cameraTarget);
         }
+
         function handlePointerDown(e) {
             currentPathLastWaypoint = null;
-            if(e.type === 'touchstart') e.preventDefault();
-            
-            // Touch Controls mapping
-            if(e.touches) {
+            if(e.type === 'touchstart') {
+                e.preventDefault();
+                // MOBILE: unchanged touch logic
                 for (let i = 0; i < e.touches.length; i++) activeTouches[e.touches[i].identifier] = { x: e.touches[i].clientX, y: e.touches[i].clientY };
                 const ids = Object.keys(activeTouches);
-                if(ids.length === 1) { 
-                    isLeftDragging = true; executePlacementRaycast(activeTouches[ids[0]].x, activeTouches[ids[0]].y); 
+                if(ids.length === 1) {
+                    isLeftDragging = true;
+                    executePlacementRaycast(activeTouches[ids[0]].x, activeTouches[ids[0]].y);
                 } else if(ids.length === 2) {
-                    isLeftDragging = false; isRightDragging = true; let t0 = activeTouches[ids[0]]; let t1 = activeTouches[ids[1]];
-                    let dist = Math.hypot(t1.x - t0.x, t1.y - t0.y); let angle = Math.atan2(t1.y - t0.y, t1.x - t0.x);
-                    rightDragStart.set((t0.x + t1.x)/2, (t0.y + t1.y)/2); touchStartTheta = camTheta; touchStartPhi = camPhi;
-                }
-            } else {
-                if(e.button === 0) { // Left Click
-                    if (keysPressed.Space) {
-                        isRightDragging = true; rightDragStart.set(e.clientX, e.clientY); touchStartTheta = camTheta; touchStartPhi = camPhi;
-                    } else if (keysPressed.Shift) {
-                        isPanningDrag = true; panDragStart.set(e.clientX, e.clientY);
-                    } else {
-                        isLeftDragging = true; executePlacementRaycast(e.clientX, e.clientY);
-                    }
-                } else if(e.button === 2) { // Right Click (Fallback for rotate)
-                    isRightDragging = true; rightDragStart.set(e.clientX, e.clientY); touchStartTheta = camTheta; touchStartPhi = camPhi;
-                }
-            }
-        }
-        function handlePointerMove(e) {
-            if(e.type === 'touchmove') e.preventDefault();
-            if(e.touches) {
-                for (let i = 0; i < e.touches.length; i++) { if(activeTouches[e.touches[i].identifier]) { activeTouches[e.touches[i].identifier].x = e.touches[i].clientX; activeTouches[e.touches[i].identifier].y = e.touches[i].clientY; } }
-                const ids = Object.keys(activeTouches);
-                if(ids.length === 1 && isLeftDragging) executePlacementRaycast(activeTouches[ids[0]].x, activeTouches[ids[0]].y);
-                else if(ids.length === 2 && isRightDragging) {
+                    isLeftDragging = false; isRightDragging = true;
                     let t0 = activeTouches[ids[0]]; let t1 = activeTouches[ids[1]];
-                    let currentCenter = new THREE.Vector2((t0.x + t1.x)/2, (t0.y + t1.y)/2);
-                    applyRelativeCameraPanning(currentCenter.x - rightDragStart.x, currentCenter.y - rightDragStart.y);
-                    rightDragStart.copy(currentCenter); updateCameraPositionReal();
+                    touchStartDist = Math.hypot(t1.x - t0.x, t1.y - t0.y);
+                    touchStartAngle = Math.atan2(t1.y - t0.y, t1.x - t0.x);
+                    touchStartCenter.set((t0.x + t1.x)/2, (t0.y + t1.y)/2);
+                    touchStartTarget.copy(cameraTarget); touchStartRadius = camRadius; touchStartTheta = camTheta;
                 }
             } else {
-                if(isLeftDragging) {
-                    executePlacementRaycast(e.clientX, e.clientY);
-                } else if(isRightDragging) { 
-                    camTheta = touchStartTheta - ((e.clientX - rightDragStart.x) * 0.007);
-                    camPhi = Math.max(0.1, Math.min(Math.PI/2 - 0.1, touchStartPhi - ((e.clientY - rightDragStart.y) * 0.007)));
-                    updateCameraPositionReal();
-                } else if(isPanningDrag) {
-                    applyRelativeCameraPanning(panDragStart.x - e.clientX, e.clientY - panDragStart.y);
-                    panDragStart.set(e.clientX, e.clientY); updateCameraPositionReal();
-                } else {
-                    // Update Ghost Path Preview on Hover
-                    updateGhostPathPreview(e.clientX, e.clientY);
+                // MOUSE ONLY — PART 3
+                if (e.button === 0) {
+                    isLeftDragging = true;
+                    mouseDragStart.set(e.clientX, e.clientY);
+                    // Determine camera mode from modifier keys
+                    if (keysPressed['Space']) {
+                        mouseCameraMode = 'rotate';
+                        touchStartTheta = camTheta; // store start angle
+                    } else if (keysPressed['ShiftLeft'] || keysPressed['ShiftRight'] || e.shiftKey) {
+                        mouseCameraMode = 'pan';
+                    } else {
+                        mouseCameraMode = null; // normal placement mode
+                        executePlacementRaycast(e.clientX, e.clientY);
+                    }
                 }
             }
         }
+
+        function handlePointerMove(e) {
+            if(e.type === 'touchmove') {
+                e.preventDefault();
+                // MOBILE: unchanged touch logic
+                for (let i = 0; i < e.touches.length; i++) {
+                    if(activeTouches[e.touches[i].identifier]) {
+                        activeTouches[e.touches[i].identifier].x = e.touches[i].clientX;
+                        activeTouches[e.touches[i].identifier].y = e.touches[i].clientY;
+                    }
+                }
+                const ids = Object.keys(activeTouches);
+                if(ids.length === 1 && isLeftDragging) {
+                    executePlacementRaycast(activeTouches[ids[0]].x, activeTouches[ids[0]].y);
+                } else if(ids.length === 2 && isRightDragging) {
+                    let t0 = activeTouches[ids[0]]; let t1 = activeTouches[ids[1]];
+                    let currentDist = Math.hypot(t1.x - t0.x, t1.y - t0.y);
+                    camRadius = Math.max(20, Math.min(130, touchStartRadius * (touchStartDist / Math.max(currentDist, 1))));
+                    camTheta = touchStartTheta + (Math.atan2(t1.y - t0.y, t1.x - t0.x) - touchStartAngle);
+                    let currentCenter = new THREE.Vector2((t0.x + t1.x)/2, (t0.y + t1.y)/2);
+                    applyRelativeCameraPanning(currentCenter.x - touchStartCenter.x, currentCenter.y - touchStartCenter.y);
+                    touchStartCenter.copy(currentCenter); updateCameraPositionReal();
+                }
+            } else {
+                // MOUSE ONLY — PART 3
+                // Always update mouse world position for ghost path preview
+                updateMouseWorldPos(e.clientX, e.clientY);
+
+                if (isLeftDragging) {
+                    if (mouseCameraMode === 'rotate') {
+                        // Space + Left Drag = rotate
+                        const deltaX = e.clientX - mouseDragStart.x;
+                        camTheta = touchStartTheta - (deltaX * 0.007);
+                        updateCameraPositionReal();
+                    } else if (mouseCameraMode === 'pan') {
+                        // Shift + Left Drag = pan
+                        const deltaX = e.clientX - mouseDragStart.x;
+                        const deltaY = e.clientY - mouseDragStart.y;
+                        applyRelativeCameraPanning(deltaX, -deltaY);
+                        mouseDragStart.set(e.clientX, e.clientY);
+                        updateCameraPositionReal();
+                    } else {
+                        // Normal placement drag
+                        executePlacementRaycast(e.clientX, e.clientY);
+                    }
+                }
+            }
+        }
+
+        function updateMouseWorldPos(scrX, scrY) {
+            if (!terrainMesh) return;
+            const raycaster = new THREE.Raycaster();
+            const mouse = new THREE.Vector2((scrX / window.innerWidth) * 2 - 1, -(scrY / window.innerHeight) * 2 + 1);
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(terrainMesh);
+            if (intersects.length > 0) mouseWorldPos.copy(intersects[0].point);
+        }
+
         function applyRelativeCameraPanning(deltaX, deltaY) {
             let forwardVector = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion); forwardVector.y = 0; forwardVector.normalize();
             let rightVector = new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion); rightVector.y = 0; rightVector.normalize();
-            let scalar = camRadius * 0.0016;
-            cameraTarget.addScaledVector(rightVector, -deltaX * scalar); cameraTarget.addScaledVector(forwardVector, deltaY * scalar);
+            let scalar = camRadius * 0.0016; cameraTarget.addScaledVector(rightVector, -deltaX * scalar); cameraTarget.addScaledVector(forwardVector, deltaY * scalar);
             cameraTarget.x = Math.max(-40, Math.min(40, cameraTarget.x)); cameraTarget.z = Math.max(-30, Math.min(30, cameraTarget.z));
         }
-        function handlePointerUp(e) { 
-            if(e.changedTouches) { for (let i = 0; i < e.changedTouches.length; i++) delete activeTouches[e.changedTouches[i].identifier]; } 
-            isLeftDragging = false; isRightDragging = false; isPanningDrag = false; lastPlacedPosition.set(999,999,999); currentPathLastWaypoint = null;
-            if (ghostLine) ghostLine.visible = false;
+
+        function handlePointerUp(e) {
+            if(e.changedTouches) { for (let i = 0; i < e.changedTouches.length; i++) delete activeTouches[e.changedTouches[i].identifier]; }
+            isLeftDragging = false; isRightDragging = false;
+            mouseCameraMode = null;
+            lastPlacedPosition.set(999,999,999);
+            // Don't reset currentPathLastWaypoint on mouseup — only on new mousedown
         }
+
         function handleMouseWheel(e) { e.preventDefault(); camRadius = Math.max(20, Math.min(130, camRadius + e.deltaY * 0.04)); updateCameraPositionReal(); }
 
-        function updateGhostPathPreview(scrX, scrY) {
-            if (gameState !== GAME_STATES.PLACEMENT || selectedUnitType !== 'WAYPOINT' || !currentPathLastWaypoint) {
-                if (ghostLine) ghostLine.visible = false; return;
-            }
-            const raycaster = new THREE.Raycaster(); const mouse = new THREE.Vector2((scrX / window.innerWidth) * 2 - 1, -(scrY / window.innerHeight) * 2 + 1); 
-            raycaster.setFromCamera(mouse, camera); const intersects = raycaster.intersectObject(terrainMesh);
-            if (intersects.length > 0) {
-                const hit = intersects[0].point;
-                const positions = ghostLine.geometry.attributes.position.array;
-                let startPos = currentPathLastWaypoint.mesh.position;
-                positions[0] = startPos.x; positions[1] = startPos.y + 0.5; positions[2] = startPos.z;
-                positions[3] = hit.x; positions[4] = hit.y + 0.5; positions[5] = hit.z;
-                ghostLine.geometry.attributes.position.needsUpdate = true;
-                ghostLine.computeLineDistances(); ghostLine.visible = true;
-            } else { ghostLine.visible = false; }
-        }
-
         function executePlacementRaycast(scrX, scrY) {
-            if (keysPressed.Space || keysPressed.Shift) return; // Prevent placement while holding camera controls
+            // PART 3: Guard — if Space or Shift is down, never place
+            if (keysPressed['Space'] || keysPressed['ShiftLeft'] || keysPressed['ShiftRight']) return;
+
             if (gameState !== GAME_STATES.PLACEMENT) return;
-            const cost = UNIT_TYPES[selectedUnitType].cost; if (cost > currentBudget && !godModeEditor) return;
-            
+            const cost = UNIT_TYPES[selectedUnitType].cost; if (cost > currentBudget) return;
             const raycaster = new THREE.Raycaster(); const mouse = new THREE.Vector2((scrX / window.innerWidth) * 2 - 1, -(scrY / window.innerHeight) * 2 + 1); raycaster.setFromCamera(mouse, camera);
             const intersects = raycaster.intersectObject(terrainMesh);
             
             if (intersects.length > 0) {
                 const hit = intersects[0].point;
-
-                // Tengri Editor Mode - Terrain deformation
-                if (godModeEditor && keysPressed.Shift === false && keysPressed.Space === false && selectedUnitType === 'TARGET_MARK') {
-                    // Overloading Target Mark in God mode as a terrain bump
-                    let posAtt = terrainMesh.geometry.attributes.position;
-                    let deformed = false;
-                    for (let i = 0; i < posAtt.count; i++) {
-                        let vx = posAtt.getX(i); let vy = posAtt.getY(i); // Note: plane is rotated X -PI/2
-                        // mapping local to world
-                        let worldPt = new THREE.Vector3(vx, posAtt.getZ(i), -vy);
-                        if (worldPt.distanceTo(hit) < 5.0) {
-                            posAtt.setZ(i, posAtt.getZ(i) + 0.5); deformed = true;
-                        }
-                    }
-                    if (deformed) {
-                        terrainMesh.geometry.computeVertexNormals();
-                        posAtt.needsUpdate = true;
-                        return; // Done deforming
-                    }
-                }
-
-                if (selectedUnitType === 'TARGET_MARK' && !godModeEditor) {
-                    if (hit.x < 1.2 || hit.x > 45 || hit.z < -32 || hit.z > 32) return;
+                
+                if (selectedUnitType === 'TARGET_MARK') {
+                    if (hit.x < 1.2 || hit.x > 45 || hit.z < -32 || hit.z > 32) return; 
                 } else if (selectedUnitType === 'WAYPOINT') {
                     if (currentPathLastWaypoint && hit.distanceTo(currentPathLastWaypoint.mesh.position) < 2.5) return;
                     if (hit.x > 54 || hit.x < -54 || hit.z < -34 || hit.z > 34) return;
                 } else {
                     if (hit.distanceTo(lastPlacedPosition) < 1.6) return;
-                    if (!godModeEditor && (hit.x > -1.2 || hit.x < -45 || hit.z < -32 || hit.z > 32)) return;
+                    if (hit.x > -1.2 || hit.x < -45 || hit.z < -32 || hit.z > 32) return;
                 }
 
                 let unitTeam = (selectedUnitType === 'TARGET_MARK') ? TEAMS.CHINESE : TEAMS.MONGOL;
-                if (godModeEditor && Math.random() > 0.5 && selectedUnitType !== 'WAYPOINT' && selectedUnitType !== 'TARGET_MARK') unitTeam = TEAMS.CHINESE; // allow placing enemies
-                
                 let newU = new Unit(selectedUnitType, unitTeam, hit.x, hit.z);
                 let prevWp = null;
+
                 if (selectedUnitType === 'WAYPOINT') {
                     if (currentPathLastWaypoint) {
-                        currentPathLastWaypoint.nextWaypoint = newU; prevWp = currentPathLastWaypoint;
+                        currentPathLastWaypoint.nextWaypoint = newU;
+                        prevWp = currentPathLastWaypoint;
                         let points = [currentPathLastWaypoint.mesh.position.clone().add(new THREE.Vector3(0,0.4,0)), newU.mesh.position.clone().add(new THREE.Vector3(0,0.4,0))];
                         let lineGeo = new THREE.BufferGeometry().setFromPoints(points);
                         let lineMat = new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.5 });
-                        let line = new THREE.Line(lineGeo, lineMat); scene.add(line); newU.incomingLine = line;
+                        let line = new THREE.Line(lineGeo, lineMat);
+                        scene.add(line);
+                        newU.incomingLine = line;
                     }
                     currentPathLastWaypoint = newU;
                 }
 
-                units.push(newU); if(!godModeEditor) currentBudget -= cost;
-                lastPlacedPosition.copy(hit); 
-                actionHistory.push({ action: 'place', unit: newU, cost: godModeEditor? 0 : cost, prevWp: prevWp });
+                units.push(newU); currentBudget -= cost; lastPlacedPosition.copy(hit); 
+                actionHistory.push({ action: 'place', unit: newU, cost: cost, prevWp: prevWp });
                 redoHistory = []; 
                 updateBudgetUI(); updateHistoryUI();
             }
@@ -1265,52 +1307,62 @@
 
         // --- BUTTON BINDINGS & GAME LOOP ---
         function setupUIListeners() {
-            document.querySelectorAll('.btn[data-unit-type]').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    const b = e.target.closest('.btn'); if(!b || b.classList.contains('disabled') || b.classList.contains('locked')) return;
-                    document.querySelectorAll('.btn[data-unit-type]').forEach(x => x.classList.remove('selected'));
-                    b.classList.add('selected'); selectedUnitType = b.getAttribute('data-unit-type');
-                });
+            // Unit selector in main row
+            document.getElementById('unit-selector-group').addEventListener('click', (e) => {
+                const b = e.target.closest('.btn'); if(!b || b.classList.contains('disabled') || b.classList.contains('locked')) return;
+                document.querySelectorAll('#unit-selector-group .btn').forEach(x => x.classList.remove('selected'));
+                document.querySelectorAll('#placement-tools-group .btn-tool').forEach(x => x.classList.remove('selected'));
+                b.classList.add('selected'); selectedUnitType = b.getAttribute('data-unit-type');
+                currentPathLastWaypoint = null;
             });
 
+            // Placement tools (Draw Path, Target Flag) in the permanent top row
+            document.getElementById('placement-tools-group').addEventListener('click', (e) => {
+                const b = e.target.closest('.btn-tool'); if(!b) return;
+                // Deselect all other buttons
+                document.querySelectorAll('#unit-selector-group .btn').forEach(x => x.classList.remove('selected'));
+                document.querySelectorAll('#placement-tools-group .btn-tool').forEach(x => x.classList.remove('selected'));
+                b.classList.add('selected');
+                selectedUnitType = b.getAttribute('data-unit-type');
+                if (selectedUnitType !== 'WAYPOINT') currentPathLastWaypoint = null;
+            });
+            
             document.getElementById('btn-undo').addEventListener('click', () => {
                 if (gameState !== GAME_STATES.PLACEMENT || actionHistory.length === 0) return;
                 let action = actionHistory.pop();
-                scene.remove(action.unit.mesh); if (action.unit.incomingLine) scene.remove(action.unit.incomingLine);
+                scene.remove(action.unit.mesh); 
+                if (action.unit.incomingLine) scene.remove(action.unit.incomingLine);
                 if (action.prevWp) action.prevWp.nextWaypoint = null;
-                units = units.filter(u => u !== action.unit); currentBudget += action.cost; redoHistory.push(action);
+                // Reset currentPathLastWaypoint to prevWp if it was the last waypoint
+                if (action.unit.type === 'WAYPOINT') {
+                    currentPathLastWaypoint = action.prevWp || null;
+                }
+                units = units.filter(u => u !== action.unit);
+                currentBudget += action.cost; redoHistory.push(action);
                 updateBudgetUI(); updateHistoryUI();
             });
             document.getElementById('btn-redo').addEventListener('click', () => {
                 if (gameState !== GAME_STATES.PLACEMENT || redoHistory.length === 0) return;
                 let action = redoHistory.pop();
-                scene.add(action.unit.mesh); if (action.unit.incomingLine) scene.add(action.unit.incomingLine);
+                scene.add(action.unit.mesh); 
+                if (action.unit.incomingLine) scene.add(action.unit.incomingLine);
                 if (action.prevWp) action.prevWp.nextWaypoint = action.unit;
-                units.push(action.unit); currentBudget -= action.cost; actionHistory.push(action);
+                if (action.unit.type === 'WAYPOINT') {
+                    currentPathLastWaypoint = action.unit;
+                }
+                units.push(action.unit);
+                currentBudget -= action.cost; actionHistory.push(action);
                 updateBudgetUI(); updateHistoryUI();
-            });
-
-            document.getElementById('btn-god-mode').addEventListener('click', (e) => {
-                godModeEditor = !godModeEditor;
-                if(godModeEditor) { e.target.style.background = "#ff00ff"; updateBudgetUI(); updateUnlockUI(); }
-                else { e.target.style.background = ""; updateBudgetUI(); updateUnlockUI(); }
-            });
-
-            document.getElementById('btn-visual-toggle').addEventListener('click', () => {
-                isMythicTheme = !isMythicTheme;
-                const header = document.getElementById('header-panel');
-                if(isMythicTheme) header.classList.add('mythic-theme'); else header.classList.remove('mythic-theme');
-                buildProceduralEnvironment(getBiomeKeyForLevel(currentLevelIdx)); // re-trigger environment build
             });
 
             document.getElementById('btn-start').addEventListener('click', () => {
                 if(gameState === GAME_STATES.PLACEMENT) {
-                    if(units.filter(u => u.team === TEAMS.MONGOL && u.type !== 'GENGHIS' && u.targetable).length === 0 && !godModeEditor) { alert("Deploy additional Mongol forces to escort Genghis!"); return; }
+                    if(units.filter(u => u.team === TEAMS.MONGOL && u.type !== 'GENGHIS' && u.targetable).length === 0) { alert("Deploy additional Mongol forces to escort Genghis!"); return; }
                     
                     let commanders = units.filter(u => u.team === TEAMS.MONGOL && u.type === 'COMMANDER');
                     units.forEach(u => {
                         if (u.team === TEAMS.MONGOL && u.type !== 'COMMANDER' && u.type !== 'GENGHIS' && u.targetable) {
-                            for (let c of commanders) { if (u.mesh.position.distanceTo(c.mesh.position) <= c.range) { u.assignedCommander = c; break; } }
+                             for (let c of commanders) { if (u.mesh.position.distanceTo(c.mesh.position) <= c.range) { u.assignedCommander = c; break; } }
                         }
                     });
 
@@ -1321,53 +1373,30 @@
                         }
                     });
 
-                    // Tactical Formations Assignment
                     let waypoints = units.filter(u => u.type === 'WAYPOINT');
-                    let formSelect = document.getElementById('formation-select').value;
-                    let wpAssignments = {}; // store how many units are assigned to each waypoint
-                    
                     units.forEach(u => {
                         if (u.team === TEAMS.MONGOL && u.targetable && u.type !== 'COMMANDER' && u.type !== 'GENGHIS') {
-                            let closestWp = null; let minDist = 4.5;
+                            let closestWp = null;
+                            let minDist = 4.5;
                             waypoints.forEach(wp => {
                                 let d = u.mesh.position.distanceTo(wp.mesh.position);
                                 if (d < minDist) { minDist = d; closestWp = wp; }
                             });
-                            if (closestWp) {
-                                u.currentWaypoint = closestWp;
-                                if(!wpAssignments[closestWp.id]) wpAssignments[closestWp.id] = [];
-                                wpAssignments[closestWp.id].push(u);
-                            }
+                            if (closestWp) u.currentWaypoint = closestWp;
                         }
                     });
-
-                    // Apply Formation Spacing Logic to assigned units
-                    for (const [wpId, wpUnits] of Object.entries(wpAssignments)) {
-                        let wpUnit = waypoints.find(w => w.id == wpId);
-                        for (let i=0; i<wpUnits.length; i++) {
-                            let au = wpUnits[i];
-                            let dx = 0, dz = 0;
-                            if (formSelect === 'LINE') { dz = (i - wpUnits.length/2) * 1.5; dx = 0; }
-                            else if (formSelect === 'WEDGE') { dz = (i % 2 === 0 ? 1 : -1) * Math.ceil(i/2) * 1.5; dx = -Math.ceil(i/2) * 1.5; }
-                            else if (formSelect === 'CIRCLE') { let ang = (i/wpUnits.length)*Math.PI*2; dx = Math.cos(ang)*2.5; dz = Math.sin(ang)*2.5; }
-                            // Add a hidden dummy waypoint mesh as target so they space out
-                            let dummyWp = new Unit('WAYPOINT', TEAMS.MONGOL, wpUnit.mesh.position.x + dx, wpUnit.mesh.position.z + dz);
-                            dummyWp.mesh.visible = false; dummyWp.nextWaypoint = wpUnit.nextWaypoint; au.currentWaypoint = dummyWp;
-                        }
-                    }
 
                     waypoints.forEach(wp => {
                         wp.mesh.children.forEach(c => { if (c.material) c.material.opacity = 0.2; });
                         if (wp.incomingLine) wp.incomingLine.material.opacity = 0.15;
                     });
-                    
+
                     gameState = GAME_STATES.SIMULATION; document.getElementById('game-status').innerText = "PHASE: WAR ENGAGED"; document.getElementById('game-status').style.color = '#ffb703';
                     document.getElementById('btn-start').style.display = 'none'; if(centerDivider) scene.remove(centerDivider);
+                    
                     document.getElementById('btn-undo').classList.add('disabled'); document.getElementById('btn-redo').classList.add('disabled');
-                    if(ghostLine) ghostLine.visible = false;
                 }
             });
-
             document.getElementById('btn-next').addEventListener('click', () => { currentLevelIdx++; saveProgressToBrowser(); loadLevel(currentLevelIdx); });
             document.getElementById('btn-clear').addEventListener('click', () => { loadLevel(currentLevelIdx); });
             document.getElementById('btn-wipe').addEventListener('click', () => { if(confirm("Wipe layout data progress and restart global campaign?")) { localStorage.clear(); currentLevelIdx = 0; loadLevel(0); } });
@@ -1392,9 +1421,7 @@
             if (cCount === 0 && mCount > 0) {
                 if(currentLevelIdx === 99) {
                     gameState = GAME_STATES.VICTORY; document.getElementById('game-status').innerText = "CAMPAIGN CONQUERED!"; saveProgressToBrowser();
-                    const toast = document.getElementById('unlock-toast'); toast.style.display = 'block'; setTimeout(() => { toast.style.display = 'none'; }, 6000);
-                    currentLevelIdx = 0;
-                    document.getElementById('tengri-panel').style.display = 'flex';
+                    const toast = document.getElementById('unlock-toast'); toast.style.display = 'block'; setTimeout(() => { toast.style.display = 'none'; }, 6000); currentLevelIdx = 0;
                 } else {
                     gameState = GAME_STATES.VICTORY; document.getElementById('game-status').innerText = "VICTORY: EMPIRE OUTPOST CRUSHED!"; document.getElementById('game-status').style.color = '#ffd700'; document.getElementById('btn-next').style.display = 'block';
                 }
@@ -1403,15 +1430,67 @@
             }
         }
 
-        function animate() {
-            requestAnimationFrame(animate); const dt = deltaClock.getDelta(); const timeTicks = performance.now();
-            engineFrame++;
-            for (let i = 0; i < units.length; i++) units[i].update(dt, timeTicks);
-            for (let i = projectiles.length - 1; i >= 0; i--) { projectiles[i].update(); if (!projectiles[i].alive) projectiles.splice(i, 1); }
-            updateFXSystems(); evaluateSimulationOutcomes(); renderer.render(scene, camera);
+        // --- GHOST PATH 2D OVERLAY SETUP ---
+        let ghostCanvas, ghostCtx;
+        function setupGhostCanvas() {
+            ghostCanvas = document.createElement('canvas');
+            ghostCanvas.id = 'ghost-canvas';
+            ghostCanvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:5;';
+            ghostCanvas.width = window.innerWidth;
+            ghostCanvas.height = window.innerHeight;
+            document.body.appendChild(ghostCanvas);
+            ghostCtx = ghostCanvas.getContext('2d');
+            window.addEventListener('resize', () => {
+                ghostCanvas.width = window.innerWidth;
+                ghostCanvas.height = window.innerHeight;
+            });
         }
 
-        window.onload = init;
+        const deltaClock = new THREE.Clock();
+        let frameCount = 0;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = deltaClock.getDelta();
+            const timeTicks = performance.now();
+            frameCount++;
+
+            // Distributed AI Updates (Time-Slicing) — update all non-AI units every frame, 
+            // split combat AI units across odd/even frames
+            aiFrameToggle = !aiFrameToggle;
+            for (let i = 0; i < units.length; i++) {
+                let u = units[i];
+                if (!u.alive) continue;
+                // Always update if it's a non-combat unit, or Genghis, or it's our AI frame
+                if (u.type === 'TARGET_MARK' || u.type === 'WAYPOINT' || u.type === 'GENGHIS') {
+                    u.update(dt, timeTicks);
+                } else {
+                    // Time-slice: even index on even frames, odd index on odd frames
+                    if ((i % 2 === 0) === aiFrameToggle) {
+                        u.update(dt, timeTicks);
+                    } else {
+                        // Still run animations + HP bar facing even on skipped AI frames
+                        u.processAnimations(dt, timeTicks);
+                        const hpBg = u.mesh.getObjectByName("hpBg"); const hpFg = u.mesh.getObjectByName("hpFg");
+                        if (hpBg && hpFg) { hpBg.quaternion.copy(camera.quaternion); hpFg.quaternion.copy(camera.quaternion); }
+                    }
+                }
+            }
+
+            for (let i = projectiles.length - 1; i >= 0; i--) { projectiles[i].update(); if (!projectiles[i].alive) projectiles.splice(i, 1); }
+            updateFXSystems();
+            evaluateSimulationOutcomes();
+
+            // Ghost path overlay
+            if (ghostCtx) drawGhostPathPreview(ghostCanvas, ghostCtx);
+
+            renderer.render(scene, camera);
+        }
+
+        window.onload = function() {
+            init();
+            setupGhostCanvas();
+        };
     </script>
 </body>
 </html>
