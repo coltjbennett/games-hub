@@ -453,6 +453,25 @@
         .gm-row label { cursor: pointer; flex: 1; }
         .gm-row label strong { color: #ffd700; display: block; }
         .gm-row label span { font-size: 10px; color: #aaa; }
+        .gm-row.gm-action {
+            cursor: default;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .gm-row.gm-action strong { color: #ffd700; display: block; }
+        .gm-row.gm-action span { font-size: 10px; color: #aaa; display: block; max-width: 230px; }
+        .gm-row.gm-action button {
+            background: #7400b8;
+            border: 1px solid #ffd700;
+            color: #ffd700;
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-family: 'Georgia', serif;
+            font-size: 11px;
+            cursor: pointer;
+            min-width: 72px;
+        }
+        .gm-row.gm-action button:hover { background: #9a00e8; }
         #god-custom-opts {
             margin-left: 12px;
             margin-bottom: 14px;
@@ -561,7 +580,7 @@
             <h2>⚡ GOD MENU ⚡</h2>
             <p class="gm-sub">TENGRI'S MANDATE — PERMANENT UNLOCK</p>
 
-            <div class="gm-row" onclick="document.getElementById('god-cb-unlock').click()">
+            <div class="gm-row" data-gm-toggle="god-cb-unlock">
                 <input type="checkbox" id="god-cb-unlock">
                 <label for="god-cb-unlock">
                     <strong>Unlock All Units</strong>
@@ -569,7 +588,7 @@
                 </label>
             </div>
 
-            <div class="gm-row" onclick="document.getElementById('god-cb-budget').click()">
+            <div class="gm-row" data-gm-toggle="god-cb-budget">
                 <input type="checkbox" id="god-cb-budget">
                 <label for="god-cb-budget">
                     <strong>Disable Budget</strong>
@@ -577,7 +596,7 @@
                 </label>
             </div>
 
-            <div class="gm-row" onclick="document.getElementById('god-cb-custom').click()">
+            <div class="gm-row" data-gm-toggle="god-cb-custom">
                 <input type="checkbox" id="god-cb-custom">
                 <label for="god-cb-custom">
                     <strong>Custom Battle Mode</strong>
@@ -604,6 +623,30 @@
                     <br><span style="font-size:9px;color:#888;margin-top:4px;display:block;">Click "Apply &amp; Reload" below to start a fresh custom battle.</span>
                 </div>
                 <button id="btn-god-apply" style="margin-top:8px;width:100%;padding:6px;background:#137547;border:1px solid #38b000;color:#fff;border-radius:5px;font-family:Georgia,serif;cursor:pointer;">Apply &amp; Reload Battle</button>
+            </div>
+
+            <div class="gm-row gm-action">
+                <div>
+                    <strong>Heal Army</strong>
+                    <span>Restore all allied units to full health and clear debuffs.</span>
+                </div>
+                <button id="btn-god-heal">Cast</button>
+            </div>
+
+            <div class="gm-row gm-action">
+                <div>
+                    <strong>Thunderstrike</strong>
+                    <span>Crack lightning over the enemy army and stun their momentum.</span>
+                </div>
+                <button id="btn-god-thunder">Cast</button>
+            </div>
+
+            <div class="gm-row gm-action">
+                <div>
+                    <strong>Rally Horde</strong>
+                    <span>Give your side a burst of speed, damage, and durability.</span>
+                </div>
+                <button id="btn-god-rally">Cast</button>
             </div>
 
             <button id="btn-god-close">CLOSE</button>
@@ -703,7 +746,7 @@
             CAVALRY: { enabled: true, name: 'Horse Rider', unlock: 35, cost: 35, hp: 240, range: 3.2, damage: 32, speed: 0.17, attackSpeed: 950, color: 0x107acc, enemyColor: 0x7a1010 },
             FIRELANCE: { enabled: true, name: 'Fire Lance', unlock: 40, cost: 45, hp: 120, range: 9.0, damage: 40, speed: 0.08, attackSpeed: 2500, color: 0xd62828, enemyColor: 0xb51717 },
             WAR_ELEPHANT: { enabled: true, name: 'War Elephant', unlock: 75, cost: 140, hp: 650, range: 4.5, damage: 65, speed: 0.05, attackSpeed: 2200, color: 0x75685c, enemyColor: 0x594f46 },
-            TENGRI_AVATAR: { enabled: true, sandbox: true, name: "Tengri's Avatar", unlock: 1, cost: 300, hp: 2200, range: 7.0, damage: 110, speed: 0.11, attackSpeed: 700, color: 0xffd700, enemyColor: 0xe8a000 },
+            TENGRI_AVATAR: { enabled: true, sandbox: true, name: "Tengri's Avatar", unlock: 1, cost: 360, hp: 3600, range: 15.0, damage: 220, speed: 0.14, attackSpeed: 420, color: 0xffd700, enemyColor: 0x8be9ff },
             GENGHIS: { enabled: true, name: 'Genghis Khan', unlock: 1, cost: 0, hp: 850, range: 4.0, damage: 60, speed: 0.12, attackSpeed: 750, color: 0xd4af37, enemyColor: 0xd64527 },
             TARGET_MARK: { enabled: true, name: 'Target Mark', unlock: 1, cost: 0, hp: 1, range: 8.0, damage: 0, speed: 0, attackSpeed: 9999, color: 0xbb0000, enemyColor: 0xbb0000 },
             WAYPOINT: { enabled: true, name: 'Draw Path', unlock: 1, cost: 0, hp: 1, range: 0, damage: 0, speed: 0, attackSpeed: 9999, color: 0x00ffff, enemyColor: 0x00ffff },
@@ -723,6 +766,12 @@
         let godCustomBiome = 'STEPPE';
         let currentBudget = 0;
         let currentObjective = null;
+        const LOW_POWER_MODE = (() => {
+            const dm = navigator.deviceMemory || 8;
+            const hc = navigator.hardwareConcurrency || 8;
+            return dm <= 4 || hc <= 4 || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+        })();
+        let godBudgetBackup = null;
 
         let actionHistory = [];
         let redoHistory = [];
@@ -860,6 +909,8 @@
                 this.arrowGeo = new THREE.BoxGeometry(0.9, 0.03, 0.03, 4);
                 this.arrowMat = new THREE.MeshBasicMaterial({ color: 0xd6bca2 });
                 this.ballGeo = new THREE.SphereGeometry(0.38, 8, 8);
+                this.lightningGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.4, 5, 1, false);
+                this.lightningMat = new THREE.MeshStandardMaterial({ color: 0x8be9ff, emissive: 0x1d4ed8, emissiveIntensity: 1.4, roughness: 0.25, metalness: 0.2 });
                 
                 this.position = new THREE.Vector3();
                 this.targetLastPos = new THREE.Vector3();
@@ -880,12 +931,17 @@
                 
                 this.totalDistance = this.position.distanceTo(this.targetLastPos);
                 this.progress = 0;
-                this.speed = (type === 'ARROW') ? 0.55 : 0.32;
+                this.speed = (type === 'ARROW') ? 0.55 : (type === 'LIGHTNING' ? 0.78 : 0.32);
                 
                 if (type === 'ARROW') {
                     this.mesh.geometry = this.arrowGeo;
                     this.mesh.material = this.arrowMat;
                     this.mesh.rotation.z = 0;
+                } else if (type === 'LIGHTNING') {
+                    this.mesh.geometry = this.lightningGeo;
+                    this.mesh.material = this.lightningMat;
+                    this.mesh.rotation.z = Math.PI / 2;
+                    this.mesh.scale.set(1.1, 1.1, 1.1);
                 } else {
                     this.mesh.geometry = this.ballGeo;
                     this.mesh.material = new THREE.MeshStandardMaterial({ map: TextureFactory.getFabric(0x222222), roughness:0.7 });
@@ -946,6 +1002,30 @@
                                 let dmg = this.damage * damageScale;
                                 if(dmg > 5) u.takeDamage(dmg, null);
                             } 
+                        }
+                    }
+                } else if (this.type === 'LIGHTNING') {
+                    if (this.targetUnit && this.targetUnit.alive) {
+                        const impact = this.mesh.position.clone();
+                        createExplosionEffect(impact, 0x7dd3fc, 14, true);
+                        createExplosionEffect(impact, 0xffffff, 8);
+                        const splashRadius = 4.6;
+                        const nearby = unitGrid.getNearby({ mesh: { position: impact } }, splashRadius);
+                        for (let i = 0; i < nearby.length; i++) {
+                            const u = nearby[i];
+                            if (!u.alive || !u.targetable || u.team === this.team) continue;
+                            const dist = impact.distanceTo(u.mesh.position);
+                            if (dist <= splashRadius) {
+                                const scale = 1.0 - (dist / splashRadius) * 0.55;
+                                u.takeDamage(this.damage * scale, null);
+                            }
+                        }
+                        if (Math.random() < 0.7) {
+                            const chain = nearby.filter(u => u.alive && u.targetable && u.team !== this.team).sort((a,b) => impact.distanceTo(a.mesh.position) - impact.distanceTo(b.mesh.position))[1];
+                            if (chain) {
+                                createExplosionEffect(chain.mesh.position.clone().add(new THREE.Vector3(0, 1.1, 0)), 0x8be9ff, 8, true);
+                                chain.takeDamage(this.damage * 0.7, null);
+                            }
                         }
                     }
                 } else {
@@ -1200,10 +1280,11 @@
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.5, 1200);
             updateCameraPositionReal();
             
-            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: LOW_POWER_MODE ? "default" : "high-performance" });
+            renderer.setPixelRatio(LOW_POWER_MODE ? 1 : Math.min(window.devicePixelRatio || 1, 1.5));
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.shadowMap.type = LOW_POWER_MODE ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
             
             document.getElementById('canvas-container').appendChild(renderer.domElement);
             
@@ -1226,8 +1307,8 @@
             const sunLight = new THREE.DirectionalLight(0xfffdf4, 1.1);
             sunLight.position.set(60, 100, 40);
             sunLight.castShadow = true;
-            sunLight.shadow.mapSize.width = 2048;
-            sunLight.shadow.mapSize.height = 2048;
+            sunLight.shadow.mapSize.width = LOW_POWER_MODE ? 1024 : 2048;
+            sunLight.shadow.mapSize.height = LOW_POWER_MODE ? 1024 : 2048;
             sunLight.shadow.camera.near = 10;
             sunLight.shadow.camera.far = 300;
             
@@ -1502,6 +1583,82 @@
                 const orb = new THREE.Mesh(orbGeo, orbMat);
                 orb.position.y = 0.4;
                 group.add(orb);
+                return group;
+            }
+
+            if (type === 'TENGRI_AVATAR') {
+                const skyMat = new THREE.MeshStandardMaterial({ color: 0x90e0ff, emissive: 0x1d4ed8, emissiveIntensity: 0.55, roughness: 0.25, metalness: 0.35 });
+                const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd700, emissive: 0xffcc33, emissiveIntensity: 0.85, roughness: 0.18, metalness: 0.9 });
+                const darkMat = new THREE.MeshStandardMaterial({ color: 0x14213d, roughness: 0.9 });
+                const body = new THREE.Mesh(new THREE.CapsuleGeometry(1.35, 2.65, 5, 10), skyMat);
+                body.position.y = 2.75;
+                body.castShadow = true;
+                body.name = 'body';
+                group.add(body);
+
+                const chest = new THREE.Mesh(new THREE.SphereGeometry(1.25, 14, 14), goldMat);
+                chest.position.set(0, 2.85, 0.05);
+                chest.scale.set(1.0, 1.2, 0.85);
+                chest.name = 'auraCore';
+                group.add(chest);
+
+                const head = new THREE.Mesh(new THREE.SphereGeometry(0.78, 16, 16), new THREE.MeshStandardMaterial({ color: 0xf1f5f9, emissive: 0x38bdf8, emissiveIntensity: 0.55, roughness: 0.4 }));
+                head.position.set(0, 4.55, 0.1);
+                head.name = 'head';
+                group.add(head);
+
+                const eyes = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.12, 0.14), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 }));
+                eyes.position.set(0, 4.54, 0.82);
+                group.add(eyes);
+
+                const halo = new THREE.Mesh(new THREE.TorusGeometry(1.55, 0.12, 8, 24), goldMat);
+                halo.rotation.x = Math.PI / 2;
+                halo.position.set(0, 5.8, 0.05);
+                halo.name = 'halo';
+                group.add(halo);
+
+                const hornL = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.95, 6), goldMat);
+                hornL.position.set(-0.65, 5.0, 0.15);
+                hornL.rotation.z = -0.75;
+                group.add(hornL);
+                const hornR = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.95, 6), goldMat);
+                hornR.position.set(0.65, 5.0, 0.15);
+                hornR.rotation.z = 0.75;
+                group.add(hornR);
+
+                const wingGeo = new THREE.ConeGeometry(1.4, 3.8, 5, 1, true);
+                const wingL = new THREE.Mesh(wingGeo, darkMat);
+                wingL.position.set(-1.95, 3.35, -0.35);
+                wingL.rotation.z = 1.35;
+                wingL.rotation.y = -0.25;
+                wingL.name = 'wingL';
+                group.add(wingL);
+                const wingR = new THREE.Mesh(wingGeo, darkMat);
+                wingR.position.set(1.95, 3.35, -0.35);
+                wingR.rotation.z = -1.35;
+                wingR.rotation.y = 0.25;
+                wingR.name = 'wingR';
+                group.add(wingR);
+
+                const spear = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 5.4), goldMat);
+                spear.position.set(1.35, 2.7, 0.3);
+                spear.rotation.z = -0.28;
+                spear.rotation.x = 0.06;
+                spear.name = 'spear';
+                group.add(spear);
+
+                const spearTip = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.9, 5), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x7dd3fc, emissiveIntensity: 1.0 }));
+                spearTip.position.set(1.52, 5.2, 0.3);
+                spearTip.rotation.z = -0.28;
+                spearTip.rotation.x = 0.06;
+                group.add(spearTip);
+
+                const auraRing = new THREE.Mesh(new THREE.TorusGeometry(2.6, 0.12, 8, 28), new THREE.MeshBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.55 }));
+                auraRing.rotation.x = Math.PI / 2;
+                auraRing.position.y = 0.55;
+                auraRing.name = 'aura';
+                group.add(auraRing);
+
                 return group;
             }
 
@@ -2318,6 +2475,8 @@
                         this.target.hp = Math.min(this.target.hp + 30, this.target.maxHp);
                         createExplosionEffect(this.target.mesh.position.clone().add(new THREE.Vector3(0,1,0)), 0x2a9d8f, 5, true);
                     }
+                } else if (this.type === 'TENGRI_AVATAR') {
+                    this.executeTengriWrath(baseDmg, origin);
                 } else {
                     if (this.target && this.target.alive) {
                         if(this.target.type === 'SHAOLIN' && Math.random() < 0.28) {
@@ -2360,6 +2519,40 @@
                         let kDir = new THREE.Vector3().subVectors(u.mesh.position, this.mesh.position).normalize();
                         u.mesh.position.addScaledVector(kDir, 0.6);
                     }
+                }
+            }
+
+            executeTengriWrath(dmg, origin) {
+                const target = this.target && this.target.alive ? this.target : null;
+                if (!target) return;
+
+                const stormOrigin = origin.clone();
+                const targetPos = target.mesh.position.clone().add(new THREE.Vector3(0, 1.0, 0));
+                createExplosionEffect(stormOrigin.clone(), 0x8be9ff, 10, true);
+                createExplosionEffect(targetPos.clone(), 0xffffff, 18);
+
+                let bolt = projectilesPool.get();
+                bolt.fire(stormOrigin, target, dmg * 1.35, 'LIGHTNING', this.team);
+                activeProjectiles.push(bolt);
+
+                const splashRadius = 5.5;
+                const nearby = unitGrid.getNearby({ mesh: { position: target.mesh.position } }, splashRadius);
+                for (let i = 0; i < nearby.length; i++) {
+                    const u = nearby[i];
+                    if (!u.alive || !u.targetable || u.team === this.team) continue;
+                    const dist = target.mesh.position.distanceTo(u.mesh.position);
+                    if (dist <= splashRadius) {
+                        u.takeDamage(dmg * (0.55 - (dist / splashRadius) * 0.2), this);
+                    }
+                }
+
+                const allyTeam = this.team;
+                const aura = unitGrid.getNearby(this, 18.0);
+                for (let i = 0; i < aura.length; i++) {
+                    const u = aura[i];
+                    if (!u.alive || u.team !== allyTeam) continue;
+                    u.isBuffed = true;
+                    if (u.hp < u.maxHp) u.hp = Math.min(u.maxHp, u.hp + 12);
                 }
             }
 
@@ -2635,7 +2828,7 @@
                 buildProceduralEnvironment(godCustomBiome);
                 currentObjective = null;
                 document.getElementById('objective-status').style.display = 'none';
-                document.getElementById('game-status').innerText = 'SANDBOX: PLACE YOUR FORCES';
+                document.getElementById('game-status').innerText = `SANDBOX: ${godPlacingTeam === 'MONGOL' ? 'MONGOL' : 'CHINESE'} SIDE READY`;
                 document.getElementById('game-status').style.color = '#7400b8';
                 updateBudgetUI();
                 updateUnlockUI();
@@ -3347,23 +3540,30 @@
             const biomeSel = document.getElementById('god-biome-sel');
             const teamLabel = document.getElementById('god-team-label');
 
-            document.getElementById('btn-god-menu').addEventListener('click', () => {
-                if (!sandboxUnlocked) return;
-                // Sync checkboxes to current state
+            const syncFromState = () => {
                 cbUnlock.checked = godUnlockAll;
                 cbBudget.checked = godNoBudget;
                 cbCustom.checked = godCustomBattle;
                 biomeSel.value = godCustomBiome;
                 teamLabel.textContent = godPlacingTeam === 'MONGOL' ? 'Mongols' : 'Chinese';
                 customOpts.style.display = godCustomBattle ? 'block' : 'none';
+            };
+
+            document.getElementById('btn-god-menu').addEventListener('click', () => {
+                if (!sandboxUnlocked) return;
+                syncFromState();
                 overlay.classList.add('open');
             });
 
-            document.getElementById('btn-god-close').addEventListener('click', () => {
-                overlay.classList.remove('open');
-            });
-            overlay.addEventListener('click', (e) => {
-                if (e.target === overlay) overlay.classList.remove('open');
+            document.getElementById('btn-god-close').addEventListener('click', () => overlay.classList.remove('open'));
+            overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.remove('open'); });
+
+            overlay.querySelectorAll('.gm-row[data-gm-toggle]').forEach(row => {
+                row.addEventListener('click', (e) => {
+                    if (e.target.closest('input,button,select,label')) return;
+                    const cb = document.getElementById(row.dataset.gmToggle);
+                    if (cb) cb.click();
+                });
             });
 
             cbUnlock.addEventListener('change', () => {
@@ -3372,8 +3572,10 @@
             });
 
             cbBudget.addEventListener('change', () => {
+                if (cbBudget.checked && !godNoBudget) godBudgetBackup = currentBudget;
                 godNoBudget = cbBudget.checked;
-                if (godNoBudget) currentBudget = 999999;
+                currentBudget = godNoBudget ? 999999 : (Number.isFinite(godBudgetBackup) ? godBudgetBackup : currentBudget);
+                if (!godNoBudget) godBudgetBackup = null;
                 updateBudgetUI();
             });
 
@@ -3382,10 +3584,7 @@
                 customOpts.style.display = godCustomBattle ? 'block' : 'none';
             });
 
-            biomeSel.addEventListener('change', () => {
-                godCustomBiome = biomeSel.value;
-            });
-
+            biomeSel.addEventListener('change', () => { godCustomBiome = biomeSel.value; });
             document.getElementById('btn-god-team-toggle').addEventListener('click', (e) => {
                 e.stopPropagation();
                 godPlacingTeam = godPlacingTeam === 'MONGOL' ? 'CHINESE' : 'MONGOL';
@@ -3397,8 +3596,64 @@
                 overlay.classList.remove('open');
                 loadLevel(currentLevelIdx);
             });
+
+            document.getElementById('btn-god-heal').addEventListener('click', (e) => {
+                e.stopPropagation();
+                godCastHealArmy();
+            });
+            document.getElementById('btn-god-thunder').addEventListener('click', (e) => {
+                e.stopPropagation();
+                godCastThunderstrike();
+            });
+            document.getElementById('btn-god-rally').addEventListener('click', (e) => {
+                e.stopPropagation();
+                godCastRallyHorde();
+            });
         }
         // ────────────────────────────────────────────────────────────
+
+        function getGodAllianceTeam() {
+            return (godCustomBattle && godPlacingTeam === 'CHINESE') ? TEAMS.CHINESE : TEAMS.MONGOL;
+        }
+
+        function getGodEnemyTeam() {
+            return getGodAllianceTeam() === TEAMS.MONGOL ? TEAMS.CHINESE : TEAMS.MONGOL;
+        }
+
+        function godCastHealArmy() {
+            const allyTeam = getGodAllianceTeam();
+            const allies = units.filter(u => u.alive && u.team === allyTeam);
+            allies.forEach(u => {
+                u.hp = u.maxHp;
+                u.isInvisible = false;
+                u.isBuffed = false;
+            });
+            createExplosionEffect(new THREE.Vector3(allyTeam === TEAMS.MONGOL ? -18 : 18, 0.5, 0), 0x2a9d8f, 18, true);
+        }
+
+        function godCastThunderstrike() {
+            const enemyTeam = getGodEnemyTeam();
+            const enemies = units.filter(u => u.alive && u.team === enemyTeam && u.targetable);
+            if (!enemies.length) return;
+            const center = enemies[Math.floor(Math.random() * enemies.length)].mesh.position.clone();
+            createExplosionEffect(center.clone().add(new THREE.Vector3(0, 2.0, 0)), 0x8be9ff, 18, true);
+            enemies.forEach(u => {
+                const d = center.distanceTo(u.mesh.position);
+                if (d < 17) u.takeDamage(Math.max(20, 70 - d * 3), null);
+            });
+        }
+
+        function godCastRallyHorde() {
+            const allyTeam = getGodAllianceTeam();
+            const allies = units.filter(u => u.alive && u.team === allyTeam);
+            allies.forEach(u => {
+                u.isBuffed = true;
+                u.speed *= 1.06;
+                u.damage *= 1.05;
+                u.hp = Math.min(u.maxHp, u.hp + 18);
+            });
+            createExplosionEffect(new THREE.Vector3(allyTeam === TEAMS.MONGOL ? -14 : 14, 0.5, 0), 0xffd700, 16, true);
+        }
 
         window.onload = function() {
             init();
