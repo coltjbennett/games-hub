@@ -102,7 +102,7 @@ const projects = [
   {
     title: 'Engine Sim',
     url: 'games/enginesim.html',
-    image: 'images/IMG_1691.jpeg',
+    image: 'images/IMG_1691.jpeg', 
     alt: 'Engine Sim',
     statusKey: 'beta',
     type: 'Sim',
