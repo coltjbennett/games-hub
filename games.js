@@ -89,6 +89,17 @@ const projects = [
     featured: false
   },
   {
+    title: 'Royal Clash',
+    url: 'games/clash.html',
+    image: 'images/IMG_1002.jpeg',
+    alt: 'Legacy Racing Sim',
+    statusKey: 'legacy',
+    type: 'Tower Defense',
+    tags: ['Strategy', 'Defense', 'Clash'],
+    description: 'The very first HTML game I ever made, long before this website. It\'s a very archaic clone of a certain popular mobile game, with some gameplay tweaks.',
+    featured: false
+  },
+  {
     title: 'Engine Sim',
     url: 'enginesim.html',
     image: 'games/images/IMG_1691.jpeg',
