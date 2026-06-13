@@ -23,7 +23,7 @@ const announcements = [
   },
   {
     title: "Site updates",
-    content: "It's been over a week since moving to Github becuase of a prime example of the 'Scunthorpe Problem' on OneCompiler.com, and it's been going great! Github is also easier to manage.<br>AN APOLOGY TO ALL USERS: The move from OneCompiler to Github made the LocalStorage that holds your data on OneCompiler inaccessible. I am very sorry about this, but OneCompiler forced my hand to leave it by not letting me upload my games anymore. But your data <i>should</i> be safe from now on (as long as you don't clear your browser data, but that's on you if you do that...) - (06/11/26)<br><br>THE SITE IS NOW 90's GEOCITIES THEMED BECAUSE WHY NOT! - (06/10/2026)<br>CLASSIC GAMES ARE BACK! I finally moved them over from OneCompiler. Sorry for the delay on them, I was ironing out a few more pressing issues on the site. - (06/13/2026)"
+    content: " - It's been over a week since moving to Github becuase of a prime example of the 'Scunthorpe Problem' on OneCompiler.com, and it's been going great! Github is also easier to manage.<br> - AN APOLOGY TO ALL USERS: The move from OneCompiler to Github made the LocalStorage that holds your data on OneCompiler inaccessible. I am very sorry about this, but OneCompiler forced my hand to leave it by not letting me upload my games anymore. But your data <i>should</i> be safe from now on (as long as you don't clear your browser data, but that's on you if you do that...) - (06/11/26)<br> - THE SITE IS NOW 90's GEOCITIES THEMED BECAUSE WHY NOT! - (06/10/2026)<br> - CLASSIC GAMES ARE BACK! I finally moved them over from OneCompiler. Sorry for the delay on them, I was ironing out a few more pressing issues on the site. - (06/13/2026)"
   }
 ];
 
