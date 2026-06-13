@@ -22,7 +22,7 @@ body {
   /* 0.05vw at 1000px width is 0.5px.
   0.05vw at 400px width is 0.2px. */
   /* filter: blur(0.003vw) contrast(1.015); */
-  filter: url(#subpixel-blur) contrast(1.015);
+  /* Filter removed from body to fix marquee lag */
 }
 
 body::before {
@@ -63,7 +63,6 @@ html::after {
   
   /* Add a subtle dark vignette to the corners like a real glass tube WAS 100px now 2.5vw*/
   box-shadow: inset 0 0 3.5vw rgba(0, 0, 0, 0.7);
-  
   /* CRITICAL: This lets you click "through" the scanlines */
   pointer-events: none; 
   z-index: 9999;
@@ -85,7 +84,8 @@ img {
   overflow: hidden;
   white-space: nowrap;
   box-sizing: border-box;
-  filter: url(#subpixel-blur) contrast(1.015);
+  /* Hardware accelerated CSS blur to prevent lag */
+  filter: blur(1px) contrast(1.015);
 }
 
 .construction-banner img {
@@ -94,7 +94,8 @@ img {
   margin: 0 8px;
 }
 
-/* Replaced marquee with a pure CSS scroll! */
+/* Replaced marquee with a pure CSS scroll!
+*/
 /* didnt want to but everyone i asked said i shouldnt use <marquee> so heres the replacement*/
 .construction-banner .marquee-content {
   display: inline-block;
@@ -103,8 +104,8 @@ img {
   font-weight: bold;
   letter-spacing: 0.06em;
   
-  /* 'steps(300)' mimics the low-framerate rendering of the <marquee> tag */
-  animation: scroll-jitter 25s steps(500, end) infinite;
+  /* 'steps(400)' mimics the low-framerate rendering of the <marquee> tag */
+  animation: scroll-jitter 25s steps(400, end) infinite;
 }
 
 @keyframes scroll-jitter {
@@ -121,6 +122,8 @@ img {
   max-width: 1100px;
   margin: 0 auto;
   padding: 12px 10px 60px;
+  /* CPU calculated SVG blur applied only to the static content wrappers */
+  filter: url(#subpixel-blur) contrast(1.015);
 }
 
 /* ===== PANELS ===== */
@@ -485,15 +488,21 @@ header h1 {
      0 0.02em 0.03em rgba(0, 255, 0, 0.4);
 }
 
-.status--new        { background: #00cc00; border-color: #00ff00; color: #000000; }
+.status--new        { background: #00cc00; border-color: #00ff00; color: #000000;
+}
 .status--complete   { background: #0066cc; border-color: #0099ff; color: #ffffff; }
-.status--legacy     { background: #808080; border-color: #aaaaaa; color: #ffffff; }
+.status--legacy     { background: #808080; border-color: #aaaaaa;
+color: #ffffff; }
 .status--unfinished { background: #cc0000; border-color: #ff3333; color: #ffffff; }
-.status--alpha      { background: #cc7700; border-color: #ffaa00; color: #ffffff; }
-.status--beta       { background: #006699; border-color: #0099cc; color: #ffffff; }
-.status--wip        { background: #8800cc; border-color: #cc00ff; color: #ffffff; }
+.status--alpha      { background: #cc7700;
+border-color: #ffaa00; color: #ffffff; }
+.status--beta       { background: #006699; border-color: #0099cc; color: #ffffff;
+}
+.status--wip        { background: #8800cc; border-color: #cc00ff; color: #ffffff;
+}
 .status--buggy      { background: #cc0033; border-color: #ff3366; color: #ffffff; }
-.status--abandoned  { background: #444444; border-color: #666666; color: #cccccc; }
+.status--abandoned  { background: #444444; border-color: #666666;
+color: #cccccc; }
 
 /* ===== TAGS ===== */
 .tags {
