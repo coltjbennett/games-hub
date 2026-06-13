@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Alien Invaders</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #050505;
+            overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
+            touch-action: none; /* Prevents scrolling on touch */
+        }
+        
+        #gameContainer {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        canvas {
+            background-color: #000;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.2);
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        #touchControls {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            max-width: 800px;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+            box-sizing: border-box;
+            pointer-events: none; /* Let clicks pass through empty space */
+        }
+
+        .d-pad, .action-pad {
+            display: flex;
+            gap: 10px;
+            pointer-events: auto;
+        }
+
+        .btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(0, 255, 255, 0.1);
+            border: 2px solid #0ff;
+            color: #0ff;
+            font-weight: bold;
+            font-size: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            user-select: none;
+            box-shadow: 0 0 10px #0ff, inset 0 0 10px #0ff;
+            text-shadow: 0 0 5px #0ff;
+        }
+        
+        .btn:active {
+            background: rgba(0, 255, 255, 0.3);
+            box-shadow: 0 0 20px #0ff, inset 0 0 20px #0ff;
+        }
+
+        .btn-fire {
+            border-color: #f0f;
+            color: #f0f;
+            box-shadow: 0 0 10px #f0f, inset 0 0 10px #f0f;
+            text-shadow: 0 0 5px #f0f;
+            background: rgba(255, 0, 255, 0.1);
+        }
+
+        .btn-fire:active {
+            background: rgba(255, 0, 255, 0.3);
+            box-shadow: 0 0 20px #f0f, inset 0 0 20px #f0f;
+        }
+
+        /* Hide touch controls on non-touch devices */
+        @media (hover: hover) and (pointer: fine) {
+            #touchControls { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="gameContainer">
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    
+    <div id="touchControls">
+        <div class="d-pad">
+            <div class="btn" id="btnLeft">◄</div>
+            <div class="btn" id="btnRight">►</div>
+        </div>
+        <div class="action-pad">
+            <div class="btn btn-fire" id="btnFire">●</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Game Constants & State
+    const GW = canvas.width;
+    const GH = canvas.height;
+    let gameState = 'START'; // START, PLAYING, GAMEOVER
+    let score = 0;
+    let lives = 3;
+    let level = 1;
+
+    // Input Handling
+    const keys = { left: false, right: false, fire: false };
+
+    window.addEventListener('keydown', (e) => {
+        if(e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true;
+        if(e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true;
+        if(e.code === 'Space') {
+            keys.fire = true;
+            if(gameState !== 'PLAYING') initGame();
+        }
+    });
+
+    window.addEventListener('keyup', (e) => {
+        if(e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = false;
+        if(e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = false;
+        if(e.code === 'Space') keys.fire = false;
+    });
+
+    // Touch Handling
+    const bindTouch = (id, key) => {
+        const btn = document.getElementById(id);
+        btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[key] = true; if(gameState !== 'PLAYING' && key === 'fire') initGame(); });
+        btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[key] = false; });
+    };
+    bindTouch('btnLeft', 'left');
+    bindTouch('btnRight', 'right');
+    bindTouch('btnFire', 'fire');
+
+    // Drawing Helper for Neon Effect
+    function drawNeonRect(x, y, w, h, color, blur = 10) {
+        ctx.shadowBlur = blur;
+        ctx.shadowColor = color;
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, w, h);
+        ctx.shadowBlur = 0; // Reset
+    }
+
+    // Entities
+    let player, bullets, invaders, bunkers, ufo;
+    let invaderDir = 1; // 1 right, -1 left
+    let invaderStepDelay = 1000;
+    let lastInvaderStep = 0;
+    let invaderMoveDown = false;
+
+    function initGame() {
+        score = 0;
+        lives = 3;
+        level = 1;
+        setupLevel();
+        gameState = 'PLAYING';
+    }
+
+    function setupLevel() {
+        player = { x: GW/2 - 20, y: GH - 50, w: 40, h: 20, speed: 5, color: '#0ff' };
+        bullets = [];
+        ufo = { x: -100, y: 50, w: 40, h: 15, active: false, speed: 2, timer: 0, color: '#f00' };
+        
+        // Setup Bunkers (4 destructible pixel-art style bases)
+        bunkers = [];
+        for(let i=0; i<4; i++) {
+            let bx = 100 + i * 175;
+            let by = GH - 120;
+            // Create a grid of small rects for damage mapping
+            for(let row=0; row<4; row++) {
+                for(let col=0; col<6; col++) {
+                    // Cut out bottom middle to form arch
+                    if(row > 1 && col > 1 && col < 4) continue;
+                    bunkers.push({ x: bx + col*10, y: by + row*10, w: 10, h: 10, active: true, color: '#0f0' });
+                }
+            }
+        }
+
+        // Setup Invaders (11 columns, 5 rows)
+        invaders = [];
+        const rows = 5;
+        const cols = 11;
+        for(let r=0; r<rows; r++) {
+            for(let c=0; c<cols; c++) {
+                // Top row = 30 pts (cyan), Mid rows = 20 pts (magenta), Bot rows = 10 pts (yellow)
+                let pts = r === 0 ? 30 : (r < 3 ? 20 : 10);
+                let color = r === 0 ? '#0ff' : (r < 3 ? '#f0f' : '#ff0');
+                invaders.push({
+                    x: 100 + c * 40,
+                    y: 100 + r * 35,
+                    w: 24, h: 16,
+                    points: pts,
+                    color: color,
+                    active: true
+                });
+            }
+        }
+        invaderDir = 1;
+        invaderStepDelay = Math.max(100, 800 - (level * 50)); 
+    }
+
+    // Logic Update
+    function update(time) {
+        if (gameState !== 'PLAYING') return;
+
+        // Player Movement
+        if (keys.left) player.x = Math.max(10, player.x - player.speed);
+        if (keys.right) player.x = Math.min(GW - player.w - 10, player.x + player.speed);
+
+        // Player Shooting (Only 1 player bullet allowed on screen per original rules)
+        if (keys.fire && !bullets.some(b => b.isPlayer)) {
+            bullets.push({ x: player.x + player.w/2 - 2, y: player.y, w: 4, h: 15, speed: -8, isPlayer: true, color: '#0ff' });
+            keys.fire = false; // Require tap to shoot again
+        }
+
+        // Bullets Update
+        for (let i = bullets.length - 1; i >= 0; i--) {
+            let b = bullets[i];
+            b.y += b.speed;
+            if (b.y < 0 || b.y > GH) bullets.splice(i, 1);
+        }
+
+        // Invaders Movement (Step-based logic)
+        let activeInvaders = invaders.filter(inv => inv.active);
+        
+        if (activeInvaders.length === 0) {
+            level++;
+            setupLevel();
+            return;
+        }
+
+        // Speed increases as invaders decrease
+        let currentDelay = Math.max(20, invaderStepDelay * (activeInvaders.length / 55));
+
+        if (time - lastInvaderStep > currentDelay) {
+            let hitEdge = false;
+            
+            if (invaderMoveDown) {
+                activeInvaders.forEach(inv => inv.y += 20);
+                invaderMoveDown = false;
+                invaderDir *= -1;
+            } else {
+                activeInvaders.forEach(inv => {
+                    inv.x += 15 * invaderDir;
+                    if (inv.x + inv.w > GW - 20 || inv.x < 20) hitEdge = true;
+                });
+                if (hitEdge) invaderMoveDown = true;
+            }
+
+            // Invader Shooting
+            if (Math.random() < 0.3) {
+                // Find bottom-most invaders in random columns
+                let cols = {};
+                activeInvaders.forEach(inv => {
+                    if (!cols[inv.x] || cols[inv.x].y < inv.y) cols[inv.x] = inv;
+                });
+                let colKeys = Object.keys(cols);
+                if(colKeys.length > 0) {
+                    let shooter = cols[colKeys[Math.floor(Math.random() * colKeys.length)]];
+                    bullets.push({ x: shooter.x + shooter.w/2 - 2, y: shooter.y + shooter.h, w: 4, h: 15, speed: 5, isPlayer: false, color: '#f0f' });
+                }
+            }
+
+            lastInvaderStep = time;
+
+            // Check Game Over (Invaders reached bottom)
+            if (activeInvaders.some(inv => inv.y + inv.h >= player.y)) {
+                gameState = 'GAMEOVER';
+            }
+        }
+
+        // UFO Logic
+        ufo.timer++;
+        if (!ufo.active && ufo.timer > 1000 && Math.random() < 0.01) {
+            ufo.active = true;
+            ufo.dir = Math.random() > 0.5 ? 1 : -1;
+            ufo.x = ufo.dir === 1 ? -ufo.w : GW;
+            ufo.timer = 0;
+        }
+        if (ufo.active) {
+            ufo.x += ufo.speed * ufo.dir;
+            if (ufo.x > GW + 50 || ufo.x < -50) ufo.active = false;
+        }
+
+        // Collisions (AABB)
+        function checkCol(a, b) {
+            return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+        }
+
+        for (let i = bullets.length - 1; i >= 0; i--) {
+            let b = bullets[i];
+            let hit = false;
+
+            // Bullet vs Bunkers
+            for (let j = 0; j < bunkers.length; j++) {
+                if (bunkers[j].active && checkCol(b, bunkers[j])) {
+                    bunkers[j].active = false;
+                    hit = true;
+                    break;
+                }
+            }
+            if (hit) { bullets.splice(i, 1); continue; }
+
+            if (b.isPlayer) {
+                // Player Bullet vs Invaders
+                for (let j = 0; j < invaders.length; j++) {
+                    if (invaders[j].active && checkCol(b, invaders[j])) {
+                        invaders[j].active = false;
+                        score += invaders[j].points;
+                        hit = true;
+                        break;
+                    }
+                }
+                // Player Bullet vs UFO
+                if (!hit && ufo.active && checkCol(b, ufo)) {
+                    ufo.active = false;
+                    score += (Math.floor(Math.random() * 3) + 1) * 50; // Random 50, 100, 150 pts
+                    hit = true;
+                }
+            } else {
+                // Alien Bullet vs Player
+                if (checkCol(b, player)) {
+                    lives--;
+                    hit = true;
+                    if (lives <= 0) gameState = 'GAMEOVER';
+                    else {
+                        // Reset player position and clear bullets
+                        player.x = GW/2 - 20;
+                        bullets = [];
+                        break;
+                    }
+                }
+            }
+            if (hit) bullets.splice(i, 1);
+        }
+    }
+
+    // Render
+    function draw() {
+        ctx.clearRect(0, 0, GW, GH);
+
+        if (gameState === 'START') {
+            ctx.fillStyle = '#0ff';
+            ctx.font = '40px Courier New';
+            ctx.textAlign = 'center';
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#0ff';
+            ctx.fillText('NEON INVADERS', GW/2, GH/2 - 50);
+            ctx.font = '20px Courier New';
+            ctx.shadowColor = '#f0f';
+            ctx.fillStyle = '#f0f';
+            ctx.fillText('PRESS SPACE OR FIRE TO START', GW/2, GH/2 + 20);
+            ctx.shadowBlur = 0;
+            return;
+        }
+
+        if (gameState === 'GAMEOVER') {
+            ctx.fillStyle = '#f00';
+            ctx.font = '50px Courier New';
+            ctx.textAlign = 'center';
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#f00';
+            ctx.fillText('GAME OVER', GW/2, GH/2 - 30);
+            ctx.fillStyle = '#fff';
+            ctx.font = '20px Courier New';
+            ctx.shadowColor = '#fff';
+            ctx.fillText(`FINAL SCORE: ${score}`, GW/2, GH/2 + 20);
+            ctx.fillStyle = '#0ff';
+            ctx.shadowColor = '#0ff';
+            ctx.fillText('PRESS SPACE OR FIRE TO RESTART', GW/2, GH/2 + 70);
+            ctx.shadowBlur = 0;
+            return;
+        }
+
+        // Draw Player (Tank shape)
+        drawNeonRect(player.x, player.y + 10, player.w, 10, player.color); // Base
+        drawNeonRect(player.x + 15, player.y, 10, 10, player.color); // Turret
+
+        // Draw Bullets
+        bullets.forEach(b => drawNeonRect(b.x, b.y, b.w, b.h, b.color, 15));
+
+        // Draw Invaders (Hand-built basic shapes)
+        invaders.forEach(inv => {
+            if (inv.active) {
+                // Drawing a basic alien shape (Blocky)
+                drawNeonRect(inv.x + 4, inv.y, 16, 4, inv.color, 5); // Top head
+                drawNeonRect(inv.x, inv.y + 4, 24, 8, inv.color, 5); // Body
+                drawNeonRect(inv.x + 2, inv.y + 12, 6, 4, inv.color, 5); // Left Leg
+                drawNeonRect(inv.x + 16, inv.y + 12, 6, 4, inv.color, 5); // Right Leg
+            }
+        });
+
+        // Draw Bunkers
+        bunkers.forEach(b => {
+            if (b.active) drawNeonRect(b.x, b.y, b.w, b.h, b.color, 5);
+        });
+
+        // Draw UFO
+        if (ufo.active) {
+            drawNeonRect(ufo.x + 10, ufo.y, 20, 5, ufo.color);
+            drawNeonRect(ufo.x, ufo.y + 5, 40, 10, ufo.color, 15);
+        }
+
+        // UI (Score & Lives)
+        ctx.fillStyle = '#fff';
+        ctx.font = '20px Courier New';
+        ctx.textAlign = 'left';
+        ctx.fillText(`SCORE: ${score}`, 20, 30);
+        ctx.textAlign = 'right';
+        ctx.fillText(`LIVES: ${lives}`, GW - 20, 30);
+    }
+
+    // Main Game Loop
+    function loop(time) {
+        update(time);
+        draw();
+        requestAnimationFrame(loop);
+    }
+
+    // Start Engine
+    requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>
