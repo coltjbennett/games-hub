@@ -1,4 +1,59 @@
-// games.js
+// data.js
+
+const siteData = {
+  version: "v2.0",
+  author: "COLTON BENNETT",
+  location: "WAUKESHA, WI",
+  heroTitle: "Project Launcher",
+  heroCopy: "<strong>Welcome to my catalog!</strong> These are the projects I have been building lately.",
+  heroNote: "Feel free to browse the current lineup, see what's there, and if anything's changed.<br>Please excuse any bugs you find; I am still learning.",
+  marqueeText: "★★★ WELCOME TO COLTON'S PROJECT LAUNCHER ★★★ &nbsp;|&nbsp; BEST VIEWED IN 1024x768 &nbsp;|&nbsp; NETSCAPE NAVIGATOR 4.0 RECOMMENDED &nbsp;|&nbsp; ★★★ SIGN MY GUESTBOOK ★★★",
+  footerCopyright: "© 2026 Colton Bennett",
+  footerLastUpdated: "June 11, 2026, 12:51:03"
+};
+
+const announcements = [
+  {
+    title: "New releases",
+    content: "Nothing's been published recently."
+  },
+  {
+    title: "Game updates",
+    content: "Ghengis Khan Simulator now has secret content to unlock after beating lv. 100, plus some UI and UX improvements and a level select menu, as well as fixing some unit model innacuracies. - (06/11/2026)"
+  },
+  {
+    title: "Site updates",
+    content: "It's been over a week since moving to Github becuase of a prime example of the 'Scunthorpe Problem' on OneCompiler.com, and it's been going great! Github is also easier to manage.<br>AN APOLOGY TO ALL USERS: The move from OneCompiler to Github made the LocalStorage that holds your data on OneCompiler inaccessible. I am very sorry about this, but OneCompiler forced my hand to leave it by not letting me upload my games anymore. But your data <i>should</i> be safe from now on (as long as you don't clear your browser data, but that's on you if you do that...) - (06/11/26)<br><br>THE SITE IS NOW 90's GEOCITIES THEMED BECAUSE WHY NOT! - (06/10/2026)"
+  }
+];
+
+const classics = [
+  {
+    title: "Classic Title 1",
+    url: "#",
+    image: "", // Add image path when ready
+    alt: "Classic placeholder 1"
+  },
+  {
+    title: "Classic Title 2",
+    url: "#",
+    image: "",
+    alt: "Classic placeholder 2"
+  },
+  {
+    title: "Classic Title 3",
+    url: "#",
+    image: "",
+    alt: "Classic placeholder 3"
+  },
+  {
+    title: "Classic Title 4",
+    url: "#",
+    image: "",
+    alt: "Classic placeholder 4"
+  }
+];
+
 const projects = [
   {
     title: 'Pixel Ops',
@@ -144,5 +199,3 @@ const projects = [
     featured: false
   }
 ];
-
-const classics = [];
