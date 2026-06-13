@@ -232,6 +232,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderProjects();
   setupWindowButtons();
   setupVisitorCounter();
+  setupToSModal();
 });
 
 sortToggle.addEventListener('click', () => {
@@ -251,3 +252,25 @@ statusFilter.addEventListener('change', () => {
   safeSet(STATUS_KEY, statusValue);
   renderProjects();
 });
+
+function setupToSModal() {
+  const tosOverlay = document.getElementById("tos-modal-overlay");
+  const acceptBtn = document.getElementById("tos-accept-btn");
+
+  if (!tosOverlay || !acceptBtn) return;
+
+  // Check if user has already accepted using your existing safeGet wrapper
+  if (!safeGet("tosAccepted")) {
+    tosOverlay.style.display = "flex";
+    document.body.style.overflow = "hidden"; // Prevent background scrolling
+  }
+
+  acceptBtn.addEventListener("click", () => {
+    // Save acceptance using your existing safeSet wrapper
+    safeSet("tosAccepted", "true");
+    
+    // Hide modal and restore scrolling
+    tosOverlay.style.display = "none";
+    document.body.style.overflow = "auto";
+  });
+}
