@@ -27,33 +27,6 @@ const announcements = [
   }
 ];
 
-const classics = [
-  {
-    title: "Classic Title 1",
-    url: "#",
-    image: "", // Add image path when ready
-    alt: "Classic placeholder 1"
-  },
-  {
-    title: "Classic Title 2",
-    url: "#",
-    image: "",
-    alt: "Classic placeholder 2"
-  },
-  {
-    title: "Classic Title 3",
-    url: "#",
-    image: "",
-    alt: "Classic placeholder 3"
-  },
-  {
-    title: "Classic Title 4",
-    url: "#",
-    image: "",
-    alt: "Classic placeholder 4"
-  }
-];
-
 const projects = [
   {
     title: 'Pixel Ops',
@@ -197,5 +170,44 @@ const projects = [
     tags: ['Driving', 'Physics'],
     description: 'Not much to talk about here: It\'s extremely incomplete. If you want a playable racing game, play the legacy one.',
     featured: false
+  }
+];
+
+const classics = [
+  {
+    title: "Alien Invaders",
+    url: "games/classics/alieninvaders.html",
+    image: "images/IMG_1802.jpeg", // Add image path when ready
+    alt: "Alien Invaders"
+  },
+  {
+    title: "Break Through",
+    url: "games/classics/breakthrough.html",
+    image: "images/IMG_1806.jpeg",
+    alt: "Classic placeholder 2"
+  },
+  {
+    title: "Meteors",
+    url: "games/classics/meteors.html",
+    image: "images/IMG_1671.jpeg",
+    alt: "Meteors"
+  },
+  {
+    title: "Neon Pong",
+    url: "games/classics/neonpong.html",
+    image: "images/IMG_1808.jpeg",
+    alt: "Neon Pong"
+  },
+  {
+    title: "Pellet Muncher",
+    url: "games/classics/pelletmuncher.html",
+    image: "images/IMG_1803.jpeg",
+    alt: "Pellet Muncher"
+  },
+  {
+    title: "Snake",
+    url: "games/classics/snake.html",
+    image: "images/IMG_1804.jpeg",
+    alt: "Snake"
   }
 ];
