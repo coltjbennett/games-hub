@@ -46,6 +46,17 @@ function getStatusMeta(statusKey) {
   return STATUS_META[statusKey] || { label: statusKey, className: 'status--legacy', bucket: 'legacy' };
 }
 
+// Native JavaScript debounce utility function 
+function debounce(func, delay) {
+  let timeoutId;
+  return function(...args) {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      func.apply(this, args);
+    }, delay);
+  };
+}
+
 let sortMode = safeGet(SORT_KEY) || 'default';
 let searchTerm = safeGet(SEARCH_KEY) || '';
 let statusValue = safeGet(STATUS_KEY) || 'all';
@@ -65,24 +76,41 @@ function renderSiteData() {
   document.getElementById('footer-updated').textContent = `Last updated: ${siteData.footerLastUpdated}`;
 }
 
-// ===== RENDER LISTS =====
+// ===== SAFE TEMPLATE RENDER LISTS =====
 function renderAnnouncements() {
-  announcementList.innerHTML = announcements.map(a => `
-    <article class="announcement-item">
-      <h3>${esc(a.title)}</h3>
-      <p>${a.content}</p>
-    </article>
-  `).join('');
+  const template = document.getElementById('announcement-template');
+  if (!template) return;
+  
+  announcementList.innerHTML = '';
+  announcements.forEach(a => {
+    const clone = template.content.cloneNode(true);
+    clone.querySelector('h3').textContent = a.title;
+    // content contains raw safe markup tags like <br> and <i> requiring innerHTML parsing
+    clone.querySelector('p').innerHTML = a.content;
+    announcementList.appendChild(clone);
+  });
 }
 
 function renderClassics() {
   if (classics.length === 0) return;
-  classicList.innerHTML = classics.map(c => `
-    <a href="${esc(c.url)}" class="classic-item" aria-label="Play ${esc(c.title)}">
-      <img src="${esc(c.image)}" alt="${esc(c.alt)}" width="80" height="80" />
-      <div class="classic-info"><h3>${esc(c.title)}</h3></div>
-    </a>
-  `).join('');
+  const template = document.getElementById('classic-template');
+  if (!template) return;
+
+  classicList.innerHTML = '';
+  classics.forEach(c => {
+    const clone = template.content.cloneNode(true);
+    const link = clone.querySelector('a');
+    link.href = c.url;
+    link.setAttribute('aria-label', `Play ${c.title}`);
+    
+    const img = clone.querySelector('img');
+    img.src = c.image;
+    img.alt = c.alt;
+    img.onerror = function() { this.src = 'images/missing.png'; };
+    
+    clone.querySelector('h3').textContent = c.title;
+    classicList.appendChild(clone);
+  });
 }
 
 function renderStats() {
@@ -100,7 +128,7 @@ function renderFeatured() {
   const status = getStatusMeta(featured.statusKey);
   featuredCard.innerHTML = `
     <div class="featured-media">
-      <img src="${featured.image}" alt="${esc(featured.alt)} featured preview" loading="eager" />
+      <img src="${featured.image}" alt="${esc(featured.alt)} featured preview" loading="eager" onerror="this.src='images/missing.png';" />
     </div>
     <div class="featured-content">
       <span class="status ${status.className}">${esc(status.label)}</span>
@@ -149,34 +177,52 @@ function updateHelperText(count) {
 
 function renderProjects() {
   const items = filteredProjects();
-  projectGrid.innerHTML = items.length ?
-    items.map(project => {
+  const template = document.getElementById('project-template');
+  
+  projectGrid.innerHTML = '';
+  
+  if (items.length && template) {
+    items.forEach(project => {
+      const clone = template.content.cloneNode(true);
       const status = getStatusMeta(project.statusKey);
-      return `
-        <article class="project-card">
-          <div class="card-image">
-            <img src="${project.image}" alt="${esc(project.alt)}" loading="lazy" />
-          </div>
-          <div class="card-body">
-            <div class="card-top">
-              <span class="status ${status.className}">${esc(status.label)}</span>
-              <span class="tag">${esc(project.type)}</span>
-            </div>
-            <h3>${esc(project.title)}</h3>
-            <div class="tags">${project.tags.map(tag => `<span class="tag ${tag.includes('Top Pick') ? 'tag--featured' : tag === 'Under development' ? 'tag--dev' : ''}">${esc(tag)}</span>`).join('')}</div>
-            <p>${esc(project.description)}</p>
-            <div class="card-actions">
-              <a class="play-btn" href="${project.url}" target="_blank" rel="noopener noreferrer" aria-label="Play ${esc(project.title)}">PLAY NOW</a>
-            </div>
-          </div>
-        </article>
-      `;
-  }).join('') : `
-    <div class="announcement-item no-matches">
-      <h3>No matches found</h3>
-      <p>Try a different search term or clear the status filter.</p>
-    </div>
-  `;
+      
+      const img = clone.querySelector('.card-image img');
+      img.src = project.image;
+      img.alt = project.alt;
+      img.onerror = function() { this.src = 'images/missing.png'; };
+      
+      const statusSpan = clone.querySelector('.status');
+      statusSpan.className = `status ${status.className}`;
+      statusSpan.textContent = status.label;
+      
+      clone.querySelector('.card-top .tag').textContent = project.type;
+      clone.querySelector('h3').textContent = project.title;
+      clone.querySelector('p').textContent = project.description;
+      
+      const tagsWrapper = clone.querySelector('.tags');
+      tagsWrapper.innerHTML = '';
+      project.tags.forEach(tag => {
+        const span = document.createElement('span');
+        span.className = `tag ${tag.includes('Top Pick') ? 'tag--featured' : tag === 'Under development' ? 'tag--dev' : ''}`;
+        span.textContent = tag;
+        tagsWrapper.appendChild(span);
+      });
+      
+      const playBtn = clone.querySelector('.play-btn');
+      playBtn.href = project.url;
+      playBtn.setAttribute('aria-label', `Play ${project.title}`);
+      
+      projectGrid.appendChild(clone);
+    });
+  } else {
+    projectGrid.innerHTML = `
+      <div class="announcement-item no-matches">
+        <h3>No matches found</h3>
+        <p>Try a different search term or clear the status filter.</p>
+      </div>
+    `;
+  }
+  
   sortToggle.textContent = sortMode === 'type' ? 'Sort: type' : 'Sort by type';
   sortToggle.setAttribute('aria-pressed', sortMode === 'type' ? 'true' : 'false');
   updateHelperText(items.length);
@@ -222,6 +268,46 @@ function setupVisitorCounter() {
   }
 }
 
+// ===== CRT TOGGLE BUTTON FEATURE =====
+function setupCRTToggle() {
+  const crtToggleBtn = document.getElementById('crt-toggle-btn');
+  if (!crtToggleBtn) return;
+
+  if (safeGet('project-launcher-no-crt') === 'true') {
+    document.documentElement.classList.add('no-crt');
+  }
+
+  crtToggleBtn.addEventListener('click', () => {
+    const isNoCrt = document.documentElement.classList.toggle('no-crt');
+    safeSet('project-launcher-no-crt', isNoCrt ? 'true' : 'false');
+  });
+}
+
+// ===== LIVE DESKTOP TASKBAR CLOCK MOUNT =====
+function updateTaskbarClock() {
+  const now = new Date();
+  
+  const timeOptions = {
+    timeZone: 'America/Chicago',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  };
+  
+  const dateOptions = {
+    timeZone: 'America/Chicago',
+    month: '2-digit',
+    day: '2-digit',
+    year: 'numeric'
+  };
+
+  const clockEl = document.getElementById('taskbar-clock');
+  const dateEl = document.getElementById('taskbar-date');
+
+  if (clockEl) clockEl.textContent = now.toLocaleTimeString('en-US', timeOptions);
+  if (dateEl) dateEl.textContent = now.toLocaleDateString('en-US', dateOptions);
+}
+
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded', () => {
   renderSiteData();
@@ -233,6 +319,9 @@ document.addEventListener('DOMContentLoaded', () => {
   setupWindowButtons();
   setupVisitorCounter();
   setupToSModal();
+  setupCRTToggle();
+  updateTaskbarClock();
+  setInterval(updateTaskbarClock, 1000);
 });
 
 sortToggle.addEventListener('click', () => {
@@ -241,11 +330,12 @@ sortToggle.addEventListener('click', () => {
   renderProjects();
 });
 
-searchInput.addEventListener('input', () => {
+// Wrapped input listener in 250ms delay debounce wrapper function
+searchInput.addEventListener('input', debounce(() => {
   searchTerm = searchInput.value;
   safeSet(SEARCH_KEY, searchTerm);
   renderProjects();
-});
+}, 250));
 
 statusFilter.addEventListener('change', () => {
   statusValue = statusFilter.value;
@@ -259,17 +349,13 @@ function setupToSModal() {
 
   if (!tosOverlay || !acceptBtn) return;
 
-  // Check if user has already accepted using your existing safeGet wrapper
   if (!safeGet("tosAccepted")) {
     tosOverlay.style.display = "flex";
-    document.body.style.overflow = "hidden"; // Prevent background scrolling
+    document.body.style.overflow = "hidden";
   }
 
   acceptBtn.addEventListener("click", () => {
-    // Save acceptance using your existing safeSet wrapper
     safeSet("tosAccepted", "true");
-    
-    // Hide modal and restore scrolling
     tosOverlay.style.display = "none";
     document.body.style.overflow = "auto";
   });
