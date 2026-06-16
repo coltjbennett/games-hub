@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project Snippet Generator</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #1e1e1e;
+      color: #fff;
+      display: flex;
+      padding: 20px;
+      gap: 20px;
+    }
+    .form-container {
+      flex: 1;
+      background: #2d2d2d;
+      padding: 20px;
+      border-radius: 8px;
+    }
+    .output-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    label {
+      display: block;
+      margin-top: 15px;
+      font-weight: bold;
+      font-size: 0.9em;
+      color: #aaa;
+    }
+    input[type="text"], select, textarea {
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+      background: #3d3d3d;
+      border: 1px solid #555;
+      color: #fff;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    .checkbox-group {
+      margin-top: 15px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .checkbox-group label { margin-top: 0; color: #fff; }
+    button {
+      margin-top: 20px;
+      padding: 12px 20px;
+      background: #007acc;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      width: 100%;
+    }
+    button:hover { background: #005f9e; }
+    pre {
+      background: #000;
+      padding: 15px;
+      border-radius: 8px;
+      overflow-x: auto;
+      flex-grow: 1;
+      margin: 0;
+      color: #9cdcfe;
+      border: 1px solid #444;
+    }
+    .string { color: #ce9178; }
+    .key { color: #9cdcfe; }
+    .boolean { color: #569cd6; }
+  </style>
+</head>
+<body>
+
+  <div class="form-container">
+    <h2>Add New Project</h2>
+    
+    <label>Title</label>
+    <input type="text" id="p-title" placeholder="e.g. Space Invaders" oninput="updateAltText()">
+
+    <label>HTML Filename (auto prepends 'games/')</label>
+    <input type="text" id="p-url" placeholder="e.g. space.html">
+
+    <label>Image Filename (auto prepends 'images/')</label>
+    <input type="text" id="p-image" placeholder="e.g. IMG_1234.jpeg">
+
+    <label>Alt Text (auto-filled from Title)</label>
+    <input type="text" id="p-alt" placeholder="e.g. Space Invaders">
+
+    <label>Status Key</label>
+    <select id="p-status">
+      <option value="new">new</option>
+      <option value="complete">complete</option>
+      <option value="beta">beta</option>
+      <option value="wipPlayable">wipPlayable</option>
+      <option value="wipBuggy">wipBuggy</option>
+      <option value="unfinished">unfinished</option>
+      <option value="legacy">legacy</option>
+      <option value="abandoned">abandoned</option>
+    </select>
+
+    <label>Type / Genre</label>
+    <input type="text" id="p-type" placeholder="e.g. Arcade">
+
+    <label>Tags (comma separated)</label>
+    <input type="text" id="p-tags" placeholder="e.g. Shooter, Space, Retro">
+
+    <label>Description</label>
+    <textarea id="p-desc" rows="3" placeholder="A short description of the game..."></textarea>
+
+    <div class="checkbox-group">
+      <input type="checkbox" id="p-featured">
+      <label for="p-featured">Featured Game</label>
+    </div>
+
+    <button onclick="generateSnippet()">Generate & Copy Snippet</button>
+  </div>
+
+  <div class="output-container">
+    <h2>Ready for data.js</h2>
+    <pre id="output-snippet">// Fill out the form to generate code...</pre>
+  </div>
+
+  <script>
+    function updateAltText() {
+      document.getElementById('p-alt').value = document.getElementById('p-title').value;
+      generateSnippet(); // Auto-update as you type
+    }
+
+    function escapeQuotes(str) {
+      return str.replace(/'/g, "\\'");
+    }
+
+    function generateSnippet() {
+      const title = document.getElementById('p-title').value || '';
+      
+      let url = document.getElementById('p-url').value || '';
+      if(url && !url.toLowerCase().startsWith('games/')) {
+        url = 'games/' + url;
+      }
+
+      let image = document.getElementById('p-image').value || '';
+      if(image && !image.toLowerCase().startsWith('images/')) {
+        image = 'images/' + image;
+      }
+
+      const alt = document.getElementById('p-alt').value || '';
+      const statusKey = document.getElementById('p-status').value;
+      const type = document.getElementById('p-type').value || '';
+      const desc = document.getElementById('p-desc').value || '';
+      const featured = document.getElementById('p-featured').checked;
+      
+      // Handle tags
+      const tagsRaw = document.getElementById('p-tags').value;
+      const tagsArray = tagsRaw.split(',')
+                               .map(t => t.trim())
+                               .filter(t => t !== '');
+      const tagsFormatted = tagsArray.length > 0 
+        ? `[${tagsArray.map(t => `'${escapeQuotes(t)}'`).join(', ')}]` 
+        : `[]`;
+
+      // Build snippet string
+      const snippet = `{
+  title: '${escapeQuotes(title)}',
+  url: '${escapeQuotes(url)}',
+  image: '${escapeQuotes(image)}',
+  alt: '${escapeQuotes(alt)}',
+  statusKey: '${statusKey}',
+  type: '${escapeQuotes(type)}',
+  tags: ${tagsFormatted},
+  description: '${escapeQuotes(desc)}',
+  featured: ${featured}
+},`;
+
+      // Display it
+      document.getElementById('output-snippet').textContent = snippet;
+    }
+
+    // Attach auto-update to all inputs
+    const inputs = document.querySelectorAll('input, select, textarea');
+    inputs.forEach(input => {
+      input.addEventListener('input', generateSnippet);
+    });
+  </script>
+</body>
+</html>
