@@ -1017,5 +1017,353 @@ function animate(){
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);const fl=$('flashlight-overlay');if(fl){fl.width=innerWidth;fl.height=innerHeight;}});
 animate();
 </script>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+
+<div id="multiplayer-select" style="display:none; position:fixed; inset:0; z-index:9999; flex-direction:column; align-items:center; justify-content:center; background:rgba(5,10,8,0.97); font-family:'Segoe UI',Tahoma,sans-serif;">
+  <h2 style="color:#0fa; font-size: clamp(2em, 5vw, 3em); font-weight: 900; letter-spacing: 0.15em; text-transform:uppercase; margin-bottom:30px; text-shadow: 0 0 15px #0fa;">DEPLOYMENT MODE</h2>
+  
+  <input type="text" id="multi-username" placeholder="ENTER USERNAME" value="Soldier" style="margin-bottom:30px; padding:15px; font-size:1.2em; background:rgba(10,20,15,0.85); color:#0fa; border:2px solid #0fa; text-align:center; width: 280px; font-weight: bold; text-transform: uppercase;">
+  
+  <div style="display:flex; gap:20px; flex-wrap:wrap; justify-content:center; align-items: stretch;">
+    <button id="btn-solo" class="menu-btn" style="background:rgba(10,30,15,0.85); color:#fff; border:2px solid #aaa; padding:14px 40px; font-weight:bold; cursor:pointer;">SOLO (OFFLINE)</button>
+    <button id="btn-host" class="menu-btn" style="background:rgba(30,20,10,0.85); color:#fff; border:2px solid #fa0; padding:14px 40px; font-weight:bold; cursor:pointer;">HOST ROOM</button>
+    
+    <div style="display:flex; flex-direction:column; gap:10px; border-left: 2px dashed #0fa; padding-left: 20px;">
+      <input type="text" id="multi-room-code" placeholder="ROOM CODE" maxlength="2" style="padding:12px; font-size:1.2em; background:rgba(10,20,15,0.85); color:#0fa; border:2px solid #0fa; text-align:center; width: 240px; font-weight: bold; text-transform: uppercase;">
+      <button id="btn-join" class="menu-btn" style="background:rgba(10,20,30,0.85); color:#fff; border:2px solid #0af; padding:14px 40px; font-weight:bold; cursor:pointer;">JOIN ROOM</button>
+    </div>
+  </div>
+  
+  <div id="multi-status" style="color:yellow; margin-top:30px; font-size:1.2em; font-weight:bold; text-transform: uppercase;"></div>
+  
+  <div id="ingame-net-hud" style="display:none; position:fixed; top:10px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.6); border:2px solid #0fa; color:#0fa; padding:8px 20px; font-weight: bold; z-index:9999; border-radius:8px; pointer-events:none;"></div>
+</div>
+
+<script>
+// --- MULTIPLAYER ENGINE LOGIC ---
+const GAME_PREFIX = "colton-pixelops-v1-";
+let myId = "local";
+let localUsername = "Soldier";
+let isHost = false;
+let peer = null;
+let hostConnection = null;
+let clientConnections = {};
+let remotePlayers = {};
+let networkActive = false;
+
+// UI Elements
+const uiSelect = document.getElementById('multiplayer-select');
+const uiStatus = document.getElementById('multi-status');
+const uiHud = document.getElementById('ingame-net-hud');
+const nameInput = document.getElementById('multi-username');
+
+// --- 1. INTERCEPT MAP CLICKS (The Vibe-Code Hack) ---
+let pendingMapEvent = null;
+
+// Use 'true' to capture the click BEFORE the rest of Pixel Ops sees it
+window.addEventListener('click', function(e) {
+    const card = e.target.closest('.map-card');
+    if (card && uiSelect.style.display === 'none') {
+        if (!e._isSimulated) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Clone the exact click to fire later
+            pendingMapEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+            pendingMapEvent._isSimulated = true;
+            window._pendingCard = card;
+
+            // Hide the game's map select, show our multiplayer menu
+            const origMapSelect = document.getElementById('map-select');
+            if(origMapSelect) origMapSelect.style.display = 'none';
+            uiSelect.style.display = 'flex';
+        }
+    }
+}, true); 
+
+function launchGame() {
+    uiSelect.style.display = 'none';
+    if(networkActive) uiHud.style.display = 'block';
+    
+    // Dispatch the stolen click so the game starts exactly as normal!
+    if (window._pendingCard) window._pendingCard.dispatchEvent(pendingMapEvent);
+}
+
+// --- 2. MENU BUTTON HANDLERS ---
+document.getElementById('btn-solo').addEventListener('click', () => {
+    networkActive = false;
+    launchGame();
+});
+
+document.getElementById('btn-host').addEventListener('click', () => {
+    localUsername = nameInput.value.trim() || "Host";
+    isHost = true;
+    networkActive = true;
+    
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let roomCode = '';
+    for (let i = 0; i < 2; i++) roomCode += chars.charAt(Math.floor(Math.random() * chars.length));
+    
+    peer = new Peer(GAME_PREFIX + roomCode);
+    uiStatus.innerText = "STARTING SERVER...";
+    
+    peer.on('open', (id) => {
+        myId = id;
+        uiStatus.style.color = "#0fa";
+        uiStatus.innerText = `ROOM CODE: ${roomCode} (give this to other players) --- WAITING 5 SECONDS TO DEPLOY HOST INTO MAP (players can join after)...`;
+        uiHud.innerText = `ROOM: ${roomCode} | PLAYERS: 1`;
+        
+        // Launch game shortly after creating room so they get in the map
+        setTimeout(launchGame, 500000);
+    });
+
+    peer.on('connection', (conn) => {
+        clientConnections[conn.peer] = conn;
+        conn.on('data', (data) => {
+            if (data.type === 'clientInit') spawnRemotePlayer(conn.peer, data.name);
+            if (data.type === 'clientMove' && remotePlayers[conn.peer]) {
+                remotePlayers[conn.peer].group.position.set(data.x, data.y, data.z);
+                remotePlayers[conn.peer].group.rotation.y = data.ry;
+                if(remotePlayers[conn.peer].head) remotePlayers[conn.peer].head.rotation.x = data.rx;
+            }
+            if (data.type === 'fire') {
+                broadcastNetBullet(data.origin, data.dir);
+                spawnNetBullet(data.origin, data.dir);
+            }
+        });
+        conn.on('close', () => {
+            removeRemotePlayer(conn.peer);
+            delete clientConnections[conn.peer];
+        });
+    });
+});
+
+document.getElementById('btn-join').addEventListener('click', () => {
+    const code = document.getElementById('multi-room-code').value.trim().toUpperCase();
+    if(code.length !== 2) { uiStatus.innerText = "ENTER A 2-LETTER CODE!"; return; }
+    
+    localUsername = nameInput.value.trim() || "Player";
+    isHost = false;
+    networkActive = true;
+    
+    peer = new Peer();
+    uiStatus.innerText = "LOCATING SERVER...";
+    
+    peer.on('open', (id) => {
+        myId = id;
+        hostConnection = peer.connect(GAME_PREFIX + code);
+        
+        hostConnection.on('open', () => {
+            uiStatus.style.color = "#0fa";
+            uiStatus.innerText = `CONNECTED TO ${code}! DEPLOYING...`;
+            uiHud.innerText = `CONNECTED TO: ${code}`;
+            hostConnection.send({ type: 'clientInit', name: localUsername });
+            setTimeout(launchGame, 1000);
+        });
+
+        hostConnection.on('data', (data) => {
+            if (data.type === 'worldState') {
+                const activeIds = Object.keys(data.players);
+                uiHud.innerText = `ROOM: ${code} | PLAYERS: ${activeIds.length}`;
+                
+                activeIds.forEach(pid => {
+                    if (pid === myId) return; // Never render yourself!
+                    const pData = data.players[pid];
+                    if(!remotePlayers[pid]) spawnRemotePlayer(pid, pData.name);
+                    
+                    remotePlayers[pid].group.position.set(pData.x, pData.y, pData.z);
+                    remotePlayers[pid].group.rotation.y = pData.ry;
+                    if(remotePlayers[pid].head) remotePlayers[pid].head.rotation.x = pData.rx;
+                });
+
+                Object.keys(remotePlayers).forEach(existingId => {
+                    if(!activeIds.includes(existingId)) removeRemotePlayer(existingId);
+                });
+            }
+            if (data.type === 'bullet') spawnNetBullet(data.origin, data.dir);
+        });
+        
+        hostConnection.on('close', () => {
+            uiHud.innerText = "DISCONNECTED FROM SERVER";
+            uiHud.style.color = "red";
+            uiHud.style.borderColor = "red";
+            Object.keys(remotePlayers).forEach(id => removeRemotePlayer(id));
+        });
+    });
+});
+
+// --- 3. BRIGHT BLUE ENEMY PLAYER MODELS ---
+function makeTextSprite(message) {
+    const cvs = document.createElement('canvas');
+    cvs.width = 512; cvs.height = 128;
+    const ctx = cvs.getContext('2d');
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, 512, 128);
+    ctx.font = 'bold 60px "Segoe UI", sans-serif'; ctx.fillStyle = '#0fa';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(message, 256, 64);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cvs) }));
+    sprite.scale.set(4, 1, 1);
+    return sprite;
+}
+
+function spawnRemotePlayer(id, name) {
+    if(remotePlayers[id] || typeof THREE === 'undefined' || typeof scene === 'undefined') return;
+    
+    const group = new THREE.Group();
+    
+    // Bright Blue Body
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.5, 1.2), new THREE.MeshStandardMaterial({ color: 0x00aaff, roughness: 0.4 }));
+    body.position.y = 1.25; 
+    group.add(body);
+    
+    // Bright Blue Head
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshStandardMaterial({ color: 0x00ffff, roughness: 0.4 }));
+    head.position.y = 2.9;
+    
+    // Red Visor
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.2, 0.85), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
+    head.add(visor); // Attach visor to head so it pitches up/down naturally
+    group.add(head);
+    
+    // Name Tag
+    const nameSprite = makeTextSprite(name);
+    nameSprite.position.set(0, 3.8, 0); 
+    group.add(nameSprite);
+    
+    scene.add(group);
+    remotePlayers[id] = { group: group, head: head, name: name };
+}
+
+function removeRemotePlayer(id) {
+    if(!remotePlayers[id] || typeof scene === 'undefined') return;
+    scene.remove(remotePlayers[id].group);
+    delete remotePlayers[id];
+}
+
+// --- 4. PROJECTILE SYNC & COMBAT ---
+function broadcastNetBullet(origin, dir) {
+    Object.values(clientConnections).forEach(conn => {
+        if (conn.open) conn.send({ type: 'bullet', origin, dir });
+    });
+}
+
+function spawnNetBullet(origin, dir) {
+    if (typeof THREE === 'undefined' || typeof scene === 'undefined') return;
+    
+    // Make network bullets visually distinct (Purple/Pink energy)
+    const bMesh = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff00ff }));
+    bMesh.position.copy(origin);
+    scene.add(bMesh);
+    
+    const vDir = new THREE.Vector3(dir.x, dir.y, dir.z);
+    bMesh._netVelocity = vDir.multiplyScalar(2.0); // Adjust speed of enemy bullets
+    bMesh._life = 100;
+    
+    if (!window._netBullets) window._netBullets = [];
+    window._netBullets.push(bMesh);
+}
+
+function showDamageFlash() {
+    let overlay = document.getElementById('net-damage-flash');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'net-damage-flash';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(255,0,0,0.5);z-index:9999;pointer-events:none;transition:opacity 0.2s;opacity:0;';
+        document.body.appendChild(overlay);
+    }
+    overlay.style.opacity = '1';
+    setTimeout(() => overlay.style.opacity = '0', 200);
+    
+    // Auto-hooks into standard vibe-coded health systems 
+    if (typeof playerHealth !== 'undefined') playerHealth -= 10;
+    if (typeof health !== 'undefined') health -= 10;
+    if (typeof updateHealthUI === 'function') updateHealthUI();
+}
+
+// --- 5. PARALLEL NETWORK SYNC LOOP ---
+// This runs constantly alongside your game, polling variables without breaking your code!
+function networkSyncLoop() {
+    requestAnimationFrame(networkSyncLoop);
+    if (!networkActive || typeof camera === 'undefined' || typeof scene === 'undefined') return;
+
+    // Grab absolute true camera direction (ignores weapon sway/bob nesting)
+    const pos = new THREE.Vector3();
+    camera.getWorldPosition(pos);
+    const quat = new THREE.Quaternion();
+    camera.getWorldQuaternion(quat);
+    const euler = new THREE.Euler().setFromQuaternion(quat, 'YXZ');
+
+    // Sync Movement State
+    if (isHost) {
+        let worldState = {};
+        worldState[myId] = {
+            name: localUsername,
+            x: pos.x, y: pos.y - 1.5, z: pos.z, // Offset Y down so feet touch the floor
+            ry: euler.y, rx: euler.x
+        };
+        Object.keys(clientConnections).forEach(id => {
+            if(remotePlayers[id]) {
+                worldState[id] = {
+                    name: remotePlayers[id].name,
+                    x: remotePlayers[id].group.position.x,
+                    y: remotePlayers[id].group.position.y,
+                    z: remotePlayers[id].group.position.z,
+                    ry: remotePlayers[id].group.rotation.y,
+                    rx: remotePlayers[id].head.rotation.x
+                };
+            }
+        });
+        Object.values(clientConnections).forEach(conn => {
+            if (conn.open) conn.send({ type: 'worldState', players: worldState });
+        });
+    } else if (hostConnection && hostConnection.open) {
+        hostConnection.send({
+            type: 'clientMove',
+            x: pos.x, y: pos.y - 1.5, z: pos.z,
+            ry: euler.y, rx: euler.x
+        });
+    }
+
+    // Polling Local Bullets: Secretly tags your bullets and fires copies over the net
+    if (typeof projectiles !== 'undefined' && Array.isArray(projectiles)) {
+        projectiles.forEach(p => {
+            if (p.isPlayer && !p._netSynced) {
+                p._netSynced = true; 
+                const origin = p.position.clone();
+                const dir = p.velocity ? p.velocity.clone().normalize() : new THREE.Vector3();
+                
+                if (isHost) {
+                    broadcastNetBullet(origin, dir);
+                } else if (hostConnection && hostConnection.open) {
+                    hostConnection.send({ type: 'fire', origin: origin, dir: dir });
+                }
+            }
+        });
+    }
+
+    // Animate Network Bullets & Hit Detection
+    if (window._netBullets) {
+        for (let i = window._netBullets.length - 1; i >= 0; i--) {
+            let b = window._netBullets[i];
+            b.position.add(b._netVelocity);
+            b._life--;
+            
+            // Proximity hit detection against YOUR camera
+            if (b.position.distanceTo(pos) < 1.5) {
+                showDamageFlash();
+                b._life = 0;
+            }
+            
+            if (b._life <= 0) {
+                scene.remove(b);
+                window._netBullets.splice(i, 1);
+            }
+        }
+    }
+}
+
+// Ignite polling
+networkSyncLoop();
+</script>
 </body>
 </html>
