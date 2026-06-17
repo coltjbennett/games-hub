@@ -19,7 +19,7 @@ const announcements = [
   },
   {
     title: "Game updates",
-    content: "Ghengis Khan Simulator now has secret content to unlock after beating lv. 100, plus some UI and UX improvements and a level select menu, as well as fixing some unit model innacuracies. - (06/11/2026)"
+    content: "PIXEL OPS NOW HAS CLIENT-SIDE MULTIPLAYER SUPPORT! TO JOIN A ROOM TOGETHER, HAVE EACH PLAYER SELECT THE SAME MAP, HAVE ONE PLAYER HOST A ROOM, AND GIVE THE OTHER PLAYERS THE CODE TO JOIN!<br>Ghengis Khan Simulator now has secret content to unlock after beating lv. 100, plus some UI and UX improvements and a level select menu, as well as fixing some unit model innacuracies. - (06/11/2026)"
   },
   {
     title: "Site updates",
