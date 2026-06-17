@@ -228,19 +228,78 @@ function renderProjects() {
   updateHelperText(items.length);
 }
 
-// ===== WINDOW BUTTON LOGIC =====
+// ===== WINDOW BUTTON & TASKBAR LOGIC =====
 function setupWindowButtons() {
-  document.querySelectorAll('.btn-minimize').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const panel = e.target.closest('.panel') || e.target.closest('.panel-dark');
-      if (panel) panel.classList.toggle('minimized');
-    });
+  document.querySelectorAll('.btn-minimize').forEach((btn) => {
+    const panel = btn.closest('.panel') || btn.closest('.panel-dark');
+    if (panel) {
+      btn.addEventListener('click', (e) => {
+        panel.classList.toggle('minimized');
+        updateTaskbarApps();
+      });
+    }
   });
 
   document.querySelectorAll('.btn-close').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const panel = e.target.closest('.panel') || e.target.closest('.panel-dark');
-      if (panel) panel.style.display = 'none';
+      if (panel) {
+        panel.style.display = 'none';
+        panel.classList.remove('minimized');
+        updateTaskbarApps();
+      }
+    });
+  });
+}
+
+function updateTaskbarApps() {
+  const container = document.getElementById('taskbar-apps');
+  if (!container) return;
+  container.innerHTML = '';
+
+  document.querySelectorAll('.minimized').forEach(panel => {
+    if (panel.style.display === 'none') return; // Skip completely closed panels
+
+    const titleSpan = panel.querySelector('.panel-title-bar span:first-child');
+    const titleText = titleSpan ? titleSpan.textContent.trim() : 'W';
+    const letter = titleText.charAt(0).toUpperCase();
+
+    const appBtn = document.createElement('div');
+    appBtn.className = 'taskbar-app';
+    appBtn.textContent = letter;
+    appBtn.setAttribute('title', titleText);
+    
+    appBtn.addEventListener('click', () => {
+      panel.classList.remove('minimized');
+      updateTaskbarApps();
+    });
+    
+    container.appendChild(appBtn);
+  });
+}
+
+// ===== START MENU =====
+function setupStartMenu() {
+  const startBtn = document.getElementById('taskbar-start-btn');
+  const startMenu = document.getElementById('start-menu');
+  
+  if (!startBtn || !startMenu) return;
+
+  startBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isHidden = window.getComputedStyle(startMenu).display === 'none';
+    startMenu.style.display = isHidden ? 'flex' : 'none';
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!startMenu.contains(e.target) && e.target !== startBtn) {
+      startMenu.style.display = 'none';
+    }
+  });
+
+  startMenu.querySelectorAll('.start-item').forEach(item => {
+    item.addEventListener('click', () => {
+      startMenu.style.display = 'none';
     });
   });
 }
@@ -317,6 +376,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderFeatured();
   renderProjects();
   setupWindowButtons();
+  setupStartMenu();
   setupVisitorCounter();
   setupToSModal();
   setupCRTToggle();
