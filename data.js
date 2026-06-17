@@ -9,7 +9,7 @@ const siteData = {
   heroNote: "Feel free to browse the current lineup, see what's there, and if anything's changed.<br>Please excuse any bugs you find; I am still learning.",
   marqueeText: "★★★ WELCOME TO COLTON'S PROJECT LAUNCHER ★★★ &nbsp;|&nbsp; BEST VIEWED IN 1024x768 &nbsp;|&nbsp; NETSCAPE NAVIGATOR 4.0 RECOMMENDED &nbsp;|&nbsp; ★★★ SIGN MY GUESTBOOK ★★★",
   footerCopyright: "© 2026 Colton Bennett",
-  footerLastUpdated: "June 13, 2026, 00:21:47"
+  footerLastUpdated: "June 17, 2026, 14:23:24"
 };
 
 const announcements = [
@@ -19,7 +19,7 @@ const announcements = [
   },
   {
     title: "Game updates",
-    content: "PIXEL OPS NOW HAS CLIENT-SIDE MULTIPLAYER SUPPORT! TO JOIN A ROOM TOGETHER, HAVE EACH PLAYER SELECT THE SAME MAP, HAVE ONE PLAYER HOST A ROOM, AND GIVE THE OTHER PLAYERS THE CODE TO JOIN!<br>Ghengis Khan Simulator now has secret content to unlock after beating lv. 100, plus some UI and UX improvements and a level select menu, as well as fixing some unit model innacuracies. - (06/11/2026)"
+    content: "PIXEL OPS NOW HAS CLIENT-SIDE MULTIPLAYER SUPPORT! TO JOIN A ROOM TOGETHER, HAVE EACH PLAYER SELECT THE SAME MAP, HAVE ONE PLAYER HOST A ROOM, AND GIVE THE OTHER PLAYERS THE CODE TO JOIN! - (06/17/2026)<br>Ghengis Khan Simulator now has secret content to unlock after beating lv. 100, plus some UI and UX improvements and a level select menu, as well as fixing some unit model innacuracies. - (06/11/2026)"
   },
   {
     title: "Site updates",
