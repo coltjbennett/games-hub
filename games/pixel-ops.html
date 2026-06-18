@@ -119,6 +119,11 @@ body{margin:0;overflow:hidden;background:#87CEEB;touch-action:none;font-family:'
 .kf-item{background:rgba(0,0,0,.65);color:#fff;font-size:.78em;font-weight:700;letter-spacing:.06em;padding:4px 14px;border-radius:6px;border-left:3px solid #f33;animation:kfIn .3s ease-out;text-align:center}
 @keyframes kfIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
 #burn-overlay{position:absolute;inset:0;background:radial-gradient(circle,transparent 30%,rgba(255,80,0,.5) 100%);opacity:0;pointer-events:none;transition:opacity .2s;z-index:16}
+
+/* CHAT UI */
+#chat-ui { display:none; position:fixed; bottom:20px; left:20px; width:350px; z-index:9000; pointer-events:none; }
+#chat-feed { max-height:200px; overflow-y:auto; margin-bottom:10px; display:flex; flex-direction:column; gap:4px; text-shadow:1px 1px 2px #000; }
+#chat-input { width:100%; background:rgba(0,0,0,0.7); color:#0fa; border:2px solid #0fa; padding:10px; border-radius:6px 6px 0 6px; font-weight:bold; font-family:sans-serif; outline:none; display:none; pointer-events:auto; }
 </style>
 </head>
 <body>
@@ -128,7 +133,7 @@ body{margin:0;overflow:hidden;background:#87CEEB;touch-action:none;font-family:'
     <h1>PIXEL <span>OPS</span></h1>
     <button class="menu-btn" id="menu-play-btn">▶ &nbsp;PLAY</button>
     <button class="menu-btn" id="menu-ach-btn" style="font-size:.95em;padding:11px 48px;">🏆 &nbsp;ACHIEVEMENTS</button>
-    <p class="menu-sub">WASD / JOYSTICK to move &nbsp;·&nbsp; SHIFT to ADS &nbsp;·&nbsp; Q/E to lean<br>ESC/P to pause &nbsp;·&nbsp; F to swap weapon &nbsp;·&nbsp; R to reload &nbsp;·&nbsp; G for upgrade tree</p>
+    <p class="menu-sub">WASD / JOYSTICK to move &nbsp;·&nbsp; SHIFT to ADS &nbsp;·&nbsp; Q/E to lean<br>ESC/P to pause &nbsp;·&nbsp; F to swap weapon &nbsp;·&nbsp; R to reload &nbsp;·&nbsp; G for upgrade tree<br><span style="color:#0fa">ENTER to Chat (Multiplayer)</span></p>
   </div>
 </div>
 <div id="map-select">
@@ -172,6 +177,14 @@ body{margin:0;overflow:hidden;background:#87CEEB;touch-action:none;font-family:'
   <button id="pause-btn-ingame" class="btn">⏸</button>
   <div id="xp-bar-wrap"><div id="xp-bar"></div></div>
   <div id="xp-label">XP: 0 / 100</div>
+
+  <div id="chat-ui">
+    <div id="chat-feed"></div>
+    <input type="text" id="chat-input" placeholder="Type message and press Enter..." maxlength="60">
+    <button id="chat-send-btn" style="display:none;pointer-events:auto;position:absolute;bottom:0;right:0;padding:8px 14px;background:rgba(0,255,170,.15);color:#0fa;border:2px solid #0fa;font-weight:bold;font-size:1em;cursor:pointer;border-radius:0 0 6px 0;">SEND</button>
+  </div>
+  <button id="chat-open-btn" style="display:none;pointer-events:auto;position:fixed;bottom:20px;left:20px;z-index:9100;padding:10px 18px;background:rgba(0,0,0,.75);color:#0fa;border:2px solid #0fa;font-weight:900;font-size:1em;border-radius:8px;letter-spacing:.08em;cursor:pointer;">💬 CHAT</button>
+  <div id="leaderboard-panel" style="display:none;position:fixed;top:15px;right:20px;z-index:9000;background:rgba(10,15,20,.88);border-left:4px solid #fa0;border-radius:0 8px 8px 0;padding:10px 14px;min-width:160px;pointer-events:none;backdrop-filter:blur(4px);font-family:inherit;"></div>
 </div>
 <div id="ach-panel">
   <h2>🏆 Achievements</h2>
@@ -210,27 +223,30 @@ body{margin:0;overflow:hidden;background:#87CEEB;touch-action:none;font-family:'
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.9.0/nipplejs.min.js"></script>
 <script>
-// --- DETERMINISTIC RNG FOR MAP SYNC ---
+// --- PERFECT DETERMINISTIC RNG FOR MAP SYNC ---
 let isSeededRNG = false;
 let rngSeed = 12345;
 let currentMapSeed = 0;
 const originalRandom = Math.random;
+
+// Mulberry32 perfectly seeded RNG
 Math.random = function() {
     if (!isSeededRNG) return originalRandom();
-    rngSeed = (rngSeed * 9301 + 49297) % 233280;
-    return rngSeed / 233280;
+    var t = rngSeed += 0x6D2B79F5;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
 };
-function setMapSeed(seed) { rngSeed = seed; isSeededRNG = true; }
-function resetRNG() { isSeededRNG = false; }
 
-  let lastTouchEnd = 0;
+function setMapSeed(seed) { rngSeed = seed; isSeededRNG = true; }
+
+let lastTouchEnd = 0;
 document.addEventListener('touchend', function (event) {
-        let now = (new Date()).getTime();
-        if (now - lastTouchEnd <= 300) {
-            event.preventDefault(); // This blocks the browser's automatic zoom
-        }
-        lastTouchEnd = now;
-    }, false);
+    let now = (new Date()).getTime();
+    if (now - lastTouchEnd <= 300) event.preventDefault();
+    lastTouchEnd = now;
+}, false);
+
 const $=id=>document.getElementById(id);
 const ADS_VIEWMODEL_SCALE=0.8,ADS_SPEED=0.2;
 let lookSensitivity=0.003,invertY=false,musicVolume=0.5;
@@ -318,6 +334,7 @@ function rebuildWeaponList(){applyUpgrades();if(curIdx>=launchers.length)curIdx=
 
 // ─── MAIN MENU BG ─────────────────────────────────────────────────────────────
 (function(){const cvs=$('menu-bg');const ctx=cvs.getContext('2d');const particles=[];function resize(){cvs.width=innerWidth;cvs.height=innerHeight;}resize();addEventListener('resize',resize);for(let i=0;i<80;i++)particles.push({x:Math.random()*innerWidth,y:Math.random()*innerHeight,vx:(Math.random()-.5)*.4,vy:(Math.random()-.5)*.4,r:Math.random()*2+.5,a:Math.random()});function loop(){ctx.clearRect(0,0,cvs.width,cvs.height);particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;if(p.x<0)p.x=cvs.width;if(p.x>cvs.width)p.x=0;if(p.y<0)p.y=cvs.height;if(p.y>cvs.height)p.y=0;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fillStyle=`rgba(0,255,170,${p.a*.6})`;ctx.fill();});requestAnimationFrame(loop);}loop();})();
+
 // ─── MAP DEFINITIONS ──────────────────────────────────────────────────────────
 const MAPS=[
   {id:'city',name:'URBAN WARFARE',desc:'Dense city blocks, alleyways, skyscrapers.',bgColor:0x87CEEB,fogColor:0x87CEEB,fogDensity:.003,thumb:'city'},
@@ -367,6 +384,7 @@ let achToastTimer=null;
 function showAchToast(a){$('ach-toast-title').textContent='🏆 '+a.name;$('ach-toast-desc').textContent=a.desc;$('ach-toast').style.transform='translateX(-50%) translateY(0)';$('ach-toast').style.opacity='1';if(achToastTimer)clearTimeout(achToastTimer);achToastTimer=setTimeout(()=>{$('ach-toast').style.transform='translateX(-50%) translateY(-60px)';$('ach-toast').style.opacity='0';},3200);}
 function renderAchPanel(){const grid=$('ach-grid');grid.innerHTML='';ACH_DEFS.forEach(a=>{const div=document.createElement('div');div.className='ach-item'+(achProgress[a.id].unlocked?' unlocked':'');div.innerHTML=`<div class="ai-icon">${a.icon}</div><div class="ai-name">${a.name}</div><div class="ai-desc">${a.desc}</div><div class="ai-status">${achProgress[a.id].unlocked?'✔ UNLOCKED':'LOCKED'}</div>`;grid.appendChild(div);});}
 renderAchPanel();
+
 // ─── UPGRADE PANEL RENDER ─────────────────────────────────────────────────────
 function renderUpgradePanel(){
   $('upg-xp-display').textContent='Level: '+getLevel()+' | Available: '+getLevel()+'× (spend levels on upgrades)';
@@ -488,8 +506,22 @@ function startEnemyRagdoll(enemy,hitPoint){if(enemy.koed)return;enemy.koed=true;
 function koEnemy(enemy,hitPoint, isNetRemote = false){
   if(enemy.koed)return;
   startEnemyRagdoll(enemy,hitPoint||enemy.position.clone());
-  kos++;$('ko-count').innerText=kos;
-const xpAmt={soldier:10,sniper:20,heavy:30,scout:15,berserker:25,elite:40}[enemy.enemyType]||10;
+  
+  // If this is a client and not the one who fired (remote kill from worldState), skip credit
+  if (isNetRemote) return;
+  
+  if (networkActive && !isHost) {
+      // Client: tell host I got this kill, host will confirm and broadcast kill credit
+      if(hostConnection && hostConnection.open) {
+          hostConnection.send({type:'clientKill', enemyId: enemy.id, enemyType: enemy.enemyType});
+      }
+      // Don't increment kos locally - wait for killCredit message back from host
+      return;
+  }
+  
+  // Host or solo: apply kill locally
+  kos++;if($('ko-count'))$('ko-count').innerText=kos;
+  const xpAmt={soldier:10,sniper:20,heavy:30,scout:15,berserker:25,elite:40}[enemy.enemyType]||10;
   addXP(xpAmt);
   const healAmt=owned.lifesteal?5:2.5;
   if(playerHealth<maxHP())playerHealth=Math.min(maxHP(),playerHealth+healAmt);
@@ -499,6 +531,12 @@ const xpAmt={soldier:10,sniper:20,heavy:30,scout:15,berserker:25,elite:40}[enemy
   if(enemy.enemyType==='sniper'){incrementAch('ko_sniper');tryUnlockAch('headhunter');updateMissionProgress('ko_type',1,{enemyType:'sniper'});}
   if(enemy.enemyType==='heavy'){incrementAch('ko_heavy');tryUnlockAch('grenadier');updateMissionProgress('ko_type',1,{enemyType:'heavy'});}
   if(enemy.enemyType==='berserker')updateMissionProgress('ko_type',1,{enemyType:'berserker'});
+  
+  if(networkActive && isHost) {
+      // Update host leaderboard entry and broadcast
+      updateLeaderboard(myId, localUsername, kos, sessionXP);
+      broadcastLeaderboard();
+  }
 }
 
 function maxHP(){return 100+(owned.hp1?25:0)+(owned.hp2?50:0);}
@@ -556,7 +594,44 @@ if(type!=='berserker'){const GꓴNGeo=type==='sniper'?new THREE.BoxGeometry(.08,
   scene.add(g);enemies.push(g);
 }
 
-// ─── PLAYER STATE ─────────────────────────────────────────────────────────────
+// spawnEnemyAt: like spawnEnemy but places enemy at exact world position (for client sync)
+function spawnEnemyAt(worldPos, forceId, forceType) {
+  const type = forceType || 'soldier';
+  const g = new THREE.Group();
+  g.enemyType = type;
+  g.id = forceId;
+  const stats={
+    soldier: {hp:100,speed:3.5,fireRange:55,fireRate:4800,projSpeed:1.5,projDmg:5, prefRange:18,stopRange:7, scale:1.0,headScale:1.0},
+    sniper:  {hp:70, speed:1.8,fireRange:100,fireRate:4000,projSpeed:3.5,projDmg:22,prefRange:45,stopRange:25,scale:1.0,headScale:1.1},
+    heavy:   {hp:280,speed:1.8,fireRange:32, fireRate:2000,projSpeed:1.2,projDmg:8, prefRange:20,stopRange:5, scale:1.3,headScale:.85},
+    scout:   {hp:55, speed:5.8,fireRange:38, fireRate:6200,projSpeed:2.0,projDmg:4, prefRange:10,stopRange:4, scale:.85,headScale:.95},
+    berserker:{hp:160,speed:5.2,fireRange:6, fireRate:800, projSpeed:0, projDmg:15,prefRange:4, stopRange:1, scale:1.15,headScale:1.0,melee:true},
+    elite:   {hp:200,speed:3.0,fireRange:70, fireRate:3000,projSpeed:2.2,projDmg:12,prefRange:22,stopRange:8, scale:1.1,headScale:1.05},
+  }[type];
+  g.stats=stats;g.health=stats.hp;g.lastFired=Date.now()+Math.random()*2000;g.walkCycle=Math.random()*Math.PI*2;g.koed=false;g.velocity=new THREE.Vector3();g.strafeDir=Math.random()<.5?-1:1;g.stuckTime=0;g.lastSeenTime=0;g.lastKnownPlayerPos=new THREE.Vector3();g.wanderTarget=null;g.onFire=0;
+  let bodyTex=camoTex;let headColor=0xd2b48c;let armorColor=0x1a1a1a;
+  if(currentMapId==='tundra'){bodyTex=arcticTex;headColor=0xe0d8d0;armorColor=0xccddee;}
+  else if(currentMapId==='desert'||currentMapId==='nightcity'){bodyTex=desertSoldierTex;}
+  else if(type==='sniper'){bodyTex=createNoiseTexture('#1a2a1a','#0e1e0e');headColor=0xc8a87c;armorColor=0x222;}
+  else if(type==='heavy'){bodyTex=heavyTex;headColor=0x8a7060;armorColor=0x111;}
+  else if(type==='scout'){bodyTex=desertTex;headColor=0xd8b890;armorColor=0x333;}
+  else if(type==='berserker'){bodyTex=createNoiseTexture('#3a1010','#2a0808');headColor=0xcc6050;armorColor=0x330000;}
+  else if(type==='elite'){bodyTex=createNoiseTexture('#101030','#080818');headColor=0x888899;armorColor=0x222244;}
+  const uniformMat=new THREE.MeshStandardMaterial({map:bodyTex,roughness:.9});
+  const skinMat=new THREE.MeshStandardMaterial({color:headColor,roughness:.6});
+  const gearMat=new THREE.MeshStandardMaterial({color:armorColor,roughness:.7});
+  const sc=stats.scale,hs=stats.headScale;
+  const head=new THREE.Mesh(new THREE.BoxGeometry(.35*hs,.4*hs,.35*hs),skinMat);head.position.y=1.6*sc;
+  const torso=new THREE.Mesh(new THREE.BoxGeometry(.65*sc,.85*sc,.35*sc),uniformMat);torso.position.y=.95*sc;
+  const armL=new THREE.Mesh(new THREE.BoxGeometry(.2*sc,.8*sc,.2*sc),uniformMat);armL.position.set(-.45*sc,1.3*sc,0);armL.geometry.translate(0,-.4*sc,0);
+  const armR=new THREE.Mesh(new THREE.BoxGeometry(.2*sc,.8*sc,.2*sc),uniformMat);armR.position.set(.45*sc,1.3*sc,0);armR.geometry.translate(0,-.4*sc,0);
+  const legL=new THREE.Mesh(new THREE.BoxGeometry(.25*sc,.8*sc,.25*sc),uniformMat);legL.position.set(-.2*sc,.8*sc,0);legL.geometry.translate(0,-.4*sc,0);
+  const legR=new THREE.Mesh(new THREE.BoxGeometry(.25*sc,.8*sc,.25*sc),uniformMat);legR.position.set(.2*sc,.8*sc,0);legR.geometry.translate(0,-.4*sc,0);
+  g.add(head,torso,armL,armR,legL,legR);Object.assign(g,{head,torso,armL,armR,legL,legR,torsoMat:uniformMat});
+  const hitBox=new THREE.Mesh(new THREE.BoxGeometry(1.2*sc,2*sc,.8*sc),new THREE.MeshBasicMaterial({visible:false}));hitBox.position.y=1*sc;g.add(hitBox);g.hitBox=hitBox;
+  g.position.copy(worldPos);
+  scene.add(g);enemies.push(g);
+}
 let playerHealth=100,kos=0,mVec={x:0,y:0},isAiming=false,activeCamRotX=0,activeCamRotY=0;
 const keys={w:false,a:false,s:false,d:false,q:false,e:false};
 let leanAmount=0,leanLeft=false,leanRight=false;
@@ -564,7 +639,7 @@ let surviveFire=0,gameRunning=false,gamePaused=false,currentMapId='city';
 let gameStartTime=0,totalReloads=0;
 let playerVelY=0,targetHeight=1.7,isGrounded=true,walkBob=0;
 let isReloading=false,recoilPitchOffset=0,launcherRecoilOffset=0,nextFireAt=0,isFiring=false;
-let curIdx=0;
+let curIdx=0, isTyping = false;
 
 // ─── MAP OBJECTS ──────────────────────────────────────────────────────────────
 let mapObjects=[];
@@ -762,8 +837,17 @@ function startGame(mapId, forceSeed=null){
   if (networkActive) {
       currentMapSeed = forceSeed !== null ? forceSeed : Math.floor(originalRandom() * 1000000);
       setMapSeed(currentMapSeed);
+      $('chat-ui').style.display = 'block';
+      if (isHost) {
+          // Tell all connected clients which map to load
+          Object.values(clientConnections).forEach(c => {
+              if(c.open) c.send({ type: 'mapAssign', mapId: currentMapId, mapSeed: currentMapSeed });
+          });
+          if(uiHud) uiHud.style.display = 'block';
+      }
   } else {
       isSeededRNG = false;
+      $('chat-ui').style.display = 'none';
   }
 
   $('map-select').style.display='none';$('main-menu').style.display='none';
@@ -785,9 +869,10 @@ function startGame(mapId, forceSeed=null){
   else if(mapId==='tundra')buildTundraMap();
   else if(mapId==='desert')buildDesertMap();
   
-  isSeededRNG = false; // Reset to random after map gen
+  isSeededRNG = false; // Reset to random after map gen so gameplay stays dynamic
 
   if (!isHost && networkActive) {
+      // Clients clear enemies - host will sync them via worldState
       enemies.forEach(e => scene.remove(e));
       enemies.length = 0;
   }
@@ -795,6 +880,19 @@ function startGame(mapId, forceSeed=null){
   launchers.forEach(w=>{w.ammo=w.mag;if(w.isFlameThrower)w.fuel=w.maxFuel;});
   updateHUD();updateXPBar();
   if(!clock)clock=new THREE.Clock();clock.start();
+  
+  // Initialize leaderboard for solo / host
+  if (isHost || !networkActive) {
+      updateLeaderboard(myId, localUsername, 0, 0);
+  }
+  renderLeaderboard();
+  if (networkActive) {
+      if($('leaderboard-panel')) $('leaderboard-panel').style.display = 'block';
+      if($('chat-open-btn')) $('chat-open-btn').style.display = 'block';
+  } else {
+      if($('leaderboard-panel')) $('leaderboard-panel').style.display = 'none';
+      if($('chat-open-btn')) $('chat-open-btn').style.display = 'none';
+  }
 }
 
 function triggerGameOver(){
@@ -813,23 +911,90 @@ const best=getBestkos(currentMapId);
 
 function pauseGame(){if(!gameRunning||gamePaused)return;gamePaused=true;$('pause-menu').style.display='flex';if(document.pointerLockElement)document.exitPointerLock();isFiring=false;}
 function resumeGame(){if(!gamePaused)return;gamePaused=false;$('pause-menu').style.display='none';clock.getDelta();}
-function quitToMenu(){gamePaused=false;gameRunning=false;$('pause-menu').style.display='none';$('ui').style.display='none';$('aim-zone').style.display='none';renderer.domElement.style.display='none';$('game-over').style.display='none';$('main-menu').style.display='flex';if(document.pointerLockElement)document.exitPointerLock();clearMap();refreshMapCardBests();}
+function quitToMenu(){gamePaused=false;gameRunning=false;$('pause-menu').style.display='none';$('ui').style.display='none';$('aim-zone').style.display='none';renderer.domElement.style.display='none';$('game-over').style.display='none';$('main-menu').style.display='flex';if(document.pointerLockElement)document.exitPointerLock();clearMap();refreshMapCardBests();if($('leaderboard-panel'))$('leaderboard-panel').style.display='none';if($('chat-open-btn'))$('chat-open-btn').style.display='none';if($('chat-input')){$('chat-input').style.display='none';}isTyping=false;}
 
 // ─── BUTTON WIRING ─────────────────────────────────────────────────────────────
-$('menu-play-btn').addEventListener('click',()=>{$('main-menu').style.display='none';$('map-select').style.display='flex';});
+$('menu-play-btn').addEventListener('click',()=>{$('main-menu').style.display='none';$('multiplayer-select').style.display='flex';});
 $('menu-ach-btn').addEventListener('click',()=>{renderAchPanel();$('ach-panel').style.display='flex';});
-$('map-back-btn').addEventListener('click',()=>{$('map-select').style.display='none';$('main-menu').style.display='flex';});
+$('map-back-btn').addEventListener('click',()=>{$('map-select').style.display='none';if(networkActive&&isHost){$('map-select').style.display='none';$('main-menu').style.display='flex';}else{$('main-menu').style.display='flex';}});
 $('ach-close-btn').addEventListener('click',()=>{$('ach-panel').style.display='none';if(!gameRunning)$('main-menu').style.display='flex';});
 $('ach-list-btn').addEventListener('click',()=>{renderAchPanel();$('ach-panel').style.display='flex';});
 $('upgrade-btn').addEventListener('click',()=>{renderUpgradePanel();$('upgrade-panel').style.display='flex';});
 $('upg-close-btn').addEventListener('click',()=>{$('upgrade-panel').style.display='none';});
 $('pause-resume-btn').addEventListener('click',resumeGame);$('pause-quit-btn').addEventListener('click',quitToMenu);
-$('go-menu-btn').addEventListener('click',()=>{$('game-over').style.display='none';$('ui').style.display='none';$('aim-zone').style.display='none';renderer.domElement.style.display='none';$('main-menu').style.display='flex';clearMap();refreshMapCardBests();});
+$('go-menu-btn').addEventListener('click',()=>{$('game-over').style.display='none';$('ui').style.display='none';$('aim-zone').style.display='none';renderer.domElement.style.display='none';$('main-menu').style.display='flex';if($('leaderboard-panel'))$('leaderboard-panel').style.display='none';if($('chat-open-btn'))$('chat-open-btn').style.display='none';if($('chat-input'))$('chat-input').style.display='none';isTyping=false;clearMap();refreshMapCardBests();});
 $('go-retry-btn').addEventListener('click',()=>{$('game-over').style.display='none';startGame(currentMapId);});
 $('pause-btn-ingame').addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();if(gamePaused)resumeGame();else pauseGame();});
 $('sens-slider').addEventListener('input',()=>{lookSensitivity=0.0006+parseInt($('sens-slider').value)*0.0005;$('sens-val').textContent=$('sens-slider').value;});
 $('vol-slider').addEventListener('input',()=>{musicVolume=parseInt($('vol-slider').value)/10;$('vol-val').textContent=$('vol-slider').value;});
 $('invert-y').addEventListener('change',()=>{invertY=$('invert-y').checked;});
+
+// ─── CHAT & NETWORK SYNC LOGIC ─────────────────────────────────────────────────
+function sendChat(name, msg) {
+    appendChat(name, msg);
+    if (isHost) {
+        Object.values(clientConnections).forEach(c => {
+            if (c.open) c.send({type: 'chat', name, msg});
+        });
+    } else if (hostConnection && hostConnection.open) {
+        hostConnection.send({type: 'chat', name, msg});
+    }
+}
+function appendChat(name, msg) {
+    const el = document.createElement('div');
+    el.innerHTML = `<span style="color:#0fa">[${name}]</span> <span style="color:#fff">${msg}</span>`;
+    el.style.background = 'rgba(0,0,0,0.5)';
+    el.style.padding = '4px 8px';
+    el.style.borderRadius = '4px';
+    $('chat-feed').appendChild(el);
+    $('chat-feed').scrollTop = $('chat-feed').scrollHeight;
+    setTimeout(() => {
+        el.style.transition = 'opacity 1s';
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 1000);
+    }, 8000);
+}
+
+function openChat() {
+    if (!networkActive || !gameRunning) return;
+    isTyping = true;
+    Object.keys(keys).forEach(k => keys[k] = false);
+    $('chat-input').style.display = 'block';
+    $('chat-send-btn').style.display = 'block';
+    $('chat-open-btn').style.display = 'none';
+    $('chat-input').focus();
+    if(document.pointerLockElement) document.exitPointerLock();
+}
+function closeChat() {
+    $('chat-input').value = '';
+    $('chat-input').style.display = 'none';
+    $('chat-send-btn').style.display = 'none';
+    if (networkActive && gameRunning) $('chat-open-btn').style.display = 'block';
+    isTyping = false;
+    requestLookLock();
+}
+function submitChat() {
+    const msg = $('chat-input').value.trim();
+    if (msg) sendChat(localUsername, msg);
+    closeChat();
+}
+
+// Chat open button (touchscreen)
+document.addEventListener('DOMContentLoaded', () => {});
+const chatOpenBtn = $('chat-open-btn');
+if(chatOpenBtn) chatOpenBtn.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); openChat(); });
+const chatSendBtn = $('chat-send-btn');
+if(chatSendBtn) chatSendBtn.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); submitChat(); });
+
+// Multiplayer back button
+const multiBackBtn = document.getElementById('multi-back-btn');
+if(multiBackBtn) multiBackBtn.addEventListener('click', () => {
+    document.getElementById('multiplayer-select').style.display = 'none';
+    document.getElementById('main-menu').style.display = 'flex';
+    // Clean up any half-initialized peer
+    if(peer) { try { peer.destroy(); } catch(e){} peer = null; }
+    networkActive = false; isHost = false;
+});
 
 // ─── INPUT ─────────────────────────────────────────────────────────────────────
 function toggleAim(){isAiming=!isAiming;}
@@ -839,28 +1004,49 @@ function crouchAction(){targetHeight=targetHeight===1?1.7:1;}
 function requestLookLock(){if(document.pointerLockElement!==renderer.domElement&&renderer.domElement.requestPointerLock)renderer.domElement.requestPointerLock();}
 document.addEventListener('pointerlockchange',()=>{if(document.pointerLockElement!==renderer.domElement)isFiring=false;});
 function canFireFromMouse(e){return(document.pointerLockElement===renderer.domElement&&e.pointerType==='mouse'&&e.button===0);}
+
 addEventListener('keydown',e=>{
   if(!gameRunning&&!gamePaused)return;
   const code=e.code;
+  
+  // Chat interception
+  if (code === 'Enter' && networkActive && gameRunning) {
+      if (!isTyping) {
+          openChat();
+      } else {
+          submitChat();
+      }
+      e.preventDefault();
+      return;
+  }
+  
+  if (isTyping) {
+      if (code === 'Escape') {
+          closeChat();
+      }
+      return; // Do not process movement
+  }
+
   if(['KeyF','KeyR','KeyC','Space','KeyQ','KeyE','Escape','KeyP','KeyG'].includes(code))e.preventDefault();
   if(code==='Escape'||code==='KeyP'){if(gamePaused)resumeGame();else pauseGame();return;}
   if(gamePaused)return;
   switch(code){case'KeyF':if(!e.repeat)swaplauncher();break;case'KeyR':if(!e.repeat)reloadlauncher();break;case'KeyC':if(!e.repeat)crouchAction();break;case'Space':if(!e.repeat)jumpAction();break;case'ShiftLeft':case'ShiftRight':if(!e.repeat)toggleAim();break;case'KeyQ':leanLeft=true;break;case'KeyE':leanRight=true;break;case'KeyG':if(!e.repeat){renderUpgradePanel();$('upgrade-panel').style.display='flex';}break;}
   const k=e.key.toLowerCase();if(k in keys)keys[k]=true;
 });
-addEventListener('keyup',e=>{const k=e.key.toLowerCase();if(k in keys)keys[k]=false;if(e.code==='KeyQ')leanLeft=false;if(e.code==='KeyE')leanRight=false;});
-addEventListener('pointerdown',e=>{if(canFireFromMouse(e)&&gameRunning&&!gamePaused){e.preventDefault();isFiring=true;firelauncher();}});
+addEventListener('keyup',e=>{if(isTyping)return;const k=e.key.toLowerCase();if(k in keys)keys[k]=false;if(e.code==='KeyQ')leanLeft=false;if(e.code==='KeyE')leanRight=false;});
+addEventListener('pointerdown',e=>{if(canFireFromMouse(e)&&gameRunning&&!gamePaused&&!isTyping){e.preventDefault();isFiring=true;firelauncher();}});
 addEventListener('pointerup',e=>{if(e.pointerType==='mouse'&&e.button===0)isFiring=false;});
 addEventListener('pointercancel',()=>isFiring=false);
+
 nipplejs.create({zone:$('move-zone'),mode:'static',position:{left:'80px',bottom:'80px'},color:'white'}).on('move',(e,d)=>mVec=d.vector).on('end',()=>mVec={x:0,y:0});
 const aimZone=$('aim-zone');let isDragging=false,previousMousePosition={x:0,y:0},activeTouchId=null;
 function updateLook(dx,dy){activeCamRotY-=dx*lookSensitivity;const dyA=invertY?-dy*lookSensitivity:dy*lookSensitivity;activeCamRotX=Math.max(-1.5,Math.min(1.5,activeCamRotX-dyA));}
 aimZone.addEventListener('mousedown',e=>{if(document.pointerLockElement===renderer.domElement)return;isDragging=true;previousMousePosition={x:e.clientX,y:e.clientY};});
 addEventListener('mouseup',()=>isDragging=false);
-addEventListener('mousemove',e=>{if(gamePaused)return;if(document.pointerLockElement===renderer.domElement){updateLook(e.movementX||0,e.movementY||0);return;}if(isDragging){updateLook(e.clientX-previousMousePosition.x,e.clientY-previousMousePosition.y);previousMousePosition={x:e.clientX,y:e.clientY};}});
-aimZone.addEventListener('click',requestLookLock);renderer.domElement.addEventListener('click',requestLookLock);
+addEventListener('mousemove',e=>{if(gamePaused||isTyping)return;if(document.pointerLockElement===renderer.domElement){updateLook(e.movementX||0,e.movementY||0);return;}if(isDragging){updateLook(e.clientX-previousMousePosition.x,e.clientY-previousMousePosition.y);previousMousePosition={x:e.clientX,y:e.clientY};}});
+aimZone.addEventListener('click',() => {if(!isTyping)requestLookLock();});renderer.domElement.addEventListener('click',() => {if(!isTyping)requestLookLock();});
 aimZone.addEventListener('touchstart',e=>{e.preventDefault();if(activeTouchId===null){activeTouchId=e.changedTouches[0].identifier;previousMousePosition={x:e.changedTouches[0].clientX,y:e.changedTouches[0].clientY};}},{passive:false});
-aimZone.addEventListener('touchmove',e=>{e.preventDefault();if(gamePaused)return;for(let i=0;i<e.changedTouches.length;i++){if(e.changedTouches[i].identifier===activeTouchId){updateLook(e.changedTouches[i].clientX-previousMousePosition.x,e.changedTouches[i].clientY-previousMousePosition.y);previousMousePosition={x:e.changedTouches[i].clientX,y:e.changedTouches[i].clientY};break;}}},{passive:false});
+aimZone.addEventListener('touchmove',e=>{e.preventDefault();if(gamePaused||isTyping)return;for(let i=0;i<e.changedTouches.length;i++){if(e.changedTouches[i].identifier===activeTouchId){updateLook(e.changedTouches[i].clientX-previousMousePosition.x,e.changedTouches[i].clientY-previousMousePosition.y);previousMousePosition={x:e.changedTouches[i].clientX,y:e.changedTouches[i].clientY};break;}}},{passive:false});
 const handleTouchEnd=e=>{for(let i=0;i<e.changedTouches.length;i++)if(e.changedTouches[i].identifier===activeTouchId){activeTouchId=null;break;}};
 aimZone.addEventListener('touchend',handleTouchEnd,{passive:false});aimZone.addEventListener('touchcancel',handleTouchEnd,{passive:false});
 $('lean-left-btn').addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();leanLeft=true;});$('lean-left-btn').addEventListener('pointerup',e=>{e.preventDefault();e.stopPropagation();leanLeft=false;});$('lean-left-btn').addEventListener('pointerleave',e=>{e.preventDefault();e.stopPropagation();leanLeft=false;});
@@ -897,10 +1083,10 @@ const muzzlePos=camera.position.clone().addScaledVector(viewForward,.15).addScal
   }
   if(w.ammo===0&&!w.isFlameThrower)reloadlauncher();
 }
-$('fire-btn').addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();isFiring=true;firelauncher();});
+$('fire-btn').addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();if(!isTyping) {isFiring=true;firelauncher();}});
 $('fire-btn').addEventListener('pointerup',e=>{e.preventDefault();e.stopPropagation();isFiring=false;});
 $('fire-btn').addEventListener('pointerleave',e=>{e.preventDefault();e.stopPropagation();isFiring=false;});
-const bindButton=(id,downFn,upFn=null)=>{const el=$(id);if(!el)return;el.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();downFn();});if(upFn){el.addEventListener('pointerup',e=>{e.preventDefault();e.stopPropagation();upFn();});el.addEventListener('pointerleave',e=>{e.preventDefault();e.stopPropagation();upFn();});}};
+const bindButton=(id,downFn,upFn=null)=>{const el=$(id);if(!el)return;el.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();if(!isTyping)downFn();});if(upFn){el.addEventListener('pointerup',e=>{e.preventDefault();e.stopPropagation();upFn();});el.addEventListener('pointerleave',e=>{e.preventDefault();e.stopPropagation();upFn();});}};
 bindButton('aim-btn',toggleAim);bindButton('swap-btn',swaplauncher);bindButton('reload-btn',reloadlauncher);bindButton('jump-btn',jumpAction);bindButton('crouch-btn',crouchAction);
 
 function takePower(amt){playerHealth-=amt;surviveFire+=.5;$('hp-count').innerText=Math.round(Math.max(0,playerHealth));$('power-overlay').style.opacity=1;setTimeout(()=>$('power-overlay').style.opacity=0,200);if(playerHealth<=0)triggerGameOver();}
@@ -1017,7 +1203,7 @@ if(playerHitBox.intersectsBox(new THREE.Box3().setFromCenterAndSize(p.position,n
   for(let i=enemies.length-1;i>=0;i--){
     const enemy=enemies[i];
 
-    // IF CLIENT: We bypass the complex movement/AI logic, only running local animations for networked positions.
+    // IF CLIENT: Bypass complex AI logic. Merely run remote ragdolls & animations exactly where the host positioned them.
     if (networkActive && !isHost) {
         if(enemy.koed){
             [enemy.head,enemy.torso,enemy.armL,enemy.armR,enemy.legL,enemy.legR].forEach(part=>{if(!part||!part.userData.velocity)return;part.position.addScaledVector(part.userData.velocity,dt);part.userData.velocity.y-=10.5*dt;if(part.userData.spin){part.rotation.x+=part.userData.spin.x*dt;part.rotation.y+=part.userData.spin.y*dt;part.rotation.z+=part.userData.spin.z*dt;}});
@@ -1130,8 +1316,12 @@ padding:14px 40px; font-weight:bold; cursor:pointer;">JOIN ROOM</button>
     </div>
   </div>
   
+  <p style="color:rgba(255,255,255,.45);font-size:.8em;margin-top:16px;text-align:center;max-width:380px;line-height:1.6">HOST: Pick a room name, then choose your map. Share the room code with friends.<br>JOIN: Enter the 2-letter code and wait for the host to start.</p>
+  
   <div id="multi-status" style="color:yellow; margin-top:30px; font-size:1.2em; font-weight:bold;
-text-transform: uppercase;"></div>
+text-transform: uppercase; white-space: pre-line; text-align:center;"></div>
+  
+  <button id="multi-back-btn" style="margin-top:18px;background:rgba(10,30,15,.85);color:#aaa;border:2px solid #444;font-size:.9em;font-weight:700;letter-spacing:.1em;padding:10px 32px;cursor:pointer;text-transform:uppercase;">← BACK</button>
   
   <div id="ingame-net-hud" style="display:none; position:fixed; top:10px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.6); border:2px solid #0fa; color:#0fa; padding:8px 20px;
 font-weight: bold; z-index:9999; border-radius:8px; pointer-events:none;"></div>
@@ -1149,48 +1339,48 @@ let clientConnections = {};
 let remotePlayers = {};
 let networkActive = false;
 
+// Leaderboard: { [id]: { name, kos, xp } }
+let leaderboard = {};
+
+function updateLeaderboard(id, name, kos, xp) {
+    leaderboard[id] = { name, kos, xp };
+    renderLeaderboard();
+}
+
+function renderLeaderboard() {
+    const lb = document.getElementById('leaderboard-panel');
+    if (!lb) return;
+    const entries = Object.values(leaderboard).sort((a, b) => b.kos - a.kos);
+    lb.innerHTML = '<div style="color:#fa0;font-weight:900;font-size:.85em;letter-spacing:.12em;margin-bottom:6px;text-transform:uppercase">🏆 Leaderboard</div>' +
+        entries.map((e, i) => {
+            const col = i === 0 ? '#fa0' : i === 1 ? '#aaa' : i === 2 ? '#c96' : '#ccc';
+            return `<div style="display:flex;justify-content:space-between;gap:10px;color:${col};font-size:.8em;font-weight:700">
+                <span>${i + 1}. ${e.name.substring(0, 10)}</span>
+                <span style="color:#f33">${e.kos} KO</span>
+            </div>`;
+        }).join('');
+}
+
 // UI Elements
 const uiSelect = document.getElementById('multiplayer-select');
 const uiStatus = document.getElementById('multi-status');
 const uiHud = document.getElementById('ingame-net-hud');
 const nameInput = document.getElementById('multi-username');
 
-// --- 1. INTERCEPT MAP CLICKS (The Vibe-Code Hack) ---
-let pendingMapEvent = null;
-
-window.addEventListener('click', function(e) {
-    const card = e.target.closest('.map-card');
-    if (card && uiSelect.style.display === 'none') {
-        if (!e._isSimulated) {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            pendingMapEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
-            pendingMapEvent._isSimulated = true;
-            window._pendingCard = card;
-
-            const origMapSelect = document.getElementById('map-select');
-            if(origMapSelect) origMapSelect.style.display = 'none';
-            uiSelect.style.display = 'flex';
-        }
-    }
-}, true);
-
-function launchGame() {
-    uiSelect.style.display = 'none';
-    if(networkActive) uiHud.style.display = 'block';
-    if (window._pendingCard) window._pendingCard.dispatchEvent(pendingMapEvent);
-}
-
-// --- 2. MENU BUTTON HANDLERS ---
+// --- 1. MENU BUTTON HANDLERS ---
+// Solo: go directly to map select
 document.getElementById('btn-solo').addEventListener('click', () => {
     networkActive = false;
-    launchGame();
+    isHost = false;
+    uiSelect.style.display = 'none';
+    document.getElementById('map-select').style.display = 'flex';
 });
+
 document.getElementById('btn-host').addEventListener('click', () => {
     localUsername = nameInput.value.trim() || "Host";
     isHost = true;
     networkActive = true;
+    leaderboard = {};
     
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let roomCode = '';
@@ -1200,13 +1390,14 @@ document.getElementById('btn-host').addEventListener('click', () => {
     uiStatus.innerText = "STARTING SERVER...";
     
     peer.on('open', (id) => {
-        myId = id; 
-
+        myId = id;
+        updateLeaderboard(myId, localUsername, 0, 0);
         uiStatus.style.color = "#0fa";
-        uiStatus.innerText = `ROOM CODE: ${roomCode} (give this to other players) --- WAITING 3 SECONDS TO DEPLOY HOST...`;
+        uiStatus.innerText = `ROOM CODE: ${roomCode} — Share with friends!\nNow pick your map below.`;
         uiHud.innerText = `ROOM: ${roomCode} | PLAYERS: 1`;
-        
-        setTimeout(launchGame, 3000); 
+        // Show map select for the host to choose
+        uiSelect.style.display = 'none';
+        document.getElementById('map-select').style.display = 'flex';
     });
 
     peer.on('connection', (conn) => {
@@ -1215,6 +1406,11 @@ document.getElementById('btn-host').addEventListener('click', () => {
         conn.on('data', (data) => {
             if (data.type === 'clientInit') {
                 spawnRemotePlayer(conn.peer, data.name);
+                updateLeaderboard(conn.peer, data.name, 0, 0);
+                // If game already running, tell this client the current map
+                if (gameRunning) {
+                    conn.send({ type: 'mapAssign', mapId: currentMapId, mapSeed: currentMapSeed });
+                }
             }
             if (data.type === 'clientMove' && remotePlayers[conn.peer]) {
                 const rp = remotePlayers[conn.peer];
@@ -1224,16 +1420,58 @@ document.getElementById('btn-host').addEventListener('click', () => {
                 if (data.wIdx !== undefined) updateRemoteWeapon(conn.peer, data.wIdx);
             }
             if (data.type === 'fire') {
-                broadcastNetBullet(data.origin, data.dir, data.power, data.isPlayer);
+                broadcastNetBullet(data.origin, data.dir, data.power, data.isPlayer, conn.peer);
                 spawnNetBullet(data.origin, data.dir, data.power, data.isPlayer);
+            }
+            if (data.type === 'chat') {
+                appendChat(data.name, data.msg);
+                Object.values(clientConnections).forEach(c => {
+                    if (c.peer !== conn.peer && c.open) c.send({type: 'chat', name: data.name, msg: data.msg});
+                });
+            }
+            // Client claiming a kill they dealt
+            if (data.type === 'clientKill') {
+                // Find enemy by id and KO it on host side if not already dead
+                const enemy = enemies.find(e => e.id === data.enemyId && !e.koed);
+                if (enemy) {
+                    startEnemyRagdoll(enemy, enemy.position.clone());
+                    // Broadcast kill credit back to all clients
+                    const xpAmt = {soldier:10,sniper:20,heavy:30,scout:15,berserker:25,elite:40}[enemy.enemyType]||10;
+                    Object.values(clientConnections).forEach(c => {
+                        if (c.open) c.send({type:'killCredit', shooterId: conn.peer, enemyType: enemy.enemyType, xp: xpAmt});
+                    });
+                    // Update leaderboard for the client killer
+                    if (leaderboard[conn.peer]) {
+                        leaderboard[conn.peer].kos++;
+                        leaderboard[conn.peer].xp += xpAmt;
+                    }
+                }
+            }
+            if (data.type === 'leaderboardUpdate') {
+                if (leaderboard[conn.peer]) {
+                    leaderboard[conn.peer].kos = data.kos;
+                    leaderboard[conn.peer].xp = data.xp;
+                }
+                // Broadcast updated leaderboard to all
+                broadcastLeaderboard();
             }
         });
         conn.on('close', () => {
             removeRemotePlayer(conn.peer);
             delete clientConnections[conn.peer];
+            delete leaderboard[conn.peer];
+            broadcastLeaderboard();
         });
     });
 });
+
+function broadcastLeaderboard() {
+    const lb = Object.entries(leaderboard).map(([id, d]) => ({id, ...d}));
+    Object.values(clientConnections).forEach(c => {
+        if (c.open) c.send({type: 'leaderboard', data: lb});
+    });
+    renderLeaderboard();
+}
 
 document.getElementById('btn-join').addEventListener('click', () => {
     const code = document.getElementById('multi-room-code').value.trim().toUpperCase();
@@ -1242,27 +1480,32 @@ document.getElementById('btn-join').addEventListener('click', () => {
     localUsername = nameInput.value.trim() || "Player";
     isHost = false;
     networkActive = true;
-    
+    leaderboard = {};
+
     peer = new Peer();
     uiStatus.innerText = "LOCATING SERVER...";
     
     peer.on('open', (id) => {
         myId = id;
+        updateLeaderboard(myId, localUsername, 0, 0);
         hostConnection = peer.connect(GAME_PREFIX + code);
         
         hostConnection.on('open', () => {
             uiStatus.style.color = "#0fa";
-            uiStatus.innerText = `CONNECTED TO ${code}! WAITING FOR HOST DATA...`;
-            uiHud.innerText = `CONNECTED TO: ${code}`;
+            uiStatus.innerText = `CONNECTED TO ${code}! Waiting for host to start game...`;
+            uiHud.innerText = `ROOM: ${code}`;
             hostConnection.send({ type: 'clientInit', name: localUsername });
         });
 
         hostConnection.on('data', (data) => {
+            // Host explicitly tells this client which map to load
+            if (data.type === 'mapAssign' && !gameRunning) {
+                uiSelect.style.display = 'none';
+                if(uiHud) uiHud.style.display = 'block';
+                startGame(data.mapId, data.mapSeed);
+            }
             if (data.type === 'worldState') {
-                if (!gameRunning) {
-                    startGame(data.mapId, data.mapSeed);
-                    launchGame(); 
-                }
+                if (!gameRunning) return; // Wait for mapAssign first
                 const activeIds = Object.keys(data.players);
                 uiHud.innerText = `ROOM: ${code} | PLAYERS: ${activeIds.length}`;
                 
@@ -1271,7 +1514,7 @@ document.getElementById('btn-join').addEventListener('click', () => {
                     const pData = data.players[pid];
                     if(!remotePlayers[pid]) spawnRemotePlayer(pid, pData.name);
                   
-                   const rp = remotePlayers[pid];
+                    const rp = remotePlayers[pid];
                     rp.group.position.set(pData.x, pData.y, pData.z);
                     rp.group.rotation.y = pData.ry;
                     if(rp.head) rp.head.rotation.x = pData.rx;
@@ -1286,21 +1529,23 @@ document.getElementById('btn-join').addEventListener('click', () => {
                     data.enemies.forEach(ne => {
                         let localE = enemies.find(e => e.id === ne.id);
                         if (!localE && !ne.ko) {
-                            spawnEnemy(new THREE.Vector3(ne.x, ne.y, ne.z), ne.id, ne.t);
-                            localE = enemies[enemies.length - 1];
+                            // Spawn at exact host position
+                            spawnEnemyAt(new THREE.Vector3(ne.x, ne.y, ne.z), ne.id, ne.t);
+                            localE = enemies.find(e => e.id === ne.id);
                         }
-                        if (localE) {
+                        if (localE && !localE.koed) {
                             localE.position.set(ne.x, ne.y, ne.z);
                             localE.rotation.y = ne.ry;
                             localE.health = ne.hp;
-                            localE.onFire = ne.f;
+                            localE.onFire = ne.f || 0;
                             if (ne.ko && !localE.koed) {
-                                koEnemy(localE, localE.position.clone(), true);
+                                startEnemyRagdoll(localE, localE.position.clone());
                             }
                         }
                     });
+                    // Remove enemies that are gone on host
                     for (let i = enemies.length - 1; i >= 0; i--) {
-                        if (!data.enemies.find(ne => ne.id === enemies[i].id) && !enemies[i].koed) {
+                        if (!data.enemies.find(ne => ne.id === enemies[i].id)) {
                             scene.remove(enemies[i]);
                             enemies.splice(i, 1);
                         }
@@ -1308,6 +1553,34 @@ document.getElementById('btn-join').addEventListener('click', () => {
                 }
             }
             if (data.type === 'bullet') spawnNetBullet(data.origin, data.dir, data.power, data.isPlayer);
+            if (data.type === 'chat') appendChat(data.name, data.msg);
+            // Host telling this client they got a kill
+            if (data.type === 'killCredit') {
+                if (data.shooterId === myId) {
+                    // I got the kill!
+                    kos++;
+                    if($('ko-count')) $('ko-count').innerText = kos;
+                    addXP(data.xp);
+                    const healAmt = owned.lifesteal ? 5 : 2.5;
+                    if(playerHealth < maxHP()) playerHealth = Math.min(maxHP(), playerHealth + healAmt);
+                    if($('hp-count')) $('hp-count').innerText = Math.round(playerHealth);
+                    spawnkoFeed(data.enemyType);
+                    incrementAch('kos', 1);
+                    updateMissionProgress('kos', 1);
+                    // Sync updated stats to host
+                    if(hostConnection && hostConnection.open) {
+                        hostConnection.send({type:'leaderboardUpdate', kos, xp: sessionXP});
+                    }
+                } else {
+                    // Someone else got a kill — just show feed
+                    spawnkoFeed(data.enemyType);
+                }
+            }
+            if (data.type === 'leaderboard') {
+                leaderboard = {};
+                data.data.forEach(e => { leaderboard[e.id] = {name: e.name, kos: e.kos, xp: e.xp}; });
+                renderLeaderboard();
+            }
         });
         hostConnection.on('close', () => {
             uiHud.innerText = "DISCONNECTED FROM SERVER";
@@ -1398,7 +1671,8 @@ function updateRemoteWeapon(id, wIdx) {
     const wInfo = launchers[wIdx];
     if (wInfo) {
         const wMesh = createWeaponModel(wInfo);
-        wMesh.position.set(0, -0.3, 0.3);
+        wMesh.position.set(0.05, -0.65, 0.25); // Set right on hand
+        wMesh.rotation.x = -0.3; // Angle up, combating downward arm angle
         wMesh.scale.set(0.8, 0.8, 0.8);
         rp.armR.add(wMesh);
         rp.weaponMesh = wMesh;
@@ -1406,9 +1680,9 @@ function updateRemoteWeapon(id, wIdx) {
 }
 
 // --- 4. PROJECTILE SYNC & COMBAT ---
-function broadcastNetBullet(origin, dir, power, isPlayer) {
+function broadcastNetBullet(origin, dir, power, isPlayer, senderId = null) {
     Object.values(clientConnections).forEach(conn => {
-        if (conn.open) conn.send({ type: 'bullet', origin, dir, power, isPlayer });
+        if (conn.peer !== senderId && conn.open) conn.send({ type: 'bullet', origin, dir, power, isPlayer });
     });
 }
 
@@ -1502,9 +1776,9 @@ function networkSyncLoop() {
         rp.lastPos.copy(rp.group.position);
         
         if (moveDist > 0.005) {
-            rp.walkCycle += moveDist * 12;
+            rp.walkCycle += moveDist * 3.5; // Dialed way back from 12
             rp.armL.rotation.x = Math.sin(rp.walkCycle) * 0.5;
-             rp.armR.rotation.x = -Math.sin(rp.walkCycle) * 0.5 + Math.PI/4;
+            rp.armR.rotation.x = -Math.sin(rp.walkCycle) * 0.5 + Math.PI/4;
             rp.legL.rotation.x = -Math.sin(rp.walkCycle) * 0.5;
             rp.legR.rotation.x = Math.sin(rp.walkCycle) * 0.5;
         } else {
