@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>chatroom</title>
+    <title>Barebones P2P Chat</title>
 </head>
 <body>
     <div id="username-screen">
@@ -12,7 +12,7 @@
     </div>
 
     <div id="chat-screen" style="display: none;">
-        <h3 id="status">Detecting Network...</h3>
+        <h3 id="status">Connecting...</h3>
         <div id="chat-box" style="border: 1px solid #000; height: 200px; width: 300px; overflow-y: scroll; margin-bottom: 5px;"></div>
         <input type="text" id="msg-input" placeholder="Type a message..." />
         <button onclick="sendMessage()">Send</button>
@@ -20,8 +20,8 @@
 
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <script>
+        const ROOM_HOST_ID = "my-barebones-chat-room-host";
         let myUsername = "";
-        let networkRoomId = "";
         
         let peer = null;
         let hostConn = null;
@@ -29,8 +29,8 @@
         
         // Host Tracking Data
         let activeConnections = []; 
-        let usedUsernames = new Set();
-        let messageHistory = [];
+        let usedUsernames = new Set(); // Stores all past & present usernames
+        let messageHistory = [];       // Stores all chat messages from server start
 
         const ui = {
             userScreen: document.getElementById("username-screen"),
@@ -41,28 +41,14 @@
             msgIp: document.getElementById("msg-input")
         };
 
-        async function saveUsername() {
+        function saveUsername() {
             const val = ui.userIp.value.trim();
             if (!val) return alert("Username required!");
             myUsername = val;
             
             ui.userScreen.style.display = "none";
             ui.chatScreen.style.display = "block";
-
-            // Step 1: Fetch Public IP to identify local Wi-Fi network
-            try {
-                ui.status.innerText = "Finding Wi-Fi Network...";
-                const res = await fetch("https://api.ipify.org?format=json");
-                const data = await res.json();
-                
-                // Sanitize IP address to form a valid PeerJS ID string
-                const cleanIP = data.ip.replace(/[^a-zA-Z0-9]/g, "-");
-                networkRoomId = `wifi-chat-room-${cleanIP}`;
-                
-                initPeer();
-            } catch (err) {
-                alert("Failed to detect Wi-Fi network IP. Internet connection required.");
-            }
+            initPeer();
         }
 
         function appendChat(author, text) {
@@ -71,16 +57,15 @@
         }
 
         function initPeer() {
-            ui.status.innerText = "Attempting to Host for your Wi-Fi...";
-            // Try to claim the unique room ID for this Wi-Fi network
-            peer = new Peer(networkRoomId);
+            ui.status.innerText = "Attempting to Host...";
+            peer = new Peer(ROOM_HOST_ID);
 
             peer.on('open', () => {
                 isHost = true;
                 usedUsernames.add(myUsername);
-                ui.status.innerText = `Hosting Wi-Fi Room as "${myUsername}"`;
+                ui.status.innerText = `Hosting as "${myUsername}"`;
                 
-                const sysMsg = { type: "MSG", author: "SYSTEM", text: `${myUsername} started the Wi-Fi room.` };
+                const sysMsg = { type: "MSG", author: "SYSTEM", text: `${myUsername} started the chat room.` };
                 messageHistory.push(sysMsg);
                 appendChat(sysMsg.author, sysMsg.text);
                 
@@ -89,7 +74,7 @@
 
             peer.on('error', (err) => {
                 if (err.type === 'unavailable-id') {
-                    // Wi-Fi Host already exists! Join as a client to this network's host
+                    // Host exists, join as client
                     peer.destroy();
                     connectAsClient();
                 } else {
@@ -105,25 +90,30 @@
                     if (data.type === "JOIN_REQUEST") {
                         const reqName = data.username;
                         
+                        // Check if username was EVER used in this server session
                         if (usedUsernames.has(reqName)) {
-                            conn.send({ type: "JOIN_REJECT", reason: "Username taken on this Wi-Fi network." });
+                            conn.send({ type: "JOIN_REJECT", reason: "Username already taken or reserved." });
                             setTimeout(() => conn.close(), 500);
                             return;
                         }
 
+                        // Register user
                         usedUsernames.add(reqName);
                         conn.username = reqName;
                         activeConnections.push(conn);
 
+                        // Accept user and send existing message history
                         conn.send({ type: "JOIN_ACCEPT", history: messageHistory });
 
-                        const joinMsg = { type: "MSG", author: "SYSTEM", text: `${reqName} joined the room.` };
+                        // Announce system event
+                        const joinMsg = { type: "MSG", author: "SYSTEM", text: `${reqName} joined the chat.` };
                         messageHistory.push(joinMsg);
                         appendChat(joinMsg.author, joinMsg.text);
                         broadcast(joinMsg);
                     } 
                     
                     else if (data.type === "MSG") {
+                        // Store in history, display locally on host, relay to all clients
                         messageHistory.push(data);
                         appendChat(data.author, data.text);
                         broadcast(data);
@@ -153,11 +143,11 @@
         // --- CLIENT LOGIC ---
         function connectAsClient() {
             isHost = false;
-            ui.status.innerText = "Connecting to Wi-Fi Host...";
+            ui.status.innerText = "Connecting to Host...";
             peer = new Peer();
 
             peer.on('open', () => {
-                hostConn = peer.connect(networkRoomId, { reliable: true });
+                hostConn = peer.connect(ROOM_HOST_ID, { reliable: true });
 
                 hostConn.on('open', () => {
                     hostConn.send({ type: "JOIN_REQUEST", username: myUsername });
@@ -165,15 +155,16 @@
 
                 hostConn.on('data', (data) => {
                     if (data.type === "JOIN_ACCEPT") {
-                        ui.status.innerText = `Connected on Wi-Fi as "${myUsername}"`;
+                        ui.status.innerText = `Connected as "${myUsername}"`;
                         
+                        // Populate full chat history from server startup
                         if (data.history && Array.isArray(data.history)) {
                             data.history.forEach(msg => appendChat(msg.author, msg.text));
                         }
                     } 
                     else if (data.type === "JOIN_REJECT") {
                         alert(`Rejected: ${data.reason}`);
-                        location.reload();
+                        location.reload(); // Reset back to username selection
                     } 
                     else if (data.type === "MSG") {
                         appendChat(data.author, data.text);
@@ -181,8 +172,8 @@
                 });
 
                 hostConn.on('close', () => {
-                    ui.status.innerText = "Disconnected from Wi-Fi host.";
-                    appendChat("SYSTEM", "Host disconnected. Refresh to re-host or reconnect.");
+                    ui.status.innerText = "Disconnected from host.";
+                    appendChat("SYSTEM", "Host connection closed.");
                 });
             });
         }
