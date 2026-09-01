@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>chatroom</title>
+</head>
+<body>
+    <div id="username-screen">
+        <h3>Enter Username</h3>
+        <input type="text" id="username-input" placeholder="Choose a unique name..." />
+        <button onclick="saveUsername()">Join Chat</button>
+    </div>
+
+    <div id="chat-screen" style="display: none;">
+        <h3 id="status">Detecting Network...</h3>
+        <div id="chat-box" style="border: 1px solid #000; height: 200px; width: 300px; overflow-y: scroll; margin-bottom: 5px;"></div>
+        <input type="text" id="msg-input" placeholder="Type a message..." />
+        <button onclick="sendMessage()">Send</button>
+    </div>
+
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <script>
+        let myUsername = "";
+        let networkRoomId = "";
+        
+        let peer = null;
+        let hostConn = null;
+        let isHost = false;
+        
+        // Host Tracking Data
+        let activeConnections = []; 
+        let usedUsernames = new Set();
+        let messageHistory = [];
+
+        const ui = {
+            userScreen: document.getElementById("username-screen"),
+            chatScreen: document.getElementById("chat-screen"),
+            userIp: document.getElementById("username-input"),
+            status: document.getElementById("status"),
+            chatBox: document.getElementById("chat-box"),
+            msgIp: document.getElementById("msg-input")
+        };
+
+        async function saveUsername() {
+            const val = ui.userIp.value.trim();
+            if (!val) return alert("Username required!");
+            myUsername = val;
+            
+            ui.userScreen.style.display = "none";
+            ui.chatScreen.style.display = "block";
+
+            // Step 1: Fetch Public IP to identify local Wi-Fi network
+            try {
+                ui.status.innerText = "Finding Wi-Fi Network...";
+                const res = await fetch("https://api.ipify.org?format=json");
+                const data = await res.json();
+                
+                // Sanitize IP address to form a valid PeerJS ID string
+                const cleanIP = data.ip.replace(/[^a-zA-Z0-9]/g, "-");
+                networkRoomId = `wifi-chat-room-${cleanIP}`;
+                
+                initPeer();
+            } catch (err) {
+                alert("Failed to detect Wi-Fi network IP. Internet connection required.");
+            }
+        }
+
+        function appendChat(author, text) {
+            ui.chatBox.innerHTML += `<div><b>${author}:</b> ${text}</div>`;
+            ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
+        }
+
+        function initPeer() {
+            ui.status.innerText = "Attempting to Host for your Wi-Fi...";
+            // Try to claim the unique room ID for this Wi-Fi network
+            peer = new Peer(networkRoomId);
+
+            peer.on('open', () => {
+                isHost = true;
+                usedUsernames.add(myUsername);
+                ui.status.innerText = `Hosting Wi-Fi Room as "${myUsername}"`;
+                
+                const sysMsg = { type: "MSG", author: "SYSTEM", text: `${myUsername} started the Wi-Fi room.` };
+                messageHistory.push(sysMsg);
+                appendChat(sysMsg.author, sysMsg.text);
+                
+                setupHostListeners();
+            });
+
+            peer.on('error', (err) => {
+                if (err.type === 'unavailable-id') {
+                    // Wi-Fi Host already exists! Join as a client to this network's host
+                    peer.destroy();
+                    connectAsClient();
+                } else {
+                    alert(`Peer Error: ${err.type}`);
+                }
+            });
+        }
+
+        // --- HOST LOGIC ---
+        function setupHostListeners() {
+            peer.on('connection', (conn) => {
+                conn.on('data', (data) => {
+                    if (data.type === "JOIN_REQUEST") {
+                        const reqName = data.username;
+                        
+                        if (usedUsernames.has(reqName)) {
+                            conn.send({ type: "JOIN_REJECT", reason: "Username taken on this Wi-Fi network." });
+                            setTimeout(() => conn.close(), 500);
+                            return;
+                        }
+
+                        usedUsernames.add(reqName);
+                        conn.username = reqName;
+                        activeConnections.push(conn);
+
+                        conn.send({ type: "JOIN_ACCEPT", history: messageHistory });
+
+                        const joinMsg = { type: "MSG", author: "SYSTEM", text: `${reqName} joined the room.` };
+                        messageHistory.push(joinMsg);
+                        appendChat(joinMsg.author, joinMsg.text);
+                        broadcast(joinMsg);
+                    } 
+                    
+                    else if (data.type === "MSG") {
+                        messageHistory.push(data);
+                        appendChat(data.author, data.text);
+                        broadcast(data);
+                    }
+                });
+
+                conn.on('close', () => {
+                    if (conn.username) {
+                        activeConnections = activeConnections.filter(c => c !== conn);
+                        const leaveMsg = { type: "MSG", author: "SYSTEM", text: `${conn.username} left.` };
+                        messageHistory.push(leaveMsg);
+                        appendChat(leaveMsg.author, leaveMsg.text);
+                        broadcast(leaveMsg);
+                    }
+                });
+            });
+        }
+
+        function broadcast(data) {
+            activeConnections.forEach(c => {
+                if (c.open) {
+                    c.send(data);
+                }
+            });
+        }
+
+        // --- CLIENT LOGIC ---
+        function connectAsClient() {
+            isHost = false;
+            ui.status.innerText = "Connecting to Wi-Fi Host...";
+            peer = new Peer();
+
+            peer.on('open', () => {
+                hostConn = peer.connect(networkRoomId, { reliable: true });
+
+                hostConn.on('open', () => {
+                    hostConn.send({ type: "JOIN_REQUEST", username: myUsername });
+                });
+
+                hostConn.on('data', (data) => {
+                    if (data.type === "JOIN_ACCEPT") {
+                        ui.status.innerText = `Connected on Wi-Fi as "${myUsername}"`;
+                        
+                        if (data.history && Array.isArray(data.history)) {
+                            data.history.forEach(msg => appendChat(msg.author, msg.text));
+                        }
+                    } 
+                    else if (data.type === "JOIN_REJECT") {
+                        alert(`Rejected: ${data.reason}`);
+                        location.reload();
+                    } 
+                    else if (data.type === "MSG") {
+                        appendChat(data.author, data.text);
+                    }
+                });
+
+                hostConn.on('close', () => {
+                    ui.status.innerText = "Disconnected from Wi-Fi host.";
+                    appendChat("SYSTEM", "Host disconnected. Refresh to re-host or reconnect.");
+                });
+            });
+        }
+
+        // --- CHAT ACTIONS ---
+        function sendMessage() {
+            const text = ui.msgIp.value.trim();
+            if (!text) return;
+
+            const payload = { type: "MSG", author: myUsername, text: text };
+
+            if (isHost) {
+                messageHistory.push(payload);
+                appendChat(myUsername, text);
+                broadcast(payload);
+            } else if (hostConn && hostConn.open) {
+                hostConn.send(payload);
+            }
+
+            ui.msgIp.value = "";
+        }
+    </script>
+</body>
+</html>
