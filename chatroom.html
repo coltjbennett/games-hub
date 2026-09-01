@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>chat</title>
-</head> 
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cross-Device P2P Chat</title>
+</head>
 <body>
     <div id="username-screen">
         <h3>Enter Username</h3>
@@ -13,24 +14,44 @@
 
     <div id="chat-screen" style="display: none;">
         <h3 id="status">Connecting...</h3>
-        <div id="chat-box" style="border: 1px solid #000; height: 200px; width: 300px; overflow-y: scroll; margin-bottom: 5px;"></div>
+        <div id="chat-box" style="border: 1px solid #000; height: 220px; width: 320px; overflow-y: scroll; margin-bottom: 5px;"></div>
         <input type="text" id="msg-input" placeholder="Type a message..." />
         <button onclick="sendMessage()">Send</button>
     </div>
 
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <script>
-        const ROOM_HOST_ID = "my-barebones-chat-room-host";
+        const ROOM_HOST_ID = "my-global-chat-room-host-xyz";
         let myUsername = "";
         
         let peer = null;
         let hostConn = null;
         let isHost = false;
         
-        // Host Tracking Data
         let activeConnections = []; 
-        let usedUsernames = new Set(); // Stores all past & present usernames
-        let messageHistory = [];       // Stores all chat messages from server start
+        let usedUsernames = new Set();
+        let messageHistory = [];
+
+        // Cross-device network traversal config (STUN + TURN)
+        const peerConfig = {
+            config: {
+                iceServers: [
+                    { urls: "stun:stun.l.google.com:19302" },
+                    { urls: "stun:stun1.l.google.com:19302" },
+                    { urls: "stun:stun2.l.google.com:19302" },
+                    {
+                        urls: "turn:openrelay.metered.ca:80",
+                        username: "openrelayproject",
+                        credential: "openrelayproject"
+                    },
+                    {
+                        urls: "turn:openrelay.metered.ca:443",
+                        username: "openrelayproject",
+                        credential: "openrelayproject"
+                    }
+                ]
+            }
+        };
 
         const ui = {
             userScreen: document.getElementById("username-screen"),
@@ -57,28 +78,32 @@
         }
 
         function initPeer() {
-            ui.status.innerText = "Attempting to Host...";
-            peer = new Peer(ROOM_HOST_ID);
+            ui.status.innerText = "Attempting to claim Host...";
+            peer = new Peer(ROOM_HOST_ID, peerConfig);
 
             peer.on('open', () => {
                 isHost = true;
                 usedUsernames.add(myUsername);
-                ui.status.innerText = `Hosting as "${myUsername}"`;
+                ui.status.innerText = `[HOST] Logged in as "${myUsername}"`;
                 
-                const sysMsg = { type: "MSG", author: "SYSTEM", text: `${myUsername} started the chat room.` };
+                const sysMsg = { type: "MSG", author: "SYSTEM", text: `${myUsername} started the room.` };
                 messageHistory.push(sysMsg);
                 appendChat(sysMsg.author, sysMsg.text);
                 
                 setupHostListeners();
             });
 
+            peer.on('disconnected', () => {
+                ui.status.innerText = "Network disconnected. Reconnecting...";
+                peer.reconnect();
+            });
+
             peer.on('error', (err) => {
                 if (err.type === 'unavailable-id') {
-                    // Host exists, join as client
-                    peer.destroy();
+                    if (peer) peer.destroy();
                     connectAsClient();
                 } else {
-                    alert(`Peer Error: ${err.type}`);
+                    console.error("Peer error:", err);
                 }
             });
         }
@@ -90,30 +115,25 @@
                     if (data.type === "JOIN_REQUEST") {
                         const reqName = data.username;
                         
-                        // Check if username was EVER used in this server session
                         if (usedUsernames.has(reqName)) {
-                            conn.send({ type: "JOIN_REJECT", reason: "Username already taken or reserved." });
+                            conn.send({ type: "JOIN_REJECT", reason: "Username taken/reserved." });
                             setTimeout(() => conn.close(), 500);
                             return;
                         }
 
-                        // Register user
                         usedUsernames.add(reqName);
                         conn.username = reqName;
                         activeConnections.push(conn);
 
-                        // Accept user and send existing message history
+                        // Sync existing history to joining user
                         conn.send({ type: "JOIN_ACCEPT", history: messageHistory });
 
-                        // Announce system event
-                        const joinMsg = { type: "MSG", author: "SYSTEM", text: `${reqName} joined the chat.` };
+                        const joinMsg = { type: "MSG", author: "SYSTEM", text: `${reqName} joined.` };
                         messageHistory.push(joinMsg);
                         appendChat(joinMsg.author, joinMsg.text);
                         broadcast(joinMsg);
                     } 
-                    
                     else if (data.type === "MSG") {
-                        // Store in history, display locally on host, relay to all clients
                         messageHistory.push(data);
                         appendChat(data.author, data.text);
                         broadcast(data);
@@ -144,7 +164,7 @@
         function connectAsClient() {
             isHost = false;
             ui.status.innerText = "Connecting to Host...";
-            peer = new Peer();
+            peer = new Peer(peerConfig);
 
             peer.on('open', () => {
                 hostConn = peer.connect(ROOM_HOST_ID, { reliable: true });
@@ -155,16 +175,16 @@
 
                 hostConn.on('data', (data) => {
                     if (data.type === "JOIN_ACCEPT") {
-                        ui.status.innerText = `Connected as "${myUsername}"`;
+                        ui.status.innerText = `[CLIENT] Connected as "${myUsername}"`;
                         
-                        // Populate full chat history from server startup
+                        ui.chatBox.innerHTML = "";
                         if (data.history && Array.isArray(data.history)) {
                             data.history.forEach(msg => appendChat(msg.author, msg.text));
                         }
                     } 
                     else if (data.type === "JOIN_REJECT") {
                         alert(`Rejected: ${data.reason}`);
-                        location.reload(); // Reset back to username selection
+                        location.reload();
                     } 
                     else if (data.type === "MSG") {
                         appendChat(data.author, data.text);
@@ -172,9 +192,17 @@
                 });
 
                 hostConn.on('close', () => {
-                    ui.status.innerText = "Disconnected from host.";
-                    appendChat("SYSTEM", "Host connection closed.");
+                    ui.status.innerText = "Host lost. Attempting host takeover...";
+                    appendChat("SYSTEM", "Connection to host lost. Re-initializing...");
+                    
+                    setTimeout(() => {
+                        initPeer();
+                    }, 1500);
                 });
+            });
+
+            peer.on('disconnected', () => {
+                peer.reconnect();
             });
         }
 
