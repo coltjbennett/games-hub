@@ -3,55 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cross-Device P2P Chat</title>
+    <title>Universal Cross-Device Chat</title>
 </head>
 <body>
     <div id="username-screen">
         <h3>Enter Username</h3>
-        <input type="text" id="username-input" placeholder="Choose a unique name..." />
-        <button onclick="saveUsername()">Join Chat</button>
+        <input type="text" id="username-input" placeholder="Choose a name..." />
+        <button onclick="joinChat()">Join Chat</button>
     </div>
 
     <div id="chat-screen" style="display: none;">
-        <h3 id="status">Connecting...</h3>
+        <h3 id="status">Connecting to global network...</h3>
         <div id="chat-box" style="border: 1px solid #000; height: 220px; width: 320px; overflow-y: scroll; margin-bottom: 5px;"></div>
         <input type="text" id="msg-input" placeholder="Type a message..." />
         <button onclick="sendMessage()">Send</button>
     </div>
 
-    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <!-- MQTT Client Library over WebSockets -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
     <script>
-        const ROOM_HOST_ID = "my-global-chat-room-host-xyz";
+        // Universal Room Channel Key
+        const ROOM_TOPIC = "universal-public-chat-room-xyz123/messages";
+        
+        let client = null;
         let myUsername = "";
-        
-        let peer = null;
-        let hostConn = null;
-        let isHost = false;
-        
-        let activeConnections = []; 
         let usedUsernames = new Set();
-        let messageHistory = [];
-
-        // Cross-device network traversal config (STUN + TURN)
-        const peerConfig = {
-            config: {
-                iceServers: [
-                    { urls: "stun:stun.l.google.com:19302" },
-                    { urls: "stun:stun1.l.google.com:19302" },
-                    { urls: "stun:stun2.l.google.com:19302" },
-                    {
-                        urls: "turn:openrelay.metered.ca:80",
-                        username: "openrelayproject",
-                        credential: "openrelayproject"
-                    },
-                    {
-                        urls: "turn:openrelay.metered.ca:443",
-                        username: "openrelayproject",
-                        credential: "openrelayproject"
-                    }
-                ]
-            }
-        };
+        let isConnected = false;
 
         const ui = {
             userScreen: document.getElementById("username-screen"),
@@ -62,165 +39,68 @@
             msgIp: document.getElementById("msg-input")
         };
 
-        function saveUsername() {
-            const val = ui.userIp.value.trim();
-            if (!val) return alert("Username required!");
-            myUsername = val;
-            
-            ui.userScreen.style.display = "none";
-            ui.chatScreen.style.display = "block";
-            initPeer();
-        }
-
         function appendChat(author, text) {
             ui.chatBox.innerHTML += `<div><b>${author}:</b> ${text}</div>`;
             ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
         }
 
-        function initPeer() {
-            ui.status.innerText = "Attempting to claim Host...";
-            peer = new Peer(ROOM_HOST_ID, peerConfig);
+        function joinChat() {
+            const val = ui.userIp.value.trim();
+            if (!val) return alert("Username required!");
+            myUsername = val;
 
-            peer.on('open', () => {
-                isHost = true;
-                usedUsernames.add(myUsername);
-                ui.status.innerText = `[HOST] Logged in as "${myUsername}"`;
+            ui.userScreen.style.display = "none";
+            ui.chatScreen.style.display = "block";
+
+            // Connect to free public WebSockets broker (HiveMQ)
+            client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
+
+            client.on("connect", () => {
+                isConnected = true;
+                ui.status.innerText = `Connected as "${myUsername}"`;
                 
-                const sysMsg = { type: "MSG", author: "SYSTEM", text: `${myUsername} started the room.` };
-                messageHistory.push(sysMsg);
-                appendChat(sysMsg.author, sysMsg.text);
-                
-                setupHostListeners();
-            });
-
-            peer.on('disconnected', () => {
-                ui.status.innerText = "Network disconnected. Reconnecting...";
-                peer.reconnect();
-            });
-
-            peer.on('error', (err) => {
-                if (err.type === 'unavailable-id') {
-                    if (peer) peer.destroy();
-                    connectAsClient();
-                } else {
-                    console.error("Peer error:", err);
-                }
-            });
-        }
-
-        // --- HOST LOGIC ---
-        function setupHostListeners() {
-            peer.on('connection', (conn) => {
-                conn.on('data', (data) => {
-                    if (data.type === "JOIN_REQUEST") {
-                        const reqName = data.username;
-                        
-                        if (usedUsernames.has(reqName)) {
-                            conn.send({ type: "JOIN_REJECT", reason: "Username taken/reserved." });
-                            setTimeout(() => conn.close(), 500);
-                            return;
-                        }
-
-                        usedUsernames.add(reqName);
-                        conn.username = reqName;
-                        activeConnections.push(conn);
-
-                        // Sync existing history to joining user
-                        conn.send({ type: "JOIN_ACCEPT", history: messageHistory });
-
-                        const joinMsg = { type: "MSG", author: "SYSTEM", text: `${reqName} joined.` };
-                        messageHistory.push(joinMsg);
-                        appendChat(joinMsg.author, joinMsg.text);
-                        broadcast(joinMsg);
-                    } 
-                    else if (data.type === "MSG") {
-                        messageHistory.push(data);
-                        appendChat(data.author, data.text);
-                        broadcast(data);
-                    }
-                });
-
-                conn.on('close', () => {
-                    if (conn.username) {
-                        activeConnections = activeConnections.filter(c => c !== conn);
-                        const leaveMsg = { type: "MSG", author: "SYSTEM", text: `${conn.username} left.` };
-                        messageHistory.push(leaveMsg);
-                        appendChat(leaveMsg.author, leaveMsg.text);
-                        broadcast(leaveMsg);
+                // Subscribe to the shared room topic
+                client.subscribe(ROOM_TOPIC, (err) => {
+                    if (!err) {
+                        // Announce join event across all devices
+                        publishMessage({ type: "JOIN", author: myUsername });
                     }
                 });
             });
-        }
 
-        function broadcast(data) {
-            activeConnections.forEach(c => {
-                if (c.open) {
-                    c.send(data);
-                }
-            });
-        }
+            client.on("message", (topic, payload) => {
+                try {
+                    const data = JSON.parse(payload.toString());
 
-        // --- CLIENT LOGIC ---
-        function connectAsClient() {
-            isHost = false;
-            ui.status.innerText = "Connecting to Host...";
-            peer = new Peer(peerConfig);
-
-            peer.on('open', () => {
-                hostConn = peer.connect(ROOM_HOST_ID, { reliable: true });
-
-                hostConn.on('open', () => {
-                    hostConn.send({ type: "JOIN_REQUEST", username: myUsername });
-                });
-
-                hostConn.on('data', (data) => {
-                    if (data.type === "JOIN_ACCEPT") {
-                        ui.status.innerText = `[CLIENT] Connected as "${myUsername}"`;
-                        
-                        ui.chatBox.innerHTML = "";
-                        if (data.history && Array.isArray(data.history)) {
-                            data.history.forEach(msg => appendChat(msg.author, msg.text));
-                        }
-                    } 
-                    else if (data.type === "JOIN_REJECT") {
-                        alert(`Rejected: ${data.reason}`);
-                        location.reload();
+                    if (data.type === "JOIN") {
+                        usedUsernames.add(data.author);
+                        appendChat("SYSTEM", `${data.author} joined the room.`);
                     } 
                     else if (data.type === "MSG") {
                         appendChat(data.author, data.text);
                     }
-                });
-
-                hostConn.on('close', () => {
-                    ui.status.innerText = "Host lost. Attempting host takeover...";
-                    appendChat("SYSTEM", "Connection to host lost. Re-initializing...");
-                    
-                    setTimeout(() => {
-                        initPeer();
-                    }, 1500);
-                });
+                } catch (e) {
+                    console.error("Malformed packet", e);
+                }
             });
 
-            peer.on('disconnected', () => {
-                peer.reconnect();
+            client.on("error", (err) => {
+                ui.status.innerText = "Connection error!";
+                console.error(err);
             });
         }
 
-        // --- CHAT ACTIONS ---
+        function publishMessage(data) {
+            if (client && isConnected) {
+                client.publish(ROOM_TOPIC, JSON.stringify(data));
+            }
+        }
+
         function sendMessage() {
             const text = ui.msgIp.value.trim();
             if (!text) return;
 
-            const payload = { type: "MSG", author: myUsername, text: text };
-
-            if (isHost) {
-                messageHistory.push(payload);
-                appendChat(myUsername, text);
-                broadcast(payload);
-            } else if (hostConn && hostConn.open) {
-                hostConn.send(payload);
-            }
-
+            publishMessage({ type: "MSG", author: myUsername, text: text });
             ui.msgIp.value = "";
         }
     </script>
