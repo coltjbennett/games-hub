@@ -13,6 +13,7 @@ const classicList = document.getElementById('classic-list');
 const SORT_KEY = 'project-launcher-sort';
 const SEARCH_KEY = 'project-launcher-search';
 const STATUS_KEY = 'project-launcher-status';
+const CHAT_USERNAME_KEY = 'mqtt_chat_username_v1';
 
 const STATUS_META = {
   complete:   { label: 'Complete',      className: 'status--complete',   bucket: 'complete' },
@@ -367,6 +368,84 @@ function updateTaskbarClock() {
   if (dateEl) dateEl.textContent = now.toLocaleDateString('en-US', dateOptions);
 }
 
+// ===== CHATROOM WIDGET (launcher button, floating window, pending dot, online counter) =====
+function setupChatWidget() {
+  const launcherBtn = document.getElementById('chat-launcher-btn');
+  const pendingDot = document.getElementById('chat-pending-dot');
+  const chatWindow = document.getElementById('chat-window');
+  const chatFrame = document.getElementById('chat-frame');
+  const minimizeBtn = document.getElementById('chat-window-minimize-btn');
+  const closeBtn = document.getElementById('chat-window-close-btn');
+  const onlineCountEl = document.getElementById('online-count');
+
+  if (!launcherBtn || !chatWindow || !chatFrame) return;
+
+  let frameReady = false;
+  let hasPendingMessages = false;
+
+  function windowIsVisibleAndOpen() {
+    return !chatWindow.hidden && !chatWindow.classList.contains('minimized');
+  }
+
+  function setPendingDot(show) {
+    hasPendingMessages = show;
+    pendingDot.hidden = !show;
+  }
+
+  function openChatWindow() {
+    chatWindow.hidden = false;
+    chatWindow.classList.remove('minimized');
+    launcherBtn.setAttribute('aria-expanded', 'true');
+    setPendingDot(false);
+  }
+
+  function closeChatWindow() {
+    chatWindow.hidden = true;
+    chatWindow.classList.remove('minimized');
+    launcherBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  function minimizeChatWindow() {
+    chatWindow.classList.add('minimized');
+    launcherBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  launcherBtn.addEventListener('click', () => {
+    if (chatWindow.hidden || chatWindow.classList.contains('minimized')) {
+      openChatWindow();
+    } else {
+      closeChatWindow();
+    }
+  });
+
+  minimizeBtn.addEventListener('click', () => minimizeChatWindow());
+  closeBtn.addEventListener('click', () => closeChatWindow());
+
+  // Once the chat iframe has loaded, if a username was already saved from a previous visit,
+  // silently sign it back in so presence/online-count keeps working without any UI prompt.
+  chatFrame.addEventListener('load', () => {
+    frameReady = true;
+    const savedUsername = safeGet(CHAT_USERNAME_KEY);
+    if (savedUsername) {
+      chatFrame.contentWindow.postMessage({ source: 'host-page', kind: 'auto-join', username: savedUsername }, '*');
+    }
+  });
+
+  // Listen for presence counts and new-message pings from the chatroom iframe.
+  window.addEventListener('message', (event) => {
+    const data = event.data || {};
+    if (data.source !== 'universal-chat') return;
+
+    if (data.kind === 'presence') {
+      if (onlineCountEl) onlineCountEl.textContent = String(data.count);
+    } else if (data.kind === 'unread') {
+      if (!windowIsVisibleAndOpen()) {
+        setPendingDot(true);
+      }
+    }
+  });
+}
+
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded', () => {
   renderSiteData();
@@ -380,6 +459,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupVisitorCounter();
   setupToSModal();
   setupCRTToggle();
+  setupChatWidget();
   updateTaskbarClock();
   setInterval(updateTaskbarClock, 1000);
 });
