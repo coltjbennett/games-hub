@@ -3,32 +3,58 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Universal Cross-Device Chat</title>
+    <title>Universal MQTT Chat</title>
 </head>
-<body>
-    <div id="username-screen">
+<body style="margin: 0; padding: 0; font-family: sans-serif; box-sizing: border-box;">
+
+    <!-- Username Selection Screen -->
+    <div id="username-screen" style="padding: 20px;">
         <h3>Enter Username</h3>
         <input type="text" id="username-input" placeholder="Choose a name..." />
         <button onclick="joinChat()">Join Chat</button>
     </div>
 
-    <div id="chat-screen" style="display: none;">
-        <h3 id="status">Connecting to global network...</h3>
-        <div id="chat-box" style="border: 1px solid #000; height: 220px; width: 320px; overflow-y: scroll; margin-bottom: 5px;"></div>
-        <input type="text" id="msg-input" placeholder="Type a message..." />
-        <button onclick="sendMessage()">Send</button>
+    <!-- Main Chat Screen (Fills Entire Viewport) -->
+    <div id="chat-screen" style="display: none; height: 100vh; width: 100vw; box-sizing: border-box; padding: 10px; flex-direction: column;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h3 id="status" style="margin: 0;">Connecting to global network...</h3>
+            <button id="host-clear-btn" onclick="confirmClearAll()" style="display: none; background-color: #d9534f; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px; font-weight: bold;">Clear All History</button>
+        </div>
+        
+        <div style="display: flex; flex: 1; gap: 10px; min-height: 0;">
+            <!-- Main Chat Panel -->
+            <div style="flex: 3; display: flex; flex-direction: column; min-height: 0;">
+                <div id="chat-box" style="border: 1px solid #000; flex: 1; overflow-y: scroll; padding: 5px; box-sizing: border-box;"></div>
+                <div id="typing-indicator" style="height: 20px; font-size: 12px; color: #666; font-style: italic; line-height: 20px;"></div>
+                <div style="display: flex; gap: 5px;">
+                    <input type="text" id="msg-input" placeholder="Type a message or paste image URL..." oninput="handleTyping()" style="flex: 1;" onkeydown="if(event.key==='Enter') sendMessage()" />
+                    <button onclick="sendMessage()">Send</button>
+                </div>
+            </div>
+
+            <!-- Active Users Panel -->
+            <div style="flex: 1; border: 1px solid #000; padding: 5px; box-sizing: border-box; overflow-y: auto;">
+                <b style="font-size: 13px;">Online Users</b>
+                <ul id="user-list" style="padding-left: 15px; margin-top: 5px; font-size: 13px;"></ul>
+            </div>
+        </div>
     </div>
 
-    <!-- MQTT Client Library over WebSockets -->
+    <!-- MQTT Client Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
     <script>
-        // Universal Room Channel Key
-        const ROOM_TOPIC = "universal-public-chat-room-xyz123/messages";
-        
+        const ROOM_TOPIC = "universal-public-single-massive-room-v3-xyz123/messages";
+        const STORAGE_KEY = "mqtt_chat_history_cache_v2";
+
         let client = null;
         let myUsername = "";
-        let usedUsernames = new Set();
         let isConnected = false;
+        let isCurrentHost = false;
+        let currentHostName = "";
+        
+        let messageHistory = [];
+        let activeUsers = new Map(); 
+        let typingTimeout = null;
 
         const ui = {
             userScreen: document.getElementById("username-screen"),
@@ -36,11 +62,81 @@
             userIp: document.getElementById("username-input"),
             status: document.getElementById("status"),
             chatBox: document.getElementById("chat-box"),
-            msgIp: document.getElementById("msg-input")
+            msgIp: document.getElementById("msg-input"),
+            userList: document.getElementById("user-list"),
+            typing: document.getElementById("typing-indicator"),
+            hostClearBtn: document.getElementById("host-clear-btn")
         };
 
-        function appendChat(author, text) {
-            ui.chatBox.innerHTML += `<div><b>${author}:</b> ${text}</div>`;
+        function getUsernameColor(username) {
+            let hash = 5381;
+            for (let i = 0; i < username.length; i++) {
+                hash = ((hash << 5) + hash) + username.charCodeAt(i);
+                hash = hash & hash;
+            }
+            
+            const r = Math.abs((hash ^ 0xDEADBEEF) % 150);
+            const g = Math.abs((hash ^ 0xCAFEBABE) % 150);
+            const b = Math.abs((hash ^ 0x8BADF00D) % 150);
+
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+
+        function escapeHTML(str) {
+            return str.replace(/[&<>'"]/g, 
+                tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+            );
+        }
+
+        function formatMessageContent(rawText) {
+            const escaped = escapeHTML(rawText);
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+
+            return escaped.replace(urlRegex, (url) => {
+                const isImage = /\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i.test(url);
+                if (isImage) {
+                    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a><br/><img src="${url}" style="max-width: 250px; max-height: 200px; display: block; margin-top: 5px; border-radius: 4px; border: 1px solid #ccc;" alt="Shared Image" />`;
+                }
+                return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
+            });
+        }
+
+        function renderAllMessages() {
+            ui.chatBox.innerHTML = "";
+            messageHistory.forEach(msg => {
+                if (msg.isSystem) {
+                    appendSystemDOM(msg.text);
+                } else {
+                    appendMsgDOM(msg.id, msg.author, msg.text);
+                }
+            });
+            ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
+        }
+
+        function appendSystemDOM(text) {
+            let line = document.createElement("div");
+            line.style.color = "#8b0000";
+            line.style.fontWeight = "bold";
+            line.style.margin = "4px 0";
+            line.innerText = `[SYSTEM] ${text}`;
+            ui.chatBox.appendChild(line);
+            ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
+        }
+
+        function appendMsgDOM(msgId, author, text) {
+            let line = document.createElement("div");
+            line.id = `msg-${msgId}`;
+            line.style.margin = "4px 0";
+            const color = getUsernameColor(author);
+            
+            let deleteBtn = "";
+            if (author === myUsername) {
+                deleteBtn = `<button onclick="deleteMyMessage('${msgId}')" style="font-size: 10px; margin-right: 5px; cursor: pointer;">x</button>`;
+            }
+
+            const formattedContent = formatMessageContent(text);
+            line.innerHTML = `${deleteBtn}<b style="color: ${color};">${author}:</b> ${formattedContent}`;
+            ui.chatBox.appendChild(line);
             ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
         }
 
@@ -50,46 +146,239 @@
             myUsername = val;
 
             ui.userScreen.style.display = "none";
-            ui.chatScreen.style.display = "block";
+            ui.chatScreen.style.display = "flex";
 
-            // Connect to free public WebSockets broker (HiveMQ)
+            loadLocalHistory();
+
             client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
 
             client.on("connect", () => {
                 isConnected = true;
-                ui.status.innerText = `Connected as "${myUsername}"`;
+                const now = Date.now();
                 
-                // Subscribe to the shared room topic
+                activeUsers.set(myUsername, { lastSeen: now, joinTime: now });
+                updateStatusText();
+
                 client.subscribe(ROOM_TOPIC, (err) => {
                     if (!err) {
-                        // Announce join event across all devices
-                        publishMessage({ type: "JOIN", author: myUsername });
+                        publishMessage({ type: "JOIN", author: myUsername, joinTime: now });
+                        
+                        setInterval(sendHeartbeat, 5000);
+                        setInterval(checkPresence, 5000);
                     }
                 });
+            });
+
+            window.addEventListener("beforeunload", () => {
+                if (isConnected) {
+                    publishMessage({ type: "LEAVE", author: myUsername });
+                }
             });
 
             client.on("message", (topic, payload) => {
                 try {
                     const data = JSON.parse(payload.toString());
 
+                    if (data.author) {
+                        const existing = activeUsers.get(data.author);
+                        const joinTime = data.joinTime || (existing ? existing.joinTime : Date.now());
+                        activeUsers.set(data.author, { lastSeen: Date.now(), joinTime: joinTime });
+                        renderUserList();
+                    }
+
                     if (data.type === "JOIN") {
-                        usedUsernames.add(data.author);
-                        appendChat("SYSTEM", `${data.author} joined the room.`);
+                        const sysObj = { isSystem: true, text: `${data.author} joined the room.` };
+                        messageHistory.push(sysObj);
+                        saveLocalHistory();
+                        appendSystemDOM(sysObj.text);
+                        
+                        if (isCurrentHost && messageHistory.length > 0) {
+                            publishMessage({ type: "SYNC_HIST", history: messageHistory, target: data.author });
+                        }
                     } 
+                    else if (data.type === "LEAVE") {
+                        if (activeUsers.has(data.author)) {
+                            activeUsers.delete(data.author);
+                            const sysObj = { isSystem: true, text: `${data.author} disconnected.` };
+                            messageHistory.push(sysObj);
+                            saveLocalHistory();
+                            appendSystemDOM(sysObj.text);
+                            renderUserList();
+                            evaluateHostRole();
+                        }
+                    }
                     else if (data.type === "MSG") {
-                        appendChat(data.author, data.text);
+                        const msgObj = { id: data.id, author: data.author, text: data.text, isSystem: false };
+                        messageHistory.push(msgObj);
+                        saveLocalHistory();
+                        appendMsgDOM(msgObj.id, msgObj.author, msgObj.text);
+                    } 
+                    else if (data.type === "DELETE_MSG") {
+                        const index = messageHistory.findIndex(m => m.id === data.id);
+                        if (index !== -1 && messageHistory[index].author === data.author) {
+                            messageHistory.splice(index, 1);
+                            saveLocalHistory();
+                            renderAllMessages();
+                        }
+                    }
+                    else if (data.type === "CLEAR_ALL") {
+                        // Purge memory array and clear browser storage entirely
+                        messageHistory = [];
+                        try {
+                            localStorage.removeItem(STORAGE_KEY);
+                        } catch (e) {}
+
+                        renderAllMessages();
+                        appendSystemDOM(`Chat history was completely purged by the host (${data.author}).`);
+                    }
+                    else if (data.type === "TYPING") {
+                        if (data.author !== myUsername) {
+                            ui.typing.innerText = `${data.author} is typing...`;
+                            clearTimeout(data.typingTimer);
+                            data.typingTimer = setTimeout(() => { ui.typing.innerText = ""; }, 2500);
+                        }
+                    } 
+                    else if (data.type === "SYNC_HIST") {
+                        if (data.target === myUsername && messageHistory.length === 0) {
+                            messageHistory = data.history;
+                            saveLocalHistory();
+                            renderAllMessages();
+                        }
+                    }
+                    else if (data.type === "NEW_HOST") {
+                        currentHostName = data.author;
+                        isCurrentHost = (data.author === myUsername);
+                        updateStatusText();
+                        renderUserList();
                     }
                 } catch (e) {
                     console.error("Malformed packet", e);
                 }
             });
+        }
 
-            client.on("error", (err) => {
-                ui.status.innerText = "Connection error!";
-                console.error(err);
+        function deleteMyMessage(id) {
+            const msg = messageHistory.find(m => m.id === id);
+            if (msg && msg.author === myUsername) {
+                publishMessage({ type: "DELETE_MSG", id: id, author: myUsername });
+            }
+        }
+
+        function confirmClearAll() {
+            if (!isCurrentHost) return;
+            if (confirm("Are you sure you want to permanently delete all messages on every device?")) {
+                publishMessage({ type: "CLEAR_ALL", author: myUsername });
+            }
+        }
+
+        // --- HOST ELECTION & MIGRATION ---
+        function evaluateHostRole() {
+            if (activeUsers.size === 0) return;
+
+            const sortedUsers = Array.from(activeUsers.entries()).sort((a, b) => a[1].joinTime - b[1].joinTime);
+            const oldestUser = sortedUsers[0][0];
+
+            if (oldestUser !== currentHostName) {
+                currentHostName = oldestUser;
+                if (oldestUser === myUsername) {
+                    isCurrentHost = true;
+                    appendSystemDOM("You are now the room Host.");
+                    publishMessage({ type: "NEW_HOST", author: myUsername });
+                } else {
+                    isCurrentHost = false;
+                    appendSystemDOM(`${oldestUser} became the new room Host.`);
+                }
+                updateStatusText();
+                renderUserList();
+            }
+        }
+
+        function updateStatusText() {
+            const role = isCurrentHost ? "[HOST]" : "[CLIENT]";
+            ui.status.innerText = `${role} Connected as "${myUsername}"`;
+            ui.hostClearBtn.style.display = isCurrentHost ? "block" : "none";
+        }
+
+        // --- PRESENCE & USER LIST ---
+        function sendHeartbeat() {
+            if (isConnected) {
+                const selfData = activeUsers.get(myUsername);
+                publishMessage({ 
+                    type: "PING", 
+                    author: myUsername, 
+                    joinTime: selfData ? selfData.joinTime : Date.now() 
+                });
+            }
+        }
+
+        function checkPresence() {
+            const now = Date.now();
+            let changed = false;
+
+            activeUsers.forEach((userData, user) => {
+                if (user !== myUsername) {
+                    const elapsed = now - userData.lastSeen;
+                    if (elapsed > 60000) { 
+                        activeUsers.delete(user);
+                        const sysObj = { isSystem: true, text: `${user} disconnected.` };
+                        messageHistory.push(sysObj);
+                        saveLocalHistory();
+                        appendSystemDOM(sysObj.text);
+                        changed = true;
+                    }
+                }
+            });
+
+            if (changed || !currentHostName || !activeUsers.has(currentHostName)) {
+                renderUserList();
+                evaluateHostRole();
+            } else {
+                renderUserList();
+            }
+        }
+
+        function renderUserList() {
+            ui.userList.innerHTML = "";
+            const now = Date.now();
+
+            activeUsers.forEach((userData, user) => {
+                const color = getUsernameColor(user);
+                const hostBadge = user === currentHostName ? " (Host)" : "";
+                const selfBadge = user === myUsername ? " (You)" : "";
+                
+                const isInactive = (now - userData.lastSeen > 15000) && user !== myUsername;
+                const inactiveBadge = isInactive ? " <span style='font-size:11px; color:#888;'>(Inactive)</span>" : "";
+
+                ui.userList.innerHTML += `<li style="color: ${color}; font-weight: bold;">${user}${hostBadge}${selfBadge}${inactiveBadge}</li>`;
             });
         }
 
+        // --- TYPING INDICATOR ---
+        function handleTyping() {
+            if (!isConnected) return;
+            clearTimeout(typingTimeout);
+            publishMessage({ type: "TYPING", author: myUsername });
+            typingTimeout = setTimeout(() => {}, 2000);
+        }
+
+        // --- HISTORY MANAGEMENT ---
+        function saveLocalHistory() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(messageHistory.slice(-100)));
+            } catch (e) {}
+        }
+
+        function loadLocalHistory() {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            if (stored) {
+                try {
+                    messageHistory = JSON.parse(stored);
+                    renderAllMessages();
+                } catch (e) {}
+            }
+        }
+
+        // --- MESSAGING ---
         function publishMessage(data) {
             if (client && isConnected) {
                 client.publish(ROOM_TOPIC, JSON.stringify(data));
@@ -100,8 +389,11 @@
             const text = ui.msgIp.value.trim();
             if (!text) return;
 
-            publishMessage({ type: "MSG", author: myUsername, text: text });
+            const msgId = Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
+
+            publishMessage({ type: "MSG", id: msgId, author: myUsername, text: text });
             ui.msgIp.value = "";
+            ui.typing.innerText = "";
         }
     </script>
 </body>
