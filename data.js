@@ -9,7 +9,7 @@ const siteData = {
   heroNote: "Feel free to browse the current lineup, see what's there, and if anything's changed.<br>Please excuse any bugs you find; I am still learning.",
   marqueeText: "★★★ WELCOME TO COLTON'S PROJECT LAUNCHER ★★★ &nbsp;|&nbsp; BEST VIEWED IN 1024x768 &nbsp;|&nbsp; NETSCAPE NAVIGATOR 4.0 RECOMMENDED &nbsp;|&nbsp; ★★★ SIGN MY GUESTBOOK ★★★",
   footerCopyright: "© 2026 Colton Bennett",
-  footerLastUpdated: "September 2, 2026, 09:23:24"
+  footerLastUpdated: "September 2, 2026, 09:35:43"
 };
 
 const announcements = [
@@ -88,9 +88,9 @@ const projects = [
     url: 'games/labyrinthine.html',
     image: 'images/IMG_1922.jpeg',
     alt: 'Labyrinthine',
-    statusKey: 'new',
+    statusKey: 'wipBuggy',
     type: 'Horror',
-    tags: ['Horror', 'Survival', 'Under development'],
+    tags: ['Horror', 'Survival', 'Under Development', 'Development on hold'],
     description: 'You are trapped in a maze with entities that want only one thing: your head... on a plate! Shine your flashlight to freeze them, and use your weapons to survive.',
     featured: false
   },
