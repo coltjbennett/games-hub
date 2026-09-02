@@ -90,7 +90,7 @@ const projects = [
     alt: 'Labyrinthine',
     statusKey: 'wipBuggy',
     type: 'Horror',
-    tags: ['Horror', 'Survival', 'Under Development', 'Development on hold'],
+    tags: ['Horror', 'Survival', 'Under development', 'Development on hold'],
     description: 'You are trapped in a maze with entities that want only one thing: your head... on a plate! Shine your flashlight to freeze them, and use your weapons to survive.',
     featured: false
   },
