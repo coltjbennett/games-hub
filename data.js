@@ -9,21 +9,21 @@ const siteData = {
   heroNote: "Feel free to browse the current lineup, see what's there, and if anything's changed.<br>Please excuse any bugs you find; I am still learning.",
   marqueeText: "★★★ WELCOME TO COLTON'S PROJECT LAUNCHER ★★★ &nbsp;|&nbsp; BEST VIEWED IN 1024x768 &nbsp;|&nbsp; NETSCAPE NAVIGATOR 4.0 RECOMMENDED &nbsp;|&nbsp; ★★★ SIGN MY GUESTBOOK ★★★",
   footerCopyright: "© 2026 Colton Bennett",
-  footerLastUpdated: "June 17, 2026, 14:23:24"
+  footerLastUpdated: "September 2, 2026, 09:23:24"
 };
 
 const announcements = [
   {
     title: "New releases",
-    content: "Nothing's been published recently."
+    content: " - A Universal Chatroom is undergoing development; an early build is accessible by appending 'chatroom.html' after '/games-hub/' to the site's URL in your browser. - (09/02/2026)"
   },
   {
     title: "Game updates",
-    content: "PIXEL OPS NOW HAS CLIENT-SIDE MULTIPLAYER SUPPORT! TO JOIN A ROOM TOGETHER, HAVE EACH PLAYER SELECT THE SAME MAP, HAVE ONE PLAYER HOST A ROOM, AND GIVE THE OTHER PLAYERS THE CODE TO JOIN! - (06/17/2026)<br>Ghengis Khan Simulator now has secret content to unlock after beating lv. 100, plus some UI and UX improvements and a level select menu, as well as fixing some unit model innacuracies. - (06/11/2026)"
+    content: " - Multiplayer support using PeerJS is being implemented into Pixel Ops with GKS slated for it next. It is not currently working within Pixel Ops, I am looking into it. - (09/02/2026)"
   },
   {
     title: "Site updates",
-    content: " - It's been over a week since moving to Github becuase of a prime example of the 'Scunthorpe Problem' on OneCompiler.com, and it's been going great! Github is also easier to manage.<br> - AN APOLOGY TO ALL USERS: The move from OneCompiler to Github made the LocalStorage that holds your data on OneCompiler inaccessible. I am very sorry about this, but OneCompiler forced my hand to leave it by not letting me upload my games anymore. But your data <i>should</i> be safe from now on (as long as you don't clear your browser data, but that's on you if you do that...) - (06/11/26)<br> - THE SITE IS NOW 90's GEOCITIES THEMED BECAUSE WHY NOT! - (06/10/2026)<br> - CLASSIC GAMES ARE BACK! I finally moved them over from OneCompiler. Sorry for the delay on them, I was ironing out a few more pressing issues on the site. - (06/13/2026)"
+    content: " - It's been over three months since moving to Github becuase of a prime example of the 'Scunthorpe Problem' on OneCompiler.com, and it's been going great! Github is also easier to manage. - (09/02/26)"
   }
 ];
 
@@ -44,11 +44,11 @@ const projects = [
     url: 'games/ghengis.html',
     image: 'images/IMG_1987.jpeg',
     alt: 'Ghengis Khan Simulator',
-    statusKey: 'new',
+    statusKey: 'complete',
     type: 'Simulation',
     tags: ['War', 'Historical', 'Under development'],
     description: 'Become the legendary Mongol leader and lead the Mongol Horde to conquer China! Use strategic placements to ensure your victory!',
-    featured: true
+    featured: false
   },
   {
     title: 'MEGALITH',
@@ -59,14 +59,14 @@ const projects = [
     type: 'Endless',
     tags: ['Endless', 'Mobile', 'Top Pick'],
     description: 'Roll through a void of platforms, collect crystals, navigate changing sectors, and go for high scores in this fast-paced endless runner!',
-    featured: false
+    featured: true
   },
   {
     title: 'City Striker',
     url: 'games/city-striker.html',
     image: 'images/IMG_1891.jpeg',
     alt: 'City Striker',
-    statusKey: 'new',
+    statusKey: 'complete',
     type: 'Driving',
     tags: ['Driving', 'Chase'],
     description: 'The police are after you! Weave through traffic and between buildings to make them crash! Keep driving for as long as possible and your score will skyrocket!',
