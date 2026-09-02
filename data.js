@@ -15,7 +15,7 @@ const siteData = {
 const announcements = [
   {
     title: "New releases",
-    content: " - A Universal Chatroom is undergoing development; an early build is accessible by appending 'chatroom.html' after '/games-hub/' to the site's URL in your browser. - (09/02/2026)"
+    content: " - A Universal Chatroom has been fully implemented, press the 'chat' button in the bottom right to open it! It connects all users that are currently on the site. Private messages to individual users ARE coming soon. - (09/02/2026)"
   },
   {
     title: "Game updates",
