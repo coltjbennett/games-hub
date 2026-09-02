@@ -46,7 +46,7 @@ const projects = [
     alt: 'Ghengis Khan Simulator',
     statusKey: 'complete',
     type: 'Simulation',
-    tags: ['War', 'Historical', 'Under development'],
+    tags: ['War', 'Historical'],
     description: 'Become the legendary Mongol leader and lead the Mongol Horde to conquer China! Use strategic placements to ensure your victory!',
     featured: false
   },
