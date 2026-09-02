@@ -45,6 +45,7 @@
     <script>
         const ROOM_TOPIC = "universal-public-single-massive-room-v3-xyz123/messages";
         const STORAGE_KEY = "mqtt_chat_history_cache_v2";
+        const USERNAME_KEY = "mqtt_chat_username_v1";
 
         let client = null;
         let myUsername = "";
@@ -140,10 +141,47 @@
             ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
         }
 
-        function joinChat() {
-            const val = ui.userIp.value.trim();
+        // ---- HOST PAGE BRIDGE (postMessage) ----
+        // Lets the parent page (index.html) show a red "pending chat" dot and an online-user count
+        // without altering any of the chat's own behavior.
+        function notifyParent(msg) {
+            try {
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage(Object.assign({ source: "universal-chat" }, msg), "*");
+                }
+            } catch (e) {}
+        }
+
+        function notifyPresenceCount() {
+            notifyParent({ kind: "presence", count: activeUsers.size });
+        }
+
+        // Let the parent page request that we auto-join using a saved username,
+        // so returning visitors don't have to retype it.
+        window.addEventListener("message", (event) => {
+            const data = event.data || {};
+            if (data.source !== "host-page") return;
+
+            if (data.kind === "auto-join" && !isConnected && data.username) {
+                ui.userIp.value = data.username;
+                joinChat(data.username);
+            }
+        });
+
+        // Pre-fill (but do not auto-submit) any previously saved username for convenience
+        (function prefillSavedUsername() {
+            try {
+                const saved = localStorage.getItem(USERNAME_KEY);
+                if (saved) ui.userIp.value = saved;
+            } catch (e) {}
+        })();
+
+        function joinChat(presetName) {
+            const val = (presetName || ui.userIp.value.trim());
             if (!val) return alert("Username required!");
             myUsername = val;
+
+            try { localStorage.setItem(USERNAME_KEY, myUsername); } catch (e) {}
 
             ui.userScreen.style.display = "none";
             ui.chatScreen.style.display = "flex";
@@ -212,6 +250,11 @@
                         messageHistory.push(msgObj);
                         saveLocalHistory();
                         appendMsgDOM(msgObj.id, msgObj.author, msgObj.text);
+
+                        // Notify host page of a freshly-arrived message from someone else, for the unread indicator
+                        if (msgObj.author !== myUsername) {
+                            notifyParent({ kind: "unread" });
+                        }
                     } 
                     else if (data.type === "DELETE_MSG") {
                         const index = messageHistory.findIndex(m => m.id === data.id);
@@ -351,6 +394,8 @@
 
                 ui.userList.innerHTML += `<li style="color: ${color}; font-weight: bold;">${user}${hostBadge}${selfBadge}${inactiveBadge}</li>`;
             });
+
+            notifyPresenceCount();
         }
 
         // --- TYPING INDICATOR ---
