@@ -4,38 +4,245 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Universal MQTT Chat</title>
+    <style>
+        @font-face {
+            font-family: "W95FA";
+            src: url('images/w95f.woff2') format('woff2'),
+                 url('images/w95f.woff') format('woff');
+            font-weight: normal;
+            font-style: normal;
+        }
+
+        :root {
+            --win-bg: #c0c0c0;
+            --win-blue: #000080;
+            --win-text-dark: #000000;
+            --win-text-light: #ffffff;
+            --win-border-light: #ffffff;
+            --win-border-dark: #808080;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: "Times New Roman", Times, serif;
+            border-radius: 0;
+        }
+
+        body {
+            background-color: var(--win-bg);
+            color: var(--win-text-dark);
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            padding: 6px;
+            box-sizing: border-box;
+        }
+
+        .w95-font {
+            font-family: "W95FA", "MS Sans Serif", Tahoma, Arial, sans-serif !important;
+            -webkit-font-smoothing: none;
+            -moz-osx-font-smoothing: grayscale;
+            font-smooth: never;
+        }
+
+        button, .btn-w95 {
+            font-family: "W95FA", "MS Sans Serif", Tahoma, Arial, sans-serif !important;
+            -webkit-font-smoothing: none;
+            font-smooth: never;
+            background: var(--win-bg);
+            border: 2px outset var(--win-border-light);
+            padding: 2px 8px;
+            font-size: 12px;
+            color: var(--win-text-dark);
+            cursor: pointer;
+            outline: none;
+        }
+
+        button:active, .btn-w95:active {
+            border: 2px inset var(--win-border-light);
+        }
+
+        input[type="text"] {
+            background: #ffffff;
+            border: 2px inset var(--win-border-dark);
+            padding: 3px 5px;
+            font-family: "Times New Roman", Times, serif;
+            font-size: 13px;
+            color: var(--win-text-dark);
+            outline: none;
+        }
+
+        .inset-panel {
+            background: #ffffff;
+            border: 2px inset var(--win-border-dark);
+            overflow-y: auto;
+        }
+
+        .outset-panel {
+            background: var(--win-bg);
+            border: 2px outset var(--win-border-light);
+            padding: 6px;
+        }
+
+        /* Tabs System */
+        .tabs-header {
+            display: flex;
+            gap: 2px;
+            border-bottom: 2px solid var(--win-border-dark);
+            padding-left: 2px;
+            margin-bottom: 4px;
+        }
+
+        .tab-btn {
+            font-family: "W95FA", "MS Sans Serif", Tahoma, Arial, sans-serif !important;
+            -webkit-font-smoothing: none;
+            font-smooth: never;
+            padding: 3px 8px;
+            cursor: pointer;
+            background: var(--win-bg);
+            border: 2px outset var(--win-border-light);
+            border-bottom: none;
+            position: relative;
+            font-size: 12px;
+            margin-bottom: -2px;
+            z-index: 1;
+        }
+
+        .tab-btn.active {
+            font-weight: bold;
+            background: var(--win-bg);
+            border: 2px outset var(--win-border-light);
+            border-bottom: 2px solid var(--win-bg);
+            z-index: 3;
+        }
+
+        .unread-dot {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            width: 6px;
+            height: 6px;
+            background: #ff0000;
+        }
+
+        .reply-quote {
+            font-size: 11px;
+            opacity: 0.85;
+            border-left: 2px solid var(--win-blue);
+            padding-left: 4px;
+            margin-bottom: 2px;
+            background: #e0e0e0;
+            color: #000;
+            font-family: "Times New Roman", Times, serif;
+        }
+
+        .clickable-msg {
+            cursor: pointer;
+            padding: 2px 4px;
+        }
+
+        .clickable-msg:hover {
+            background: var(--win-blue);
+            color: #ffffff;
+        }
+
+        .clickable-msg:hover .reply-quote {
+            color: #000000;
+        }
+
+        .user-item {
+            cursor: pointer;
+            font-weight: bold;
+            padding: 2px 4px;
+            list-style: none;
+        }
+
+        .user-item:hover {
+            background: var(--win-blue);
+            color: #ffffff !important;
+        }
+
+        .blocked-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            background: var(--win-bg);
+            border: 2px outset var(--win-border-light);
+            padding: 1px 4px;
+            font-size: 11px;
+        }
+    </style>
 </head>
-<body style="margin: 0; padding: 0; font-family: sans-serif; box-sizing: border-box;">
+<body>
 
     <!-- Username Selection Screen -->
-    <div id="username-screen" style="padding: 20px;">
-        <h3>Enter Username</h3>
-        <input type="text" id="username-input" placeholder="Choose a name..." />
-        <button onclick="joinChat()">Join Chat</button>
+    <div id="username-screen" class="outset-panel" style="padding: 15px; margin: 20px auto; max-width: 320px;">
+        <h4 class="w95-font" style="margin-bottom: 8px;">Create Username</h4>
+        <input type="text" id="username-input" placeholder="Enter a username..." style="width: 100%; margin-bottom: 10px;" />
+        <button onclick="joinChat()" style="width: 100%;">Enter Chatroom</button>
     </div>
 
-    <!-- Main Chat Screen (Fills Entire Viewport) -->
-    <div id="chat-screen" style="display: none; height: 100vh; width: 100vw; box-sizing: border-box; padding: 10px; flex-direction: column;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-            <h3 id="status" style="margin: 0;">Connecting to global network...</h3>
-            <button id="host-clear-btn" onclick="confirmClearAll()" style="display: none; background-color: #d9534f; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px; font-weight: bold;">Clear All History</button>
+    <!-- Main Chat Screen -->
+    <div id="chat-screen" style="display: none; height: 100%; width: 100%; flex-direction: column;">
+        <!-- Header Controls -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <span id="status" class="w95-font" style="font-size: 12px; font-weight: bold;">Connecting to chatroom...</span>
+            <div style="display: flex; gap: 4px;">
+                <button onclick="toggleSettings()">Settings</button>
+                <button id="host-clear-btn" onclick="confirmClearAll()" style="display: none; background: #d9534f; color: white; font-weight: bold;">Clear All History</button>
+            </div>
         </div>
-        
-        <div style="display: flex; flex: 1; gap: 10px; min-height: 0;">
+
+        <!-- Settings Panel -->
+        <div id="settings-panel" class="outset-panel" style="display: none; margin-bottom: 6px;">
+            <b class="w95-font" style="font-size: 12px; display: block; margin-bottom: 6px;">User Settings</b>
+            <div style="display: flex; gap: 4px; align-items: center; margin-bottom: 6px;">
+                <label class="w95-font" style="font-size: 11px;">Username:</label>
+                <input type="text" id="new-username-input" placeholder="New username..." style="flex: 1;" />
+                <button onclick="changeUsername()">Update</button>
+            </div>
+            <div style="display: flex; gap: 4px; align-items: center; margin-bottom: 6px;">
+                <label class="w95-font" style="font-size: 11px;">Block User:</label>
+                <input type="text" id="block-input" placeholder="Username..." style="flex: 1;" />
+                <button onclick="blockUser()">Block</button>
+            </div>
+            <div class="w95-font" style="font-size: 11px; margin-bottom: 6px;">
+                <b>Blocked Users:</b>
+                <div id="blocked-list" style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;">None</div>
+            </div>
+            <button onclick="toggleSettings()" style="width: 100%;">Close Settings</button>
+        </div>
+
+        <!-- Tabs Header -->
+        <div id="tabs-bar" class="tabs-header">
+            <div id="tab-global" class="tab-btn active" onclick="switchTab('global')">Forum</div>
+        </div>
+
+        <!-- Inner Content Area -->
+        <div style="display: flex; flex: 1; gap: 6px; min-height: 0;">
             <!-- Main Chat Panel -->
             <div style="flex: 3; display: flex; flex-direction: column; min-height: 0;">
-                <div id="chat-box" style="border: 1px solid #000; flex: 1; overflow-y: scroll; padding: 5px; box-sizing: border-box;"></div>
-                <div id="typing-indicator" style="height: 20px; font-size: 12px; color: #666; font-style: italic; line-height: 20px;"></div>
-                <div style="display: flex; gap: 5px;">
-                    <input type="text" id="msg-input" placeholder="Type a message or paste image URL..." oninput="handleTyping()" style="flex: 1;" onkeydown="if(event.key==='Enter') sendMessage()" />
+                <div id="chat-box" class="inset-panel" style="flex: 1; padding: 4px;"></div>
+                <div id="typing-indicator" class="w95-font" style="height: 18px; font-size: 11px; color: #555; line-height: 18px;"></div>
+
+                <!-- Reply Bar Preview -->
+                <div id="reply-preview" class="outset-panel" style="display: none; font-size: 11px; padding: 3px 6px; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <span id="reply-text" style="font-family: 'Times New Roman', serif;"></span>
+                    <button onclick="cancelReply()" style="padding: 0 4px; line-height: 12px; font-weight: bold;">✕</button>
+                </div>
+
+                <div style="display: flex; gap: 4px;">
+                    <input type="text" id="msg-input" placeholder="Type a message or click to reply..." oninput="handleTyping()" style="flex: 1;" onkeydown="if(event.key==='Enter') sendMessage()" />
                     <button onclick="sendMessage()">Send</button>
                 </div>
             </div>
 
-            <!-- Active Users Panel -->
-            <div style="flex: 1; border: 1px solid #000; padding: 5px; box-sizing: border-box; overflow-y: auto;">
-                <b style="font-size: 13px;">Online Users</b>
-                <ul id="user-list" style="padding-left: 15px; margin-top: 5px; font-size: 13px;"></ul>
+            <!-- Online Users Sidebar -->
+            <div class="inset-panel" style="flex: 1; padding: 4px;">
+                <b class="w95-font" style="font-size: 11px; display: block; border-bottom: 1px solid #808080; padding-bottom: 2px;">Online Users</b>
+                <ul id="user-list" style="margin-top: 4px; font-size: 12px; padding-left: 0;"></ul>
             </div>
         </div>
     </div>
@@ -46,15 +253,24 @@
         const ROOM_TOPIC = "universal-public-single-massive-room-v3-xyz123/messages";
         const STORAGE_KEY = "mqtt_chat_history_cache_v2";
         const USERNAME_KEY = "mqtt_chat_username_v1";
+        const BLOCKED_KEY = "mqtt_chat_blocked_v1";
+        const VIP_HOSTS = ["Colton", "mr_puffy_5312"];
 
         let client = null;
         let myUsername = "";
         let isConnected = false;
         let isCurrentHost = false;
         let currentHostName = "";
-        
+
         let messageHistory = [];
-        let activeUsers = new Map(); 
+        let dmHistories = {};
+        let offlineDms = {};
+        let activeUsers = new Map();
+        let blockedUsers = new Set();
+
+        let currentTab = "global";
+        let unreadTabs = new Set();
+        let activeReply = null;
         let typingTimeout = null;
 
         const ui = {
@@ -66,49 +282,179 @@
             msgIp: document.getElementById("msg-input"),
             userList: document.getElementById("user-list"),
             typing: document.getElementById("typing-indicator"),
-            hostClearBtn: document.getElementById("host-clear-btn")
+            hostClearBtn: document.getElementById("host-clear-btn"),
+            tabsBar: document.getElementById("tabs-bar"),
+            replyPreview: document.getElementById("reply-preview"),
+            replyText: document.getElementById("reply-text"),
+            settingsPanel: document.getElementById("settings-panel"),
+            newUsernameIp: document.getElementById("new-username-input"),
+            blockIp: document.getElementById("block-input"),
+            blockedList: document.getElementById("blocked-list")
         };
+
+        function loadBlockedUsers() {
+            try {
+                const stored = localStorage.getItem(BLOCKED_KEY);
+                if (stored) blockedUsers = new Set(JSON.parse(stored));
+            } catch (e) {}
+            renderBlockedUI();
+        }
+
+        function saveBlockedUsers() {
+            try {
+                localStorage.setItem(BLOCKED_KEY, JSON.stringify(Array.from(blockedUsers)));
+            } catch (e) {}
+            renderBlockedUI();
+        }
+
+        function renderBlockedUI() {
+            ui.blockedList.innerHTML = "";
+            if (blockedUsers.size === 0) {
+                ui.blockedList.innerText = "None";
+                return;
+            }
+            blockedUsers.forEach(user => {
+                const chip = document.createElement("span");
+                chip.className = "blocked-chip w95-font";
+                chip.innerHTML = `${escapeHTML(user)} <button onclick="unblockUser('${escapeHTML(user)}')" style="padding:0 3px; font-size:9px;">✕</button>`;
+                ui.blockedList.appendChild(chip);
+            });
+        }
+
+        function toggleSettings() {
+            ui.settingsPanel.style.display = ui.settingsPanel.style.display === "none" ? "block" : "none";
+        }
+
+        function changeUsername() {
+            const newName = ui.newUsernameIp.value.trim();
+            if (!newName || newName === myUsername) return;
+            const oldName = myUsername;
+            myUsername = newName;
+            try { localStorage.setItem(USERNAME_KEY, myUsername); } catch (e) {}
+            
+            // Re-register self with new name
+            const selfData = activeUsers.get(oldName) || { joinTime: Date.now() };
+            activeUsers.delete(oldName);
+            activeUsers.set(myUsername, { lastSeen: Date.now(), joinTime: selfData.joinTime });
+
+            publishMessage({ type: "RENAME", oldAuthor: oldName, author: myUsername, joinTime: selfData.joinTime });
+            evaluateHostRole();
+            updateStatusText();
+            ui.newUsernameIp.value = "";
+            toggleSettings();
+        }
+
+        function blockUser() {
+            const name = ui.blockIp.value.trim();
+            if (name && name !== myUsername) {
+                blockedUsers.add(name);
+                saveBlockedUsers();
+                ui.blockIp.value = "";
+                renderActiveTabMessages();
+            }
+        }
+
+        function unblockUser(name) {
+            blockedUsers.delete(name);
+            saveBlockedUsers();
+            renderActiveTabMessages();
+        }
 
         function getUsernameColor(username) {
             let hash = 5381;
-            for (let i = 0; i < username.length; i++) {
-                hash = ((hash << 5) + hash) + username.charCodeAt(i);
-                hash = hash & hash;
-            }
-            
+            for (let i = 0; i < username.length; i++) hash = ((hash << 5) + hash) + username.charCodeAt(i);
             const r = Math.abs((hash ^ 0xDEADBEEF) % 150);
             const g = Math.abs((hash ^ 0xCAFEBABE) % 150);
             const b = Math.abs((hash ^ 0x8BADF00D) % 150);
-
             return `rgb(${r}, ${g}, ${b})`;
         }
 
         function escapeHTML(str) {
-            return str.replace(/[&<>'"]/g, 
-                tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
-            );
+            return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
         }
 
         function formatMessageContent(rawText) {
             const escaped = escapeHTML(rawText);
             const urlRegex = /(https?:\/\/[^\s]+)/g;
-
             return escaped.replace(urlRegex, (url) => {
                 const isImage = /\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i.test(url);
                 if (isImage) {
-                    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a><br/><img src="${url}" style="max-width: 250px; max-height: 200px; display: block; margin-top: 5px; border-radius: 4px; border: 1px solid #ccc;" alt="Shared Image" />`;
+                    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a><br/><img src="${url}" style="max-width: 220px; max-height: 180px; display: block; margin-top: 4px; border: 1px solid #ccc;" alt="Shared Image" />`;
                 }
                 return `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`;
             });
         }
 
-        function renderAllMessages() {
+        /* --- TAB MANAGEMENT --- */
+        function switchTab(tabId) {
+            currentTab = tabId;
+            unreadTabs.delete(tabId);
+
+            document.querySelectorAll(".tab-btn").forEach(el => el.classList.remove("active"));
+            const activeEl = document.getElementById(`tab-${tabId.replace(':', '-')}`);
+            if (activeEl) {
+                activeEl.classList.add("active");
+                const dot = activeEl.querySelector(".unread-dot");
+                if (dot) dot.remove();
+            }
+
+            renderActiveTabMessages();
+        }
+
+        function ensureDmTab(username) {
+            const tabId = `dm:${username}`;
+            if (!dmHistories[username]) {
+                dmHistories[username] = loadDmHistory(username);
+            }
+
+            const elementId = `tab-dm-${username}`;
+            if (!document.getElementById(elementId)) {
+                const tab = document.createElement("div");
+                tab.id = elementId;
+                tab.className = "tab-btn";
+                tab.innerText = `@${username}`;
+                tab.onclick = () => switchTab(tabId);
+                ui.tabsBar.appendChild(tab);
+            }
+            return tabId;
+        }
+
+        function markUnread(tabId) {
+            if (currentTab === tabId) return;
+            unreadTabs.add(tabId);
+            const elementId = `tab-${tabId.replace(':', '-')}`;
+            const tab = document.getElementById(elementId);
+            if (tab && !tab.querySelector(".unread-dot")) {
+                const dot = document.createElement("span");
+                dot.className = "unread-dot";
+                tab.appendChild(dot);
+            }
+        }
+
+        /* --- REPLIES --- */
+        function setReplyTarget(msg) {
+            activeReply = msg;
+            ui.replyText.innerText = `Replying to @${msg.author}: "${msg.text.substring(0, 25)}${msg.text.length > 25 ? '...' : ''}"`;
+            ui.replyPreview.style.display = "flex";
+            ui.msgIp.focus();
+        }
+
+        function cancelReply() {
+            activeReply = null;
+            ui.replyPreview.style.display = "none";
+        }
+
+        /* --- RENDERING --- */
+        function renderActiveTabMessages() {
             ui.chatBox.innerHTML = "";
-            messageHistory.forEach(msg => {
+            let list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
+
+            list.forEach(msg => {
+                if (blockedUsers.has(msg.author)) return;
                 if (msg.isSystem) {
                     appendSystemDOM(msg.text);
                 } else {
-                    appendMsgDOM(msg.id, msg.author, msg.text);
+                    appendMsgDOM(msg);
                 }
             });
             ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
@@ -118,32 +464,42 @@
             let line = document.createElement("div");
             line.style.color = "#8b0000";
             line.style.fontWeight = "bold";
-            line.style.margin = "4px 0";
+            line.style.margin = "2px 0";
+            line.style.fontSize = "12px";
             line.innerText = `[SYSTEM] ${text}`;
             ui.chatBox.appendChild(line);
             ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
         }
 
-        function appendMsgDOM(msgId, author, text) {
+        function appendMsgDOM(msg) {
             let line = document.createElement("div");
-            line.id = `msg-${msgId}`;
-            line.style.margin = "4px 0";
-            const color = getUsernameColor(author);
-            
+            line.id = `msg-${msg.id}`;
+            line.className = "clickable-msg";
+            line.style.margin = "2px 0";
+
+            line.onclick = (e) => {
+                if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A') {
+                    setReplyTarget(msg);
+                }
+            };
+
+            const color = getUsernameColor(msg.author);
             let deleteBtn = "";
-            if (author === myUsername) {
-                deleteBtn = `<button onclick="deleteMyMessage('${msgId}')" style="font-size: 10px; margin-right: 5px; cursor: pointer;">x</button>`;
+            if (msg.author === myUsername) {
+                deleteBtn = `<button onclick="deleteMyMessage('${msg.id}')" style="font-size: 9px; padding: 0 3px; margin-right: 4px;">x</button>`;
             }
 
-            const formattedContent = formatMessageContent(text);
-            line.innerHTML = `${deleteBtn}<b style="color: ${color};">${author}:</b> ${formattedContent}`;
+            let replyHtml = "";
+            if (msg.replyTo) {
+                replyHtml = `<div class="reply-quote"><b>@${escapeHTML(msg.replyTo.author)}:</b> ${escapeHTML(msg.replyTo.text)}</div>`;
+            }
+
+            const formattedContent = formatMessageContent(msg.text);
+            line.innerHTML = `${replyHtml}${deleteBtn}<b style="color: ${color};">${msg.author}:</b> ${formattedContent}`;
             ui.chatBox.appendChild(line);
             ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
         }
 
-        // ---- HOST PAGE BRIDGE (postMessage) ----
-        // Lets the parent page (index.html) show a red "pending chat" dot and an online-user count
-        // without altering any of the chat's own behavior.
         function notifyParent(msg) {
             try {
                 if (window.parent && window.parent !== window) {
@@ -156,24 +512,21 @@
             notifyParent({ kind: "presence", count: activeUsers.size });
         }
 
-        // Let the parent page request that we auto-join using a saved username,
-        // so returning visitors don't have to retype it.
         window.addEventListener("message", (event) => {
             const data = event.data || {};
             if (data.source !== "host-page") return;
-
             if (data.kind === "auto-join" && !isConnected && data.username) {
                 ui.userIp.value = data.username;
                 joinChat(data.username);
             }
         });
 
-        // Pre-fill (but do not auto-submit) any previously saved username for convenience
         (function prefillSavedUsername() {
             try {
                 const saved = localStorage.getItem(USERNAME_KEY);
                 if (saved) ui.userIp.value = saved;
             } catch (e) {}
+            loadBlockedUsers();
         })();
 
         function joinChat(presetName) {
@@ -193,14 +546,13 @@
             client.on("connect", () => {
                 isConnected = true;
                 const now = Date.now();
-                
+
                 activeUsers.set(myUsername, { lastSeen: now, joinTime: now });
-                updateStatusText();
+                evaluateHostRole();
 
                 client.subscribe(ROOM_TOPIC, (err) => {
                     if (!err) {
                         publishMessage({ type: "JOIN", author: myUsername, joinTime: now });
-                        
                         setInterval(sendHeartbeat, 5000);
                         setInterval(checkPresence, 5000);
                     }
@@ -208,84 +560,130 @@
             });
 
             window.addEventListener("beforeunload", () => {
-                if (isConnected) {
-                    publishMessage({ type: "LEAVE", author: myUsername });
-                }
+                if (isConnected) publishMessage({ type: "LEAVE", author: myUsername });
             });
 
             client.on("message", (topic, payload) => {
                 try {
                     const data = JSON.parse(payload.toString());
 
-                    if (data.author) {
+                    if (data.author && !blockedUsers.has(data.author)) {
                         const existing = activeUsers.get(data.author);
                         const joinTime = data.joinTime || (existing ? existing.joinTime : Date.now());
                         activeUsers.set(data.author, { lastSeen: Date.now(), joinTime: joinTime });
                         renderUserList();
+                        evaluateHostRole();
                     }
 
                     if (data.type === "JOIN") {
+                        if (blockedUsers.has(data.author)) return;
                         const sysObj = { isSystem: true, text: `${data.author} joined the room.` };
                         messageHistory.push(sysObj);
                         saveLocalHistory();
-                        appendSystemDOM(sysObj.text);
-                        
-                        if (isCurrentHost && messageHistory.length > 0) {
+                        if (currentTab === "global") appendSystemDOM(sysObj.text);
+
+                        if (isCurrentHost) {
                             publishMessage({ type: "SYNC_HIST", history: messageHistory, target: data.author });
+                            if (offlineDms[data.author] && offlineDms[data.author].length > 0) {
+                                publishMessage({ type: "OFFLINE_DM_DELIVERY", target: data.author, dms: offlineDms[data.author] });
+                                delete offlineDms[data.author];
+                            }
                         }
-                    } 
+                    }
                     else if (data.type === "LEAVE") {
                         if (activeUsers.has(data.author)) {
                             activeUsers.delete(data.author);
                             const sysObj = { isSystem: true, text: `${data.author} disconnected.` };
                             messageHistory.push(sysObj);
                             saveLocalHistory();
-                            appendSystemDOM(sysObj.text);
+                            if (currentTab === "global") appendSystemDOM(sysObj.text);
                             renderUserList();
                             evaluateHostRole();
                         }
                     }
                     else if (data.type === "MSG") {
-                        const msgObj = { id: data.id, author: data.author, text: data.text, isSystem: false };
+                        if (blockedUsers.has(data.author)) return;
+                        const msgObj = { id: data.id, author: data.author, text: data.text, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), isSystem: false };
                         messageHistory.push(msgObj);
                         saveLocalHistory();
-                        appendMsgDOM(msgObj.id, msgObj.author, msgObj.text);
 
-                        // Notify host page of a freshly-arrived message from someone else, for the unread indicator
+                        if (currentTab === "global") appendMsgDOM(msgObj);
+
                         if (msgObj.author !== myUsername) {
                             notifyParent({ kind: "unread" });
                         }
-                    } 
-                    else if (data.type === "DELETE_MSG") {
-                        const index = messageHistory.findIndex(m => m.id === data.id);
-                        if (index !== -1 && messageHistory[index].author === data.author) {
-                            messageHistory.splice(index, 1);
-                            saveLocalHistory();
-                            renderAllMessages();
+                    }
+                    else if (data.type === "DM") {
+                        if (blockedUsers.has(data.author)) return;
+                        if (isCurrentHost && !activeUsers.has(data.target) && data.target !== myUsername) {
+                            if (!offlineDms[data.target]) offlineDms[data.target] = [];
+                            offlineDms[data.target].push(data);
+                        }
+
+                        if (data.target === myUsername) {
+                            const tabId = ensureDmTab(data.author);
+                            const msgObj = { id: data.id, author: data.author, text: data.text, replyTo: data.replyTo, timestamp: data.timestamp || Date.now() };
+
+                            dmHistories[data.author] = mergeHistory(dmHistories[data.author] || [], [msgObj]);
+                            saveDmHistory(data.author);
+
+                            if (currentTab === tabId) {
+                                appendMsgDOM(msgObj);
+                            } else {
+                                markUnread(tabId);
+                            }
                         }
                     }
+                    else if (data.type === "OFFLINE_DM_DELIVERY") {
+                        if (data.target === myUsername && Array.isArray(data.dms)) {
+                            data.dms.forEach(dm => {
+                                const tabId = ensureDmTab(dm.author);
+                                const msgObj = { id: dm.id, author: dm.author, text: dm.text, replyTo: dm.replyTo, timestamp: dm.timestamp || Date.now() };
+                                dmHistories[dm.author] = mergeHistory(dmHistories[dm.author] || [], [msgObj]);
+                                saveDmHistory(dm.author);
+                                markUnread(tabId);
+                            });
+                        }
+                    }
+                    else if (data.type === "DELETE_MSG") {
+                        const idxG = messageHistory.findIndex(m => m.id === data.id);
+                        if (idxG !== -1 && messageHistory[idxG].author === data.author) {
+                            messageHistory.splice(idxG, 1);
+                            saveLocalHistory();
+                        }
+                        Object.keys(dmHistories).forEach(user => {
+                            const idxD = dmHistories[user].findIndex(m => m.id === data.id);
+                            if (idxD !== -1 && dmHistories[user][idxD].author === data.author) {
+                                dmHistories[user].splice(idxD, 1);
+                                saveDmHistory(user);
+                            }
+                        });
+                        renderActiveTabMessages();
+                    }
                     else if (data.type === "CLEAR_ALL") {
-                        // Purge memory array and clear browser storage entirely
                         messageHistory = [];
-                        try {
-                            localStorage.removeItem(STORAGE_KEY);
-                        } catch (e) {}
+                        try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
 
-                        renderAllMessages();
-                        appendSystemDOM(`Chat history was completely purged by the host (${data.author}).`);
+                        Object.keys(dmHistories).forEach(user => {
+                            dmHistories[user] = [];
+                            saveDmHistory(user);
+                        });
+
+                        renderActiveTabMessages();
+                        appendSystemDOM(`Chat and DM histories were completely purged by host (${data.author}).`);
                     }
                     else if (data.type === "TYPING") {
-                        if (data.author !== myUsername) {
+                        if (data.author !== myUsername && !blockedUsers.has(data.author)) {
                             ui.typing.innerText = `${data.author} is typing...`;
                             clearTimeout(data.typingTimer);
                             data.typingTimer = setTimeout(() => { ui.typing.innerText = ""; }, 3000);
                         }
-                    } 
+                    }
                     else if (data.type === "SYNC_HIST") {
-                        if (data.target === myUsername && messageHistory.length === 0) {
-                            messageHistory = data.history;
+                        if (data.target === myUsername) {
+                            messageHistory = mergeHistory(messageHistory, data.history || []);
                             saveLocalHistory();
-                            renderAllMessages();
+                            renderActiveTabMessages();
                         }
                     }
                     else if (data.type === "NEW_HOST") {
@@ -294,42 +692,71 @@
                         updateStatusText();
                         renderUserList();
                     }
+                    else if (data.type === "RENAME") {
+                        if (activeUsers.has(data.oldAuthor)) {
+                            const uData = activeUsers.get(data.oldAuthor);
+                            activeUsers.delete(data.oldAuthor);
+                            activeUsers.set(data.author, { lastSeen: Date.now(), joinTime: data.joinTime || uData.joinTime });
+                            appendSystemDOM(`${data.oldAuthor} changed name to ${data.author}`);
+                            renderUserList();
+                            evaluateHostRole();
+                        }
+                    }
                 } catch (e) {
                     console.error("Malformed packet", e);
                 }
             });
         }
 
+        function mergeHistory(local, remote) {
+            const map = new Map();
+            local.forEach(m => { if (m.id) map.set(m.id, m); });
+            remote.forEach(m => {
+                if (m.id && !map.has(m.id)) {
+                    map.set(m.id, m);
+                }
+            });
+            return Array.from(map.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        }
+
         function deleteMyMessage(id) {
-            const msg = messageHistory.find(m => m.id === id);
-            if (msg && msg.author === myUsername) {
-                publishMessage({ type: "DELETE_MSG", id: id, author: myUsername });
-            }
+            publishMessage({ type: "DELETE_MSG", id: id, author: myUsername });
         }
 
         function confirmClearAll() {
             if (!isCurrentHost) return;
-            if (confirm("Are you sure you want to permanently delete all messages on every device?")) {
+            if (confirm("Are you sure you want to permanently delete global & DM messages on all devices?")) {
                 publishMessage({ type: "CLEAR_ALL", author: myUsername });
             }
         }
 
-        // --- HOST ELECTION & MIGRATION ---
+        /* --- VIP HOST ELECTION HIERARCHY --- */
         function evaluateHostRole() {
             if (activeUsers.size === 0) return;
 
             const sortedUsers = Array.from(activeUsers.entries()).sort((a, b) => a[1].joinTime - b[1].joinTime);
-            const oldestUser = sortedUsers[0][0];
 
-            if (oldestUser !== currentHostName) {
-                currentHostName = oldestUser;
-                if (oldestUser === myUsername) {
+            // Filter online VIP users (Colton & mr_puffy_5312)
+            const activeVips = sortedUsers.filter(([user]) => VIP_HOSTS.includes(user));
+
+            let designatedHost = "";
+            if (activeVips.length > 0) {
+                // Older online VIP gets host
+                designatedHost = activeVips[0][0];
+            } else {
+                // Otherwise standard oldest online user gets host
+                designatedHost = sortedUsers[0][0];
+            }
+
+            if (designatedHost !== currentHostName) {
+                currentHostName = designatedHost;
+                if (designatedHost === myUsername) {
                     isCurrentHost = true;
                     appendSystemDOM("You are now the room Host.");
                     publishMessage({ type: "NEW_HOST", author: myUsername });
                 } else {
                     isCurrentHost = false;
-                    appendSystemDOM(`${oldestUser} became the new room Host.`);
+                    appendSystemDOM(`${designatedHost} became the new room Host.`);
                 }
                 updateStatusText();
                 renderUserList();
@@ -342,15 +769,11 @@
             ui.hostClearBtn.style.display = isCurrentHost ? "block" : "none";
         }
 
-        // --- PRESENCE & USER LIST ---
+        /* --- PRESENCE & USER LIST --- */
         function sendHeartbeat() {
             if (isConnected) {
                 const selfData = activeUsers.get(myUsername);
-                publishMessage({ 
-                    type: "PING", 
-                    author: myUsername, 
-                    joinTime: selfData ? selfData.joinTime : Date.now() 
-                });
+                publishMessage({ type: "PING", author: myUsername, joinTime: selfData ? selfData.joinTime : Date.now() });
             }
         }
 
@@ -360,13 +783,12 @@
 
             activeUsers.forEach((userData, user) => {
                 if (user !== myUsername) {
-                    const elapsed = now - userData.lastSeen;
-                    if (elapsed > 60000) { 
+                    if (now - userData.lastSeen > 60000) {
                         activeUsers.delete(user);
                         const sysObj = { isSystem: true, text: `${user} disconnected.` };
                         messageHistory.push(sysObj);
                         saveLocalHistory();
-                        appendSystemDOM(sysObj.text);
+                        if (currentTab === "global") appendSystemDOM(sysObj.text);
                         changed = true;
                     }
                 }
@@ -385,20 +807,26 @@
             const now = Date.now();
 
             activeUsers.forEach((userData, user) => {
+                if (blockedUsers.has(user)) return;
                 const color = getUsernameColor(user);
                 const hostBadge = user === currentHostName ? " (Host)" : "";
                 const selfBadge = user === myUsername ? " (You)" : "";
-                
-                const isInactive = (now - userData.lastSeen > 10000) && user !== myUsername;
-                const inactiveBadge = isInactive ? " <span style='font-size:11px; color:#888;'>(Inactive)</span>" : "";
 
-                ui.userList.innerHTML += `<li style="color: ${color}; font-weight: bold;">${user}${hostBadge}${selfBadge}${inactiveBadge}</li>`;
+                const isInactive = (now - userData.lastSeen > 10000) && user !== myUsername;
+                const inactiveBadge = isInactive ? " <span style='font-size:10px; color:#888;'>(Inactive)</span>" : "";
+
+                const clickHandler = user !== myUsername ? `onclick="startDmWith('${user}')"` : "";
+                ui.userList.innerHTML += `<li class="user-item" ${clickHandler} style="color: ${color};">${user}${hostBadge}${selfBadge}${inactiveBadge}</li>`;
             });
 
             notifyPresenceCount();
         }
 
-        // --- TYPING INDICATOR ---
+        function startDmWith(username) {
+            const tabId = ensureDmTab(username);
+            switchTab(tabId);
+        }
+
         function handleTyping() {
             if (!isConnected) return;
             clearTimeout(typingTimeout);
@@ -406,11 +834,9 @@
             typingTimeout = setTimeout(() => {}, 3000);
         }
 
-        // --- HISTORY MANAGEMENT ---
+        /* --- LOCAL STORAGE --- */
         function saveLocalHistory() {
-            try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(messageHistory.slice(-100)));
-            } catch (e) {}
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(messageHistory.slice(-200))); } catch (e) {}
         }
 
         function loadLocalHistory() {
@@ -418,12 +844,27 @@
             if (stored) {
                 try {
                     messageHistory = JSON.parse(stored);
-                    renderAllMessages();
+                    renderActiveTabMessages();
                 } catch (e) {}
             }
         }
 
-        // --- MESSAGING ---
+        function saveDmHistory(otherUser) {
+            try {
+                const key = `mqtt_dm_${myUsername}_${otherUser}`;
+                localStorage.setItem(key, JSON.stringify((dmHistories[otherUser] || []).slice(-100)));
+            } catch(e) {}
+        }
+
+        function loadDmHistory(otherUser) {
+            try {
+                const key = `mqtt_dm_${myUsername}_${otherUser}`;
+                const stored = localStorage.getItem(key);
+                return stored ? JSON.parse(stored) : [];
+            } catch(e) { return []; }
+        }
+
+        /* --- MESSAGING --- */
         function publishMessage(data) {
             if (client && isConnected) {
                 client.publish(ROOM_TOPIC, JSON.stringify(data));
@@ -435,10 +876,24 @@
             if (!text) return;
 
             const msgId = Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
+            const timestamp = Date.now();
 
-            publishMessage({ type: "MSG", id: msgId, author: myUsername, text: text });
+            if (currentTab === "global") {
+                const payload = { type: "MSG", id: msgId, author: myUsername, text: text, timestamp: timestamp, replyTo: activeReply };
+                publishMessage(payload);
+            } else {
+                const targetUser = currentTab.replace("dm:", "");
+                const payload = { type: "DM", id: msgId, author: myUsername, target: targetUser, text: text, timestamp: timestamp, replyTo: activeReply };
+
+                dmHistories[targetUser] = mergeHistory(dmHistories[targetUser] || [], [payload]);
+                saveDmHistory(targetUser);
+                appendMsgDOM(payload);
+                publishMessage(payload);
+            }
+
             ui.msgIp.value = "";
             ui.typing.innerText = "";
+            cancelReply();
         }
     </script>
 </body>
