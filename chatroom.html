@@ -89,7 +89,15 @@
             border-bottom: 2px solid var(--win-border-dark);
             padding-left: 2px;
             margin-bottom: 4px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            white-space: nowrap;
+            flex-wrap: nowrap;
         }
+        
+        .tabs-header::-webkit-scrollbar { height: 6px; }
+        .tabs-header::-webkit-scrollbar-track { background: var(--win-bg); border-top: 1px solid var(--win-border-dark); }
+        .tabs-header::-webkit-scrollbar-thumb { background: #dfdfdf; border: 1px outset var(--win-border-light); }
 
         .tab-btn {
             padding: 3px 8px;
@@ -101,6 +109,7 @@
             font-size: 13px;
             margin-bottom: -2px;
             z-index: 1;
+            flex-shrink: 0;
         }
 
         .tab-btn.active {
@@ -205,9 +214,16 @@
         .admin-only:hover { color: #ffffff; background: #8b0000; }
 
         audio { height: 25px; outline: none; margin-top: 4px; }
+        
+        #toast-container { position: fixed; bottom: 10px; right: 10px; z-index: 9999; display: flex; flex-direction: column; gap: 6px; }
+        .toast-msg { background: var(--win-blue); color: white; border: 2px outset var(--win-border-light); padding: 6px 12px; font-size: 13px; box-shadow: 2px 2px 5px rgba(0,0,0,0.5); }
     </style>
+    <!-- Compression Library for heavy JSON & Files -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
 </head>
 <body>
+
+    <div id="toast-container"></div>
 
     <!-- Context Menu -->
     <div id="context-menu">
@@ -344,8 +360,8 @@
     <!-- MQTT Client Library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
     <script>
-        const ROOM_TOPIC = "universal-public-single-massive-room-v3-xyz123/messages";
-        const STORAGE_KEY = "mqtt_chat_history_cache_v2";
+        const ROOM_TOPIC = "universal-public-single-massive-room-v4-xyz123/messages";
+        const STORAGE_KEY = "mqtt_chat_history_cache_v3";
         const USERNAME_KEY = "mqtt_chat_username_v1";
         const BLOCKED_KEY = "mqtt_chat_blocked_v1";
         const ADMINS = ["Colton", "mr_puffy_5312"];
@@ -359,6 +375,7 @@
         let dmHistories = {};
         let activeUsers = new Map();
         let blockedUsers = new Set();
+        let chunkBuffers = {}; // For reassembling compressed network chunks
 
         let currentTab = "global";
         let unreadTabs = new Set();
@@ -406,8 +423,40 @@
             contextMenu: document.getElementById("context-menu")
         };
 
+        // Garbage collection for orphaned network chunks
+        setInterval(() => {
+            const now = Date.now();
+            Object.keys(chunkBuffers).forEach(tId => {
+                if (now - chunkBuffers[tId].ts > 60000) delete chunkBuffers[tId];
+            });
+        }, 30000);
+
         /* --- GLOBAL EVENT LISTENERS --- */
         document.addEventListener("click", () => { ui.contextMenu.style.display = "none"; });
+
+        /* --- SOUND & TOASTS --- */
+        function playPingSound() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.type = "sine";
+                osc.frequency.setValueAtTime(800, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0, ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.5, ctx.currentTime + 0.05);
+                gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+                osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.3);
+            } catch(e){}
+        }
+
+        function showToast(msg) {
+            playPingSound();
+            const t = document.createElement("div"); t.className = "toast-msg"; t.innerText = msg;
+            document.getElementById("toast-container").appendChild(t);
+            setTimeout(() => t.remove(), 5000);
+        }
 
         /* --- MODALS & PENALTIES --- */
         function openModal(id) { document.getElementById(id).style.display = "flex"; }
@@ -415,8 +464,7 @@
         function customAlert(text) { document.getElementById('alert-text').innerText = text; openModal('alert-modal'); }
 
         function openPasswordModal(action, name = "") {
-            pendingAction = action;
-            pendingName = name;
+            pendingAction = action; pendingName = name;
             document.getElementById('unban-password').value = "";
             document.getElementById('password-modal-title').innerText = action === 'unban' ? 'Admin Override' : 'Admin Authentication';
             openModal('password-modal');
@@ -425,15 +473,11 @@
         function submitPassword() {
             const pwd = document.getElementById("unban-password").value;
             if (pendingAction === 'unban') {
-                if (pwd === "adminpass") {
-                    localStorage.removeItem("mqtt_banned");
-                    location.reload();
-                } else { customAlert("Incorrect password."); }
+                if (pwd === "adminpass") { localStorage.removeItem("mqtt_banned"); location.reload(); } else { customAlert("Incorrect password."); }
             } else if (pendingAction === 'join_admin' || pendingAction === 'change_admin') {
                 if (pwd === "adminpass") {
                     closeModal("password-modal");
-                    if (pendingAction === 'join_admin') executeJoin(pendingName);
-                    else executeChangeUsername(pendingName);
+                    if (pendingAction === 'join_admin') executeJoin(pendingName); else executeChangeUsername(pendingName);
                 } else { customAlert("Incorrect admin password."); }
             }
             document.getElementById("unban-password").value = "";
@@ -442,30 +486,19 @@
         function checkPenalties() {
             if (localStorage.getItem("mqtt_banned") === "true") {
                 ui.userScreen.style.display = "none"; ui.chatScreen.style.display = "none";
-                ui.penaltyScreen.style.display = "flex";
-                ui.penaltyTitle.innerText = "ACCESS DENIED";
-                ui.penaltyDesc.innerText = "You are permanently banned.";
-                ui.banInfoBtn.style.display = "block";
-                if (client) client.end();
-                return true;
+                ui.penaltyScreen.style.display = "flex"; ui.penaltyTitle.innerText = "ACCESS DENIED"; ui.penaltyDesc.innerText = "You are permanently banned."; ui.banInfoBtn.style.display = "block";
+                if (client) client.end(); return true;
             }
             const kickEnd = parseInt(localStorage.getItem("mqtt_timeout") || "0");
             if (Date.now() < kickEnd) {
                 ui.userScreen.style.display = "none"; ui.chatScreen.style.display = "none";
                 ui.penaltyScreen.style.display = "flex"; ui.banInfoBtn.style.display = "none";
                 if (client) client.end();
-
                 if(kickInterval) clearInterval(kickInterval);
                 kickInterval = setInterval(() => {
                     const remaining = Math.ceil((kickEnd - Date.now()) / 1000);
-                    if (remaining <= 0) {
-                        clearInterval(kickInterval);
-                        localStorage.removeItem("mqtt_timeout");
-                        location.reload();
-                    } else {
-                        ui.penaltyTitle.innerText = "TIMED OUT";
-                        ui.penaltyDesc.innerText = `You are timed out. Time remaining: ${remaining}s`;
-                    }
+                    if (remaining <= 0) { clearInterval(kickInterval); localStorage.removeItem("mqtt_timeout"); location.reload(); } 
+                    else { ui.penaltyTitle.innerText = "TIMED OUT"; ui.penaltyDesc.innerText = `You are timed out. Time remaining: ${remaining}s`; }
                 }, 1000);
                 return true;
             }
@@ -480,22 +513,17 @@
                     mediaRecorder = new MediaRecorder(stream);
                     mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
                     mediaRecorder.onstop = () => {
-                        const mimeType = mediaRecorder.mimeType || 'audio/webm';
-                        const blob = new Blob(audioChunks, { type: mimeType });
-                        audioChunks = [];
+                        const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' }); audioChunks = [];
                         const reader = new FileReader();
                         reader.onloadend = () => sendPayload(reader.result, { isAudio: true });
                         reader.readAsDataURL(blob);
                     };
-                    audioChunks = [];
-                    mediaRecorder.start();
+                    audioChunks = []; mediaRecorder.start();
                     ui.btnRecord.style.background = "#ff9999";
                     setTimeout(() => { if(mediaRecorder && mediaRecorder.state !== "inactive") toggleRecording(); }, 30000);
                 } catch(e) { customAlert("Microphone access denied."); }
             } else {
-                mediaRecorder.stop();
-                mediaRecorder.stream.getTracks().forEach(t => t.stop());
-                ui.btnRecord.style.background = "var(--win-bg)";
+                mediaRecorder.stop(); mediaRecorder.stream.getTracks().forEach(t => t.stop()); ui.btnRecord.style.background = "var(--win-bg)";
             }
         }
 
@@ -509,37 +537,27 @@
                     const img = new Image();
                     img.onload = function() {
                         const canvas = document.createElement("canvas");
-                        const MAX_SIZE = 800; 
-                        let w = img.width; let h = img.height;
-                        if (w > h) { if (w > MAX_SIZE) { h *= MAX_SIZE / w; w = MAX_SIZE; } } 
-                        else { if (h > MAX_SIZE) { w *= MAX_SIZE / h; h = MAX_SIZE; } }
-                        canvas.width = w; canvas.height = h;
+                        canvas.width = img.width; canvas.height = img.height;
                         const ctx = canvas.getContext("2d");
-                        ctx.drawImage(img, 0, 0, w, h);
-                        sendPayload(canvas.toDataURL("image/jpeg", 0.6), { isImage: true }); 
+                        ctx.drawImage(img, 0, 0, img.width, img.height);
+                        // Encode natively as PNG (Lossless)
+                        sendPayload(canvas.toDataURL("image/png"), { isImage: true }); 
                     }
                     img.src = event.target.result;
                 }
                 reader.readAsDataURL(file);
             } else {
-                if (file.size > 1024 * 1024 * 2) return customAlert("File too large. Max limit is 2MB.");
+                if (file.size > 1024 * 1024 * 20) return customAlert("File too large. Max limit is 20MB.");
                 const reader = new FileReader();
-                reader.onload = function(event) {
-                    sendPayload(event.target.result, { isFile: true, fileName: file.name });
-                };
+                reader.onload = function(event) { sendPayload(event.target.result, { isFile: true, fileName: file.name }); };
                 reader.readAsDataURL(file);
             }
             e.target.value = "";
         });
 
-        function loadBlockedUsers() {
-            try { const stored = localStorage.getItem(BLOCKED_KEY); if (stored) blockedUsers = new Set(JSON.parse(stored)); } catch (e) {}
-            renderBlockedUI();
-        }
-        function saveBlockedUsers() {
-            try { localStorage.setItem(BLOCKED_KEY, JSON.stringify(Array.from(blockedUsers))); } catch (e) {}
-            renderBlockedUI();
-        }
+        /* --- SETTINGS & BLOCKS --- */
+        function loadBlockedUsers() { try { const stored = localStorage.getItem(BLOCKED_KEY); if (stored) blockedUsers = new Set(JSON.parse(stored)); } catch (e) {} renderBlockedUI(); }
+        function saveBlockedUsers() { try { localStorage.setItem(BLOCKED_KEY, JSON.stringify(Array.from(blockedUsers))); } catch (e) {} renderBlockedUI(); }
         function renderBlockedUI() {
             ui.blockedList.innerHTML = "";
             if (blockedUsers.size === 0) { ui.blockedList.innerText = "None"; return; }
@@ -558,11 +576,7 @@
             newName = newName.replace(/[\s/]/g, '_');
             if (newName === myUsername) return;
 
-            if (ADMINS.includes(newName)) {
-                openPasswordModal('change_admin', newName);
-            } else {
-                executeChangeUsername(newName);
-            }
+            if (ADMINS.includes(newName)) openPasswordModal('change_admin', newName); else executeChangeUsername(newName);
         }
 
         function executeChangeUsername(newName) {
@@ -570,26 +584,47 @@
             try { localStorage.setItem(USERNAME_KEY, myUsername); } catch (e) {}
             
             const selfData = activeUsers.get(oldName) || { joinTime: Date.now() };
-            activeUsers.delete(oldName);
-            activeUsers.set(myUsername, { lastSeen: Date.now(), joinTime: selfData.joinTime });
+            activeUsers.delete(oldName); activeUsers.set(myUsername, { lastSeen: Date.now(), joinTime: selfData.joinTime });
 
-            publishMessage({ type: "RENAME", oldAuthor: oldName, author: myUsername, joinTime: selfData.joinTime, id: generateId() });
+            publishPayload({ type: "RENAME", oldAuthor: oldName, author: myUsername, joinTime: selfData.joinTime, id: generateId() });
             
-            renderUserList(); evaluateAdminRole(); updateStatusText();
-            ui.newUsernameIp.value = ""; toggleSettings();
+            // Retroactively overwrite names in local DOM / History
+            processRenameRetroactive(oldName, myUsername);
+
+            renderUserList(); evaluateAdminRole(); updateStatusText(); ui.newUsernameIp.value = ""; toggleSettings();
         }
 
-        function blockUser() {
-            const name = ui.blockIp.value.trim();
-            if (name && name !== myUsername) { blockedUsers.add(name); saveBlockedUsers(); ui.blockIp.value = ""; renderActiveTabMessages(); }
+        function processRenameRetroactive(oldName, newName) {
+            messageHistory.forEach(m => {
+                if(m.author === oldName) m.author = newName;
+                if(m.replyTo && m.replyTo.author === oldName) m.replyTo.author = newName;
+            });
+            saveLocalHistory();
+
+            if (dmHistories[oldName]) {
+                dmHistories[newName] = dmHistories[oldName]; delete dmHistories[oldName];
+                dmHistories[newName].forEach(m => {
+                    if(m.author === oldName) m.author = newName;
+                    if(m.replyTo && m.replyTo.author === oldName) m.replyTo.author = newName;
+                });
+                localStorage.removeItem(`mqtt_dm_${myUsername}_${oldName}`); saveDmHistory(newName);
+
+                let oldTabId = `tab-dm-${oldName}`; let tabEl = document.getElementById(oldTabId);
+                if(tabEl) {
+                    tabEl.id = `tab-dm-${newName}`; tabEl.innerText = `@${newName}`;
+                    tabEl.onclick = () => switchTab(`dm:${newName}`);
+                    if(currentTab === `dm:${oldName}`) currentTab = `dm:${newName}`;
+                }
+            }
+            renderActiveTabMessages();
         }
+
+        function blockUser() { const name = ui.blockIp.value.trim(); if (name && name !== myUsername) { blockedUsers.add(name); saveBlockedUsers(); ui.blockIp.value = ""; renderActiveTabMessages(); } }
         function unblockUser(name) { blockedUsers.delete(name); saveBlockedUsers(); renderActiveTabMessages(); }
 
         function getUsernameColor(username) {
-            let hash = 5381;
-            for (let i = 0; i < username.length; i++) hash = ((hash << 5) + hash) + username.charCodeAt(i);
-            const r = Math.abs((hash ^ 0xDEADBEEF) % 150); const g = Math.abs((hash ^ 0xCAFEBABE) % 150); const b = Math.abs((hash ^ 0x8BADF00D) % 150);
-            return `rgb(${r}, ${g}, ${b})`;
+            let hash = 5381; for (let i = 0; i < username.length; i++) hash = ((hash << 5) + hash) + username.charCodeAt(i);
+            return `rgb(${Math.abs((hash ^ 0xDEADBEEF) % 150)}, ${Math.abs((hash ^ 0xCAFEBABE) % 150)}, ${Math.abs((hash ^ 0x8BADF00D) % 150)})`;
         }
         function escapeHTML(str) { return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)); }
 
@@ -598,8 +633,7 @@
             if (msg.isAudio) return `<br><audio controls src="${rawText}"></audio>`;
             if (msg.isFile) return `<br><a href="${rawText}" download="${escapeHTML(msg.fileName)}" class="btn-w95" style="text-decoration:none; margin-top:4px; padding:4px;">💾 Download ${escapeHTML(msg.fileName)}</a>`;
             const escaped = escapeHTML(rawText);
-            const urlRegex = /(https?:\/\/[^\s]+)/g;
-            return escaped.replace(urlRegex, url => `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: blue;">${url}</a>`);
+            return escaped.replace(/(https?:\/\/[^\s]+)/g, url => `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: blue;">${url}</a>`);
         }
 
         /* --- TAB MANAGEMENT --- */
@@ -607,15 +641,11 @@
             currentTab = tabId; unreadTabs.delete(tabId);
             document.querySelectorAll(".tab-btn").forEach(el => el.classList.remove("active"));
             const activeEl = document.getElementById(`tab-${tabId.replace(':', '-')}`);
-            if (activeEl) {
-                activeEl.classList.add("active");
-                const dot = activeEl.querySelector(".unread-dot");
-                if (dot) dot.remove();
-            }
+            if (activeEl) { activeEl.classList.add("active"); const dot = activeEl.querySelector(".unread-dot"); if (dot) dot.remove(); }
             renderActiveTabMessages();
         }
 
-        function ensureDmTab(username) {
+        function ensureDmTab(username, switchTo = true) {
             const tabId = `dm:${username}`;
             if (!dmHistories[username]) dmHistories[username] = loadDmHistory(username);
             const elementId = `tab-dm-${username}`;
@@ -625,17 +655,27 @@
                 tab.onclick = () => switchTab(tabId);
                 ui.tabsBar.appendChild(tab);
             }
+            if(switchTo) switchTab(tabId);
             return tabId;
+        }
+
+        function loadPersistentDMTabs() {
+            for (let i = 0; i < localStorage.length; i++) {
+                let key = localStorage.key(i);
+                if (key && key.startsWith(`mqtt_dm_${myUsername}_`)) {
+                    let otherUser = key.replace(`mqtt_dm_${myUsername}_`, '');
+                    let history = loadDmHistory(otherUser);
+                    if (history && history.length > 0) ensureDmTab(otherUser, false);
+                }
+            }
         }
 
         function markUnread(tabId) {
             if (currentTab === tabId) return;
             unreadTabs.add(tabId);
-            const elementId = `tab-${tabId.replace(':', '-')}`;
-            const tab = document.getElementById(elementId);
+            const tab = document.getElementById(`tab-${tabId.replace(':', '-')}`);
             if (tab && !tab.querySelector(".unread-dot")) {
-                const dot = document.createElement("span"); dot.className = "unread-dot";
-                tab.appendChild(dot);
+                const dot = document.createElement("span"); dot.className = "unread-dot"; tab.appendChild(dot);
             }
         }
 
@@ -651,10 +691,7 @@
         function renderActiveTabMessages() {
             ui.chatBox.innerHTML = "";
             let list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
-            list.forEach(msg => {
-                if (blockedUsers.has(msg.author)) return;
-                if (msg.isSystem) appendSystemDOM(msg); else appendMsgDOM(msg);
-            });
+            list.forEach(msg => { if (blockedUsers.has(msg.author)) return; if (msg.isSystem) appendSystemDOM(msg); else appendMsgDOM(msg); });
             ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
         }
 
@@ -662,29 +699,21 @@
             let sysObj = typeof arg === "string" ? { id: generateId(), text: arg, isSystem: true, localOnly: true, timestamp: Date.now() } : arg;
             if (!sysObj.timestamp) sysObj.timestamp = Date.now();
             let line = document.createElement("div");
-            line.id = `msg-${sysObj.id}`;
-            line.style.color = "#8b0000"; line.style.fontWeight = "bold"; line.style.margin = "2px 0"; 
-            line.style.fontSize = "15px";
+            line.id = `msg-${sysObj.id}`; line.style.color = "#8b0000"; line.style.fontWeight = "bold"; line.style.margin = "2px 0"; line.style.fontSize = "15px";
             
             let deleteBtn = isAdmin ? `<button onclick="deleteAnyMessage('${sysObj.id}')" style="font-size: 10px; padding: 0 3px; margin-right: 4px;">x</button>` : "";
             line.innerHTML = `${deleteBtn}[SYSTEM] ${sysObj.text}`;
-            
             ui.chatBox.appendChild(line); ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
         }
 
         function appendMsgDOM(msg) {
-            let line = document.createElement("div");
-            line.id = `msg-${msg.id}`; line.className = "clickable-msg"; line.style.margin = "2px 0";
-            line.style.fontSize = "15px";
-            
+            let line = document.createElement("div"); line.id = `msg-${msg.id}`; line.className = "clickable-msg"; line.style.margin = "2px 0"; line.style.fontSize = "15px";
             line.onclick = (e) => { if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A' && e.target.tagName !== 'AUDIO') setReplyTarget(msg); };
 
-            const color = getUsernameColor(msg.author);
             let deleteBtn = (msg.author === myUsername || isAdmin) ? `<button onclick="deleteAnyMessage('${msg.id}')" style="font-size: 10px; padding: 0 3px; margin-right: 4px;">x</button>` : "";
             let replyHtml = msg.replyTo ? `<div class="reply-quote"><b>@${escapeHTML(msg.replyTo.author)}:</b> ${msg.replyTo.isImage ? "[Image]" : msg.replyTo.isAudio ? "[Voice Memo]" : msg.replyTo.isFile ? "[File]" : escapeHTML(msg.replyTo.text)}</div>` : "";
 
-            const formattedContent = formatMessageContent(msg.text, msg);
-            line.innerHTML = `${replyHtml}${deleteBtn}<b style="color: ${color};">${msg.author}:</b> ${formattedContent}`;
+            line.innerHTML = `${replyHtml}${deleteBtn}<b style="color: ${getUsernameColor(msg.author)};">${msg.author}:</b> ${formatMessageContent(msg.text, msg)}`;
             ui.chatBox.appendChild(line); ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
         }
 
@@ -693,32 +722,18 @@
             try { 
                 let saved = localStorage.getItem(USERNAME_KEY); 
                 if (saved) { 
-                    if (/[\s/]/.test(saved)) {
-                        saved = saved.replace(/[\s/]/g, '_');
-                        localStorage.setItem(USERNAME_KEY, saved);
-                    }
+                    if (/[\s/]/.test(saved)) { saved = saved.replace(/[\s/]/g, '_'); localStorage.setItem(USERNAME_KEY, saved); }
                     ui.userIp.value = saved; 
-                    // Auto-login functionality
-                    if (ADMINS.includes(saved)) {
-                        openPasswordModal('join_admin', saved);
-                    } else {
-                        executeJoin(saved);
-                    }
+                    if (ADMINS.includes(saved)) openPasswordModal('join_admin', saved); else executeJoin(saved);
                 } 
             } catch (e) {}
             loadBlockedUsers();
         })();
 
         function joinChat() {
-            let val = ui.userIp.value.trim();
-            if (!val) return alert("Username required!");
+            let val = ui.userIp.value.trim(); if (!val) return alert("Username required!");
             val = val.replace(/[\s/]/g, '_');
-
-            if (ADMINS.includes(val)) {
-                openPasswordModal('join_admin', val);
-            } else {
-                executeJoin(val);
-            }
+            if (ADMINS.includes(val)) openPasswordModal('join_admin', val); else executeJoin(val);
         }
 
         function executeJoin(val) {
@@ -726,30 +741,50 @@
             try { localStorage.setItem(USERNAME_KEY, myUsername); } catch (e) {}
             ui.userScreen.style.display = "none"; ui.chatScreen.style.display = "flex";
             loadLocalHistory();
+            loadPersistentDMTabs();
 
             client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
             client.on("connect", () => {
-                isConnected = true;
-                const now = Date.now();
+                isConnected = true; const now = Date.now();
                 activeUsers.set(myUsername, { lastSeen: now, joinTime: now });
                 evaluateAdminRole(); renderUserList();
 
                 client.subscribe(ROOM_TOPIC, (err) => {
                     if (!err) {
-                        publishMessage({ type: "JOIN", author: myUsername, joinTime: now, id: generateId() });
-                        publishMessage({ type: "SYNC_REQ", author: myUsername });
-                        
-                        setInterval(() => { if (isConnected) publishMessage({ type: "PING", author: myUsername, joinTime: activeUsers.get(myUsername)?.joinTime || Date.now() }); }, 5000);
+                        publishPayload({ type: "JOIN", author: myUsername, joinTime: now, id: generateId() });
+                        publishPayload({ type: "SYNC_REQ", author: myUsername });
+                        setInterval(() => { if (isConnected) publishPayload({ type: "PING", author: myUsername, joinTime: activeUsers.get(myUsername)?.joinTime || Date.now() }); }, 5000);
                         setInterval(checkPresence, 5000);
                     }
                 });
             });
 
-            window.addEventListener("beforeunload", () => { if (isConnected) publishMessage({ type: "LEAVE", author: myUsername, id: generateId() }); });
+            window.addEventListener("beforeunload", () => { if (isConnected) publishPayload({ type: "LEAVE", author: myUsername, id: generateId() }); });
 
             client.on("message", (topic, payload) => {
                 try {
-                    const data = JSON.parse(payload.toString());
+                    const rawData = JSON.parse(payload.toString());
+                    let data = null;
+
+                    // Handle Chunked Payloads
+                    if (rawData.type === "CHUNK") {
+                        if (!chunkBuffers[rawData.tId]) chunkBuffers[rawData.tId] = { chunks: [], count: 0, total: rawData.tc, ts: Date.now() };
+                        chunkBuffers[rawData.tId].chunks[rawData.c] = rawData.data;
+                        chunkBuffers[rawData.tId].count++;
+                        if (chunkBuffers[rawData.tId].count === chunkBuffers[rawData.tId].total) {
+                            const decompressed = LZString.decompressFromBase64(chunkBuffers[rawData.tId].chunks.join(''));
+                            delete chunkBuffers[rawData.tId];
+                            if (decompressed) data = JSON.parse(decompressed);
+                        } else return;
+                    } else if (rawData.type === "C_MSG") {
+                        const decomp = LZString.decompressFromBase64(rawData.d);
+                        if (decomp) data = JSON.parse(decomp);
+                    } else {
+                        data = rawData; 
+                    }
+
+                    if (!data) return;
+
                     if (data.author && !blockedUsers.has(data.author)) {
                         const existing = activeUsers.get(data.author);
                         activeUsers.set(data.author, { lastSeen: Date.now(), joinTime: data.joinTime || (existing ? existing.joinTime : Date.now()) });
@@ -758,20 +793,8 @@
 
                     if (data.type === "SYNC_REQ") {
                         if (data.author === myUsername) return; 
-                        
-                        let oldestUser = myUsername;
-                        let oldestTime = activeUsers.get(myUsername)?.joinTime || Date.now();
-                        
-                        activeUsers.forEach((uData, uName) => {
-                            if (uData.joinTime < oldestTime || (uData.joinTime === oldestTime && uName < oldestUser)) {
-                                oldestTime = uData.joinTime;
-                                oldestUser = uName;
-                            }
-                        });
-
-                        if (oldestUser === myUsername) {
-                            publishMessage({ type: "SYNC_RES", target: data.author, history: messageHistory });
-                        }
+                        // Everyone sends their history directly back to sync completely disparate timelines
+                        publishPayload({ type: "SYNC_RES", target: data.author, history: messageHistory });
                     }
                     else if (data.type === "SYNC_RES" && data.target === myUsername) {
                         messageHistory = mergeHistory(messageHistory, data.history);
@@ -797,84 +820,72 @@
                         if (blockedUsers.has(data.author)) return;
                         const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), isSystem: false };
                         messageHistory.push(msgObj); saveLocalHistory();
+                        
+                        if (msgObj.text && msgObj.text.includes(`@${myUsername}`)) { showToast(`Mention from ${msgObj.author}: ${msgObj.text.substring(0, 40)}`); }
                         if (currentTab === "global") appendMsgDOM(msgObj);
                     }
                     else if (data.type === "DM") {
                         if (blockedUsers.has(data.author)) return;
                         if (data.target === myUsername) {
-                            const tabId = ensureDmTab(data.author);
+                            const tabId = ensureDmTab(data.author, false);
                             const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now() };
                             dmHistories[data.author] = mergeHistory(dmHistories[data.author] || [], [msgObj]);
                             saveDmHistory(data.author);
+                            
+                            if (msgObj.text && msgObj.text.includes(`@${myUsername}`)) { showToast(`Mention from ${msgObj.author}: ${msgObj.text.substring(0, 40)}`); }
                             if (currentTab === tabId) appendMsgDOM(msgObj); else markUnread(tabId);
                         }
                     }
                     else if (data.type === "CMD" && data.target === myUsername && ADMINS.includes(data.author)) {
                         if (data.cmd === "KICK") {
                             if (client) client.end();
-                            isConnected = false; ui.chatScreen.style.display = "none"; ui.userScreen.style.display = "block";
-                            customAlert("You have been kicked by an administrator.");
+                            isConnected = false; ui.chatScreen.style.display = "none"; ui.userScreen.style.display = "block"; customAlert("You have been kicked by an administrator.");
                         } else if (data.cmd === "TIMEOUT") {
-                            localStorage.setItem("mqtt_timeout", Date.now() + (data.duration || 120000)); 
-                            checkPenalties();
+                            localStorage.setItem("mqtt_timeout", Date.now() + (data.duration || 120000)); checkPenalties();
                         } else if (data.cmd === "BAN") {
                             localStorage.setItem("mqtt_banned", "true"); checkPenalties();
                         } else if (data.cmd === "MUTE") {
                             isMuted = true;
-                            let durTxt = data.duration ? ` for ${Math.round(data.duration/60000)} minutes` : "";
-                            appendSystemDOM(`You have been muted by an Admin${durTxt}.`);
+                            appendSystemDOM(`You have been muted by an Admin${data.duration ? ` for ${Math.round(data.duration/60000)} minutes` : ""}.`);
                             if(muteTimeoutId) clearTimeout(muteTimeoutId);
-                            if (data.duration) {
-                                muteTimeoutId = setTimeout(() => { isMuted = false; mutedAttemptCount = 0; appendSystemDOM("Your mute has expired."); }, data.duration);
-                            }
+                            if (data.duration) muteTimeoutId = setTimeout(() => { isMuted = false; mutedAttemptCount = 0; appendSystemDOM("Your mute has expired."); }, data.duration);
                         } else if (data.cmd === "UNMUTE") {
-                            isMuted = false; mutedAttemptCount = 0; if(muteTimeoutId) clearTimeout(muteTimeoutId);
-                            appendSystemDOM("You have been unmuted by an Admin.");
+                            isMuted = false; mutedAttemptCount = 0; if(muteTimeoutId) clearTimeout(muteTimeoutId); appendSystemDOM("You have been unmuted by an Admin.");
                         }
                     }
                     else if (data.type === "MUTE_ATTEMPT" && isAdmin) { appendSystemDOM({ id: data.id || generateId(), isSystem: true, text: `${data.author} tried to send a message while muted (Attempt #${data.count})`, timestamp: data.timestamp || Date.now() }); }
                     else if (data.type === "DELETE_MSG") {
                         const idxG = messageHistory.findIndex(m => m.id === data.id);
-                        if (idxG !== -1) {
-                            if (messageHistory[idxG].author === data.deleter || ADMINS.includes(data.deleter)) { messageHistory.splice(idxG, 1); saveLocalHistory(); }
-                        }
+                        if (idxG !== -1 && (messageHistory[idxG].author === data.deleter || ADMINS.includes(data.deleter))) { messageHistory.splice(idxG, 1); saveLocalHistory(); }
                         Object.keys(dmHistories).forEach(user => {
                             const idxD = dmHistories[user].findIndex(m => m.id === data.id);
-                            if (idxD !== -1) {
-                                if (dmHistories[user][idxD].author === data.deleter || ADMINS.includes(data.deleter)) { dmHistories[user].splice(idxD, 1); saveDmHistory(user); }
-                            }
+                            if (idxD !== -1 && (dmHistories[user][idxD].author === data.deleter || ADMINS.includes(data.deleter))) { dmHistories[user].splice(idxD, 1); saveDmHistory(user); }
                         });
-                        
-                        const el = document.getElementById(`msg-${data.id}`);
-                        if (el) el.remove();
-                        
+                        const el = document.getElementById(`msg-${data.id}`); if (el) el.remove();
                         renderActiveTabMessages();
                     }
                     else if (data.type === "CLEAR_ALL") {
-                        messageHistory = [];
-                        try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+                        messageHistory = []; try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
                         Object.keys(dmHistories).forEach(user => { dmHistories[user] = []; saveDmHistory(user); });
                         const sysObj = { id: data.id || generateId(), isSystem: true, text: `Chat histories were purged by Admin (${data.author}).`, timestamp: data.timestamp || Date.now() };
-                        messageHistory.push(sysObj); saveLocalHistory();
-                        renderActiveTabMessages(); 
+                        messageHistory.push(sysObj); saveLocalHistory(); renderActiveTabMessages(); 
                     }
                     else if (data.type === "TYPING") {
                         if (data.author !== myUsername && !blockedUsers.has(data.author)) {
                             ui.typing.innerText = `${data.author} is typing...`;
-                            clearTimeout(data.typingTimer);
-                            data.typingTimer = setTimeout(() => { ui.typing.innerText = ""; }, 3000);
+                            clearTimeout(data.typingTimer); data.typingTimer = setTimeout(() => { ui.typing.innerText = ""; }, 3000);
                         }
                     }
                     else if (data.type === "RENAME") {
                         if (activeUsers.has(data.oldAuthor)) {
-                            const uData = activeUsers.get(data.oldAuthor);
-                            activeUsers.delete(data.oldAuthor);
+                            const uData = activeUsers.get(data.oldAuthor); activeUsers.delete(data.oldAuthor);
                             activeUsers.set(data.author, { lastSeen: Date.now(), joinTime: data.joinTime || uData.joinTime });
-                            const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.oldAuthor} changed name to ${data.author}`, timestamp: data.timestamp || Date.now() };
-                            messageHistory.push(sysObj); saveLocalHistory();
-                            if (currentTab === "global") appendSystemDOM(sysObj);
-                            renderUserList(); evaluateAdminRole();
                         }
+                        processRenameRetroactive(data.oldAuthor, data.author);
+                        const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.oldAuthor} changed name to ${data.author}`, timestamp: data.timestamp || Date.now() };
+                        messageHistory.push(sysObj); saveLocalHistory();
+                        if (currentTab === "global") appendSystemDOM(sysObj);
+                        renderUserList(); evaluateAdminRole();
                     }
                 } catch (e) {}
             });
@@ -887,44 +898,30 @@
             return Array.from(map.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
         }
 
-        function deleteAnyMessage(id) { publishMessage({ type: "DELETE_MSG", id: id, deleter: myUsername }); }
-        function confirmClearAll() { if (isAdmin && confirm("Are you sure you want to permanently delete all messages?")) publishMessage({ type: "CLEAR_ALL", author: myUsername, id: generateId() }); }
+        function deleteAnyMessage(id) { publishPayload({ type: "DELETE_MSG", id: id, deleter: myUsername }); }
+        function confirmClearAll() { if (isAdmin && confirm("Are you sure you want to permanently delete all messages?")) publishPayload({ type: "CLEAR_ALL", author: myUsername, id: generateId() }); }
 
         /* --- ADMIN, MENU & LIST LOGIC --- */
-        function evaluateAdminRole() {
-            const wasAdmin = isAdmin;
-            isAdmin = ADMINS.includes(myUsername);
-            updateStatusText(); 
-            if (wasAdmin !== isAdmin) {
-                renderActiveTabMessages(); 
-            }
-        }
-        function updateStatusText() {
-            ui.status.innerText = `${isAdmin ? "[ADMIN]" : "[USER]"} Connected as "${myUsername}"`;
-            ui.adminClearBtn.style.display = isAdmin ? "block" : "none";
-        }
+        function evaluateAdminRole() { const wasAdmin = isAdmin; isAdmin = ADMINS.includes(myUsername); updateStatusText(); if (wasAdmin !== isAdmin) renderActiveTabMessages(); }
+        function updateStatusText() { ui.status.innerText = `${isAdmin ? "[ADMIN]" : "[USER]"} Connected as "${myUsername}"`; ui.adminClearBtn.style.display = isAdmin ? "block" : "none"; }
 
         function checkPresence() {
-            const now = Date.now();
-            let changed = false;
+            const now = Date.now(); let changed = false;
             activeUsers.forEach((userData, user) => {
                 if (user !== myUsername && now - userData.lastSeen > 60000) {
                     activeUsers.delete(user);
                     const sysObj = { id: generateId(), isSystem: true, text: `${user} disconnected.`, timestamp: Date.now() };
                     messageHistory.push(sysObj); saveLocalHistory();
-                    if (currentTab === "global") appendSystemDOM(sysObj);
-                    changed = true;
+                    if (currentTab === "global") appendSystemDOM(sysObj); changed = true;
                 }
             });
             if (changed) { renderUserList(); evaluateAdminRole(); }
         }
 
         function renderUserList() {
-            ui.userList.innerHTML = "";
-            const now = Date.now();
+            ui.userList.innerHTML = ""; const now = Date.now();
             activeUsers.forEach((userData, user) => {
                 if (blockedUsers.has(user)) return;
-                const color = getUsernameColor(user);
                 const adminBadge = ADMINS.includes(user) ? " (Admin)" : "";
                 const selfBadge = user === myUsername ? " (You)" : "";
                 const inactiveBadge = (now - userData.lastSeen > 10000) && user !== myUsername ? " <span style='font-size:11px; color:#888;'>(Inactive)</span>" : "";
@@ -935,86 +932,95 @@
                     ontouchstart="handleTouchStart(event, '${user}')"
                     ontouchmove="clearTimeout(pressTimer)"
                     ontouchend="handleTouchEnd(event, '${user}')"
-                    style="color: ${color};">${user}${adminBadge}${selfBadge}${inactiveBadge}</li>`;
+                    style="color: ${getUsernameColor(user)};">${user}${adminBadge}${selfBadge}${inactiveBadge}</li>`;
             });
         }
 
         /* --- TOUCH & CONTEXT MENU --- */
         function handleTouchStart(e, user) {
-            if (user === myUsername) return; 
-            isLongPress = false;
-            const touch = e.touches[0];
-            const px = touch.pageX;
-            const py = touch.pageY;
-            
-            pressTimer = setTimeout(() => { 
-                isLongPress = true; 
-                showContextMenu({ pageX: px, pageY: py, preventDefault: () => {} }, user); 
-            }, 500);
+            if (user === myUsername) return; isLongPress = false;
+            pressTimer = setTimeout(() => { isLongPress = true; showContextMenu({ pageX: e.touches[0].pageX, pageY: e.touches[0].pageY, preventDefault: () => {} }, user); }, 500);
         }
-        function handleTouchEnd(e, user) { 
-            clearTimeout(pressTimer); 
-            if (isLongPress) {
-                try { e.preventDefault(); } catch(err){}
-            } 
-        }
+        function handleTouchEnd(e, user) { clearTimeout(pressTimer); if (isLongPress) { try { e.preventDefault(); } catch(err){} } }
         function handleUserClick(e, user) { if (isLongPress) return; startDmWith(user); }
         
         function showContextMenu(e, username) {
             if (e.preventDefault) e.preventDefault();
             if (username === myUsername) return; 
-            contextMenuTarget = username;
-            ui.contextMenu.style.display = "block";
-            ui.contextMenu.style.left = e.pageX + "px";
-            ui.contextMenu.style.top = e.pageY + "px";
+            contextMenuTarget = username; ui.contextMenu.style.display = "block"; ui.contextMenu.style.left = e.pageX + "px"; ui.contextMenu.style.top = e.pageY + "px";
             document.querySelectorAll(".admin-only").forEach(el => { el.style.display = isAdmin ? "block" : "none"; });
         }
 
         function contextAction(action) {
-            const target = contextMenuTarget;
-            ui.contextMenu.style.display = "none";
+            const target = contextMenuTarget; ui.contextMenu.style.display = "none";
             if (!target || target === myUsername) return;
             if (action === 'DM') startDmWith(target);
-            else if (['KICK', 'BAN'].includes(action)) { publishMessage({ type: "CMD", cmd: action, target: target, author: myUsername }); appendSystemDOM(`Command ${action} dispatched to ${target}.`); }
-            else if (['MUTE', 'TIMEOUT'].includes(action)) { publishMessage({ type: "CMD", cmd: action, target: target, author: myUsername, duration: 300000 }); appendSystemDOM(`Command ${action} (5m) dispatched to ${target}.`); }
+            else if (['KICK', 'BAN'].includes(action)) { publishPayload({ type: "CMD", cmd: action, target: target, author: myUsername }); appendSystemDOM(`Command ${action} dispatched to ${target}.`); }
+            else if (['MUTE', 'TIMEOUT'].includes(action)) { publishPayload({ type: "CMD", cmd: action, target: target, author: myUsername, duration: 300000 }); appendSystemDOM(`Command ${action} (5m) dispatched to ${target}.`); }
         }
 
         function parseDuration(str) {
             if (!str) return null;
-            const match = str.match(/^(\d+)([smhd])?$/i);
-            if (!match) return null;
-            const val = parseInt(match[1]);
-            const unit = match[2] ? match[2].toLowerCase() : 'm'; 
-            const multipliers = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
-            return val * multipliers[unit];
+            const match = str.match(/^(\d+)([smhd])?$/i); if (!match) return null;
+            const multipliers = { s: 1000, m: 60000, h: 3600000, d: 86400000 }; return parseInt(match[1]) * multipliers[match[2] ? match[2].toLowerCase() : 'm'];
         }
 
-        function startDmWith(username) { if (username !== myUsername) switchTab(ensureDmTab(username)); }
-        function handleTyping() { if (!isConnected || isMuted) return; clearTimeout(typingTimeout); publishMessage({ type: "TYPING", author: myUsername }); typingTimeout = setTimeout(() => {}, 3000); }
+        function startDmWith(username) { if (username !== myUsername) ensureDmTab(username, true); }
+        function handleTyping() { if (!isConnected || isMuted) return; clearTimeout(typingTimeout); publishPayload({ type: "TYPING", author: myUsername }); typingTimeout = setTimeout(() => {}, 3000); }
 
-        function saveLocalHistory() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(messageHistory.slice(-100))); } catch(e){} }
-        function loadLocalHistory() { const stored = localStorage.getItem(STORAGE_KEY); if (stored) { try { messageHistory = JSON.parse(stored); renderActiveTabMessages(); } catch(e){} } }
-        function saveDmHistory(otherUser) { try { localStorage.setItem(`mqtt_dm_${myUsername}_${otherUser}`, JSON.stringify((dmHistories[otherUser]||[]).slice(-50))); } catch(e){} }
-        function loadDmHistory(otherUser) { try { const s = localStorage.getItem(`mqtt_dm_${myUsername}_${otherUser}`); return s ? JSON.parse(s) : []; } catch(e){ return []; } }
-        function publishMessage(data) { if (client && isConnected) client.publish(ROOM_TOPIC, JSON.stringify(data)); }
+        function saveLocalHistory() { 
+            let str = LZString.compressToUTF16(JSON.stringify(messageHistory));
+            while (str.length > 2000000 && messageHistory.length > 0) {
+                messageHistory.shift(); str = LZString.compressToUTF16(JSON.stringify(messageHistory));
+            }
+            try { localStorage.setItem(STORAGE_KEY, str); } catch(e){} 
+        }
+        function loadLocalHistory() { 
+            const stored = localStorage.getItem(STORAGE_KEY); 
+            if (stored) { try { let decomp = LZString.decompressFromUTF16(stored); messageHistory = JSON.parse(decomp || stored) || []; } catch(e){ messageHistory = []; } } 
+        }
+        function saveDmHistory(otherUser) { 
+            let key = `mqtt_dm_${myUsername}_${otherUser}`; let str = LZString.compressToUTF16(JSON.stringify(dmHistories[otherUser] || []));
+            while (str.length > 2000000 && dmHistories[otherUser].length > 0) {
+                dmHistories[otherUser].shift(); str = LZString.compressToUTF16(JSON.stringify(dmHistories[otherUser]));
+            }
+            try { localStorage.setItem(key, str); } catch(e){} 
+        }
+        function loadDmHistory(otherUser) { 
+            try { const s = localStorage.getItem(`mqtt_dm_${myUsername}_${otherUser}`); if(!s) return []; let decomp = LZString.decompressFromUTF16(s); return JSON.parse(decomp || s) || []; } catch(e){ return []; } 
+        }
+
+        /* Network Chunking & Compression System */
+        function publishPayload(dataObj) {
+            if (!client || !isConnected) return;
+            const jsonStr = JSON.stringify(dataObj);
+            const compressed = LZString.compressToBase64(jsonStr);
+            const CHUNK_SIZE = 100000;
+            
+            if (compressed.length <= CHUNK_SIZE) {
+                client.publish(ROOM_TOPIC, JSON.stringify({ type: "C_MSG", d: compressed }));
+            } else {
+                const totalChunks = Math.ceil(compressed.length / CHUNK_SIZE);
+                const transferId = generateId();
+                for(let i = 0; i < totalChunks; i++) {
+                    client.publish(ROOM_TOPIC, JSON.stringify({ type: "CHUNK", tId: transferId, c: i, tc: totalChunks, data: compressed.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE) }));
+                }
+            }
+        }
 
         /* --- SENDING & PARSING COMMANDS --- */
         function processInput() {
-            const text = ui.msgIp.value.trim();
-            if (!text) return;
+            const text = ui.msgIp.value.trim(); if (!text) return;
             if (text.startsWith("/")) {
                 if (!isAdmin) { appendSystemDOM("You do not have admin privileges."); ui.msgIp.value = ""; return; }
                 const parts = text.split(" ");
-                const cmd = parts[0].toUpperCase().substring(1);
-                const target = parts[1];
-                const dur = parseDuration(parts[2]);
+                const cmd = parts[0].toUpperCase().substring(1); const target = parts[1]; const dur = parseDuration(parts[2]);
                 
                 if (!target) { appendSystemDOM("Usage: /kick User, /timeout User 5m, /mute User 10m, /unmute User, /ban User"); return; }
                 if (target === myUsername) { appendSystemDOM("You cannot use admin commands on yourself."); ui.msgIp.value = ""; return; }
 
                 if (["KICK", "TIMEOUT", "MUTE", "UNMUTE", "BAN"].includes(cmd)) {
-                    publishMessage({ type: "CMD", cmd: cmd, target: target, author: myUsername, duration: dur });
-                    appendSystemDOM(`Command ${cmd} dispatched to ${target}.`);
+                    publishPayload({ type: "CMD", cmd: cmd, target: target, author: myUsername, duration: dur }); appendSystemDOM(`Command ${cmd} dispatched to ${target}.`);
                 } else { appendSystemDOM("Unknown command."); }
                 ui.msgIp.value = ""; return;
             }
@@ -1024,22 +1030,18 @@
         function sendPayload(content, opts = {}) {
             if (isMuted) {
                 mutedAttemptCount++; appendSystemDOM("You cannot send messages while muted.");
-                publishMessage({ type: "MUTE_ATTEMPT", author: myUsername, count: mutedAttemptCount, id: generateId() }); ui.msgIp.value = ""; return;
+                publishPayload({ type: "MUTE_ATTEMPT", author: myUsername, count: mutedAttemptCount, id: generateId() }); ui.msgIp.value = ""; return;
             }
 
-            const msgId = Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
-            const timestamp = Date.now();
             const cleanReply = activeReply ? { author: activeReply.author, text: activeReply.text, isImage: activeReply.isImage, isAudio: activeReply.isAudio, isFile: activeReply.isFile } : null;
-
-            const payload = { type: currentTab === "global" ? "MSG" : "DM", id: msgId, author: myUsername, text: content, isImage: opts.isImage, isAudio: opts.isAudio, isFile: opts.isFile, fileName: opts.fileName, timestamp: timestamp, replyTo: cleanReply };
+            const payload = { type: currentTab === "global" ? "MSG" : "DM", id: generateId(), author: myUsername, text: content, isImage: opts.isImage, isAudio: opts.isAudio, isFile: opts.isFile, fileName: opts.fileName, timestamp: Date.now(), replyTo: cleanReply };
             
             if (currentTab !== "global") {
                 payload.target = currentTab.replace("dm:", "");
                 dmHistories[payload.target] = mergeHistory(dmHistories[payload.target] || [], [payload]);
                 saveDmHistory(payload.target); appendMsgDOM(payload);
             }
-            publishMessage(payload);
-
+            publishPayload(payload);
             ui.msgIp.value = ""; ui.typing.innerText = ""; cancelReply();
         }
     </script>
