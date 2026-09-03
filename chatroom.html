@@ -235,7 +235,7 @@
             </div>
             <div class="w95-content">
                 <p style="margin-bottom: 15px;">You have been permanently banned by a chatroom administrator.</p>
-                <button onclick="openModal('password-modal')" style="position: absolute; bottom: 4px; right: 4px; padding: 0; font-size: 4px; width: 6px; height: 6px; border: 1px solid transparent; background: transparent; color: #a0a0a0; cursor: pointer;">.</button>
+                <button onclick="openPasswordModal('unban')" style="position: absolute; bottom: 4px; right: 4px; padding: 0; font-size: 4px; width: 6px; height: 6px; border: 1px solid transparent; background: transparent; color: #a0a0a0; cursor: pointer;">.</button>
             </div>
         </div>
     </div>
@@ -244,12 +244,12 @@
     <div id="password-modal" class="modal-overlay">
         <div class="w95-window">
             <div class="w95-titlebar">
-                <span>Admin Override</span>
+                <span id="password-modal-title">Admin Override</span>
                 <button onclick="closeModal('password-modal')" style="height: 18px; line-height: 10px;">X</button>
             </div>
             <div class="w95-content" style="display: flex; gap: 6px;">
-                <input type="password" id="unban-password" placeholder="Enter password..." style="flex: 1;" />
-                <button onclick="submitUnban()">Submit</button>
+                <input type="password" id="unban-password" placeholder="Enter password..." style="flex: 1;" onkeydown="if(event.key==='Enter') submitPassword()" />
+                <button onclick="submitPassword()">Submit</button>
             </div>
         </div>
     </div>
@@ -271,7 +271,7 @@
     <!-- Username Selection Screen -->
     <div id="username-screen" class="outset-panel" style="padding: 15px; margin: 20px auto; max-width: 320px;">
         <h4 style="margin-bottom: 8px;">Create Username</h4>
-        <input type="text" id="username-input" placeholder="Enter a username..." style="width: 100%; margin-bottom: 10px;" />
+        <input type="text" id="username-input" placeholder="Enter a username..." style="width: 100%; margin-bottom: 10px;" onkeydown="if(event.key==='Enter') joinChat()" />
         <button onclick="joinChat()" style="width: 100%;">Enter Chatroom</button>
     </div>
 
@@ -291,7 +291,7 @@
             <b style="font-size: 12px; display: block; margin-bottom: 6px;">User Settings</b>
             <div style="display: flex; gap: 4px; align-items: center; margin-bottom: 6px;">
                 <label style="font-size: 11px;">Username:</label>
-                <input type="text" id="new-username-input" placeholder="New username..." style="flex: 1;" />
+                <input type="text" id="new-username-input" placeholder="New username..." style="flex: 1;" onkeydown="if(event.key==='Enter') changeUsername()" />
                 <button onclick="changeUsername()">Update</button>
             </div>
             <div style="display: flex; gap: 4px; align-items: center; margin-bottom: 6px;">
@@ -370,12 +370,14 @@
         let kickInterval = null;
         let muteTimeoutId = null;
 
-        // Media & Touch States
         let mediaRecorder = null;
         let audioChunks = [];
         let isLongPress = false;
         let pressTimer = null;
         let contextMenuTarget = "";
+        
+        let pendingAction = "unban";
+        let pendingName = "";
 
         const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
 
@@ -412,12 +414,28 @@
         function closeModal(id) { document.getElementById(id).style.display = "none"; }
         function customAlert(text) { document.getElementById('alert-text').innerText = text; openModal('alert-modal'); }
 
-        function submitUnban() {
+        function openPasswordModal(action, name = "") {
+            pendingAction = action;
+            pendingName = name;
+            document.getElementById('unban-password').value = "";
+            document.getElementById('password-modal-title').innerText = action === 'unban' ? 'Admin Override' : 'Admin Authentication';
+            openModal('password-modal');
+        }
+
+        function submitPassword() {
             const pwd = document.getElementById("unban-password").value;
-            if (pwd === "password") {
-                localStorage.removeItem("mqtt_banned");
-                location.reload();
-            } else { customAlert("Incorrect password."); }
+            if (pendingAction === 'unban') {
+                if (pwd === "password") {
+                    localStorage.removeItem("mqtt_banned");
+                    location.reload();
+                } else { customAlert("Incorrect password."); }
+            } else if (pendingAction === 'join_admin' || pendingAction === 'change_admin') {
+                if (pwd === "adminpass") { // Secure check before allowing the admin name
+                    closeModal("password-modal");
+                    if (pendingAction === 'join_admin') executeJoin(pendingName);
+                    else executeChangeUsername(pendingName);
+                } else { customAlert("Incorrect admin password."); }
+            }
             document.getElementById("unban-password").value = "";
         }
 
@@ -504,7 +522,7 @@
                 }
                 reader.readAsDataURL(file);
             } else {
-                if (file.size > 1024 * 1024) return customAlert("File too large. Max limit is 1MB.");
+                if (file.size > 1024 * 1024 * 2) return customAlert("File too large. Max limit is 2MB.");
                 const reader = new FileReader();
                 reader.onload = function(event) {
                     sendPayload(event.target.result, { isFile: true, fileName: file.name });
@@ -537,6 +555,15 @@
             if (checkPenalties()) return; 
             const newName = ui.newUsernameIp.value.trim();
             if (!newName || newName === myUsername) return;
+
+            if (ADMINS.includes(newName)) {
+                openPasswordModal('change_admin', newName);
+            } else {
+                executeChangeUsername(newName);
+            }
+        }
+
+        function executeChangeUsername(newName) {
             const oldName = myUsername; myUsername = newName;
             try { localStorage.setItem(USERNAME_KEY, myUsername); } catch (e) {}
             
@@ -660,15 +687,34 @@
 
         (function init() {
             if(checkPenalties()) return;
-            try { const saved = localStorage.getItem(USERNAME_KEY); if (saved) ui.userIp.value = saved; } catch (e) {}
+            try { 
+                const saved = localStorage.getItem(USERNAME_KEY); 
+                if (saved) { 
+                    ui.userIp.value = saved; 
+                    // Auto-login functionality
+                    if (ADMINS.includes(saved)) {
+                        openPasswordModal('join_admin', saved);
+                    } else {
+                        executeJoin(saved);
+                    }
+                } 
+            } catch (e) {}
             loadBlockedUsers();
         })();
 
         function joinChat() {
             const val = ui.userIp.value.trim();
             if (!val) return alert("Username required!");
-            myUsername = val;
 
+            if (ADMINS.includes(val)) {
+                openPasswordModal('join_admin', val);
+            } else {
+                executeJoin(val);
+            }
+        }
+
+        function executeJoin(val) {
+            myUsername = val;
             try { localStorage.setItem(USERNAME_KEY, myUsername); } catch (e) {}
             ui.userScreen.style.display = "none"; ui.chatScreen.style.display = "flex";
             loadLocalHistory();
