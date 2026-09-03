@@ -15,7 +15,7 @@ const siteData = {
 const announcements = [
   {
     title: "New releases",
-    content: " - A Universal Chatroom has been fully implemented, press the 'chat' button in the bottom right to open it! It connects all users that are currently on the site. Private messages to individual users ARE coming soon. - (09/02/2026)"
+    content: " - A Universal Chatroom has been fully implemented, press the 'chat' button in the bottom right to open it! It connects all users that are currently on the site. Private messages to individual users, audio messages, file sharing, and replying to messages have all been added. - (09/03/2026)"
   },
   {
     title: "Game updates",
