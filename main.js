@@ -379,15 +379,20 @@ function setupChatWidget() {
 
   if (!launcherBtn || !chatWindow || !chatFrame) return;
 
-  let frameReady = false;
-  let hasPendingMessages = false;
+  function sendWindowStateToFrame(isOpen) {
+    if (chatFrame && chatFrame.contentWindow) {
+      chatFrame.contentWindow.postMessage({
+        source: 'parent-shell',
+        action: isOpen ? 'chatWindowOpened' : 'chatWindowClosed'
+      }, '*');
+    }
+  }
 
   function windowIsVisibleAndOpen() {
     return !chatWindow.hidden && !chatWindow.classList.contains('minimized');
   }
 
   function setPendingDot(show) {
-    hasPendingMessages = show;
     pendingDot.hidden = !show;
   }
 
@@ -396,17 +401,20 @@ function setupChatWidget() {
     chatWindow.classList.remove('minimized');
     launcherBtn.setAttribute('aria-expanded', 'true');
     setPendingDot(false);
+    sendWindowStateToFrame(true);
   }
 
   function closeChatWindow() {
     chatWindow.hidden = true;
     chatWindow.classList.remove('minimized');
     launcherBtn.setAttribute('aria-expanded', 'false');
+    sendWindowStateToFrame(false);
   }
 
   function minimizeChatWindow() {
     chatWindow.classList.add('minimized');
     launcherBtn.setAttribute('aria-expanded', 'false');
+    sendWindowStateToFrame(false);
   }
 
   launcherBtn.addEventListener('click', () => {
@@ -421,7 +429,7 @@ function setupChatWidget() {
   closeBtn.addEventListener('click', () => closeChatWindow());
 
   chatFrame.addEventListener('load', () => {
-    frameReady = true;
+    sendWindowStateToFrame(windowIsVisibleAndOpen());
   });
 
   window.addEventListener('message', (event) => {
