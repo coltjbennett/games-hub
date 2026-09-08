@@ -421,14 +421,8 @@ function setupChatWidget() {
   minimizeBtn.addEventListener('click', () => minimizeChatWindow());
   closeBtn.addEventListener('click', () => closeChatWindow());
 
-  // Once the chat iframe has loaded, if a username was already saved from a previous visit,
-  // silently sign it back in so presence/online-count keeps working without any UI prompt.
   chatFrame.addEventListener('load', () => {
     frameReady = true;
-    const savedUsername = safeGet(CHAT_USERNAME_KEY);
-    if (savedUsername) {
-      chatFrame.contentWindow.postMessage({ source: 'host-page', kind: 'auto-join', username: savedUsername }, '*');
-    }
   });
 
   // Listen for presence counts and new-message pings from the chatroom iframe.
