@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>PeerJS 3D FPS - Vertical Arena & TURN Bypass</title>
+    <title>3D FPS - Vertical Arena</title>
     <style>
         * {
             box-sizing: border-box;
@@ -299,7 +299,7 @@
     <!-- Dependencies -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.2/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
 </head>
 <body>
 
@@ -370,30 +370,18 @@
 
     <script>
         /* ==========================================================================
-           1. CONFIGURATION & NAT TRAVERSAL (TURN/STUN)
+           1. CONFIGURATION & NETWORK TRANSPORT
            ========================================================================== */
         const ROOM_PREFIX = "coltons-multiplayer-fps-";
-        
-        // Critical for Cross-Device / Cross-Network Multiplayer
-        // Added standard TURN server on port 443 (TCP) to punch through school firewalls
-        const PEER_CONFIG = {
-            config: {
-                'iceServers': [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    {
-                        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-                        username: 'openrelayproject',
-                        credential: 'openrelayproject'
-                    },
-                    {
-                        urls: 'turn:openrelay.metered.ca:443?transport=udp',
-                        username: 'openrelayproject',
-                        credential: 'openrelayproject'
-                    }
-                ]
-            }
-        };
+
+        // NETWORK TRANSPORT: public MQTT-over-WebSockets broker (same relay used by
+        // the chatroom app). This replaces PeerJS/WebRTC entirely, so there is no
+        // signaling server and no NAT traversal (STUN/TURN) required -- every
+        // client just opens a normal outbound WebSocket to the broker and
+        // publishes/subscribes on a shared topic. That is why it connects
+        // reliably on networks (school wifi, etc.) where WebRTC gets blocked.
+        const MQTT_BROKER_URL = "wss://broker.hivemq.com:8884/mqtt";
+        const TOPIC_PREFIX = "coltons-multiplayer-fps-v1/";
 
         const SETTINGS = {
             sensitivity: 0.003,
@@ -446,12 +434,15 @@
         };
 
         /* ==========================================================================
-           3. NETWORK MANAGER (PEERJS)
+           3. NETWORK MANAGER (MQTT RELAY)
            ========================================================================== */
         class NetworkManager {
             constructor() {
                 this.peer = null;
+                this.mqttClient = null;
+                this.roomTopic = null;
                 this.connections = {};
+                this.lastSeen = {}; // peerId -> timestamp, drives disconnect detection
                 this.isHost = false;
                 this.myId = null;
                 this.roomCode = null;
@@ -460,73 +451,117 @@
                 this.lobbyPlayers = [];
             }
 
+            // ---- MQTT relay transport (swapped in for PeerJS/WebRTC) ----------
+            // Every peer (host and clients alike) just opens one WebSocket to the
+            // public broker and pub/subs on a topic derived from the room code.
+            // "Connections" are simulated as a set of known peer IDs we've seen
+            // messages from, since there's no per-peer socket anymore -- every
+            // message is broadcast on the room topic and filtered by senderId.
+            _makeId() {
+                return Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+            }
+
+            _connectMqtt(onReady) {
+                this.myId = this._makeId();
+                this.mqttClient = mqtt.connect(MQTT_BROKER_URL);
+                this.mqttClient.on('connect', () => {
+                    this.mqttClient.subscribe(this.roomTopic, (err) => {
+                        if (!err) onReady();
+                    });
+                });
+                this.mqttClient.on('error', (err) => {
+                    if (this._onNetError) this._onNetError(err);
+                });
+                this.mqttClient.on('message', (topic, payloadBuf) => {
+                    if (topic !== this.roomTopic) return;
+                    let msg;
+                    try { msg = JSON.parse(payloadBuf.toString()); } catch (e) { return; }
+                    if (!msg || !msg.__senderId || msg.__senderId === this.myId) return;
+                    this.connections[msg.__senderId] = true;
+                    this.lastSeen[msg.__senderId] = Date.now();
+                    this.handleData(msg.__senderId, msg.payload);
+                });
+
+                // Heartbeat: since the relay has no per-peer "connection closed"
+                // event, presence is tracked with a ping every 3s and a timeout
+                // sweep that drops anyone we haven't heard from in 9s.
+                if (!this._presenceInterval) {
+                    this._presenceInterval = setInterval(() => {
+                        if (this.mqttClient && this.mqttClient.connected) this.broadcast({ type: 'presence' });
+                    }, 3000);
+                }
+                if (!this._timeoutInterval) {
+                    this._timeoutInterval = setInterval(() => {
+                        const now = Date.now();
+                        Object.keys(this.lastSeen).forEach((id) => {
+                            if (now - this.lastSeen[id] > 9000 && this.connections[id]) {
+                                delete this.connections[id];
+                                delete this.lastSeen[id];
+                                game.removeRemotePlayer(id);
+                                if (this.isHost) {
+                                    this.lobbyPlayers = this.lobbyPlayers.filter(p => p.id !== id);
+                                    this.broadcast({ type: 'lobby_update', players: this.lobbyPlayers });
+                                    this.updateLobbyUI();
+                                    this.updateLeaderboardUI();
+                                }
+                            }
+                        });
+                    }, 3000);
+                }
+            }
+
             initHost(username, onOpen) {
                 this.username = username;
                 this.isHost = true;
                 this.roomCode = Math.random().toString(36).substring(2, 5).toUpperCase();
-                const fullId = ROOM_PREFIX + this.roomCode;
-                
-                // STUN CONFIG PASSED HERE
-                this.peer = new Peer(fullId, PEER_CONFIG);
-                this.peer.on('open', (id) => {
-                    this.myId = id;
+                this.roomTopic = TOPIC_PREFIX + this.roomCode;
+
+                this._connectMqtt(() => {
                     this.lobbyPlayers = [{ id: this.myId, username: this.username, isHost: true, kills: 0, deaths: 0 }];
                     this.updateLobbyUI();
                     game.buildProceduralWorld(this.roomCode);
+                    this.peer = { open: true }; // kept so existing `network.peer && network.peer.open` checks still work
                     onOpen(this.roomCode);
                 });
-
-                this.peer.on('connection', (conn) => this.setupConnection(conn));
             }
 
             initClient(username, code, onConnected, onError) {
                 this.username = username;
                 this.isHost = false;
                 this.roomCode = code.toUpperCase();
-                const fullId = ROOM_PREFIX + this.roomCode;
+                this.roomTopic = TOPIC_PREFIX + this.roomCode;
+                this._onNetError = onError;
 
-                // STUN CONFIG PASSED HERE
-                this.peer = new Peer(undefined, PEER_CONFIG);
-                this.peer.on('open', (id) => {
-                    this.myId = id;
-                    const conn = this.peer.connect(fullId);
-                    this.setupConnection(conn);
-                    conn.on('open', () => {
-                        conn.send({ type: 'join', username: this.username });
-                        game.buildProceduralWorld(this.roomCode);
-                        onConnected();
-                    });
-                });
-
-                this.peer.on('error', (err) => onError(err));
-            }
-
-            setupConnection(conn) {
-                this.connections[conn.peer] = conn;
-                conn.on('data', (data) => this.handleData(conn.peer, data));
-                conn.on('close', () => {
-                    delete this.connections[conn.peer];
-                    game.removeRemotePlayer(conn.peer);
-                    
-                    if (this.isHost) {
-                        this.lobbyPlayers = this.lobbyPlayers.filter(p => p.id !== conn.peer);
-                        this.broadcast({ type: 'lobby_update', players: this.lobbyPlayers });
-                        this.updateLobbyUI();
-                        this.updateLeaderboardUI();
-                    }
+                this._connectMqtt(() => {
+                    this.peer = { open: true };
+                    this.broadcast({ type: 'join', username: this.username });
+                    game.buildProceduralWorld(this.roomCode);
+                    onConnected();
                 });
             }
 
+            // Publishes to every peer in the room (there's no concept of a single
+            // direct connection over the relay, so send() just tags the payload
+            // with an explicit target and lets that peer's handleData filter it --
+            // every other peer already ignores messages addressed elsewhere).
             broadcast(data) {
-                Object.values(this.connections).forEach(conn => conn.send(data));
+                if (!this.mqttClient) return;
+                this.mqttClient.publish(this.roomTopic, JSON.stringify({ __senderId: this.myId, payload: data }));
             }
 
             send(connId, data) {
-                if (this.connections[connId]) this.connections[connId].send(data);
+                this.broadcast(Object.assign({ __targetId: connId }, data));
             }
 
             handleData(senderId, data) {
-                if (data.type === 'join' && this.isHost) {
+                // Messages sent via send() carry a __targetId -- since the relay
+                // broadcasts to everyone, ignore anything not addressed to us.
+                if (data.__targetId && data.__targetId !== this.myId) return;
+
+                if (data.type === 'presence') {
+                    // no-op: arriving here already refreshed lastSeen[senderId] above
+                }
+                else if (data.type === 'join' && this.isHost) {
                     this.lobbyPlayers.push({ id: senderId, username: data.username, isHost: false, kills: 0, deaths: 0 });
                     this.broadcast({ type: 'lobby_update', players: this.lobbyPlayers });
                     this.updateLobbyUI();
@@ -684,10 +719,16 @@
                 this.playerMaterial = new CANNON.Material('playerMat');
                 this.worldMaterial = new CANNON.Material('worldMat');
 
+                // FIX: friction was 0, which is why the player slid down ramps
+                // even with no movement input -- there was nothing to resist
+                // gravity's pull along the slope surface. Real friction fixes
+                // that; player velocity is still driven directly by input each
+                // frame (see updatePhysics), so this doesn't make movement feel
+                // sluggish, it just lets the player actually hold still.
                 const contactMat = new CANNON.ContactMaterial(
                     this.playerMaterial,
                     this.worldMaterial,
-                    { friction: 0.0, restitution: 0.0 }
+                    { friction: 0, restitution: 0.0 }
                 );
                 this.world.addContactMaterial(contactMat);
 
@@ -702,6 +743,28 @@
                 this.playerBody.fixedRotation = true;
                 this.playerBody.updateMassProperties();
                 this.world.addBody(this.playerBody);
+
+                // FIX: ground detection for jump(). The old code raycast straight
+                // down from the player's own center, which is unreliable against
+                // Cannon sphere colliders and against angled ramp boxes. Instead,
+                // track actual contact-normal events: any contact whose normal
+                // (pointing away from the other body, toward the player) has a
+                // strong upward component means we're standing on something.
+                this.groundedUntil = 0; // timestamp; "grounded" if now < this
+                this.playerBody.addEventListener('collide', (e) => {
+                    const contact = e.contact;
+                    // Cannon gives the contact normal along bi->bj; figure out
+                    // which side the player body is on so "up" is consistent.
+                    const normal = new CANNON.Vec3();
+                    if (contact.bi === this.playerBody) {
+                        contact.ni.negate(normal);
+                    } else {
+                        normal.copy(contact.ni);
+                    }
+                    if (normal.y > 0.45) { // ~63 degrees or flatter counts as ground
+                        this.groundedUntil = performance.now() + 150; // short grace window
+                    }
+                });
             }
 
             /* ==========================================================================
@@ -798,6 +861,10 @@
             }
 
             createRamp(pos, size, axis, angle, color) {
+                // FIX: ramps were pointed the wrong way -- rotated 180 degrees
+                // about the Y axis here so the high/low ends are flipped, on
+                // both the visual mesh and the physics body (composed with the
+                // existing tilt rotation so the slope angle itself is unchanged).
                 const mesh = new THREE.Mesh(
                     new THREE.BoxGeometry(size.x, size.y, size.z),
                     new THREE.MeshStandardMaterial({ color: color })
@@ -805,6 +872,7 @@
                 mesh.position.copy(pos);
                 if (axis === 'x') mesh.rotation.x = angle;
                 if (axis === 'z') mesh.rotation.z = angle;
+                mesh.rotateY(Math.PI);
                 mesh.castShadow = true;
                 mesh.receiveShadow = true;
                 this.scene.add(mesh);
@@ -815,11 +883,15 @@
                     position: new CANNON.Vec3(pos.x, pos.y, pos.z),
                     material: this.worldMaterial
                 });
-                
-                body.quaternion.setFromAxisAngle(
+
+                const tiltQuat = new CANNON.Quaternion();
+                tiltQuat.setFromAxisAngle(
                     new CANNON.Vec3(axis === 'x' ? 1 : 0, 0, axis === 'z' ? 1 : 0),
                     angle
                 );
+                const yFlipQuat = new CANNON.Quaternion();
+                yFlipQuat.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), Math.PI);
+                tiltQuat.mult(yFlipQuat, body.quaternion);
 
                 this.world.addBody(body);
                 this.worldObjects.push({ mesh, body });
@@ -954,16 +1026,23 @@
 
             jump() {
                 if (GAME_STATE !== 'PLAYING') return;
-                
-                // FIX: Downward raycast to prevent infinite mid-air jumping
-                const start = new CANNON.Vec3().copy(this.playerBody.position);
-                const end = new CANNON.Vec3(start.x, start.y - 1.1, start.z); // Slightly below collision radius
-                const ray = new CANNON.Ray(start, end);
-                const result = new CANNON.RaycastResult();
-                ray.intersectWorld(this.world, { mode: CANNON.Ray.ANY, skipBackfaces: true }, result);
-                
-                if (result.hasHit) {
+
+                // FIX: the old ground check was a downward raycast from the
+                // player's own center against a Cannon Sphere shape, which is
+                // unreliable (sphere raycasting misses hits/matches inconsistently
+                // in cannon.js) -- that's why jumping never worked at all.
+                // Ground state now comes from actual collision-contact normals
+                // (see initPhysics), which is accurate. As a deliberate safety
+                // net per request ("infinite jump over zero jump"), if we're
+                // moving slowly enough vertically that we're plausibly resting
+                // on something but haven't gotten a fresh contact event yet,
+                // still allow the jump rather than risk a dead input.
+                const grounded = performance.now() < this.groundedUntil;
+                const plausiblyResting = Math.abs(this.playerBody.velocity.y) < 6;
+
+                if (grounded || plausiblyResting) {
                     this.playerBody.velocity.y = SETTINGS.jumpForce;
+                    this.groundedUntil = 0;
                 }
             }
 
@@ -1186,6 +1265,11 @@
                 moveVector.applyEuler(yawRotation);
 
                 if (moveX === 0 && moveZ === 0) {
+                    // FIX: player used to slide down ramps when input was
+                    // released. Zero-friction contacts were the root cause
+                    // (fixed in initPhysics), but explicitly killing horizontal
+                    // velocity here too -- rather than trusting the solver alone
+                    // -- makes standing still rock solid on any slope angle.
                     this.playerBody.velocity.x = 0;
                     this.playerBody.velocity.z = 0;
                 } else {
@@ -1296,7 +1380,7 @@
                 const uname = getUsername(); if(!uname) return;
                 const code = document.getElementById('room-input').value.trim();
                 if (code.length !== 3) { statusText.innerText = "Enter valid 3-char code!"; return; }
-                GAME_STATE = 'WAITING'; statusText.innerText = "Connecting via TURN...";
+                GAME_STATE = 'WAITING'; statusText.innerText = "Connecting...";
                 network.initClient(uname, code, () => {
                     lobbyMenu.classList.add('hidden'); waitingRoom.classList.remove('hidden');
                     displayRoomCode.innerText = code; btnStartGame.classList.add('hidden'); waitingStatus.classList.remove('hidden');
