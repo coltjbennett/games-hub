@@ -29,6 +29,17 @@ const announcements = [
 
 const projects = [
   {
+  title: 'FPS beta',
+  url: 'games/fps.html',
+  image: '',
+  alt: 'FPS beta',
+  statusKey: 'new',
+  type: 'FPS',
+  tags: ['Shooter', 'Multiplayer', 'Under development'],
+  description: 'THIS IS NOT A COMPLETE GAME; THIS IS A TEST OF A NEW ENGINE I AM ROLLING OUT FOR MULTIPLAYER FPS GAMES',
+  featured: false
+  },
+  {
     title: 'Pixel Ops',
     url: 'games/pixel-ops.html',
     image: 'images/IMG_1941.jpeg',
