@@ -129,8 +129,7 @@
             padding: 0 3px;
         }
 
-        .close-tab-btn:hover { color: red;
-        }
+        .close-tab-btn:hover { color: red; }
 
         .unread-dot {
             position: absolute;
@@ -143,12 +142,9 @@
             padding-left: 4px; margin-bottom: 2px; background: #e0e0e0; color: #000;
         }
 
-        .clickable-msg { cursor: pointer; padding: 2px 4px;
-        }
-        .clickable-msg:hover { background: var(--win-blue); color: #ffffff;
-        }
-        .clickable-msg:hover .reply-quote { color: #000000;
-        }
+        .clickable-msg { cursor: pointer; padding: 2px 4px; }
+        .clickable-msg:hover { background: var(--win-blue); color: #ffffff; }
+        .clickable-msg:hover .reply-quote { color: #000000; }
         
         /* Clean Timestamps */
         .msg-time {
@@ -162,8 +158,7 @@
             -moz-osx-font-smoothing: auto;
             font-smooth: auto;
         }
-        .clickable-msg:hover .msg-time { color: #ddd;
-        }
+        .clickable-msg:hover .msg-time { color: #ddd; }
 
         .user-item { 
             cursor: pointer;
@@ -171,8 +166,7 @@
             user-select: none !important; -webkit-user-select: none !important;
             -moz-user-select: none !important; -ms-user-select: none !important;
         }
-        .user-item:hover { background: var(--win-blue); color: #ffffff !important;
-        }
+        .user-item:hover { background: var(--win-blue); color: #ffffff !important; }
 
         .blocked-chip {
             display: inline-flex;
@@ -221,18 +215,12 @@
             background: var(--win-bg); border: 2px outset var(--win-border-light);
             padding: 2px; box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
         }
-        .context-item { padding: 3px 15px 3px 5px; cursor: pointer; font-size: 13px;
-            text-align: left; }
-        .context-item:hover { background: var(--win-blue); color: var(--win-text-light);
-        }
-        .context-divider { border-top: 1px solid var(--win-border-dark); border-bottom: 1px solid var(--win-border-light);
-            margin: 2px 0; }
-        .admin-only { display: none; color: #8b0000;
-        }
-        .admin-only:hover { color: #ffffff; background: #8b0000;
-        }
-        audio { height: 25px; outline: none; margin-top: 4px;
-        }
+        .context-item { padding: 3px 15px 3px 5px; cursor: pointer; font-size: 13px; text-align: left; }
+        .context-item:hover { background: var(--win-blue); color: var(--win-text-light); }
+        .context-divider { border-top: 1px solid var(--win-border-dark); border-bottom: 1px solid var(--win-border-light); margin: 2px 0; }
+        .admin-only { display: none; color: #8b0000; }
+        .admin-only:hover { color: #ffffff; background: #8b0000; }
+        audio { height: 25px; outline: none; margin-top: 4px; }
     </style>
 </head>
 <body>
@@ -371,6 +359,10 @@
         let isGhost = true;
         let isConnected = false;
         let isAdmin = false;
+        let isOnHomepage = true;
+        let hasJoinedRoomWindow = false;
+        let lastSeenTime = 0;
+        let pendingMentionAuthor = null;
 
         let messageHistory = [];
         let dmHistories = {};
@@ -401,7 +393,7 @@
         let pendingName = "";
         let lastDisplayedTimestamp = 0;
         const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
-        let ghostId = "Guest_" + generateId();
+        let ghostId = "ghost-" + generateId();
 
         const ui = {
             userScreen: document.getElementById("username-screen"),
@@ -429,6 +421,9 @@
             btnRecord: document.getElementById("btn-record"),
             contextMenu: document.getElementById("context-menu")
         };
+
+        function safeGet(k) { try { return localStorage.getItem(k); } catch(e){ return null; } }
+        function safeSet(k, v) { try { localStorage.setItem(k, v); } catch(e){} }
 
         document.addEventListener("click", () => { ui.contextMenu.style.display = "none"; });
         function openModal(id) { document.getElementById(id).style.display = "flex"; }
@@ -604,7 +599,7 @@
             if (Array.isArray(pendingDMs)) pendingDMs = {};
             
             renderBlockedUI();
-            if (myUsername) {
+            if (myUsername && !isGhost) {
                 Object.keys(localStorage).forEach(key => {
                     if (key.startsWith(`mqtt_dm_${myUsername}_`)) {
                         let target = key.replace(`mqtt_dm_${myUsername}_`, "");
@@ -644,11 +639,13 @@
         function executeChangeUsername(newName) {
             const oldName = myUsername;
             myUsername = newName;
+            isGhost = false;
             try { localStorage.setItem(USERNAME_KEY, myUsername); } catch (e) {}
             const selfData = activeUsers.get(oldName) || { joinTime: Date.now() };
-            activeUsers.delete(oldName); activeUsers.set(myUsername, { lastSeen: Date.now(), joinTime: selfData.joinTime });
+            activeUsers.delete(oldName); 
+            activeUsers.set(myUsername, { lastSeen: Date.now(), joinTime: selfData.joinTime, isOnHomepage: isOnHomepage, isGhost: false });
             publishMessage({ type: "RENAME", oldAuthor: oldName, author: myUsername, joinTime: selfData.joinTime, id: generateId() });
-            renderUserList(); evaluateAdminRole(); updateStatusText();
+            renderUserList(); evaluateAdminRole(); updateStatusText(); updateAndBroadcastPresence();
             ui.newUsernameIp.value = ""; toggleSettings();
         }
 
@@ -677,7 +674,7 @@
         }
 
         function ensureDmTab(username) {
-            if (!myUsername) return;
+            if (!myUsername || isGhost) return;
             const tabId = `dm:${username}`;
             if (!dmHistories[username]) dmHistories[username] = loadDmHistory(username);
             const elementId = `tab-dm-${username}`;
@@ -761,41 +758,132 @@
             ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
         }
 
+        function checkUnreadMessages(messages) {
+            if (!isOnHomepage) return;
+            if (!lastSeenTime) return;
+            let hasUnread = messages.some(m => !m.isSystem && m.author !== myUsername && m.timestamp > lastSeenTime && !blockedUsers.has(m.author));
+            if (hasUnread) {
+                window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*');
+            }
+        }
+
+        function publishPing() {
+            if (isConnected && myUsername) {
+                let uData = activeUsers.get(myUsername) || { joinTime: Date.now() };
+                publishMessage({
+                    type: "PING",
+                    author: myUsername,
+                    isGhost: isGhost,
+                    isOnHomepage: isOnHomepage,
+                    joinTime: uData.joinTime
+                });
+            }
+        }
+
+        function updateAndBroadcastPresence() {
+            let count = activeUsers.size;
+            window.parent.postMessage({ source: 'universal-chat', kind: 'presence', count: count }, '*');
+        }
+
+        function handleChatWindowOpened() {
+            isOnHomepage = false;
+            lastSeenTime = Date.now();
+            try { localStorage.setItem("mqtt_last_seen_time", String(lastSeenTime)); } catch(e){}
+
+            if (pendingMentionAuthor) {
+                triggerMention(pendingMentionAuthor);
+                pendingMentionAuthor = null;
+            }
+
+            if (!isGhost) {
+                if (!hasJoinedRoomWindow) {
+                    hasJoinedRoomWindow = true;
+                    const now = Date.now();
+                    publishMessage({ type: "JOIN", author: myUsername, joinTime: activeUsers.get(myUsername)?.joinTime || now, id: generateId(), isOnHomepage: false });
+                }
+                publishPing();
+            } else {
+                ui.userScreen.style.display = "block";
+                ui.chatScreen.style.display = "none";
+            }
+        }
+
+        function handleChatWindowClosed() {
+            isOnHomepage = true;
+            lastSeenTime = Date.now();
+            try { localStorage.setItem("mqtt_last_seen_time", String(lastSeenTime)); } catch(e){}
+            if (isConnected) publishPing();
+        }
+
+        window.addEventListener('message', (event) => {
+            const data = event.data || {};
+            if (data.source !== 'parent-shell') return;
+
+            if (data.action === 'chatWindowOpened') {
+                handleChatWindowOpened();
+            } else if (data.action === 'chatWindowClosed') {
+                handleChatWindowClosed();
+            }
+        });
+
         (function init() {
             if(checkPenalties()) return;
-            loadSettingsAndDMs();
+
+            try {
+                let st = localStorage.getItem("mqtt_last_seen_time");
+                if (st) lastSeenTime = parseInt(st, 10) || 0;
+            } catch(e){}
+
+            let saved = localStorage.getItem(USERNAME_KEY);
+            let remAdmin = localStorage.getItem('mqtt_admin_rem');
+
+            if (saved) {
+                if (/[\s/]/.test(saved)) { saved = saved.replace(/[\s/]/g, '_'); localStorage.setItem(USERNAME_KEY, saved); }
+                ui.userIp.value = saved;
+                myUsername = saved;
+                isGhost = false;
+
+                if (ADMINS.includes(saved) && remAdmin === 'adminpass') {
+                    isAdmin = true;
+                }
+
+                ui.userScreen.style.display = "none";
+                ui.chatScreen.style.display = "flex";
+                loadSettingsAndDMs();
+                loadLocalHistory();
+            } else {
+                let storedGhost = safeGet("mqtt_ghost_id");
+                if (!storedGhost) {
+                    storedGhost = "ghost-" + generateId();
+                    safeSet("mqtt_ghost_id", storedGhost);
+                }
+                ghostId = storedGhost;
+                myUsername = ghostId;
+                isGhost = true;
+                ui.userScreen.style.display = "block";
+                ui.chatScreen.style.display = "none";
+                loadSettingsAndDMs();
+                loadLocalHistory();
+            }
+
+            activeUsers.set(myUsername, { lastSeen: Date.now(), joinTime: Date.now(), isOnHomepage: true, isGhost: isGhost });
 
             client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
             client.on("connect", () => {
                 isConnected = true;
                 client.subscribe(ROOM_TOPIC, (err) => {
                     if (!err) {
-                        publishMessage({ type: "SYNC_REQ", author: myUsername || ghostId });
-                        if (!myUsername) setInterval(checkPresence, 5000);
+                        publishMessage({ type: "SYNC_REQ", author: myUsername, isGhost: isGhost, isOnHomepage: isOnHomepage });
+                        publishPing();
+                        if (!window.pingInterval) {
+                            window.pingInterval = setInterval(() => { if (isConnected) publishPing(); }, 5000);
+                        }
                     }
                 });
             });
 
             setupMqttListeners();
-
-            try { 
-                let saved = localStorage.getItem(USERNAME_KEY); 
-                if (saved) { 
-                    if (/[\s/]/.test(saved)) { saved = saved.replace(/[\s/]/g, '_'); localStorage.setItem(USERNAME_KEY, saved); }
-                    ui.userIp.value = saved; 
-                    let remAdmin = localStorage.getItem('mqtt_admin_rem');
-                    if (ADMINS.includes(saved)) {
-                        if (remAdmin === 'adminpass') executeJoin(saved, true);
-                        else openPasswordModal('join_admin', saved);
-                    } else {
-                        executeJoin(saved, true);
-                    }
-                } else {
-                    ui.userScreen.style.display = "block";
-                    ui.chatScreen.style.display = "none";
-                    loadLocalHistory();
-                }
-            } catch (e) {}
+            setInterval(checkPresence, 5000);
         })();
 
         function joinChat() {
@@ -805,27 +893,34 @@
             if (ADMINS.includes(val)) openPasswordModal('join_admin', val); else executeJoin(val);
         }
 
-        function executeJoin(val, isSilent = false) {
+        function executeJoin(val) {
+            const oldName = myUsername;
+            if (isGhost && oldName) {
+                activeUsers.delete(oldName);
+                if (isConnected) publishMessage({ type: "LEAVE", author: oldName, isGhost: true, id: generateId() });
+            }
+
             myUsername = val;
             isGhost = false;
             try { localStorage.setItem(USERNAME_KEY, myUsername); } catch (e) {}
             ui.userScreen.style.display = "none";
             ui.chatScreen.style.display = "flex";
+            loadSettingsAndDMs();
             loadLocalHistory();
 
             const now = Date.now();
-            activeUsers.set(myUsername, { lastSeen: now, joinTime: now });
-            evaluateAdminRole(); renderUserList();
-            
-            if (isConnected && !isSilent) {
-                publishMessage({ type: "JOIN", author: myUsername, joinTime: now, id: generateId() });
+            activeUsers.set(myUsername, { lastSeen: now, joinTime: now, isOnHomepage: false, isGhost: false });
+            evaluateAdminRole(); renderUserList(); updateAndBroadcastPresence();
+
+            hasJoinedRoomWindow = true;
+            if (isConnected) {
+                publishMessage({ type: "JOIN", author: myUsername, joinTime: now, id: generateId(), isOnHomepage: false });
                 publishMessage({ type: "SYNC_REQ", author: myUsername });
             }
-            
+
             if (!window.pingInterval) {
-                window.pingInterval = setInterval(() => { if (isConnected && !isGhost) publishMessage({ type: "PING", author: myUsername, joinTime: activeUsers.get(myUsername)?.joinTime || Date.now() }); }, 5000);
+                window.pingInterval = setInterval(() => { if (isConnected) publishPing(); }, 5000);
             }
-            setInterval(checkPresence, 5000);
         }
 
         function processPendingOutbox(targetUser) {
@@ -842,19 +937,19 @@
                 try {
                     const data = JSON.parse(payload.toString());
                     if (data.compressed && data.text) data.text = LZString.decompressFromUTF16(data.text) || data.text;
+                    
                     if (data.author && !blockedUsers.has(data.author)) {
                         const existing = activeUsers.get(data.author);
-                        activeUsers.set(data.author, { lastSeen: Date.now(), joinTime: data.joinTime || (existing ? existing.joinTime : Date.now()) });
-                        renderUserList(); evaluateAdminRole();
+                        activeUsers.set(data.author, {
+                            lastSeen: Date.now(),
+                            joinTime: data.joinTime || (existing ? existing.joinTime : Date.now()),
+                            isOnHomepage: data.isOnHomepage !== undefined ? data.isOnHomepage : (existing ? existing.isOnHomepage : false),
+                            isGhost: data.isGhost !== undefined ? data.isGhost : (data.author.startsWith("ghost-"))
+                        });
+                        renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
                     }
 
-                    // Ghost/Guest Unread Hook
-                    let selfId = isGhost ? ghostId : myUsername;
-                    if ((data.type === "MSG" || (data.type === "DM" && data.target === selfId)) && data.author !== selfId) {
-                        window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*');
-                    }
-
-                    // Ping Logic
+                    // Notification & Ping triggers for logged in users
                     if (!isGhost && data.author !== myUsername && !blockedUsers.has(data.author)) {
                         const isDM = (data.type === "DM" && data.target === myUsername);
                         const isMention = (data.type === "MSG" && data.text && data.text.includes(`@${myUsername}`));
@@ -867,17 +962,26 @@
                                 let storedPings = JSON.parse(localStorage.getItem('mqtt_pings') || '{}');
                                 storedPings[data.id] = true;
                                 localStorage.setItem('mqtt_pings', JSON.stringify(storedPings));
+
+                                if (isMention) {
+                                    if (!isOnHomepage) {
+                                        triggerMention(data.author);
+                                    } else {
+                                        pendingMentionAuthor = data.author;
+                                    }
+                                }
                             }
                         }
                     }
 
                     if (data.type === "SYNC_REQ") { 
-                        if (data.author !== selfId) publishMessage({ type: "SYNC_RES", target: data.author, history: messageHistory }); 
+                        if (data.author !== myUsername) publishMessage({ type: "SYNC_RES", target: data.author, history: messageHistory }); 
                         if (!isGhost && data.author) processPendingOutbox(data.author);
                     }
-                    else if (data.type === "SYNC_RES" && data.target === selfId) { 
+                    else if (data.type === "SYNC_RES" && data.target === myUsername) { 
                         messageHistory = mergeHistory(messageHistory, data.history); saveLocalHistory(); 
                         if (currentTab === "global") renderActiveTabMessages();
+                        checkUnreadMessages(messageHistory);
                     }
                     else if (data.type === "JOIN") {
                         if (blockedUsers.has(data.author)) return;
@@ -890,17 +994,23 @@
                     }
                     else if (data.type === "LEAVE") {
                         if (activeUsers.has(data.author)) {
+                            const uData = activeUsers.get(data.author);
                             activeUsers.delete(data.author);
-                            const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} disconnected.`, timestamp: data.timestamp || Date.now() };
-                            messageHistory.push(sysObj); saveLocalHistory();
-                            if (currentTab === "global") appendSystemDOM(sysObj);
-                            renderUserList(); evaluateAdminRole();
+                            if (!uData.isGhost) {
+                                const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} disconnected.`, timestamp: data.timestamp || Date.now() };
+                                messageHistory.push(sysObj); saveLocalHistory();
+                                if (currentTab === "global") appendSystemDOM(sysObj);
+                            }
+                            renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
                         }
                     }
                     else if (data.type === "MSG") {
                         if (blockedUsers.has(data.author)) return;
                         const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), isSystem: false };
                         messageHistory.push(msgObj); saveLocalHistory(); if (currentTab === "global") appendMsgDOM(msgObj);
+                        if (data.author !== myUsername && isOnHomepage) {
+                            window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*');
+                        }
                     }
                     else if (data.type === "DM") {
                         if (blockedUsers.has(data.author)) return;
@@ -910,6 +1020,7 @@
                             const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now() };
                             dmHistories[data.author] = mergeHistory(dmHistories[data.author] || [], [msgObj]); saveDmHistory(data.author);
                             if (currentTab === tabId) appendMsgDOM(msgObj); else markUnread(tabId);
+                            if (isOnHomepage) window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*');
                         }
                     }
                     else if (data.type === "CMD" && data.target === myUsername && ADMINS.includes(data.author)) {
@@ -956,7 +1067,7 @@
                         const oldName = data.oldAuthor;
                         const newName = data.author;
                         if (activeUsers.has(oldName)) { const uData = activeUsers.get(oldName); activeUsers.delete(oldName);
-                            activeUsers.set(newName, { lastSeen: Date.now(), joinTime: data.joinTime || uData.joinTime }); }
+                            activeUsers.set(newName, { lastSeen: Date.now(), joinTime: data.joinTime || uData.joinTime, isOnHomepage: uData.isOnHomepage, isGhost: false }); }
                         messageHistory.forEach(m => { if (m.author === oldName) m.author = newName; if (m.replyTo && m.replyTo.author === oldName) m.replyTo.author = newName; });
                         saveLocalHistory();
                         if (dmHistories[oldName]) {
@@ -971,7 +1082,7 @@
                         const sysObj = { id: data.id || generateId(), isSystem: true, text: `${oldName} changed name to ${newName}`, timestamp: data.timestamp || Date.now() };
                         messageHistory.push(sysObj); saveLocalHistory();
                         if (currentTab === "global") renderActiveTabMessages();
-                        renderUserList(); evaluateAdminRole();
+                        renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
                     }
                 } catch (e) {}
             });
@@ -991,6 +1102,7 @@
                                 storedPings[m.id] = true;
                                 localStorage.setItem('mqtt_pings', JSON.stringify(storedPings));
                                 window.parent.postMessage({ source: 'universal-chat', kind: 'ping', user: m.author, text: `You were pinged by ${m.author} while offline` }, '*');
+                                pendingMentionAuthor = m.author;
                             }
                         }
                     }
@@ -1009,29 +1121,34 @@
             const now = Date.now();
             let changed = false;
             activeUsers.forEach((userData, user) => {
-                if (user !== myUsername && now - userData.lastSeen > 60000) {
+                if (user !== myUsername && now - userData.lastSeen > 30000) {
                     activeUsers.delete(user);
-                    const sysObj = { id: generateId(), isSystem: true, text: `${user} disconnected.`, timestamp: Date.now() };
-              
-                    messageHistory.push(sysObj); saveLocalHistory();
-                    if (currentTab === "global") appendSystemDOM(sysObj);
+                    if (!userData.isGhost) {
+                        const sysObj = { id: generateId(), isSystem: true, text: `${user} disconnected.`, timestamp: Date.now() };
+                        messageHistory.push(sysObj); saveLocalHistory();
+                        if (currentTab === "global") appendSystemDOM(sysObj);
+                    }
                     changed = true;
                 }
             });
             if (changed) { renderUserList(); evaluateAdminRole(); }
+            updateAndBroadcastPresence();
         }
 
         function renderUserList() {
             ui.userList.innerHTML = "";
             const now = Date.now();
             activeUsers.forEach((userData, user) => {
+                if (userData.isGhost || user.startsWith("ghost-")) return;
                 if (blockedUsers.has(user)) return;
+
                 const color = getUsernameColor(user);
                 const adminBadge = ADMINS.includes(user) ? " [Admin]" : "";
                 const selfBadge = user === myUsername ? " [You]" : "";
-      
+                const homepageTag = userData.isOnHomepage ? " <span style='font-size:11px; color:#555;'>[On homepage]</span>" : "";
                 const inactiveBadge = (now - userData.lastSeen > 10000) && user !== myUsername ? " <span style='font-size:11px; color:#888;'>(Inactive)</span>" : "";
-                ui.userList.innerHTML += `<li class="user-item" oncontextmenu="showContextMenu(event, '${user}'); return false;" onclick="handleUserClick(event, '${user}')" ontouchstart="handleTouchStart(event, '${user}')" ontouchmove="clearTimeout(pressTimer)" ontouchend="handleTouchEnd(event, '${user}')" style="color: ${color};">${user}${adminBadge}${selfBadge}${inactiveBadge}</li>`;
+
+                ui.userList.innerHTML += `<li class="user-item" oncontextmenu="showContextMenu(event, '${user}'); return false;" onclick="handleUserClick(event, '${user}')" ontouchstart="handleTouchStart(event, '${user}')" ontouchmove="clearTimeout(pressTimer)" ontouchend="handleTouchEnd(event, '${user}')" style="color: ${color};">${user}${adminBadge}${selfBadge}${homepageTag}${inactiveBadge}</li>`;
             });
         }
 
@@ -1066,7 +1183,7 @@
             return val * multipliers[match[2] ? match[2].toLowerCase() : 'm'];
         }
 
-        function startDmWith(username) { if (username !== myUsername) { if (closedDMs.has(username)) { closedDMs.delete(username); saveClosedDMs(); } switchTab(ensureDmTab(username)); } }
+        function startDmWith(username) { if (username !== myUsername && !isGhost) { if (closedDMs.has(username)) { closedDMs.delete(username); saveClosedDMs(); } switchTab(ensureDmTab(username)); } }
         function handleTyping() { if (!isConnected || isMuted || isGhost) return;
             clearTimeout(typingTimeout); publishMessage({ type: "TYPING", author: myUsername }); typingTimeout = setTimeout(() => {}, 3000);
         }
