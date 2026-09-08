@@ -86,7 +86,6 @@ function renderAnnouncements() {
   announcements.forEach(a => {
     const clone = template.content.cloneNode(true);
     clone.querySelector('h3').textContent = a.title;
-    // content contains raw safe markup tags like <br> and <i> requiring innerHTML parsing
     clone.querySelector('p').innerHTML = a.content;
     announcementList.appendChild(clone);
   });
@@ -233,7 +232,7 @@ function renderProjects() {
 function setupWindowButtons() {
   document.querySelectorAll('.btn-minimize').forEach((btn) => {
     const panel = btn.closest('.panel') || btn.closest('.panel-dark');
-    if (panel) {
+    if (panel && panel.id !== 'ping-banner') {
       btn.addEventListener('click', (e) => {
         panel.classList.toggle('minimized');
         updateTaskbarApps();
@@ -259,7 +258,7 @@ function updateTaskbarApps() {
   container.innerHTML = '';
 
   document.querySelectorAll('.minimized').forEach(panel => {
-    if (panel.style.display === 'none') return; // Skip completely closed panels
+    if (panel.style.display === 'none' || panel.id === 'ping-banner') return; 
 
     const titleSpan = panel.querySelector('.panel-title-bar span:first-child');
     const titleText = titleSpan ? titleSpan.textContent.trim() : 'W';
@@ -368,7 +367,7 @@ function updateTaskbarClock() {
   if (dateEl) dateEl.textContent = now.toLocaleDateString('en-US', dateOptions);
 }
 
-// ===== CHATROOM WIDGET (launcher button, floating window, pending dot, online counter) =====
+// ===== CHATROOM WIDGET (launcher button, floating window, pending dot, online counter, ping banner) =====
 function setupChatWidget() {
   const launcherBtn = document.getElementById('chat-launcher-btn');
   const pendingDot = document.getElementById('chat-pending-dot');
@@ -425,7 +424,6 @@ function setupChatWidget() {
     frameReady = true;
   });
 
-  // Listen for presence counts and new-message pings from the chatroom iframe.
   window.addEventListener('message', (event) => {
     const data = event.data || {};
     if (data.source !== 'universal-chat') return;
@@ -435,6 +433,14 @@ function setupChatWidget() {
     } else if (data.kind === 'unread') {
       if (!windowIsVisibleAndOpen()) {
         setPendingDot(true);
+      }
+    } else if (data.kind === 'ping') {
+      const banner = document.getElementById('ping-banner');
+      const bannerText = document.getElementById('ping-banner-text');
+      if (banner && bannerText) {
+        bannerText.textContent = data.text;
+        banner.style.top = '10px';
+        setTimeout(() => { banner.style.top = '-100px'; }, 3000);
       }
     }
   });
@@ -464,7 +470,6 @@ sortToggle.addEventListener('click', () => {
   renderProjects();
 });
 
-// Wrapped input listener in 250ms delay debounce wrapper function
 searchInput.addEventListener('input', debounce(() => {
   searchTerm = searchInput.value;
   safeSet(SEARCH_KEY, searchTerm);
