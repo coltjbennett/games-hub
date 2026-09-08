@@ -31,7 +31,7 @@ const projects = [
   {
   title: 'FPS beta',
   url: 'games/fps.html',
-  image: '',
+  image: 'images/missing.png',
   alt: 'FPS beta',
   statusKey: 'new',
   type: 'FPS',
