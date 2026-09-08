@@ -129,7 +129,8 @@
             padding: 0 3px;
         }
 
-        .close-tab-btn:hover { color: red; }
+        .close-tab-btn:hover { color: red;
+        }
 
         .unread-dot {
             position: absolute;
@@ -142,9 +143,12 @@
             padding-left: 4px; margin-bottom: 2px; background: #e0e0e0; color: #000;
         }
 
-        .clickable-msg { cursor: pointer; padding: 2px 4px; }
-        .clickable-msg:hover { background: var(--win-blue); color: #ffffff; }
-        .clickable-msg:hover .reply-quote { color: #000000; }
+        .clickable-msg { cursor: pointer; padding: 2px 4px;
+        }
+        .clickable-msg:hover { background: var(--win-blue); color: #ffffff;
+        }
+        .clickable-msg:hover .reply-quote { color: #000000;
+        }
         
         /* Clean Timestamps */
         .msg-time {
@@ -158,7 +162,8 @@
             -moz-osx-font-smoothing: auto;
             font-smooth: auto;
         }
-        .clickable-msg:hover .msg-time { color: #ddd; }
+        .clickable-msg:hover .msg-time { color: #ddd;
+        }
 
         .user-item { 
             cursor: pointer;
@@ -166,7 +171,8 @@
             user-select: none !important; -webkit-user-select: none !important;
             -moz-user-select: none !important; -ms-user-select: none !important;
         }
-        .user-item:hover { background: var(--win-blue); color: #ffffff !important; }
+        .user-item:hover { background: var(--win-blue); color: #ffffff !important;
+        }
 
         .blocked-chip {
             display: inline-flex;
@@ -201,6 +207,7 @@
             background: var(--win-blue);
             color: var(--win-text-light);
             padding: 3px 6px; font-weight: bold; display: flex; justify-content: space-between; align-items: center;
+            font-family: "W95FA", "MS Sans Serif", sans-serif !important;
         }
 
         .w95-content {
@@ -214,12 +221,18 @@
             background: var(--win-bg); border: 2px outset var(--win-border-light);
             padding: 2px; box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
         }
-        .context-item { padding: 3px 15px 3px 5px; cursor: pointer; font-size: 13px; text-align: left; }
-        .context-item:hover { background: var(--win-blue); color: var(--win-text-light); }
-        .context-divider { border-top: 1px solid var(--win-border-dark); border-bottom: 1px solid var(--win-border-light); margin: 2px 0; }
-        .admin-only { display: none; color: #8b0000; }
-        .admin-only:hover { color: #ffffff; background: #8b0000; }
-        audio { height: 25px; outline: none; margin-top: 4px; }
+        .context-item { padding: 3px 15px 3px 5px; cursor: pointer; font-size: 13px;
+            text-align: left; }
+        .context-item:hover { background: var(--win-blue); color: var(--win-text-light);
+        }
+        .context-divider { border-top: 1px solid var(--win-border-dark); border-bottom: 1px solid var(--win-border-light);
+            margin: 2px 0; }
+        .admin-only { display: none; color: #8b0000;
+        }
+        .admin-only:hover { color: #ffffff; background: #8b0000;
+        }
+        audio { height: 25px; outline: none; margin-top: 4px;
+        }
     </style>
 </head>
 <body>
@@ -252,9 +265,14 @@
     <div id="password-modal" class="modal-overlay">
         <div class="w95-window">
             <div class="w95-titlebar"><span id="password-modal-title">Admin Override</span><button onclick="closeModal('password-modal')" style="height: 18px; line-height: 10px;">X</button></div>
-            <div class="w95-content" style="display: flex; gap: 6px;">
+            <div class="w95-content" style="display: flex; gap: 6px; padding-bottom: 4px;">
                 <input type="password" id="unban-password" placeholder="Enter password..." style="flex: 1;" onkeydown="if(event.key==='Enter') submitPassword()" />
                 <button onclick="submitPassword()">Submit</button>
+            </div>
+            <div class="w95-content" style="padding-top: 0; text-align: left;">
+                <label style="font-size: 12px; cursor: pointer;">
+                    <input type="checkbox" id="remember-admin-chk"> Remember Me
+                </label>
             </div>
         </div>
     </div>
@@ -320,9 +338,9 @@
                 </div>
 
                 <div style="display: flex; gap: 4px; position: relative;">
-                    <input type="file" id="universal-upload" style="display: none;" />
-                    <button onclick="document.getElementById('universal-upload').click()" title="Attach Media or File">📎</button>
-                    <button id="btn-record" onclick="toggleRecording()" title="Voice Memo">🎤</button>
+                    <input type="file" id="universal-upload" accept="*/*" style="display: none;" />
+                    <button onclick="document.getElementById('universal-upload').click()" title="Attach Media or File">Add File</button>
+                    <button id="btn-record" onclick="toggleRecording()" title="Voice Memo">Record Msg</button>
                     <div style="flex: 1; position: relative; display: flex;">
                         <input type="text" id="msg-input" placeholder="Type a msg, /command, or click to reply..." oninput="handleTyping()" style="width: 100%;" onkeydown="if(event.key==='Enter') processInput()" />
                         <div id="audio-timer" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #ffffff; border: 2px inset var(--win-border-dark); cursor: not-allowed; line-height: 22px; text-align: center; font-weight: bold; font-family: monospace, sans-serif; font-size: 14px;">00:00</div>
@@ -349,10 +367,10 @@
         const ADMINS = ["Colton", "mr_puffy_5312"];
 
         let client = null;
-        let myUsername = "";
+        let myUsername = null;
+        let isGhost = true;
         let isConnected = false;
         let isAdmin = false;
-        let isGhost = false;
 
         let messageHistory = [];
         let dmHistories = {};
@@ -360,10 +378,13 @@
         
         let blockedUsers = new Set();
         let closedDMs = new Set();
+        let pendingDMs = {};
+        let lastPingFrom = {};
 
         let currentTab = "global";
         let unreadTabs = new Set();
         let activeReply = null;
+        let typingTimeout = null;
 
         let isMuted = false;
         let mutedAttemptCount = 0;
@@ -372,12 +393,15 @@
 
         let mediaRecorder = null;
         let audioChunks = [];
+        let isLongPress = false;
+        let pressTimer = null;
         let contextMenuTarget = "";
         
         let pendingAction = "unban";
         let pendingName = "";
         let lastDisplayedTimestamp = 0;
         const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
+        let ghostId = "Guest_" + generateId();
 
         const ui = {
             userScreen: document.getElementById("username-screen"),
@@ -386,6 +410,7 @@
             penaltyTitle: document.getElementById("penalty-title"),
             penaltyDesc: document.getElementById("penalty-desc"),
             banInfoBtn: document.getElementById("ban-info-btn"),
+          
             userIp: document.getElementById("username-input"),
             status: document.getElementById("status"),
             chatBox: document.getElementById("chat-box"),
@@ -394,6 +419,7 @@
             typing: document.getElementById("typing-indicator"),
             adminClearBtn: document.getElementById("admin-clear-btn"),
             tabsBar: document.getElementById("tabs-bar"),
+      
             replyPreview: document.getElementById("reply-preview"),
             replyText: document.getElementById("reply-text"),
             settingsPanel: document.getElementById("settings-panel"),
@@ -408,10 +434,6 @@
         function openModal(id) { document.getElementById(id).style.display = "flex"; }
         function closeModal(id) { document.getElementById(id).style.display = "none"; }
         function customAlert(text) { document.getElementById('alert-text').innerText = text; openModal('alert-modal'); }
-
-        function updateOnlineCount() {
-            window.parent.postMessage({ source: 'universal-chat', kind: 'presence', count: activeUsers.size }, '*');
-        }
 
         function triggerMention(author) {
             document.getElementById("mention-text").innerText = `@${author} mentioned you!`;
@@ -434,10 +456,16 @@
 
         function submitPassword() {
             const pwd = document.getElementById("unban-password").value;
+            const rememberMe = document.getElementById("remember-admin-chk").checked;
+            
             if (pendingAction === 'unban') {
-                if (pwd === "adminpass") { localStorage.removeItem("mqtt_banned"); location.reload(); } else { customAlert("Incorrect password."); }
+                if (pwd === "adminpass") { localStorage.removeItem("mqtt_banned"); location.reload(); } 
+                else { customAlert("Incorrect password."); }
             } else if (pendingAction === 'join_admin' || pendingAction === 'change_admin') {
                 if (pwd === "adminpass") {
+                    if (rememberMe) {
+                        try { localStorage.setItem('mqtt_admin_rem', pwd); } catch(e){}
+                    }
                     closeModal("password-modal");
                     if (pendingAction === 'join_admin') executeJoin(pendingName); else executeChangeUsername(pendingName);
                 } else { customAlert("Incorrect admin password."); }
@@ -498,7 +526,12 @@
                         const blob = new Blob(audioChunks, { type: mimeType });
                         audioChunks = [];
                         const reader = new FileReader();
-                        reader.onloadend = () => sendPayload(reader.result, { isAudio: true });
+                        reader.onloadend = () => {
+                            const raw = reader.result;
+                            const comp = LZString.compressToUTF16(raw);
+                            if (comp.length > 500000) return customAlert("Audio recording too long! (<1MB limit)");
+                            sendPayload(raw, { isAudio: true, preCompressed: comp });
+                        };
                         reader.readAsDataURL(blob);
                         
                         msgInput.style.display = "block";
@@ -516,20 +549,32 @@
         document.getElementById("universal-upload").addEventListener("change", function(e) {
             const file = e.target.files[0];
             if (!file) return;
+            const isVideo = file.type.startsWith("video/");
+            const isImage = file.type.startsWith("image/");
+            const isFile = !isImage && !isVideo;
+
             const reader = new FileReader();
             reader.onload = function(event) { 
-                sendPayload(event.target.result, { isImage: file.type.startsWith("image/"), isFile: !file.type.startsWith("image/"), fileName: file.name }); 
+                const raw = event.target.result;
+                const comp = LZString.compressToUTF16(raw);
+                if (comp.length > 500000) {
+                    return customAlert("File too large. Compression could not fit it under ~1MB.");
+                }
+                sendPayload(raw, { isImage, isVideo, isFile, fileName: file.name, preCompressed: comp }); 
             };
             reader.readAsDataURL(file); e.target.value = "";
         });
-        
+
         function saveToLocalWithCompression(key, historyArray) {
             let compressed = LZString.compressToUTF16(JSON.stringify(historyArray));
-            while (compressed.length > 2000000 && historyArray.length > 0) {
-                historyArray.shift();
-                compressed = LZString.compressToUTF16(JSON.stringify(historyArray));
+            try { 
+                localStorage.setItem(key, compressed);
+            } catch(e) {
+                if (e.name === 'QuotaExceededError' || e.code === 22) {
+                    while (historyArray.length > 10) { historyArray.shift(); }
+                    try { localStorage.setItem(key, LZString.compressToUTF16(JSON.stringify(historyArray))); } catch(err) { console.warn("Storage totally full."); }
+                }
             }
-            try { localStorage.setItem(key, compressed); } catch(e){}
         }
 
         function loadFromLocalWithCompression(key) {
@@ -542,24 +587,33 @@
             } catch(e) { return []; }
         }
 
-        function loadLocalHistory() { messageHistory = loadFromLocalWithCompression(STORAGE_KEY); if(currentTab === "global") renderActiveTabMessages(); }
+        function loadLocalHistory() { 
+            messageHistory = loadFromLocalWithCompression(STORAGE_KEY);
+            if(currentTab === "global") renderActiveTabMessages(); 
+        }
         function saveLocalHistory() { saveToLocalWithCompression(STORAGE_KEY, messageHistory); }
         function loadDmHistory(otherUser) { return loadFromLocalWithCompression(`mqtt_dm_${myUsername}_${otherUser}`); }
         function saveDmHistory(otherUser) { saveToLocalWithCompression(`mqtt_dm_${myUsername}_${otherUser}`, dmHistories[otherUser] || []); }
 
         function loadSettingsAndDMs() {
-            try { const s = localStorage.getItem(BLOCKED_KEY); if (s) blockedUsers = new Set(JSON.parse(s)); } catch (e) {}
-            try { const c = localStorage.getItem(CLOSED_DMS_KEY); if (c) closedDMs = new Set(JSON.parse(c)); } catch (e) {}
+            try { const s = localStorage.getItem(BLOCKED_KEY);
+                if (s) blockedUsers = new Set(JSON.parse(s)); } catch (e) {}
+            try { const c = localStorage.getItem(CLOSED_DMS_KEY);
+                if (c) closedDMs = new Set(JSON.parse(c)); } catch (e) {}
+            pendingDMs = loadFromLocalWithCompression('mqtt_pending_dms') || {};
+            if (Array.isArray(pendingDMs)) pendingDMs = {};
+            
             renderBlockedUI();
-            Object.keys(localStorage).forEach(key => {
-                if (key.startsWith(`mqtt_dm_${myUsername}_`)) {
-                    let target = key.replace(`mqtt_dm_${myUsername}_`, "");
-                    let hist = loadFromLocalWithCompression(key);
-                    if (hist.length > 0) { dmHistories[target] = hist; if (!closedDMs.has(target)) ensureDmTab(target); }
-                }
-            });
+            if (myUsername) {
+                Object.keys(localStorage).forEach(key => {
+                    if (key.startsWith(`mqtt_dm_${myUsername}_`)) {
+                        let target = key.replace(`mqtt_dm_${myUsername}_`, "");
+                        let hist = loadFromLocalWithCompression(key);
+                        if (hist.length > 0) { dmHistories[target] = hist; if (!closedDMs.has(target)) ensureDmTab(target); }
+                    }
+                });
+            }
         }
-        
         function saveBlockedUsers() { try { localStorage.setItem(BLOCKED_KEY, JSON.stringify(Array.from(blockedUsers))); } catch (e) {} renderBlockedUI(); }
         function saveClosedDMs() { try { localStorage.setItem(CLOSED_DMS_KEY, JSON.stringify(Array.from(closedDMs))); } catch (e) {} }
 
@@ -573,7 +627,8 @@
             });
         }
         function toggleSettings() { ui.settingsPanel.style.display = ui.settingsPanel.style.display === "none" ? "block" : "none"; }
-        function blockUser() { const n = ui.blockIp.value.trim(); if (n && n !== myUsername) { blockedUsers.add(n); saveBlockedUsers(); ui.blockIp.value = ""; renderActiveTabMessages(); } }
+        function blockUser() { const n = ui.blockIp.value.trim();
+            if (n && n !== myUsername) { blockedUsers.add(n); saveBlockedUsers(); ui.blockIp.value = ""; renderActiveTabMessages(); } }
         function unblockUser(n) { blockedUsers.delete(n); saveBlockedUsers(); renderActiveTabMessages(); }
 
         function changeUsername() {
@@ -602,13 +657,13 @@
             for (let i = 0; i < username.length; i++) hash = ((hash << 5) + hash) + username.charCodeAt(i);
             return `rgb(${Math.abs((hash ^ 0xDEADBEEF) % 150)}, ${Math.abs((hash ^ 0xCAFEBABE) % 150)}, ${Math.abs((hash ^ 0x8BADF00D) % 150)})`;
         }
-        
         function escapeHTML(str) { return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)); }
 
         function formatMessageContent(rawText, msg) {
             if (msg.isImage) return `<img src="${rawText}" style="max-width: 250px; border: 2px inset var(--win-border-dark); display: block; margin-top: 4px;" alt="User Image"/>`;
+            if (msg.isVideo) return `<br><video controls src="${rawText}" style="max-width: 250px; border: 2px inset var(--win-border-dark); display: block; margin-top: 4px;"></video>`;
             if (msg.isAudio) return `<br><audio controls src="${rawText}"></audio>`;
-            if (msg.isFile) return `<br><a href="${rawText}" download="${escapeHTML(msg.fileName)}" class="btn-w95" style="text-decoration:none; margin-top:4px; padding:4px;">💾 Download ${escapeHTML(msg.fileName)}</a>`;
+            if (msg.isFile) return `<br><a href="${rawText}" download="${escapeHTML(msg.fileName)}" class="btn-w95" style="text-decoration:none; margin-top:4px; padding:4px;">Download ${escapeHTML(msg.fileName)}</a>`;
             return escapeHTML(rawText).replace(/(https?:\/\/[^\s]+)/g, url => `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: blue;">${url}</a>`);
         }
 
@@ -622,6 +677,7 @@
         }
 
         function ensureDmTab(username) {
+            if (!myUsername) return;
             const tabId = `dm:${username}`;
             if (!dmHistories[username]) dmHistories[username] = loadDmHistory(username);
             const elementId = `tab-dm-${username}`;
@@ -650,7 +706,7 @@
 
         function setReplyTarget(msg) {
             activeReply = msg;
-            let preview = msg.isImage ? "[Image]" : msg.isAudio ? "[Voice Memo]" : msg.isFile ? "[File]" : msg.text;
+            let preview = msg.isImage ? "[Image]" : msg.isVideo ? "[Video]" : msg.isAudio ? "[Voice Memo]" : msg.isFile ? "[File]" : msg.text;
             ui.replyText.innerText = `Replying to @${msg.author}: "${preview.substring(0, 25)}${preview.length > 25 ? '...' : ''}"`;
             ui.replyPreview.style.display = "flex"; ui.msgIp.focus();
         }
@@ -685,11 +741,11 @@
         function appendMsgDOM(msg) {
             let line = document.createElement("div");
             line.id = `msg-${msg.id}`; line.className = "clickable-msg"; line.style.margin = "2px 0"; line.style.fontSize = "15px";
-            line.onclick = (e) => { if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A' && e.target.tagName !== 'AUDIO' && !e.target.classList.contains('close-tab-btn')) setReplyTarget(msg); };
+            line.onclick = (e) => { if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A' && e.target.tagName !== 'AUDIO' && e.target.tagName !== 'VIDEO' && !e.target.classList.contains('close-tab-btn')) setReplyTarget(msg); };
 
             const color = getUsernameColor(msg.author);
-            let deleteBtn = (msg.author === myUsername || isAdmin) ? `<button onclick="deleteAnyMessage('${msg.id}')" style="font-size: 10px; padding: 0 3px; margin-right: 4px;">x</button>` : "";
-            let replyHtml = msg.replyTo ? `<div class="reply-quote"><b>@${escapeHTML(msg.replyTo.author)}:</b> ${msg.replyTo.isImage ? "[Image]" : msg.replyTo.isAudio ? "[Voice Memo]" : msg.replyTo.isFile ? "[File]" : escapeHTML(msg.replyTo.text)}</div>` : "";
+            let deleteBtn = (!isGhost && (msg.author === myUsername || isAdmin)) ? `<button onclick="deleteAnyMessage('${msg.id}')" style="font-size: 10px; padding: 0 3px; margin-right: 4px;">x</button>` : "";
+            let replyHtml = msg.replyTo ? `<div class="reply-quote"><b>@${escapeHTML(msg.replyTo.author)}:</b> ${msg.replyTo.isImage ? "[Image]" : msg.replyTo.isVideo ? "[Video]" : msg.replyTo.isAudio ? "[Voice Memo]" : msg.replyTo.isFile ? "[File]" : escapeHTML(msg.replyTo.text)}</div>` : "";
             const formattedContent = formatMessageContent(msg.text, msg);
             let msgTimestamp = msg.timestamp || Date.now();
             const timeStr = new Date(msgTimestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
@@ -705,34 +761,41 @@
             ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
         }
 
-        function startBackgroundConnection() {
-            isGhost = true;
-            myUsername = "__GHOST__" + generateId();
-            ui.userScreen.style.display = "block";
-            ui.chatScreen.style.display = "none";
-            connectMQTT();
-        }
-
         (function init() {
             if(checkPenalties()) return;
+            loadSettingsAndDMs();
+
+            client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
+            client.on("connect", () => {
+                isConnected = true;
+                client.subscribe(ROOM_TOPIC, (err) => {
+                    if (!err) {
+                        publishMessage({ type: "SYNC_REQ", author: myUsername || ghostId });
+                        if (!myUsername) setInterval(checkPresence, 5000);
+                    }
+                });
+            });
+
+            setupMqttListeners();
+
             try { 
                 let saved = localStorage.getItem(USERNAME_KEY); 
-                loadSettingsAndDMs(); 
                 if (saved) { 
                     if (/[\s/]/.test(saved)) { saved = saved.replace(/[\s/]/g, '_'); localStorage.setItem(USERNAME_KEY, saved); }
                     ui.userIp.value = saved; 
+                    let remAdmin = localStorage.getItem('mqtt_admin_rem');
                     if (ADMINS.includes(saved)) {
-                        openPasswordModal('join_admin', saved);
-                        startBackgroundConnection();
+                        if (remAdmin === 'adminpass') executeJoin(saved, true);
+                        else openPasswordModal('join_admin', saved);
                     } else {
-                        executeJoin(saved);
+                        executeJoin(saved, true);
                     }
                 } else {
-                    startBackgroundConnection();
+                    ui.userScreen.style.display = "block";
+                    ui.chatScreen.style.display = "none";
+                    loadLocalHistory();
                 }
-            } catch (e) {
-                startBackgroundConnection();
-            }
+            } catch (e) {}
         })();
 
         function joinChat() {
@@ -742,118 +805,114 @@
             if (ADMINS.includes(val)) openPasswordModal('join_admin', val); else executeJoin(val);
         }
 
-        function executeJoin(val) {
-            const oldName = myUsername;
+        function executeJoin(val, isSilent = false) {
             myUsername = val;
             isGhost = false;
             try { localStorage.setItem(USERNAME_KEY, myUsername); } catch (e) {}
-            
             ui.userScreen.style.display = "none";
             ui.chatScreen.style.display = "flex";
             loadLocalHistory();
 
-            if (!client || !isConnected) {
-                connectMQTT(true);
-            } else {
-                const now = Date.now();
-                if (oldName && oldName.startsWith("__GHOST__")) activeUsers.delete(oldName);
-                activeUsers.set(myUsername, { lastSeen: now, joinTime: now });
-                evaluateAdminRole(); renderUserList();
+            const now = Date.now();
+            activeUsers.set(myUsername, { lastSeen: now, joinTime: now });
+            evaluateAdminRole(); renderUserList();
+            
+            if (isConnected && !isSilent) {
                 publishMessage({ type: "JOIN", author: myUsername, joinTime: now, id: generateId() });
                 publishMessage({ type: "SYNC_REQ", author: myUsername });
             }
+            
+            if (!window.pingInterval) {
+                window.pingInterval = setInterval(() => { if (isConnected && !isGhost) publishMessage({ type: "PING", author: myUsername, joinTime: activeUsers.get(myUsername)?.joinTime || Date.now() }); }, 5000);
+            }
+            setInterval(checkPresence, 5000);
         }
 
-        function connectMQTT(sendJoin = false) {
-            client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
-            client.on("connect", () => {
-                isConnected = true; 
-                ui.status.innerText = "Connected";
-                const now = Date.now();
-                activeUsers.set(myUsername, { lastSeen: now, joinTime: now });
-                evaluateAdminRole(); renderUserList();
-                client.subscribe(ROOM_TOPIC, (err) => {
-                    if (!err) {
-                        if (sendJoin && !isGhost) publishMessage({ type: "JOIN", author: myUsername, joinTime: now, id: generateId() });
-                        if (!isGhost) publishMessage({ type: "SYNC_REQ", author: myUsername });
-                        setInterval(() => { if (isConnected) publishMessage({ type: "PING", author: myUsername, joinTime: activeUsers.get(myUsername)?.joinTime || Date.now() }); }, 5000);
-                        setInterval(checkPresence, 5000);
-                    }
-                });
-            });
+        function processPendingOutbox(targetUser) {
+            if (pendingDMs[targetUser]) {
+                pendingDMs[targetUser].forEach(msg => publishMessage(msg));
+                delete pendingDMs[targetUser];
+                saveToLocalWithCompression('mqtt_pending_dms', pendingDMs);
+            }
+        }
 
-            window.addEventListener("beforeunload", () => { if (isConnected) publishMessage({ type: "LEAVE", author: myUsername, id: generateId() }); });
-            
+        function setupMqttListeners() {
+            window.addEventListener("beforeunload", () => { if (isConnected && !isGhost) publishMessage({ type: "LEAVE", author: myUsername, id: generateId() }); });
             client.on("message", (topic, payload) => {
                 try {
                     const data = JSON.parse(payload.toString());
                     if (data.compressed && data.text) data.text = LZString.decompressFromUTF16(data.text) || data.text;
-                    
                     if (data.author && !blockedUsers.has(data.author)) {
                         const existing = activeUsers.get(data.author);
                         activeUsers.set(data.author, { lastSeen: Date.now(), joinTime: data.joinTime || (existing ? existing.joinTime : Date.now()) });
                         renderUserList(); evaluateAdminRole();
                     }
 
-                    if (data.type === "SYNC_REQ") { 
-                        if (!isGhost && data.author !== myUsername) {
-                            let dmsForUser = dmHistories[data.author] || [];
-                            publishMessage({ type: "SYNC_RES", author: myUsername, target: data.author, history: messageHistory, dmHistory: dmsForUser });
+                    // Ghost/Guest Unread Hook
+                    let selfId = isGhost ? ghostId : myUsername;
+                    if ((data.type === "MSG" || (data.type === "DM" && data.target === selfId)) && data.author !== selfId) {
+                        window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*');
+                    }
+
+                    // Ping Logic
+                    if (!isGhost && data.author !== myUsername && !blockedUsers.has(data.author)) {
+                        const isDM = (data.type === "DM" && data.target === myUsername);
+                        const isMention = (data.type === "MSG" && data.text && data.text.includes(`@${myUsername}`));
+                        if (isDM || isMention) {
+                            const now = Date.now();
+                            if (now - (lastPingFrom[data.author] || 0) >= 3000) {
+                                lastPingFrom[data.author] = now;
+                                let notifText = isDM ? `You received a DM from ${data.author}` : `You were pinged by ${data.author}`;
+                                window.parent.postMessage({ source: 'universal-chat', kind: 'ping', user: data.author, text: notifText }, '*');
+                                let storedPings = JSON.parse(localStorage.getItem('mqtt_pings') || '{}');
+                                storedPings[data.id] = true;
+                                localStorage.setItem('mqtt_pings', JSON.stringify(storedPings));
+                            }
                         }
                     }
-                    else if (data.type === "SYNC_RES" && data.target === myUsername) { 
-                        messageHistory = mergeHistory(messageHistory, data.history); 
-                        saveLocalHistory(); 
-                        if (data.dmHistory && data.dmHistory.length > 0) {
-                            dmHistories[data.author] = mergeHistory(dmHistories[data.author] || [], data.dmHistory);
-                            saveDmHistory(data.author);
-                            const tabId = `dm:${data.author}`;
-                            if (currentTab !== tabId) markUnread(tabId);
-                        }
+
+                    if (data.type === "SYNC_REQ") { 
+                        if (data.author !== selfId) publishMessage({ type: "SYNC_RES", target: data.author, history: messageHistory }); 
+                        if (!isGhost && data.author) processPendingOutbox(data.author);
+                    }
+                    else if (data.type === "SYNC_RES" && data.target === selfId) { 
+                        messageHistory = mergeHistory(messageHistory, data.history); saveLocalHistory(); 
                         if (currentTab === "global") renderActiveTabMessages();
-                        else if (currentTab === `dm:${data.author}`) renderActiveTabMessages();
                     }
                     else if (data.type === "JOIN") {
-                        if (blockedUsers.has(data.author) || data.author.startsWith("__GHOST__")) return;
+                        if (blockedUsers.has(data.author)) return;
+                        if (!isGhost) processPendingOutbox(data.author);
                         const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} joined the room.`, timestamp: data.timestamp || Date.now() };
                         messageHistory.push(sysObj); saveLocalHistory(); if (currentTab === "global") appendSystemDOM(sysObj);
+                    }
+                    else if (data.type === "PING") {
+                        if (!isGhost && data.author) processPendingOutbox(data.author);
                     }
                     else if (data.type === "LEAVE") {
                         if (activeUsers.has(data.author)) {
                             activeUsers.delete(data.author);
-                            if (!data.author.startsWith("__GHOST__")) {
-                                const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} disconnected.`, timestamp: data.timestamp || Date.now() };
-                                messageHistory.push(sysObj); saveLocalHistory();
-                                if (currentTab === "global") appendSystemDOM(sysObj);
-                            }
+                            const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} disconnected.`, timestamp: data.timestamp || Date.now() };
+                            messageHistory.push(sysObj); saveLocalHistory();
+                            if (currentTab === "global") appendSystemDOM(sysObj);
                             renderUserList(); evaluateAdminRole();
                         }
                     }
                     else if (data.type === "MSG") {
                         if (blockedUsers.has(data.author)) return;
-                        const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), isSystem: false };
+                        const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), isSystem: false };
                         messageHistory.push(msgObj); saveLocalHistory(); if (currentTab === "global") appendMsgDOM(msgObj);
-                        if (!msgObj.isFile && !msgObj.isImage && !msgObj.isAudio && msgObj.text.includes(`@${myUsername}`) && msgObj.author !== myUsername && !isGhost) triggerMention(msgObj.author);
-                        
-                        if (data.author !== myUsername) {
-                            window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*');
-                        }
                     }
                     else if (data.type === "DM") {
                         if (blockedUsers.has(data.author)) return;
-                        if (data.target === myUsername) {
+                        if (!isGhost && data.target === myUsername) {
                             if (closedDMs.has(data.author)) { closedDMs.delete(data.author); saveClosedDMs(); }
                             const tabId = ensureDmTab(data.author);
-                            const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now() };
+                            const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now() };
                             dmHistories[data.author] = mergeHistory(dmHistories[data.author] || [], [msgObj]); saveDmHistory(data.author);
                             if (currentTab === tabId) appendMsgDOM(msgObj); else markUnread(tabId);
-                            
-                            if (data.author !== myUsername) {
-                                window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*');
-                            }
                         }
                     }
-                    else if (data.type === "CMD" && data.target === myUsername && ADMINS.includes(data.author) && !isGhost) {
+                    else if (data.type === "CMD" && data.target === myUsername && ADMINS.includes(data.author)) {
                         if (data.cmd === "KICK") { if (client) client.end();
                             isConnected = false; ui.chatScreen.style.display = "none"; ui.userScreen.style.display = "block"; customAlert("You have been kicked by an administrator.");
                         }
@@ -868,7 +927,7 @@
                         }
                         else if (data.cmd === "UNMUTE") { isMuted = false; mutedAttemptCount = 0; if(muteTimeoutId) clearTimeout(muteTimeoutId); appendSystemDOM("You have been unmuted by an Admin."); }
                     }
-                    else if (data.type === "MUTE_ATTEMPT" && isAdmin && !isGhost) { appendSystemDOM({ id: data.id || generateId(), isSystem: true, text: `${data.author} tried to send a message while muted (Attempt #${data.count})`, timestamp: data.timestamp || Date.now() }); }
+                    else if (data.type === "MUTE_ATTEMPT" && isAdmin) { appendSystemDOM({ id: data.id || generateId(), isSystem: true, text: `${data.author} tried to send a message while muted (Attempt #${data.count})`, timestamp: data.timestamp || Date.now() }); }
                     else if (data.type === "DELETE_MSG") {
                         const idxG = messageHistory.findIndex(m => m.id === data.id);
                         if (idxG !== -1 && (messageHistory[idxG].author === data.deleter || ADMINS.includes(data.deleter))) { messageHistory.splice(idxG, 1); saveLocalHistory(); }
@@ -887,7 +946,7 @@
                         messageHistory.push(sysObj); saveLocalHistory(); renderActiveTabMessages(); 
                     }
                     else if (data.type === "TYPING") {
-                        if (data.author !== myUsername && !blockedUsers.has(data.author) && !isGhost) {
+                        if (!isGhost && data.author !== myUsername && !blockedUsers.has(data.author)) {
                             ui.typing.innerText = `${data.author} is typing...`;
                             clearTimeout(data.typingTimer);
                             data.typingTimer = setTimeout(() => { ui.typing.innerText = ""; }, 3000);
@@ -903,180 +962,166 @@
                         if (dmHistories[oldName]) {
                             dmHistories[newName] = dmHistories[oldName];
                             delete dmHistories[oldName];
-                            dmHistories[newName].forEach(m => { if (m.author === oldName) m.author = newName; });
-                            saveDmHistory(newName);
+                            dmHistories[newName].forEach(m => { if (m.author === oldName) m.author = newName; if (m.replyTo && m.replyTo.author === oldName) m.replyTo.author = newName; });
+                            saveDmHistory(newName); try { localStorage.removeItem(`mqtt_dm_${myUsername}_${oldName}`); } catch(e){}
+                            if (closedDMs.has(oldName)) { closedDMs.delete(oldName); closedDMs.add(newName); saveClosedDMs(); }
                             const oldTab = document.getElementById(`tab-dm-${oldName}`);
-                            if (oldTab) {
-                                oldTab.id = `tab-dm-${newName}`;
-                                oldTab.innerHTML = `@${newName} <span class="close-tab-btn" onclick="closeDmTab(event, '${newName}')">✕</span>`;
-                                oldTab.onclick = () => switchTab(`dm:${newName}`);
-                            }
-                            if (currentTab === `dm:${oldName}`) {
-                                currentTab = `dm:${newName}`;
+                            if (oldTab) { const wasActive = (currentTab === `dm:${oldName}`); oldTab.remove(); ensureDmTab(newName); if (wasActive) switchTab(`dm:${newName}`); }
+                        }
+                        const sysObj = { id: data.id || generateId(), isSystem: true, text: `${oldName} changed name to ${newName}`, timestamp: data.timestamp || Date.now() };
+                        messageHistory.push(sysObj); saveLocalHistory();
+                        if (currentTab === "global") renderActiveTabMessages();
+                        renderUserList(); evaluateAdminRole();
+                    }
+                } catch (e) {}
+            });
+        }
+
+        function mergeHistory(local, remote) {
+            const map = new Map();
+            local.forEach(m => { if (m.id) map.set(m.id, m); });
+            remote.forEach(m => { 
+                if (m.id && !map.has(m.id)) {
+                    map.set(m.id, m); 
+                    if (!isGhost && m.author !== myUsername && !blockedUsers.has(m.author)) {
+                        const isMention = m.text && m.text.includes(`@${myUsername}`);
+                        if (isMention) {
+                            let storedPings = JSON.parse(localStorage.getItem('mqtt_pings') || '{}');
+                            if (!storedPings[m.id]) {
+                                storedPings[m.id] = true;
+                                localStorage.setItem('mqtt_pings', JSON.stringify(storedPings));
+                                window.parent.postMessage({ source: 'universal-chat', kind: 'ping', user: m.author, text: `You were pinged by ${m.author} while offline` }, '*');
                             }
                         }
                     }
-                } catch(e) {
-                    console.error("Message processing error:", e);
+                } 
+            });
+            return Array.from(map.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        }
+
+        function deleteAnyMessage(id) { publishMessage({ type: "DELETE_MSG", id: id, deleter: myUsername }); }
+        function confirmClearAll() { if (isAdmin && confirm("Are you sure you want to delete all messages?")) publishMessage({ type: "CLEAR_ALL", author: myUsername, id: generateId() }); }
+        function evaluateAdminRole() { const wasAdmin = isAdmin; isAdmin = ADMINS.includes(myUsername); updateStatusText();
+            if (wasAdmin !== isAdmin) renderActiveTabMessages(); }
+        function updateStatusText() { ui.status.innerText = `${isAdmin ? "[ADMIN]" : "[USER]"} Connected as "${myUsername}"`; ui.adminClearBtn.style.display = isAdmin ? "block" : "none"; }
+
+        function checkPresence() {
+            const now = Date.now();
+            let changed = false;
+            activeUsers.forEach((userData, user) => {
+                if (user !== myUsername && now - userData.lastSeen > 60000) {
+                    activeUsers.delete(user);
+                    const sysObj = { id: generateId(), isSystem: true, text: `${user} disconnected.`, timestamp: Date.now() };
+              
+                    messageHistory.push(sysObj); saveLocalHistory();
+                    if (currentTab === "global") appendSystemDOM(sysObj);
+                    changed = true;
                 }
             });
-        } // connectMQTT END
-
-        function publishMessage(msgObj) {
-            if (!client || !isConnected) return;
-            const payload = JSON.stringify(msgObj);
-            client.publish(ROOM_TOPIC, payload);
-        }
-
-        function processInput() {
-            if (checkPenalties() || isMuted) {
-                if (isMuted) { mutedAttemptCount++; publishMessage({ type: "MUTE_ATTEMPT", author: myUsername, count: mutedAttemptCount }); }
-                return;
-            }
-            const text = ui.msgIp.value.trim();
-            if (!text) return;
-            
-            if (text.startsWith("/dm ")) {
-                const parts = text.split(" ");
-                if (parts.length > 2) {
-                    const targetUser = parts[1];
-                    const dmText = parts.slice(2).join(" ");
-                    ensureDmTab(targetUser);
-                    const msgObj = { type: "DM", id: generateId(), author: myUsername, target: targetUser, text: dmText, timestamp: Date.now() };
-                    publishMessage(msgObj);
-                    dmHistories[targetUser] = mergeHistory(dmHistories[targetUser] || [], [msgObj]);
-                    saveDmHistory(targetUser);
-                    if (currentTab === `dm:${targetUser}`) appendMsgDOM(msgObj);
-                }
-                ui.msgIp.value = ""; return;
-            }
-            
-            if (text.startsWith("/clear") && isAdmin) {
-                confirmClearAll();
-                ui.msgIp.value = ""; return;
-            }
-
-            const msgObj = {
-                type: currentTab === "global" ? "MSG" : "DM",
-                id: generateId(),
-                author: myUsername,
-                text: text,
-                timestamp: Date.now()
-            };
-            
-            if (currentTab !== "global") {
-                const targetUser = currentTab.replace("dm:", "");
-                msgObj.target = targetUser;
-                dmHistories[targetUser] = mergeHistory(dmHistories[targetUser] || [], [msgObj]);
-                saveDmHistory(targetUser);
-                appendMsgDOM(msgObj);
-            }
-            
-            if (activeReply) { msgObj.replyTo = activeReply; cancelReply(); }
-            publishMessage(msgObj);
-            ui.msgIp.value = "";
-        }
-
-        function handleTyping() {
-            if (isMuted || checkPenalties()) return;
-            publishMessage({ type: "TYPING", author: myUsername });
-        }
-
-        function mergeHistory(oldH, newH) {
-            const map = new Map();
-            oldH.forEach(m => map.set(m.id, m));
-            newH.forEach(m => map.set(m.id, m));
-            return Array.from(map.values()).sort((a,b) => a.timestamp - b.timestamp);
-        }
-
-        function evaluateAdminRole() {
-            isAdmin = ADMINS.includes(myUsername);
-            ui.adminClearBtn.style.display = isAdmin ? "inline-flex" : "none";
-            document.querySelectorAll('.admin-only').forEach(el => el.style.display = isAdmin ? "block" : "none");
+            if (changed) { renderUserList(); evaluateAdminRole(); }
         }
 
         function renderUserList() {
             ui.userList.innerHTML = "";
             const now = Date.now();
-            Array.from(activeUsers.entries())
-                .filter(([name, data]) => now - data.lastSeen < 15000)
-                .sort((a,b) => a[0].localeCompare(b[0]))
-                .forEach(([name, data]) => {
-                    const li = document.createElement("li");
-                    li.className = "user-item";
-                    const isAdm = ADMINS.includes(name);
-                    li.innerHTML = `<span style="color:${getUsernameColor(name)}">●</span> ${escapeHTML(name)}${isAdm ? " ⭐" : ""}`;
-                    li.oncontextmenu = (e) => { e.preventDefault(); showContextMenu(e, name); };
-                    li.onclick = () => { ensureDmTab(name); switchTab(`dm:${name}`); };
-                    ui.userList.appendChild(li);
-                });
-            updateOnlineCount();
-        }
-
-        function checkPresence() {
-            const now = Date.now();
-            let changed = false;
-            activeUsers.forEach((data, name) => {
-                if (now - data.lastSeen > 15000) { activeUsers.delete(name); changed = true; }
+            activeUsers.forEach((userData, user) => {
+                if (blockedUsers.has(user)) return;
+                const color = getUsernameColor(user);
+                const adminBadge = ADMINS.includes(user) ? " [Admin]" : "";
+                const selfBadge = user === myUsername ? " [You]" : "";
+      
+                const inactiveBadge = (now - userData.lastSeen > 10000) && user !== myUsername ? " <span style='font-size:11px; color:#888;'>(Inactive)</span>" : "";
+                ui.userList.innerHTML += `<li class="user-item" oncontextmenu="showContextMenu(event, '${user}'); return false;" onclick="handleUserClick(event, '${user}')" ontouchstart="handleTouchStart(event, '${user}')" ontouchmove="clearTimeout(pressTimer)" ontouchend="handleTouchEnd(event, '${user}')" style="color: ${color};">${user}${adminBadge}${selfBadge}${inactiveBadge}</li>`;
             });
-            if (changed) renderUserList();
         }
 
-        function showContextMenu(e, name) {
-            if (name === myUsername) return;
-            contextMenuTarget = name;
-            ui.contextMenu.style.left = e.pageX + "px";
+        function handleTouchStart(e, user) { if (user === myUsername || isGhost) return; isLongPress = false;
+            const touch = e.touches[0]; pressTimer = setTimeout(() => { isLongPress = true; showContextMenu({ pageX: touch.pageX, pageY: touch.pageY, preventDefault: () => {} }, user); }, 500);
+        }
+        function handleTouchEnd(e, user) { clearTimeout(pressTimer); if (isLongPress) { try { e.preventDefault(); } catch(err){} } }
+        function handleUserClick(e, user) { if (isLongPress || isGhost) return; startDmWith(user); }
+        
+        function showContextMenu(e, username) {
+            if (e.preventDefault) e.preventDefault();
+            if (username === myUsername || isGhost) return; contextMenuTarget = username;
+            ui.contextMenu.style.display = "block"; ui.contextMenu.style.left = e.pageX + "px";
             ui.contextMenu.style.top = e.pageY + "px";
-            ui.contextMenu.style.display = "block";
+            document.querySelectorAll(".admin-only").forEach(el => { el.style.display = isAdmin ? "block" : "none"; });
         }
 
         function contextAction(action) {
+            const target = contextMenuTarget;
             ui.contextMenu.style.display = "none";
-            if (!contextMenuTarget) return;
-            if (action === "DM") { ensureDmTab(contextMenuTarget); switchTab(`dm:${contextMenuTarget}`); }
-            else if (isAdmin) {
-                if (action === "KICK") publishMessage({ type: "CMD", cmd: "KICK", target: contextMenuTarget, author: myUsername });
-                else if (action === "TIMEOUT") publishMessage({ type: "CMD", cmd: "TIMEOUT", target: contextMenuTarget, author: myUsername, duration: 300000 });
-                else if (action === "BAN") publishMessage({ type: "CMD", cmd: "BAN", target: contextMenuTarget, author: myUsername });
-                else if (action === "MUTE") publishMessage({ type: "CMD", cmd: "MUTE", target: contextMenuTarget, author: myUsername, duration: 300000 });
-            }
+            if (!target || target === myUsername || isGhost) return;
+            if (action === 'DM') startDmWith(target);
+            else if (['KICK', 'BAN'].includes(action)) { publishMessage({ type: "CMD", cmd: action, target: target, author: myUsername }); appendSystemDOM(`Command ${action} dispatched to ${target}.`); }
+            else if (['MUTE', 'TIMEOUT'].includes(action)) { publishMessage({ type: "CMD", cmd: action, target: target, author: myUsername, duration: 300000 }); appendSystemDOM(`Command ${action} (5m) dispatched to ${target}.`); }
         }
 
-        function deleteAnyMessage(id) { publishMessage({ type: "DELETE_MSG", id: id, deleter: myUsername }); }
-        function confirmClearAll() { if (confirm("Clear all global chat history?")) publishMessage({ type: "CLEAR_ALL", author: myUsername }); }
-        
-        function sendPayload(dataUrl, meta) {
-            if (checkPenalties() || isMuted) {
-                if (isMuted) { mutedAttemptCount++; publishMessage({ type: "MUTE_ATTEMPT", author: myUsername, count: mutedAttemptCount }); }
-                return;
+        function parseDuration(str) {
+            if (!str) return null;
+            const match = str.match(/^(\d+)([smhd])?$/i); if (!match) return null;
+            const val = parseInt(match[1]);
+            const multipliers = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
+            return val * multipliers[match[2] ? match[2].toLowerCase() : 'm'];
+        }
+
+        function startDmWith(username) { if (username !== myUsername) { if (closedDMs.has(username)) { closedDMs.delete(username); saveClosedDMs(); } switchTab(ensureDmTab(username)); } }
+        function handleTyping() { if (!isConnected || isMuted || isGhost) return;
+            clearTimeout(typingTimeout); publishMessage({ type: "TYPING", author: myUsername }); typingTimeout = setTimeout(() => {}, 3000);
+        }
+        function publishMessage(data) { if (client && isConnected) client.publish(ROOM_TOPIC, JSON.stringify(data)); }
+
+        function processInput() {
+            if (isGhost) return;
+            const text = ui.msgIp.value.trim();
+            if (!text) return;
+            if (text.startsWith("/")) {
+                if (!isAdmin) { appendSystemDOM("You do not have admin privileges."); ui.msgIp.value = ""; return; }
+                const parts = text.split(" ");
+                const cmd = parts[0].toUpperCase().substring(1); const target = parts[1]; const dur = parseDuration(parts[2]);
+                if (!target) { appendSystemDOM("Usage: /kick User, /timeout User 5m, /mute User 10m, /unmute User, /ban User"); return; }
+                if (target === myUsername) { appendSystemDOM("You cannot use admin commands on yourself."); ui.msgIp.value = ""; return; }
+                if (["KICK", "TIMEOUT", "MUTE", "UNMUTE", "BAN"].includes(cmd)) { publishMessage({ type: "CMD", cmd: cmd, target: target, author: myUsername, duration: dur }); appendSystemDOM(`Command ${cmd} dispatched to ${target}.`); } 
+                else { appendSystemDOM("Unknown command."); }
+                ui.msgIp.value = ""; return;
+            }
+            sendPayload(text);
+        }
+
+        function sendPayload(content, opts = {}) {
+            if (isGhost) return;
+            if (isMuted) {
+                mutedAttemptCount++;
+                appendSystemDOM("You cannot send messages while muted.");
+                publishMessage({ type: "MUTE_ATTEMPT", author: myUsername, count: mutedAttemptCount, id: generateId() }); ui.msgIp.value = ""; return;
+            }
+            const msgId = Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
+            const cleanReply = activeReply ? { author: activeReply.author, text: activeReply.text, isImage: activeReply.isImage, isVideo: activeReply.isVideo, isAudio: activeReply.isAudio, isFile: activeReply.isFile } : null;
+            let finalText = content; let compressedFlag = false;
+            
+            if (opts.isFile || opts.isImage || opts.isAudio || opts.isVideo) { 
+                finalText = opts.preCompressed || LZString.compressToUTF16(content);
+                compressedFlag = true; 
             }
             
-            // Compresses heavily using LZString prior to transmission
-            const compressedData = LZString.compressToUTF16(dataUrl);
-
-            const msgObj = {
-                type: currentTab === "global" ? "MSG" : "DM",
-                id: generateId(),
-                author: myUsername,
-                text: compressedData,
-                compressed: true,
-                isImage: meta.isImage || false,
-                isAudio: meta.isAudio || false,
-                isFile: meta.isFile || false,
-                fileName: meta.fileName || "",
-                timestamp: Date.now()
-            };
+            const payload = { type: currentTab === "global" ? "MSG" : "DM", id: msgId, author: myUsername, text: finalText, compressed: compressedFlag, isImage: opts.isImage, isVideo: opts.isVideo, isAudio: opts.isAudio, isFile: opts.isFile, fileName: opts.fileName, timestamp: Date.now(), replyTo: cleanReply };
             
             if (currentTab !== "global") {
-                const targetUser = currentTab.replace("dm:", "");
-                msgObj.target = targetUser;
-                dmHistories[targetUser] = mergeHistory(dmHistories[targetUser] || [], [msgObj]);
-                saveDmHistory(targetUser); 
-                appendMsgDOM(msgObj);
+                payload.target = currentTab.replace("dm:", "");
+                if (closedDMs.has(payload.target)) { closedDMs.delete(payload.target); saveClosedDMs(); ensureDmTab(payload.target); }
+                dmHistories[payload.target] = mergeHistory(dmHistories[payload.target] || [], [payload]);
+                saveDmHistory(payload.target); 
+                const renderPayload = {...payload, text: content}; appendMsgDOM(renderPayload);
+                
+                if (!activeUsers.has(payload.target)) {
+                    pendingDMs[payload.target] = pendingDMs[payload.target] || [];
+                    pendingDMs[payload.target].push(payload);
+                    saveToLocalWithCompression('mqtt_pending_dms', pendingDMs);
+                }
             }
-            
-            if (activeReply) { msgObj.replyTo = activeReply; cancelReply(); }
-            publishMessage(msgObj);
+            publishMessage(payload);
+            ui.msgIp.value = ""; ui.typing.innerText = ""; cancelReply();
         }
     </script>
 </body>
