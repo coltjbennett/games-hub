@@ -397,6 +397,7 @@
         let myUsername = "";
         let isConnected = false;
         let isAdmin = false;
+        let isGhost = false;
 
         let messageHistory = [];
         let dmHistories = {};
@@ -459,6 +460,10 @@
         function closeModal(id) { document.getElementById(id).style.display = "none";
         }
         function customAlert(text) { document.getElementById('alert-text').innerText = text; openModal('alert-modal');
+        }
+
+        function updateOnlineCount() {
+            window.parent.postMessage({ source: 'universal-chat', kind: 'presence', count: activeUsers.size }, '*');
         }
 
         function triggerMention(author) {
@@ -573,6 +578,7 @@
             reader.onload = function(event) { sendPayload(event.target.result, { isImage: file.type.startsWith("image/"), isFile: !file.type.startsWith("image/"), fileName: file.name }); };
             reader.readAsDataURL(file); e.target.value = "";
         });
+        
         function saveToLocalWithCompression(key, historyArray) {
             let compressed = LZString.compressToUTF16(JSON.stringify(historyArray));
             while (compressed.length > 2000000 && historyArray.length > 0) {
@@ -618,6 +624,7 @@
                 }
             });
         }
+        
         function saveBlockedUsers() { try { localStorage.setItem(BLOCKED_KEY, JSON.stringify(Array.from(blockedUsers))); } catch (e) {} renderBlockedUI();
         }
         function saveClosedDMs() { try { localStorage.setItem(CLOSED_DMS_KEY, JSON.stringify(Array.from(closedDMs)));
@@ -778,19 +785,34 @@
             ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
         }
 
+        function startBackgroundConnection() {
+            isGhost = true;
+            myUsername = "__GHOST__" + generateId();
+            ui.userScreen.style.display = "block";
+            ui.chatScreen.style.display = "none";
+            connectMQTT();
+        }
+
         (function init() {
             if(checkPenalties()) return;
             try { 
                 let saved = localStorage.getItem(USERNAME_KEY); 
+                loadSettingsAndDMs(); 
                 if (saved) { 
-                    if 
-                    (/[\s/]/.test(saved)) { saved = saved.replace(/[\s/]/g, '_'); localStorage.setItem(USERNAME_KEY, saved); }
+                    if (/[\s/]/.test(saved)) { saved = saved.replace(/[\s/]/g, '_'); localStorage.setItem(USERNAME_KEY, saved); }
                     ui.userIp.value = saved; 
-                    if (ADMINS.includes(saved)) openPasswordModal('join_admin', saved); else executeJoin(saved);
-                } 
-            } catch (e) {}
-            
-            loadSettingsAndDMs();
+                    if (ADMINS.includes(saved)) {
+                        openPasswordModal('join_admin', saved);
+                        startBackgroundConnection();
+                    } else {
+                        executeJoin(saved);
+                    }
+                } else {
+                    startBackgroundConnection();
+                }
+            } catch (e) {
+                startBackgroundConnection();
+            }
         })();
 
         function joinChat() {
@@ -801,78 +823,104 @@
         }
 
         function executeJoin(val) {
+            const oldName = myUsername;
             myUsername = val;
+            isGhost = false;
             try { localStorage.setItem(USERNAME_KEY, myUsername); } catch (e) {}
+            
             ui.userScreen.style.display = "none";
             ui.chatScreen.style.display = "flex";
             loadLocalHistory();
 
+            if (!client || !isConnected) {
+                connectMQTT(true);
+            } else {
+                const now = Date.now();
+                if (oldName && oldName.startsWith("__GHOST__")) activeUsers.delete(oldName);
+                activeUsers.set(myUsername, { lastSeen: now, joinTime: now });
+                evaluateAdminRole(); renderUserList();
+                publishMessage({ type: "JOIN", author: myUsername, joinTime: now, id: generateId() });
+                publishMessage({ type: "SYNC_REQ", author: myUsername });
+            }
+        }
+
+        function connectMQTT(sendJoin = false) {
             client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
             client.on("connect", () => {
                 isConnected = true; const now = Date.now();
                 activeUsers.set(myUsername, { lastSeen: now, joinTime: now });
                 evaluateAdminRole(); renderUserList();
                 client.subscribe(ROOM_TOPIC, (err) => {
-          
                     if (!err) {
-                        publishMessage({ type: "JOIN", author: myUsername, joinTime: now, id: generateId() });
-                        publishMessage({ type: "SYNC_REQ", author: myUsername });
+                        if (sendJoin && !isGhost) publishMessage({ type: "JOIN", author: myUsername, joinTime: now, id: generateId() });
+                        if (!isGhost) publishMessage({ type: "SYNC_REQ", author: myUsername });
                         setInterval(() => 
                         { if (isConnected) publishMessage({ type: "PING", author: myUsername, joinTime: activeUsers.get(myUsername)?.joinTime || Date.now() }); }, 5000);
                         setInterval(checkPresence, 5000);
                     }
                 });
             });
+
             window.addEventListener("beforeunload", () => { if (isConnected) publishMessage({ type: "LEAVE", author: myUsername, id: generateId() }); });
+            
             client.on("message", (topic, payload) => {
                 try {
                     const data = JSON.parse(payload.toString());
                     if (data.compressed && data.text) data.text = LZString.decompressFromUTF16(data.text) || data.text;
+                    
                     if (data.author && !blockedUsers.has(data.author)) {
-    
                         const existing = activeUsers.get(data.author);
                         activeUsers.set(data.author, { lastSeen: Date.now(), joinTime: data.joinTime || (existing ? existing.joinTime : Date.now()) });
                         renderUserList(); evaluateAdminRole();
-                
                     }
 
-                    if (data.type === "SYNC_REQ") { if (data.author !== myUsername) publishMessage({ type: "SYNC_RES", target: data.author, history: messageHistory }); }
-                    else if (data.type === "SYNC_RES" && data.target === myUsername) { messageHistory = mergeHistory(messageHistory, data.history); saveLocalHistory(); if (currentTab === "global") renderActiveTabMessages();
+                    if (data.type === "SYNC_REQ") { 
+                        if (!isGhost && data.author !== myUsername) publishMessage({ type: "SYNC_RES", target: data.author, history: messageHistory }); 
+                    }
+                    else if (data.type === "SYNC_RES" && data.target === myUsername) { 
+                        messageHistory = mergeHistory(messageHistory, data.history); saveLocalHistory(); if (currentTab === "global") renderActiveTabMessages();
                     }
                     else if (data.type === "JOIN") {
-                        if (blockedUsers.has(data.author)) return;
+                        if (blockedUsers.has(data.author) || data.author.startsWith("__GHOST__")) return;
                         const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} joined the room.`, timestamp: data.timestamp || Date.now() };
                         messageHistory.push(sysObj); saveLocalHistory(); if (currentTab === "global") appendSystemDOM(sysObj);
                     }
                     else if (data.type === "LEAVE") {
                         if (activeUsers.has(data.author)) {
                             activeUsers.delete(data.author);
-                            const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} disconnected.`, timestamp: data.timestamp || Date.now() };
-                            messageHistory.push(sysObj); saveLocalHistory();
-                            if (currentTab === "global") appendSystemDOM(sysObj);
+                            if (!data.author.startsWith("__GHOST__")) {
+                                const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} disconnected.`, timestamp: data.timestamp || Date.now() };
+                                messageHistory.push(sysObj); saveLocalHistory();
+                                if (currentTab === "global") appendSystemDOM(sysObj);
+                            }
                             renderUserList(); evaluateAdminRole();
                         }
                     }
                     else if (data.type === "MSG") {
                         if (blockedUsers.has(data.author)) return;
-                        const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp ||
-                        Date.now(), isSystem: false };
+                        const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), isSystem: false };
                         messageHistory.push(msgObj); saveLocalHistory(); if (currentTab === "global") appendMsgDOM(msgObj);
-                        if (!msgObj.isFile && !msgObj.isImage && !msgObj.isAudio && msgObj.text.includes(`@${myUsername}`) && msgObj.author !== myUsername) triggerMention(msgObj.author);
+                        if (!msgObj.isFile && !msgObj.isImage && !msgObj.isAudio && msgObj.text.includes(`@${myUsername}`) && msgObj.author !== myUsername && !isGhost) triggerMention(msgObj.author);
+                        
+                        if (data.author !== myUsername && !isGhost) {
+                            window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*');
+                        }
                     }
                     else if (data.type === "DM") {
                         if (blockedUsers.has(data.author)) return;
                         if (data.target === myUsername) {
-                            if (closedDMs.has(data.author)) { closedDMs.delete(data.author);
-                                saveClosedDMs(); }
+                            if (closedDMs.has(data.author)) { closedDMs.delete(data.author); saveClosedDMs(); }
                             const tabId = ensureDmTab(data.author);
-                            const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp ||
-                            Date.now() };
+                            const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now() };
                             dmHistories[data.author] = mergeHistory(dmHistories[data.author] || [], [msgObj]); saveDmHistory(data.author);
                             if (currentTab === tabId) appendMsgDOM(msgObj); else markUnread(tabId);
+                            
+                            if (data.author !== myUsername && !isGhost) {
+                                window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*');
+                            }
                         }
                     }
-                    else if (data.type === "CMD" && data.target === myUsername && ADMINS.includes(data.author)) {
+                    else if (data.type === "CMD" && data.target === myUsername && ADMINS.includes(data.author) && !isGhost) {
                         if (data.cmd === "KICK") { if (client) client.end();
                             isConnected = false; ui.chatScreen.style.display = "none"; ui.userScreen.style.display = "block"; customAlert("You have been kicked by an administrator.");
                         }
@@ -891,7 +939,7 @@
                             mutedAttemptCount = 0; if(muteTimeoutId) clearTimeout(muteTimeoutId); appendSystemDOM("You have been unmuted by an Admin.");
                         }
                     }
-                    else if (data.type === "MUTE_ATTEMPT" && isAdmin) { appendSystemDOM({ id: data.id || generateId(), isSystem: true, text: `${data.author} tried to send a message while muted (Attempt #${data.count})`, timestamp: data.timestamp || Date.now() });
+                    else if (data.type === "MUTE_ATTEMPT" && isAdmin && !isGhost) { appendSystemDOM({ id: data.id || generateId(), isSystem: true, text: `${data.author} tried to send a message while muted (Attempt #${data.count})`, timestamp: data.timestamp || Date.now() });
                     }
                     else if (data.type === "DELETE_MSG") {
                         const idxG = messageHistory.findIndex(m => m.id === data.id);
@@ -908,12 +956,11 @@
                         messageHistory = [];
                         try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
                         Object.keys(dmHistories).forEach(user => { dmHistories[user] = []; saveDmHistory(user); });
-                        const sysObj = { id: data.id || generateId(), isSystem: true, text: `Chat histories were purged by Admin (${data.author}).`, timestamp: data.timestamp ||
-                        Date.now() };
+                        const sysObj = { id: data.id || generateId(), isSystem: true, text: `Chat histories were purged by Admin (${data.author}).`, timestamp: data.timestamp || Date.now() };
                         messageHistory.push(sysObj); saveLocalHistory(); renderActiveTabMessages(); 
                     }
                     else if (data.type === "TYPING") {
-                        if (data.author !== myUsername && !blockedUsers.has(data.author)) {
+                        if (data.author !== myUsername && !blockedUsers.has(data.author) && !isGhost) {
                             ui.typing.innerText = `${data.author} is typing...`;
                             clearTimeout(data.typingTimer);
                             data.typingTimer = setTimeout(() => { ui.typing.innerText = ""; }, 3000);
@@ -937,10 +984,9 @@
                             if (oldTab) { const wasActive = (currentTab === `dm:${oldName}`); oldTab.remove(); ensureDmTab(newName); if (wasActive) switchTab(`dm:${newName}`);
                             }
                         }
-                        const sysObj = { id: data.id ||
-                            generateId(), isSystem: true, text: `${oldName} changed name to ${newName}`, timestamp: data.timestamp || Date.now() };
+                        const sysObj = { id: data.id || generateId(), isSystem: true, text: `${oldName} changed name to ${newName}`, timestamp: data.timestamp || Date.now() };
                         messageHistory.push(sysObj); saveLocalHistory();
-                        if (currentTab === "global") renderActiveTabMessages();
+                        if (currentTab === "global" && !isGhost) renderActiveTabMessages();
                         renderUserList(); evaluateAdminRole();
                     }
                 } catch (e) {}
@@ -959,9 +1005,8 @@
         function confirmClearAll() { if (isAdmin && confirm("Are you sure you want to delete all messages?")) publishMessage({ type: "CLEAR_ALL", author: myUsername, id: generateId() });
         }
         function evaluateAdminRole() { const wasAdmin = isAdmin; isAdmin = ADMINS.includes(myUsername); updateStatusText();
-            if (wasAdmin !== isAdmin) renderActiveTabMessages(); }
-        function updateStatusText() { ui.status.innerText = `${isAdmin ?
-            "[ADMIN]" : "[USER]"} Connected as "${myUsername}"`; ui.adminClearBtn.style.display = isAdmin ? "block" : "none";
+            if (wasAdmin !== isAdmin && !isGhost) renderActiveTabMessages(); }
+        function updateStatusText() { ui.status.innerText = `${isAdmin ? "[ADMIN]" : "[USER]"} Connected as "${myUsername}"`; ui.adminClearBtn.style.display = isAdmin ? "block" : "none";
         }
 
         function checkPresence() {
@@ -970,10 +1015,11 @@
             activeUsers.forEach((userData, user) => {
                 if (user !== myUsername && now - userData.lastSeen > 60000) {
                     activeUsers.delete(user);
-                    const sysObj = { id: generateId(), isSystem: true, text: `${user} disconnected.`, timestamp: Date.now() };
-              
-                    messageHistory.push(sysObj); saveLocalHistory();
-                    if (currentTab === "global") appendSystemDOM(sysObj);
+                    if (!user.startsWith("__GHOST__")) {
+                        const sysObj = { id: generateId(), isSystem: true, text: `${user} disconnected.`, timestamp: Date.now() };
+                        messageHistory.push(sysObj); saveLocalHistory();
+                        if (currentTab === "global" && !isGhost) appendSystemDOM(sysObj);
+                    }
                     changed = true;
                 }
             });
@@ -984,7 +1030,7 @@
             ui.userList.innerHTML = "";
             const now = Date.now();
             activeUsers.forEach((userData, user) => {
-                if (blockedUsers.has(user)) return;
+                if (blockedUsers.has(user) || user.startsWith("__GHOST__")) return;
                 const color = getUsernameColor(user);
                 const adminBadge = ADMINS.includes(user) ? " (Admin)" : "";
                 const selfBadge = user === myUsername ? " (You)" : "";
@@ -992,6 +1038,7 @@
                 const inactiveBadge = (now - userData.lastSeen > 10000) && user !== myUsername ? " <span style='font-size:11px; color:#888;'>(Inactive)</span>" : "";
                 ui.userList.innerHTML += `<li class="user-item" oncontextmenu="showContextMenu(event, '${user}'); return false;" onclick="handleUserClick(event, '${user}')" ontouchstart="handleTouchStart(event, '${user}')" ontouchmove="clearTimeout(pressTimer)" ontouchend="handleTouchEnd(event, '${user}')" style="color: ${color};">${user}${adminBadge}${selfBadge}${inactiveBadge}</li>`;
             });
+            updateOnlineCount(); // Trigger presence tally up to the host window
         }
 
         function handleTouchStart(e, user) { if (user === myUsername) return; isLongPress = false;
