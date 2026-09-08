@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>PeerJS 3D FPS - Synced World & Full Auto</title>
+    <title>PeerJS 3D FPS - Vertical Arena & STUN</title>
     <style>
         * {
             box-sizing: border-box;
@@ -370,20 +370,33 @@
 
     <script>
         /* ==========================================================================
-           1. CONFIGURATION, CONSTANTS & SEEDED PRNG FOR SYNCHRONIZED MAPS
+           1. CONFIGURATION & NAT TRAVERSAL (STUN SERVERS)
            ========================================================================== */
         const ROOM_PREFIX = "coltons-multiplayer-fps-";
+        
+        // Critical for Cross-Device / Cross-Network Multiplayer
+        const PEER_CONFIG = {
+            config: {
+                'iceServers': [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun3.l.google.com:19302' }
+                ]
+            }
+        };
+
         const SETTINGS = {
             sensitivity: 0.003,
             moveSpeed: 14,
-            jumpForce: 11,
+            jumpForce: 24,       // Increased to match true gravity acceleration
             bulletSpeed: 120,
-            bulletDamage: 10,  // Reduced damage to 10 per hit
-            fireRate: 120      // Full-auto fire interval in ms
+            bulletDamage: 10,
+            fireRate: 120
         };
         let GAME_STATE = 'LOBBY';
 
-        // Seeded PRNG for deterministic world generation across all peers
+        // Seeded PRNG for Map Synchronization
         function mulberry32(a) {
             return function() {
                 var t = a += 0x6D2B79F5;
@@ -392,12 +405,9 @@
                 return ((t ^ t >>> 10) >>> 0) / 4294967296;
             }
         }
-
         function getSeedFromCode(code) {
             let seed = 0;
-            for (let i = 0; i < code.length; i++) {
-                seed = (seed << 5) - seed + code.charCodeAt(i);
-            }
+            for (let i = 0; i < code.length; i++) seed = (seed << 5) - seed + code.charCodeAt(i);
             return seed >>> 0;
         }
 
@@ -439,7 +449,8 @@
                 this.roomCode = Math.random().toString(36).substring(2, 5).toUpperCase();
                 const fullId = ROOM_PREFIX + this.roomCode;
                 
-                this.peer = new Peer(fullId);
+                // STUN CONFIG PASSED HERE
+                this.peer = new Peer(fullId, PEER_CONFIG);
                 this.peer.on('open', (id) => {
                     this.myId = id;
                     this.lobbyPlayers = [{ id: this.myId, username: this.username, isHost: true, kills: 0, deaths: 0 }];
@@ -448,9 +459,7 @@
                     onOpen(this.roomCode);
                 });
 
-                this.peer.on('connection', (conn) => {
-                    this.setupConnection(conn);
-                });
+                this.peer.on('connection', (conn) => this.setupConnection(conn));
             }
 
             initClient(username, code, onConnected, onError) {
@@ -459,7 +468,8 @@
                 this.roomCode = code.toUpperCase();
                 const fullId = ROOM_PREFIX + this.roomCode;
 
-                this.peer = new Peer();
+                // STUN CONFIG PASSED HERE
+                this.peer = new Peer(undefined, PEER_CONFIG);
                 this.peer.on('open', (id) => {
                     this.myId = id;
                     const conn = this.peer.connect(fullId);
@@ -602,8 +612,9 @@
                 this.worldObjects = [];
                 this.input = { moveX: 0, moveZ: 0, yaw: 0, pitch: 0 };
                 this.isLocked = false;
+                
+                this.lastTime = performance.now(); // Critical for true physics delta time
 
-                // Auto-firing & Combat State
                 this.isFiring = false;
                 this.lastShotTime = 0;
                 this.health = 100;
@@ -619,7 +630,7 @@
             initGraphics() {
                 this.scene = new THREE.Scene();
                 this.scene.background = new THREE.Color(0x87ceeb);
-                this.scene.fog = new THREE.FogExp2(0x87ceeb, 0.015);
+                this.scene.fog = new THREE.FogExp2(0x87ceeb, 0.012);
 
                 this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
                 
@@ -642,7 +653,8 @@
 
             initPhysics() {
                 this.world = new CANNON.World();
-                this.world.gravity.set(0, -25, 0);
+                // FIX: Real gravitational acceleration (increased pull)
+                this.world.gravity.set(0, -60, 0); 
                 this.world.broadphase = new CANNON.NaiveBroadphase();
 
                 this.playerMaterial = new CANNON.Material('playerMat');
@@ -655,21 +667,23 @@
                 );
                 this.world.addContactMaterial(contactMat);
 
-                const radius = 0.8;
                 this.playerBody = new CANNON.Body({
                     mass: 75,
-                    shape: new CANNON.Sphere(radius),
-                    position: new CANNON.Vec3(0, 10, 20),
-                    material: this.playerMaterial
+                    shape: new CANNON.Sphere(0.8),
+                    position: new CANNON.Vec3(0, 30, 0),
+                    material: this.playerMaterial,
+                    linearDamping: 0, // Ensure smooth falling without artificial slow down
+                    angularDamping: 1
                 });
                 this.playerBody.fixedRotation = true;
                 this.playerBody.updateMassProperties();
                 this.world.addBody(this.playerBody);
             }
 
-            /* Deterministically generate identical world for everyone using Room Code */
+            /* ==========================================================================
+               MAP GENERATION (Multi-Tier Verticality)
+               ========================================================================== */
             buildProceduralWorld(roomCode) {
-                // Clear existing map objects if re-building
                 this.worldObjects.forEach(obj => {
                     if (obj.mesh) this.scene.remove(obj.mesh);
                     if (obj.body) this.world.remove(obj.body);
@@ -677,11 +691,10 @@
                 this.worldObjects = [];
 
                 const rng = mulberry32(getSeedFromCode(roomCode || "XYZ"));
-
                 const gridTex = TextureGenerator.createGrid('#3f3f46', '#52525b');
                 gridTex.repeat.set(50, 50);
 
-                // Main Ground
+                // Ground Floor (Tier 0)
                 const groundMat = new THREE.MeshStandardMaterial({ map: gridTex, roughness: 0.9 });
                 const groundMesh = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), groundMat);
                 groundMesh.rotation.x = -Math.PI / 2;
@@ -693,38 +706,53 @@
                 this.world.addBody(groundBody);
                 this.worldObjects.push({ mesh: groundMesh, body: groundBody });
 
-                // Synchronized Center Platform
-                this.createBox(new THREE.Vector3(0, 2, 0), new THREE.Vector3(16, 4, 16), 0x3b82f6);
+                // Multi-Tier Platforms
+                // Tier 1: Main Mid Hub
+                this.createBox(new THREE.Vector3(0, 6, 0), new THREE.Vector3(40, 2, 40), 0x3b82f6);
                 
-                // Synchronized Ramps
-                this.createRamp(new THREE.Vector3(0, 2, 12), new THREE.Vector3(6, 0.5, 10), Math.PI / 6, 0x4ade80);
-                this.createRamp(new THREE.Vector3(0, 2, -12), new THREE.Vector3(6, 0.5, 10), -Math.PI / 6, 0x4ade80);
+                // Tier 2: Top Vantage Point
+                this.createBox(new THREE.Vector3(0, 16, 0), new THREE.Vector3(16, 2, 16), 0xf43f5e);
 
-                // Synchronized Corner Towers
-                const towerPositions = [
-                    new THREE.Vector3(30, 4, 30), new THREE.Vector3(-30, 4, 30),
-                    new THREE.Vector3(30, 4, -30), new THREE.Vector3(-30, 4, -30)
-                ];
-                towerPositions.forEach(pos => {
-                    this.createBox(pos, new THREE.Vector3(8, 8, 8), 0xf43f5e);
+                // Corner Sniper Towers
+                const corners = [[36, 36], [-36, 36], [36, -36], [-36, -36]];
+                corners.forEach(c => {
+                    this.createBox(new THREE.Vector3(c[0], 12, c[1]), new THREE.Vector3(14, 2, 14), 0x8b5cf6);
                 });
 
-                // Deterministically Seeded Cover Crates
-                for (let i = 0; i < 25; i++) {
-                    const x = (rng() - 0.5) * 120;
-                    const z = (rng() - 0.5) * 120;
-                    if (Math.abs(x) < 20 && Math.abs(z) < 20) continue;
+                // Ramps Ground -> Tier 1
+                this.createRamp(new THREE.Vector3(0, 3, 26), new THREE.Vector3(12, 2, 16), 'x', -Math.PI/6, 0x10b981);
+                this.createRamp(new THREE.Vector3(0, 3, -26), new THREE.Vector3(12, 2, 16), 'x', Math.PI/6, 0x10b981);
+                this.createRamp(new THREE.Vector3(26, 3, 0), new THREE.Vector3(16, 2, 12), 'z', Math.PI/6, 0x10b981);
+                this.createRamp(new THREE.Vector3(-26, 3, 0), new THREE.Vector3(16, 2, 12), 'z', -Math.PI/6, 0x10b981);
 
-                    const width = 2 + rng() * 4;
-                    const height = 2 + rng() * 6;
-                    const depth = 2 + rng() * 4;
-                    
-                    this.createBox(
-                        new THREE.Vector3(x, height/2, z), 
-                        new THREE.Vector3(width, height, depth), 
-                        0xf59e0b
-                    );
-                }
+                // Ramps Tier 1 -> Tier 2
+                this.createRamp(new THREE.Vector3(0, 11, 14), new THREE.Vector3(6, 2, 14), 'x', -Math.PI/4, 0xf59e0b);
+                this.createRamp(new THREE.Vector3(0, 11, -14), new THREE.Vector3(6, 2, 14), 'x', Math.PI/4, 0xf59e0b);
+
+                // Bridges from Tier 1 -> Corner Towers
+                corners.forEach(c => {
+                    // Small ramps connecting Tier 1 (Y=7 top) to Towers (Y=13 top)
+                    let rx = c[0] > 0 ? 25 : -25;
+                    let rz = c[1] > 0 ? 25 : -25;
+                    // Simplify: Just put structural jump pads or blocks
+                    this.createBox(new THREE.Vector3(rx, 8.5, rz), new THREE.Vector3(8, 3, 8), 0x64748b);
+                });
+
+                // Deterministic Cover Crates on all 3 Vertical Layers
+                const spawnCrates = (count, radius, baseY) => {
+                    for (let i = 0; i < count; i++) {
+                        const x = (rng() - 0.5) * radius;
+                        const z = (rng() - 0.5) * radius;
+                        if (Math.abs(x) < 8 && Math.abs(z) < 8 && baseY < 15) continue; // Keep center clear
+
+                        const w = 2 + rng() * 3, h = 3 + rng() * 5, d = 2 + rng() * 3;
+                        this.createBox(new THREE.Vector3(x, baseY + h/2, z), new THREE.Vector3(w, h, d), 0xfacc15);
+                    }
+                };
+
+                spawnCrates(15, 120, 0);   // Ground crates
+                spawnCrates(8, 36, 7);     // Tier 1 crates
+                spawnCrates(4, 14, 17);    // Tier 2 crates
             }
 
             createBox(pos, size, color) {
@@ -739,7 +767,7 @@
 
                 const body = new CANNON.Body({
                     mass: 0,
-                    shape: new CANNON.Box(new CANNON.Vec3(size.x / 2, size.y / 2, size.z / 2)),
+                    shape: new CANNON.Box(new CANNON.Vec3(size.x/2, size.y/2, size.z/2)),
                     position: new CANNON.Vec3(pos.x, pos.y, pos.z),
                     material: this.worldMaterial
                 });
@@ -747,30 +775,36 @@
                 this.worldObjects.push({ mesh, body });
             }
 
-            createRamp(pos, size, angleX, color) {
+            createRamp(pos, size, axis, angle, color) {
                 const mesh = new THREE.Mesh(
                     new THREE.BoxGeometry(size.x, size.y, size.z),
                     new THREE.MeshStandardMaterial({ color: color })
                 );
                 mesh.position.copy(pos);
-                mesh.rotation.x = angleX;
+                if (axis === 'x') mesh.rotation.x = angle;
+                if (axis === 'z') mesh.rotation.z = angle;
                 mesh.castShadow = true;
                 mesh.receiveShadow = true;
                 this.scene.add(mesh);
 
                 const body = new CANNON.Body({
                     mass: 0,
-                    shape: new CANNON.Box(new CANNON.Vec3(size.x / 2, size.y / 2, size.z / 2)),
+                    shape: new CANNON.Box(new CANNON.Vec3(size.x/2, size.y/2, size.z/2)),
                     position: new CANNON.Vec3(pos.x, pos.y, pos.z),
                     material: this.worldMaterial
                 });
-                body.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), angleX);
+                
+                body.quaternion.setFromAxisAngle(
+                    new CANNON.Vec3(axis === 'x' ? 1 : 0, 0, axis === 'z' ? 1 : 0),
+                    angle
+                );
+
                 this.world.addBody(body);
                 this.worldObjects.push({ mesh, body });
             }
 
             /* ==========================================================================
-               INPUT ENGINE (FULL-AUTO & INFINITE JUMP)
+               INPUT & PHYSICS ENGINE
                ========================================================================== */
             initInput() {
                 this.keys = {};
@@ -783,20 +817,15 @@
                 });
                 window.addEventListener('keyup', (e) => this.keys[e.code] = false);
 
-                // Mouse Full Auto Handling
                 window.addEventListener('mousedown', (e) => {
-                    if (GAME_STATE === 'PLAYING' && this.isLocked && e.button === 0) {
-                        this.isFiring = true;
-                    }
+                    if (GAME_STATE === 'PLAYING' && this.isLocked && e.button === 0) this.isFiring = true;
                 });
                 window.addEventListener('mouseup', (e) => {
                     if (e.button === 0) this.isFiring = false;
                 });
 
                 this.container.addEventListener('click', () => {
-                    if (GAME_STATE === 'PLAYING' && !this.isTouchDevice()) {
-                        this.container.requestPointerLock();
-                    }
+                    if (GAME_STATE === 'PLAYING' && !this.isTouchDevice()) this.container.requestPointerLock();
                 });
 
                 document.addEventListener('pointerlockchange', () => {
@@ -815,9 +844,7 @@
                 this.setupTouchEvents();
             }
 
-            isTouchDevice() {
-                return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-            }
+            isTouchDevice() { return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0); }
 
             setupTouchEvents() {
                 const joyZone = document.getElementById('joystick-zone');
@@ -857,10 +884,7 @@
                             const dist = Math.hypot(dx, dy);
                             const maxDist = joyRect.width / 2;
 
-                            if (dist > maxDist) {
-                                dx = (dx / dist) * maxDist;
-                                dy = (dy / dist) * maxDist;
-                            }
+                            if (dist > maxDist) { dx = (dx / dist) * maxDist; dy = (dy / dist) * maxDist; }
 
                             joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
                             this.input.moveX = dx / maxDist;
@@ -889,9 +913,7 @@
                             this.input.moveX = 0;
                             this.input.moveZ = 0;
                         }
-                        if (touch.identifier === this.touchState.lookId) {
-                            this.touchState.lookId = null;
-                        }
+                        if (touch.identifier === this.touchState.lookId) this.touchState.lookId = null;
                     }
                 };
 
@@ -900,25 +922,21 @@
 
                 document.getElementById('btn-jump').addEventListener('touchstart', (e) => { e.preventDefault(); this.jump(); });
                 
-                // Full Auto Touch Fire Button
                 const btnShoot = document.getElementById('btn-shoot');
                 btnShoot.addEventListener('touchstart', (e) => { e.preventDefault(); this.isFiring = true; });
                 btnShoot.addEventListener('touchend', (e) => { e.preventDefault(); this.isFiring = false; });
                 btnShoot.addEventListener('touchcancel', (e) => { e.preventDefault(); this.isFiring = false; });
             }
 
-            clampPitch() {
-                this.input.pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, this.input.pitch));
-            }
+            clampPitch() { this.input.pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, this.input.pitch)); }
 
-            /* Infinite Jumping */
             jump() {
                 if (GAME_STATE !== 'PLAYING') return;
                 this.playerBody.velocity.y = SETTINGS.jumpForce;
             }
 
             /* ==========================================================================
-               COMBAT & BULLET SYSTEM
+               COMBAT & GAME LOOP
                ========================================================================== */
             shoot() {
                 if (GAME_STATE !== 'PLAYING') return;
@@ -939,9 +957,7 @@
             }
 
             spawnBullet(origin, direction, ownerId) {
-                const geometry = new THREE.SphereGeometry(0.18, 8, 8);
-                const material = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
-                const mesh = new THREE.Mesh(geometry, material);
+                const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.18, 8, 8), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
                 mesh.position.set(origin.x, origin.y, origin.z);
                 this.scene.add(mesh);
 
@@ -950,24 +966,10 @@
                     shape: new CANNON.Sphere(0.18),
                     position: new CANNON.Vec3(origin.x, origin.y, origin.z)
                 });
-                
-                body.velocity.set(
-                    direction.x * SETTINGS.bulletSpeed,
-                    direction.y * SETTINGS.bulletSpeed,
-                    direction.z * SETTINGS.bulletSpeed
-                );
+                body.velocity.set(direction.x * SETTINGS.bulletSpeed, direction.y * SETTINGS.bulletSpeed, direction.z * SETTINGS.bulletSpeed);
 
-                const bulletObj = {
-                    mesh: mesh,
-                    body: body,
-                    ownerId: ownerId,
-                    createdAt: Date.now(),
-                    toDestroy: false
-                };
-
-                body.addEventListener('collide', () => {
-                    bulletObj.toDestroy = true;
-                });
+                const bulletObj = { mesh: mesh, body: body, ownerId: ownerId, createdAt: Date.now(), toDestroy: false };
+                body.addEventListener('collide', () => bulletObj.toDestroy = true);
 
                 this.world.addBody(body);
                 this.bullets.push(bulletObj);
@@ -976,75 +978,45 @@
             takeDamage(damage, attackerId) {
                 this.health -= damage;
                 if (this.health < 0) this.health = 0;
-                
                 this.updateHealthUI();
-
-                if (this.health === 0) {
-                    this.respawn(attackerId);
-                }
+                if (this.health === 0) this.respawn(attackerId);
             }
 
             respawn(killerId) {
                 if (network.peer && network.peer.open) {
                     const msg = { type: 'player_killed', victimId: network.myId, killerId: killerId };
-                    if (network.isHost) {
-                        network.handleData(network.myId, msg);
-                    } else {
-                        network.broadcast(msg);
-                    }
+                    if (network.isHost) network.handleData(network.myId, msg);
+                    else network.broadcast(msg);
                 }
 
                 this.health = 100;
                 this.updateHealthUI();
-                const rx = (Math.random() - 0.5) * 60;
-                const rz = (Math.random() - 0.5) * 60;
-                this.playerBody.position.set(rx, 10, rz);
+                // Respawn high up so player drops into the arena layers
+                this.playerBody.position.set((Math.random() - 0.5) * 60, 40, (Math.random() - 0.5) * 60);
                 this.playerBody.velocity.set(0, 0, 0);
             }
 
             updateHealthUI() {
                 const bar = document.getElementById('health-bar');
-                const text = document.getElementById('health-text');
-                
+                document.getElementById('health-text').innerText = `${this.health} / 100`;
                 bar.style.width = `${this.health}%`;
-                text.innerText = `${this.health} / 100`;
-
-                if (this.health > 50) bar.style.backgroundColor = '#22c55e';
-                else if (this.health > 25) bar.style.backgroundColor = '#eab308';
-                else bar.style.backgroundColor = '#ef4444';
+                bar.style.backgroundColor = this.health > 50 ? '#22c55e' : this.health > 25 ? '#eab308' : '#ef4444';
             }
 
-            /* ==========================================================================
-               PLAYER MODELS & NAMETAGS
-               ========================================================================== */
             createPlayerModel(color = 0xef4444) {
                 const group = new THREE.Group();
-                
-                const bodyGeo = new THREE.BoxGeometry(1, 1.4, 1);
-                const bodyMat = new THREE.MeshStandardMaterial({ color: color });
-                const body = new THREE.Mesh(bodyGeo, bodyMat);
-                body.position.y = -0.1;
-                body.castShadow = true;
-                group.add(body);
+                const body = new THREE.Mesh(new THREE.BoxGeometry(1, 1.4, 1), new THREE.MeshStandardMaterial({ color: color }));
+                body.position.y = -0.1; body.castShadow = true; group.add(body);
                 
                 const headGroup = new THREE.Group();
                 headGroup.position.y = 0.9;
-                
-                const headGeo = new THREE.BoxGeometry(0.7, 0.7, 0.7);
-                const headMat = new THREE.MeshStandardMaterial({ color: 0xfca5a5 });
-                const head = new THREE.Mesh(headGeo, headMat);
-                head.castShadow = true;
-                headGroup.add(head);
+                const head = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), new THREE.MeshStandardMaterial({ color: 0xfca5a5 }));
+                head.castShadow = true; headGroup.add(head);
 
-                const visorGeo = new THREE.BoxGeometry(0.5, 0.15, 0.1);
-                const visorMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
-                const visor = new THREE.Mesh(visorGeo, visorMat);
-                visor.position.set(0, 0.1, -0.36);
-                headGroup.add(visor);
+                const visor = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.15, 0.1), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+                visor.position.set(0, 0.1, -0.36); headGroup.add(visor);
 
-                group.add(headGroup);
-                group.head = headGroup;
-
+                group.add(headGroup); group.head = headGroup;
                 return group;
             }
 
@@ -1052,21 +1024,17 @@
                 if (!this.remotePlayers[id]) {
                     const mesh = this.createPlayerModel();
                     this.scene.add(mesh);
-                    
                     const tag = document.createElement('div');
                     tag.className = 'nametag';
                     const playerInfo = network.lobbyPlayers.find(p => p.id === id);
                     tag.innerText = playerInfo ? playerInfo.username : "Player";
                     this.nametagContainer.appendChild(tag);
-
                     this.remotePlayers[id] = { mesh, tag };
                 }
                 const player = this.remotePlayers[id];
                 player.mesh.position.set(data.x, data.y, data.z);
                 player.mesh.rotation.set(0, data.yaw, 0);
-                if(player.mesh.head) {
-                    player.mesh.head.rotation.set(data.pitch, 0, 0);
-                }
+                if(player.mesh.head) player.mesh.head.rotation.set(data.pitch, 0, 0);
             }
 
             removeRemotePlayer(id) {
@@ -1084,36 +1052,30 @@
                     vector.project(this.camera);
 
                     if (vector.z < 1) {
-                        const x = (vector.x * .5 + .5) * window.innerWidth;
-                        const y = (vector.y * -.5 + .5) * window.innerHeight;
                         player.tag.style.display = 'block';
-                        player.tag.style.left = `${x}px`;
-                        player.tag.style.top = `${y}px`;
-                    } else {
-                        player.tag.style.display = 'none';
-                    }
+                        player.tag.style.left = `${(vector.x * .5 + .5) * window.innerWidth}px`;
+                        player.tag.style.top = `${(vector.y * -.5 + .5) * window.innerHeight}px`;
+                    } else player.tag.style.display = 'none';
                 });
             }
 
-            /* ==========================================================================
-               GAME LOOP
-               ========================================================================== */
             updatePhysics() {
                 if(GAME_STATE !== 'PLAYING') return;
 
-                this.world.step(1 / 60);
+                const nowTime = performance.now();
+                const dt = (nowTime - this.lastTime) / 1000;
+                this.lastTime = nowTime;
 
-                // Auto Firing Interval Check
-                const now = Date.now();
-                if (this.isFiring && (now - this.lastShotTime >= SETTINGS.fireRate)) {
+                // FIX: Real delta time step ensures physics run correctly regardless of monitor refresh rate
+                this.world.step(1 / 60, Math.min(dt, 0.1), 3);
+
+                if (this.isFiring && (Date.now() - this.lastShotTime >= SETTINGS.fireRate)) {
                     this.shoot();
-                    this.lastShotTime = now;
+                    this.lastShotTime = Date.now();
                 }
 
-                // Direct Movement
                 let moveX = this.input.moveX;
                 let moveZ = this.input.moveZ;
-
                 if (this.keys['KeyW']) moveZ = -1;
                 if (this.keys['KeyS']) moveZ = 1;
                 if (this.keys['KeyA']) moveX = -1;
@@ -1133,49 +1095,31 @@
                     this.playerBody.velocity.z = moveVector.z * SETTINGS.moveSpeed;
                 }
 
-                this.camera.position.set(
-                    this.playerBody.position.x,
-                    this.playerBody.position.y + 0.6,
-                    this.playerBody.position.z
-                );
+                this.camera.position.set(this.playerBody.position.x, this.playerBody.position.y + 0.6, this.playerBody.position.z);
                 this.camera.rotation.set(this.input.pitch, this.input.yaw, 0, 'YXZ');
 
-                // Broadcast Position/Rotation
                 if (network.peer && network.peer.open) {
                     network.broadcast({
-                        type: 'transform',
-                        id: network.myId,
-                        x: this.playerBody.position.x,
-                        y: this.playerBody.position.y,
-                        z: this.playerBody.position.z,
-                        yaw: this.input.yaw,
-                        pitch: this.input.pitch
+                        type: 'transform', id: network.myId,
+                        x: this.playerBody.position.x, y: this.playerBody.position.y, z: this.playerBody.position.z,
+                        yaw: this.input.yaw, pitch: this.input.pitch
                     });
                 }
 
-                // Bullets Physics & Hit Detection
                 for (let i = this.bullets.length - 1; i >= 0; i--) {
                     const b = this.bullets[i];
                     b.mesh.position.copy(b.body.position);
 
                     if (b.ownerId === network.myId) {
                         Object.keys(this.remotePlayers).forEach(targetId => {
-                            const targetPos = this.remotePlayers[targetId].mesh.position;
-                            const dist = b.mesh.position.distanceTo(targetPos);
-                            
-                            if (dist < 1.2) {
+                            if (b.mesh.position.distanceTo(this.remotePlayers[targetId].mesh.position) < 1.2) {
                                 b.toDestroy = true;
-                                network.send(targetId, {
-                                    type: 'damage',
-                                    targetId: targetId,
-                                    attackerId: network.myId,
-                                    damage: SETTINGS.bulletDamage
-                                });
+                                network.send(targetId, { type: 'damage', targetId: targetId, attackerId: network.myId, damage: SETTINGS.bulletDamage });
                             }
                         });
                     }
 
-                    if (b.toDestroy || (now - b.createdAt > 1500)) {
+                    if (b.toDestroy || (Date.now() - b.createdAt > 1500)) {
                         this.scene.remove(b.mesh);
                         this.world.remove(b.body);
                         this.bullets.splice(i, 1);
@@ -1191,21 +1135,20 @@
 
             animate() {
                 requestAnimationFrame(() => this.animate());
-                
                 if (GAME_STATE === 'PLAYING') {
                     this.updatePhysics();
                     this.updateNametags();
                 } else {
                     this.camera.position.set(Math.sin(Date.now()*0.0005)*50, 20, Math.cos(Date.now()*0.0005)*50);
                     this.camera.lookAt(0,0,0);
+                    this.lastTime = performance.now(); // Keep delta fresh while paused
                 }
-
                 this.renderer.render(this.scene, this.camera);
             }
         }
 
         /* ==========================================================================
-           5. SYSTEM INITIALIZATION & STATE MANAGEMENT
+           5. BOOTSTRAP
            ========================================================================== */
         const network = new NetworkManager();
         let game;
@@ -1214,88 +1157,51 @@
             GAME_STATE = 'PLAYING';
             document.getElementById('waiting-room').classList.add('hidden');
             document.getElementById('hud').classList.remove('hidden');
-            game.playerBody.position.set((Math.random() - 0.5) * 30, 10, (Math.random() - 0.5) * 30);
+            // Drop in from the sky above the new towers
+            game.playerBody.position.set((Math.random() - 0.5) * 60, 40, (Math.random() - 0.5) * 60);
             network.updateLeaderboardUI();
         }
 
         window.addEventListener('DOMContentLoaded', () => {
             game = new GameEngine();
 
-            const lobbyMenu = document.getElementById('lobby-menu');
-            const waitingRoom = document.getElementById('waiting-room');
-            const statusText = document.getElementById('status-text');
-            const displayRoomCode = document.getElementById('display-room-code');
-            const btnStartGame = document.getElementById('btn-start-game');
-            const waitingStatus = document.getElementById('waiting-status');
+            const lobbyMenu = document.getElementById('lobby-menu'), waitingRoom = document.getElementById('waiting-room');
+            const statusText = document.getElementById('status-text'), displayRoomCode = document.getElementById('display-room-code');
+            const btnStartGame = document.getElementById('btn-start-game'), waitingStatus = document.getElementById('waiting-status');
 
             function getUsername() {
                 const u = document.getElementById('username-input').value.trim();
-                if(!u) {
-                    alert("Please enter a username!");
-                    return null;
-                }
+                if(!u) { alert("Please enter a username!"); return null; }
                 return u;
             }
 
             document.getElementById('btn-host').addEventListener('click', () => {
-                const uname = getUsername();
-                if(!uname) return;
-
-                GAME_STATE = 'WAITING';
-                statusText.innerText = "Creating room...";
+                const uname = getUsername(); if(!uname) return;
+                GAME_STATE = 'WAITING'; statusText.innerText = "Creating room...";
                 network.initHost(uname, (code) => {
-                    lobbyMenu.classList.add('hidden');
-                    waitingRoom.classList.remove('hidden');
-                    displayRoomCode.innerText = code;
-                    
-                    btnStartGame.classList.remove('hidden');
-                    waitingStatus.classList.add('hidden');
+                    lobbyMenu.classList.add('hidden'); waitingRoom.classList.remove('hidden');
+                    displayRoomCode.innerText = code; btnStartGame.classList.remove('hidden'); waitingStatus.classList.add('hidden');
                 });
             });
 
             document.getElementById('btn-join').addEventListener('click', () => {
-                const uname = getUsername();
-                if(!uname) return;
-
+                const uname = getUsername(); if(!uname) return;
                 const code = document.getElementById('room-input').value.trim();
-                if (code.length !== 3) {
-                    statusText.innerText = "Enter valid 3-char code!";
-                    return;
-                }
-
-                GAME_STATE = 'WAITING';
-                statusText.innerText = "Connecting...";
+                if (code.length !== 3) { statusText.innerText = "Enter valid 3-char code!"; return; }
+                GAME_STATE = 'WAITING'; statusText.innerText = "Connecting via STUN...";
                 network.initClient(uname, code, () => {
-                    lobbyMenu.classList.add('hidden');
-                    waitingRoom.classList.remove('hidden');
-                    displayRoomCode.innerText = code;
-                    
-                    btnStartGame.classList.add('hidden');
-                    waitingStatus.classList.remove('hidden');
-                }, (err) => {
-                    statusText.innerText = "Connection Failed!";
-                    GAME_STATE = 'LOBBY';
-                });
+                    lobbyMenu.classList.add('hidden'); waitingRoom.classList.remove('hidden');
+                    displayRoomCode.innerText = code; btnStartGame.classList.add('hidden'); waitingStatus.classList.remove('hidden');
+                }, () => { statusText.innerText = "Connection Failed!"; GAME_STATE = 'LOBBY'; });
             });
 
-            btnStartGame.addEventListener('click', () => {
-                network.broadcast({ type: 'start_game' });
-                startGameLoop();
-            });
-
-            const settingsMenu = document.getElementById('settings-menu');
+            btnStartGame.addEventListener('click', () => { network.broadcast({ type: 'start_game' }); startGameLoop(); });
             document.getElementById('btn-settings-hud').addEventListener('click', () => {
                 if (game.isLocked) document.exitPointerLock();
-                settingsMenu.classList.remove('hidden');
+                document.getElementById('settings-menu').classList.remove('hidden');
             });
-
-            document.getElementById('btn-close-settings').addEventListener('click', () => {
-                settingsMenu.classList.add('hidden');
-            });
-
-            document.getElementById('sensitivity-slider').addEventListener('input', (e) => {
-                SETTINGS.sensitivity = e.target.value * 0.0006;
-            });
+            document.getElementById('btn-close-settings').addEventListener('click', () => document.getElementById('settings-menu').classList.add('hidden'));
+            document.getElementById('sensitivity-slider').addEventListener('input', (e) => SETTINGS.sensitivity = e.target.value * 0.0006);
         });
     </script>
 </body>
