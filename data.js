@@ -15,11 +15,11 @@ const siteData = {
 const announcements = [
   {
     title: "New releases",
-    content: " - A Universal Chatroom has been fully implemented, press the 'chat' button in the bottom right to open it! It connects all users that are currently on the site. Private messages to individual users, audio messages, file sharing, and replying to messages have all been added. - (09/03/2026)"
+    content: " - A Universal Chatroom has been fully implemented, press the 'chat' button in the bottom right to open it! It connects all users that are currently on the site. Private messages to individual users, audio messages, file sharing, and replying to messages have all been added. - (09/03/2026)<br> - New beta out for a multiplayer PvP FPS game"
   },
   {
     title: "Game updates",
-    content: " - Multiplayer support using PeerJS is being implemented into Pixel Ops with GKS slated for it next. It is not currently working within Pixel Ops, I am looking into it. - (09/02/2026)"
+    content: " - Removed the broken multiplayer from Pixel Ops, becuase I am making a proper multiplayer FPS."
   },
   {
     title: "Site updates",
@@ -33,7 +33,7 @@ const projects = [
   url: 'games/fps.html',
   image: 'images/missing.png',
   alt: 'FPS beta',
-  statusKey: 'new',
+  statusKey: 'beta',
   type: 'FPS',
   tags: ['Shooter', 'Multiplayer', 'Under development'],
   description: 'THIS IS NOT A COMPLETE GAME; THIS IS A TEST OF A NEW ENGINE I AM ROLLING OUT FOR MULTIPLAYER FPS GAMES',
@@ -101,7 +101,7 @@ const projects = [
     alt: 'Labyrinthine',
     statusKey: 'wipBuggy',
     type: 'Horror',
-    tags: ['Horror', 'Survival', 'Under development', 'Development on hold'],
+    tags: ['Horror', 'Survival', 'Development on hold'],
     description: 'You are trapped in a maze with entities that want only one thing: your head... on a plate! Shine your flashlight to freeze them, and use your weapons to survive.',
     featured: false
   },
