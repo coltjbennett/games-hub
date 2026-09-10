@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>MS Paint</title>
   <style>
     @font-face {
@@ -27,6 +27,7 @@
       padding: 0;
       font-family: "W95FA", "MS Sans Serif", sans-serif;
       user-select: none;
+      -webkit-user-select: none;
     }
 
     body {
@@ -37,6 +38,7 @@
       flex-direction: column;
       overflow: hidden;
       padding: 2px;
+      touch-action: none;
     }
 
     /* Menu Bar */
@@ -69,7 +71,7 @@
 
     /* Tools Sidebar */
     .tools-panel {
-      width: 58px;
+      width: 62px;
       display: flex;
       flex-direction: column;
       gap: 4px;
@@ -83,7 +85,7 @@
     }
 
     .tool-btn {
-      width: 25px;
+      width: 27px;
       height: 25px;
       background: var(--win-bg);
       border: 2px outset var(--win-border-light);
@@ -105,15 +107,15 @@
 
     /* Tool Options Box */
     .tool-options {
-      height: 60px;
       border: 2px inset var(--win-border-dark);
       background: var(--win-bg);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 3px;
-      padding: 2px;
+      gap: 4px;
+      padding: 4px 2px;
+      font-size: 10px;
     }
 
     .size-option {
@@ -127,23 +129,43 @@
       outline: 1px solid var(--win-blue);
     }
 
+    .slider-control {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      width: 100%;
+    }
+
+    .slider-control input[type="range"] {
+      width: 48px;
+      cursor: pointer;
+    }
+
     /* Canvas Area */
     .canvas-container {
       flex: 1;
       background: #808080;
       border: 2px inset var(--win-border-dark);
       overflow: auto;
-      display: flex;
-      align-items: flex-start;
-      justify-content: flex-start;
       padding: 10px;
       position: relative;
+      touch-action: none;
+    }
+
+    .canvas-wrapper {
+      position: relative;
+      line-height: 0;
+      display: inline-block;
+      transform-origin: 0 0;
     }
 
     #paintCanvas {
       background: #ffffff;
       box-shadow: 2px 2px 5px rgba(0,0,0,0.4);
       cursor: crosshair;
+      touch-action: none;
+      transform-origin: 0 0;
     }
 
     /* Colors Bar */
@@ -201,7 +223,7 @@
 
     /* Status Bar */
     .status-bar {
-      height: 20px;
+      height: 22px;
       border-top: 1px solid var(--win-border-dark);
       display: flex;
       align-items: center;
@@ -209,6 +231,12 @@
       padding: 0 6px;
       font-size: 11px;
       background: var(--win-bg);
+    }
+
+    .status-section {
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
     .actions-bar {
@@ -244,17 +272,22 @@
       <div class="tools-grid">
         <div class="tool-btn active" data-tool="pencil" title="Pencil">✏️</div>
         <div class="tool-btn" data-tool="brush" title="Brush">🖌️</div>
-        <div class="tool-btn" data-tool="eraser" title="Eraser">🧹</div>
+        <div class="tool-btn" data-tool="eraser" title="Eraser">🧼</div>
         <div class="tool-btn" data-tool="bucket" title="Fill Bucket">🪣</div>
         <div class="tool-btn" data-tool="line" title="Line">➖</div>
         <div class="tool-btn" data-tool="rect" title="Rectangle">▭</div>
         <div class="tool-btn" data-tool="ellipse" title="Ellipse">◯</div>
         <div class="tool-btn" data-tool="eyedropper" title="Pick Color">🧪</div>
         <div class="tool-btn" data-tool="spray" title="Airbrush">💨</div>
-        <div class="tool-btn" data-tool="text" title="Text">A</div>
+        <div class="tool-btn" data-tool="text" title="Text">Aa</div>
       </div>
 
-      <div class="tool-options" id="sizeOptions">
+      <div class="tool-options">
+        <div class="slider-control">
+          <label for="brushSlider">Size: <b id="brushSizeVal">2</b>px</label>
+          <input type="range" id="brushSlider" min="1" max="50" value="2" />
+        </div>
+        <div style="width:100%; border-top: 1px solid var(--win-border-dark); margin: 2px 0;"></div>
         <div class="size-option active" style="height: 2px;" data-size="2"></div>
         <div class="size-option" style="height: 4px;" data-size="4"></div>
         <div class="size-option" style="height: 7px;" data-size="8"></div>
@@ -262,8 +295,10 @@
       </div>
     </div>
 
-    <div class="canvas-container">
-      <canvas id="paintCanvas" width="580" height="360"></canvas>
+    <div class="canvas-container" id="canvasContainer">
+      <div class="canvas-wrapper" id="canvasWrapper">
+        <canvas id="paintCanvas" width="580" height="360"></canvas>
+      </div>
     </div>
   </div>
 
@@ -280,21 +315,39 @@
   </div>
 
   <div class="status-bar">
-    <span id="statusHelp">For Help, select a tool or draw on canvas.</span>
-    <span id="statusCoords">0, 0px</span>
-    <span>580x360px</span>
+    <span id="statusHelp">Left-click/Tap to draw. Right-click drag / 2-finger drag to pan.</span>
+    <div class="status-section">
+      <span id="statusCoords">0, 0px</span>
+      <span>580x360px</span>
+      <div class="slider-control" style="flex-direction: row; gap: 4px;">
+        <label for="zoomSlider">Zoom:</label>
+        <input type="range" id="zoomSlider" min="50" max="300" value="100" step="10" style="width: 60px;" />
+        <span id="zoomVal">100%</span>
+      </div>
+    </div>
   </div>
 
   <script>
     const canvas = document.getElementById('paintCanvas');
     const ctx = canvas.getContext('2d');
-    
+    const container = document.getElementById('canvasContainer');
+    const wrapper = document.getElementById('canvasWrapper');
+    const brushSlider = document.getElementById('brushSlider');
+    const brushSizeVal = document.getElementById('brushSizeVal');
+    const zoomSlider = document.getElementById('zoomSlider');
+    const zoomVal = document.getElementById('zoomVal');
+
     let currentTool = 'pencil';
     let fgColor = '#000000';
     let bgColor = '#ffffff';
     let lineWidth = 2;
+    let currentZoom = 1.0;
+    
     let isDrawing = false;
+    let isPanning = false;
     let startX = 0, startY = 0;
+    let panStartX = 0, panStartY = 0;
+    let scrollStartX = 0, scrollStartY = 0;
     let snapshot = null;
 
     const undoStack = [];
@@ -335,6 +388,40 @@
       }
     }
 
+    // Zoom Handling
+    function updateZoom(zoomPercent) {
+      currentZoom = zoomPercent / 100;
+      zoomVal.textContent = `${zoomPercent}%`;
+      canvas.style.transform = `scale(${currentZoom})`;
+      wrapper.style.width = `${canvas.width * currentZoom}px`;
+      wrapper.style.height = `${canvas.height * currentZoom}px`;
+    }
+
+    zoomSlider.addEventListener('input', (e) => {
+      updateZoom(parseInt(e.target.value, 10));
+    });
+
+    // Brush Size Handling
+    function setBrushSize(size) {
+      lineWidth = parseInt(size, 10);
+      brushSlider.value = lineWidth;
+      brushSizeVal.textContent = lineWidth;
+
+      document.querySelectorAll('.size-option').forEach(o => {
+        if (parseInt(o.dataset.size, 10) === lineWidth) {
+          o.classList.add('active');
+        } else {
+          o.classList.remove('active');
+        }
+      });
+    }
+
+    brushSlider.addEventListener('input', (e) => setBrushSize(e.target.value));
+
+    document.querySelectorAll('.size-option').forEach(opt => {
+      opt.addEventListener('click', () => setBrushSize(opt.dataset.size));
+    });
+
     // Swatches Setup
     const swatchesGrid = document.getElementById('swatchesGrid');
     colors.forEach(c => {
@@ -360,15 +447,6 @@
         btn.classList.add('active');
         currentTool = btn.dataset.tool;
         document.getElementById('statusHelp').textContent = `Tool: ${currentTool}`;
-      });
-    });
-
-    // Size switching
-    document.querySelectorAll('.size-option').forEach(opt => {
-      opt.addEventListener('click', () => {
-        document.querySelectorAll('.size-option').forEach(o => o.classList.remove('active'));
-        opt.classList.add('active');
-        lineWidth = parseInt(opt.dataset.size, 10);
       });
     });
 
@@ -417,22 +495,59 @@
       ctx.putImageData(imgData, 0, 0);
     }
 
-    // Pointer position helper
+    // Coordinates calculation with zoom correction
     function getCoords(e) {
       const rect = canvas.getBoundingClientRect();
+      const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+      const clientY = e.clientY !== undefined ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
       return {
-        x: Math.floor(e.clientX - rect.left),
-        y: Math.floor(e.clientY - rect.top)
+        x: Math.floor((clientX - rect.left) / currentZoom),
+        y: Math.floor((clientY - rect.top) / currentZoom)
       };
     }
 
-    // Mouse Events
-    canvas.addEventListener('mousemove', (e) => {
-      const pos = getCoords(e);
-      document.getElementById('statusCoords').textContent = `${pos.x}, ${pos.y}px`;
+    // Prevent context menu on canvas
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-      if (!isDrawing) return;
+    // Mouse & Pointer Interactions
+    function startDrawing(pos) {
+      isDrawing = true;
+      startX = pos.x;
+      startY = pos.y;
 
+      saveState();
+
+      if (currentTool === 'bucket') {
+        floodFill(pos.x, pos.y, fgColor);
+        isDrawing = false;
+        return;
+      }
+
+      if (currentTool === 'eyedropper') {
+        const pixel = ctx.getImageData(pos.x, pos.y, 1, 1).data;
+        fgColor = `#${((1 << 24) + (pixel[0] << 16) + (pixel[1] << 8) + pixel[2]).toString(16).slice(1)}`;
+        document.getElementById('fgColorBox').style.background = fgColor;
+        isDrawing = false;
+        return;
+      }
+
+      if (currentTool === 'text') {
+        const text = prompt('Enter text:');
+        if (text) {
+          ctx.fillStyle = fgColor;
+          ctx.font = `${lineWidth * 4 + 12}px W95FA, sans-serif`;
+          ctx.fillText(text, pos.x, pos.y);
+        }
+        isDrawing = false;
+        return;
+      }
+
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y);
+      snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    }
+
+    function draw(pos) {
       if (currentTool === 'pencil' || currentTool === 'brush') {
         ctx.strokeStyle = fgColor;
         ctx.lineWidth = currentTool === 'pencil' ? 1 : lineWidth;
@@ -471,52 +586,93 @@
         }
         ctx.stroke();
       }
+    }
+
+    // Mouse Listeners
+    canvas.addEventListener('mousedown', (e) => {
+      if (e.button === 2) {
+        // Right-click drag -> Pan Canvas
+        isPanning = true;
+        panStartX = e.clientX;
+        panStartY = e.clientY;
+        scrollStartX = container.scrollLeft;
+        scrollStartY = container.scrollTop;
+        canvas.style.cursor = 'grab';
+        return;
+      }
+
+      if (e.button === 0) {
+        // Left-click drag -> Draw
+        startDrawing(getCoords(e));
+      }
     });
 
-    canvas.addEventListener('mousedown', (e) => {
+    window.addEventListener('mousemove', (e) => {
+      if (isPanning) {
+        container.scrollLeft = scrollStartX - (e.clientX - panStartX);
+        container.scrollTop = scrollStartY - (e.clientY - panStartY);
+        return;
+      }
+
       const pos = getCoords(e);
-      isDrawing = true;
-      startX = pos.x;
-      startY = pos.y;
+      document.getElementById('statusCoords').textContent = `${pos.x}, ${pos.y}px`;
 
-      saveState();
-
-      if (currentTool === 'bucket') {
-        floodFill(pos.x, pos.y, fgColor);
-        isDrawing = false;
-        return;
+      if (isDrawing) {
+        draw(pos);
       }
-
-      if (currentTool === 'eyedropper') {
-        const pixel = ctx.getImageData(pos.x, pos.y, 1, 1).data;
-        fgColor = `#${((1 << 24) + (pixel[0] << 16) + (pixel[1] << 8) + pixel[2]).toString(16).slice(1)}`;
-        document.getElementById('fgColorBox').style.background = fgColor;
-        isDrawing = false;
-        return;
-      }
-
-      if (currentTool === 'text') {
-        const text = prompt('Enter text:');
-        if (text) {
-          ctx.fillStyle = fgColor;
-          ctx.font = `${lineWidth * 6 + 10}px W95FA, sans-serif`;
-          ctx.fillText(text, pos.x, pos.y);
-        }
-        isDrawing = false;
-        return;
-      }
-
-      ctx.beginPath();
-      ctx.moveTo(pos.x, pos.y);
-      snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
     });
 
     window.addEventListener('mouseup', () => {
+      if (isPanning) {
+        isPanning = false;
+        canvas.style.cursor = 'crosshair';
+      }
       if (isDrawing) {
         isDrawing = false;
         ctx.closePath();
       }
     });
+
+    // Touch Event Listeners (Prevents background scrolling while drawing/panning)
+    let touchPanStartX = 0, touchPanStartY = 0;
+
+    canvas.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      if (e.touches.length === 1) {
+        // Single finger -> Draw
+        isPanning = false;
+        startDrawing(getCoords(e));
+      } else if (e.touches.length === 2) {
+        // Two fingers -> Pan Canvas
+        isDrawing = false;
+        isPanning = true;
+        touchPanStartX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        touchPanStartY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        scrollStartX = container.scrollLeft;
+        scrollStartY = container.scrollTop;
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      if (isPanning && e.touches.length === 2) {
+        const currentX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        container.scrollLeft = scrollStartX - (currentX - touchPanStartX);
+        container.scrollTop = scrollStartY - (currentY - touchPanStartY);
+      } else if (isDrawing && e.touches.length === 1) {
+        draw(getCoords(e));
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      if (e.touches.length < 2) isPanning = false;
+      if (e.touches.length === 0 && isDrawing) {
+        isDrawing = false;
+        ctx.closePath();
+      }
+    }, { passive: false });
 
     // Action handlers
     document.getElementById('btn-new').addEventListener('click', clearCanvas);
@@ -537,6 +693,7 @@
 
     // Initial setup
     clearCanvas();
+    updateZoom(100);
   </script>
 </body>
 </html>
