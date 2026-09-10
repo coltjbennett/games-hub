@@ -136,7 +136,7 @@ function renderFeatured() {
       <h3>${esc(featured.title)}</h3>
       <p>${esc(featured.description)}</p>
       <div class="featured-meta">${featured.tags.map(tag => `<span class="tag ${tag.includes('Top Pick') ? 'tag--featured' : ''}">${esc(tag)}</span>`).join('')}</div>
-      <a class="play-btn" href="${featured.url}" target="_blank" rel="noopener noreferrer" aria-label="Play ${esc(featured.title)}">PLAY NOW</a>
+      <a class="play-btn" href="${featured.url}" target="_blank" rel="noopener noreferrer" aria-label="Play ${esc(featured.title)}" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">Launch</a>
     </div>
   `;
 }
