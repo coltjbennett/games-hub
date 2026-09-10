@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Weather Applet</title>
+  <style>
+    body {
+      margin: 0;
+      background: #c0c0c0;
+      font-family: "MS Sans Serif", Tahoma, Arial, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding: 12px;
+      box-sizing: border-box;
+      user-select: none;
+    }
+    .weather-box {
+      background: #ffffff;
+      border: 2px inset #808080;
+      padding: 10px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+    h2 {
+      margin: 0 0 10px 0;
+      font-size: 16px;
+      color: #000080;
+      text-decoration: underline;
+    }
+    .temp {
+      font-size: 34px;
+      font-weight: bold;
+      color: #000;
+      margin-bottom: 6px;
+    }
+    .desc {
+      font-size: 14px;
+      color: #333;
+    }
+    .loading {
+      font-style: italic;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div class="weather-box">
+    <h2>Waukesha, WI</h2>
+    <div id="content" class="loading">Fetching data...</div>
+  </div>
+  <script>
+    async function getWeather() {
+      try {
+        // Fetch real-time weather from Open-Meteo for Waukesha, WI coords
+        const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=43.0117&longitude=-88.2315&current_weather=true&temperature_unit=fahrenheit');
+        const data = await res.json();
+        const w = data.current_weather;
+        
+        document.getElementById('content').innerHTML = `
+          <div class="temp">${w.temperature}°F</div>
+          <div class="desc">Wind Speed: <strong>${w.windspeed} mph</strong></div>
+          <div class="desc" style="margin-top: 4px;">Time: ${w.time.replace('T', ' ')}</div>
+        `;
+      } catch (e) {
+        document.getElementById('content').innerHTML = '<span style="color:red; font-weight:bold;">Error resolving connection.</span><br>Check internet status.';
+      }
+    }
+    // Launch fetch
+    getWeather();
+  </script>
+</body>
+</html>
