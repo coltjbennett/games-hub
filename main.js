@@ -15,6 +15,8 @@ const SEARCH_KEY = 'project-launcher-search';
 const STATUS_KEY = 'project-launcher-status';
 const CHAT_USERNAME_KEY = 'mqtt_chat_username_v1';
 
+let highestZIndex = 1000;
+
 const STATUS_META = {
   complete:   { label: 'Complete',      className: 'status--complete',   bucket: 'complete' },
   beta:       { label: 'Beta Release',  className: 'status--beta',       bucket: 'progress' },
@@ -47,7 +49,6 @@ function getStatusMeta(statusKey) {
   return STATUS_META[statusKey] || { label: statusKey, className: 'status--legacy', bucket: 'legacy' };
 }
 
-// Native JavaScript debounce utility function 
 function debounce(func, delay) {
   let timeoutId;
   return function(...args) {
@@ -62,8 +63,8 @@ let sortMode = safeGet(SORT_KEY) || 'default';
 let searchTerm = safeGet(SEARCH_KEY) || '';
 let statusValue = safeGet(STATUS_KEY) || 'all';
 
-searchInput.value = searchTerm;
-statusFilter.value = statusValue;
+if (searchInput) searchInput.value = searchTerm;
+if (statusFilter) statusFilter.value = statusValue;
 
 // ===== INJECT DYNAMIC SITE DATA =====
 function renderSiteData() {
@@ -228,53 +229,249 @@ function renderProjects() {
   updateHelperText(items.length);
 }
 
-// ===== WINDOW BUTTON & TASKBAR LOGIC =====
+// ===== IN-PAGE WINDOW BUTTONS (FOR REGULAR PAGE PANELS) =====
 function setupWindowButtons() {
-  document.querySelectorAll('.btn-minimize').forEach((btn) => {
+  document.querySelectorAll('.page-shell .btn-minimize').forEach((btn) => {
     const panel = btn.closest('.panel') || btn.closest('.panel-dark');
     if (panel && panel.id !== 'ping-banner') {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', () => {
         panel.classList.toggle('minimized');
-        updateTaskbarApps();
       });
     }
   });
 
-  document.querySelectorAll('.btn-close').forEach(btn => {
+  document.querySelectorAll('.page-shell .btn-close').forEach(btn => {
     btn.addEventListener('click', (e) => {
       const panel = e.target.closest('.panel') || e.target.closest('.panel-dark');
       if (panel) {
         panel.style.display = 'none';
         panel.classList.remove('minimized');
-        updateTaskbarApps();
       }
     });
   });
 }
 
-function updateTaskbarApps() {
-  const container = document.getElementById('taskbar-apps');
-  if (!container) return;
-  container.innerHTML = '';
+// ===== DRAGGABLE & RESIZABLE FLOATING WINDOW ENGINE =====
+function makeWindowDraggableAndResizable(win) {
+  const titleBar = win.querySelector('.panel-title-bar');
+  const iframe = win.querySelector('iframe');
 
-  document.querySelectorAll('.minimized').forEach(panel => {
-    if (panel.style.display === 'none' || panel.id === 'ping-banner') return; 
+  // Bring window to top on click
+  win.addEventListener('mousedown', () => {
+    highestZIndex++;
+    win.style.zIndex = highestZIndex;
+  });
 
-    const titleSpan = panel.querySelector('.panel-title-bar span:first-child');
-    const titleText = titleSpan ? titleSpan.textContent.trim() : 'W';
-    const letter = titleText.charAt(0).toUpperCase();
+  // Attach Resize Handles
+  const directions = ['e', 's', 'w', 'se', 'sw'];
+  directions.forEach(dir => {
+    let handle = win.querySelector(`.win-resize-handle-${dir}`);
+    if (!handle) {
+      handle = document.createElement('div');
+      handle.className = `win-resize-handle win-resize-handle-${dir}`;
+      win.appendChild(handle);
+    }
 
-    const appBtn = document.createElement('div');
-    appBtn.className = 'taskbar-app';
-    appBtn.textContent = letter;
-    appBtn.setAttribute('title', titleText);
-    
-    appBtn.addEventListener('click', () => {
-      panel.classList.remove('minimized');
-      updateTaskbarApps();
-    });
-    
-    container.appendChild(appBtn);
+    let isResizing = false;
+    let startX, startY, startW, startH, startLeft, startTop;
+
+    const startResize = (e) => {
+      e.stopPropagation();
+      if (e.cancelable) e.preventDefault();
+      isResizing = true;
+
+      const clientX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
+      const clientY = e.type.startsWith('touch') ? e.touches[0].clientY : e.clientY;
+
+      startX = clientX;
+      startY = clientY;
+
+      const rect = win.getBoundingClientRect();
+      startW = rect.width;
+      startH = rect.height;
+      startLeft = rect.left;
+      startTop = rect.top;
+
+      win.style.left = startLeft + 'px';
+      win.style.top = startTop + 'px';
+      win.style.right = 'auto';
+      win.style.bottom = 'auto';
+
+      if (iframe) iframe.style.pointerEvents = 'none';
+      highestZIndex++;
+      win.style.zIndex = highestZIndex;
+
+      document.addEventListener('mousemove', onResize);
+      document.addEventListener('mouseup', stopResize);
+      document.addEventListener('touchmove', onResize, { passive: false });
+      document.addEventListener('touchend', stopResize);
+    };
+
+    const onResize = (e) => {
+      if (!isResizing) return;
+      if (e.cancelable) e.preventDefault();
+
+      const clientX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
+      const clientY = e.type.startsWith('touch') ? e.touches[0].clientY : e.clientY;
+
+      const dx = clientX - startX;
+      const dy = clientY - startY;
+
+      const minW = 280;
+      const minH = 200;
+
+      if (dir.includes('e')) {
+        win.style.width = Math.max(minW, startW + dx) + 'px';
+      }
+      if (dir.includes('s')) {
+        win.style.height = Math.max(minH, startH + dy) + 'px';
+      }
+      if (dir.includes('w')) {
+        const newW = Math.max(minW, startW - dx);
+        if (newW > minW) {
+          win.style.width = newW + 'px';
+          win.style.left = (startLeft + dx) + 'px';
+        }
+      }
+    };
+
+    const stopResize = () => {
+      if (!isResizing) return;
+      isResizing = false;
+      if (iframe) iframe.style.pointerEvents = 'auto';
+      document.removeEventListener('mousemove', onResize);
+      document.removeEventListener('mouseup', stopResize);
+      document.removeEventListener('touchmove', onResize);
+      document.removeEventListener('touchend', stopResize);
+    };
+
+    handle.addEventListener('mousedown', startResize);
+    handle.addEventListener('touchstart', startResize, { passive: false });
+  });
+
+  // Attach Title Bar Dragging
+  if (titleBar) {
+    let isDragging = false;
+    let startX, startY, initialLeft, initialTop;
+
+    const startDrag = (e) => {
+      if (e.target.closest('button')) return;
+      isDragging = true;
+
+      const clientX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
+      const clientY = e.type.startsWith('touch') ? e.touches[0].clientY : e.clientY;
+
+      startX = clientX;
+      startY = clientY;
+
+      const rect = win.getBoundingClientRect();
+      initialLeft = rect.left;
+      initialTop = rect.top;
+
+      win.style.left = initialLeft + 'px';
+      win.style.top = initialTop + 'px';
+      win.style.right = 'auto';
+      win.style.bottom = 'auto';
+
+      if (iframe) iframe.style.pointerEvents = 'none';
+      highestZIndex++;
+      win.style.zIndex = highestZIndex;
+
+      document.addEventListener('mousemove', onDrag);
+      document.addEventListener('mouseup', stopDrag);
+      document.addEventListener('touchmove', onDrag, { passive: false });
+      document.addEventListener('touchend', stopDrag);
+    };
+
+    const onDrag = (e) => {
+      if (!isDragging) return;
+      if (e.cancelable) e.preventDefault();
+
+      const clientX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
+      const clientY = e.type.startsWith('touch') ? e.touches[0].clientY : e.clientY;
+
+      const dx = clientX - startX;
+      const dy = clientY - startY;
+
+      win.style.left = Math.max(0, Math.min(window.innerWidth - 80, initialLeft + dx)) + 'px';
+      win.style.top = Math.max(0, Math.min(window.innerHeight - 30, initialTop + dy)) + 'px';
+    };
+
+    const stopDrag = () => {
+      if (!isDragging) return;
+      isDragging = false;
+      if (iframe) iframe.style.pointerEvents = 'auto';
+      document.removeEventListener('mousemove', onDrag);
+      document.removeEventListener('mouseup', stopDrag);
+      document.removeEventListener('touchmove', onDrag);
+      document.removeEventListener('touchend', stopDrag);
+    };
+
+    titleBar.addEventListener('mousedown', startDrag);
+    titleBar.addEventListener('touchstart', startDrag, { passive: false });
+  }
+}
+
+// ===== TASKBAR & APPLETS SETUP =====
+function setupAppletsAndFloatingWindows() {
+  const windowsConfig = [
+    { winId: 'chat-window', btnId: 'taskbar-chat-btn' },
+    { winId: 'paint-window', btnId: 'taskbar-paint-btn' },
+    { winId: 'weather-window', btnId: 'taskbar-weather-btn' }
+  ];
+
+  windowsConfig.forEach(cfg => {
+    const win = document.getElementById(cfg.winId);
+    if (!win) return;
+
+    makeWindowDraggableAndResizable(win);
+
+    const taskbarBtn = document.getElementById(cfg.btnId);
+    const minBtn = win.querySelector('.btn-minimize') || win.querySelector('[id$="-minimize-btn"]');
+    const closeBtn = win.querySelector('.btn-close') || win.querySelector('[id$="-close-btn"]');
+
+    function updateBtnState() {
+      if (!taskbarBtn) return;
+      const isVisible = !win.hidden && !win.classList.contains('minimized');
+      if (isVisible) {
+        taskbarBtn.classList.add('active');
+      } else {
+        taskbarBtn.classList.remove('active');
+      }
+    }
+
+    function openWin() {
+      win.hidden = false;
+      win.classList.remove('minimized');
+      highestZIndex++;
+      win.style.zIndex = highestZIndex;
+      updateBtnState();
+    }
+
+    function closeWin() {
+      win.hidden = true;
+      win.classList.remove('minimized');
+      updateBtnState();
+    }
+
+    function minimizeWin() {
+      win.classList.add('minimized');
+      win.hidden = true;
+      updateBtnState();
+    }
+
+    if (taskbarBtn) {
+      taskbarBtn.addEventListener('click', () => {
+        if (win.hidden || win.classList.contains('minimized')) {
+          openWin();
+        } else {
+          minimizeWin();
+        }
+      });
+    }
+
+    if (minBtn) minBtn.addEventListener('click', (e) => { e.stopPropagation(); minimizeWin(); });
+    if (closeBtn) closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeWin(); });
   });
 }
 
@@ -367,14 +564,12 @@ function updateTaskbarClock() {
   if (dateEl) dateEl.textContent = now.toLocaleDateString('en-US', dateOptions);
 }
 
-// ===== CHATROOM WIDGET (launcher button, floating window, pending dot, online counter, ping banner) =====
+// ===== CHATROOM WIDGET =====
 function setupChatWidget() {
   const launcherBtn = document.getElementById('chat-launcher-btn');
   const pendingDot = document.getElementById('chat-pending-dot');
   const chatWindow = document.getElementById('chat-window');
   const chatFrame = document.getElementById('chat-frame');
-  const minimizeBtn = document.getElementById('chat-window-minimize-btn');
-  const closeBtn = document.getElementById('chat-window-close-btn');
   const onlineCountEl = document.getElementById('online-count');
 
   if (!launcherBtn || !chatWindow || !chatFrame) return;
@@ -393,7 +588,7 @@ function setupChatWidget() {
   }
 
   function setPendingDot(show) {
-    pendingDot.hidden = !show;
+    if (pendingDot) pendingDot.hidden = !show;
   }
 
   function openChatWindow() {
@@ -402,17 +597,13 @@ function setupChatWidget() {
     launcherBtn.setAttribute('aria-expanded', 'true');
     setPendingDot(false);
     sendWindowStateToFrame(true);
+    highestZIndex++;
+    chatWindow.style.zIndex = highestZIndex;
   }
 
   function closeChatWindow() {
     chatWindow.hidden = true;
     chatWindow.classList.remove('minimized');
-    launcherBtn.setAttribute('aria-expanded', 'false');
-    sendWindowStateToFrame(false);
-  }
-
-  function minimizeChatWindow() {
-    chatWindow.classList.add('minimized');
     launcherBtn.setAttribute('aria-expanded', 'false');
     sendWindowStateToFrame(false);
   }
@@ -424,9 +615,6 @@ function setupChatWidget() {
       closeChatWindow();
     }
   });
-
-  minimizeBtn.addEventListener('click', () => minimizeChatWindow());
-  closeBtn.addEventListener('click', () => closeChatWindow());
 
   chatFrame.addEventListener('load', () => {
     sendWindowStateToFrame(windowIsVisibleAndOpen());
@@ -454,42 +642,6 @@ function setupChatWidget() {
   });
 }
 
-// ===== INIT =====
-document.addEventListener('DOMContentLoaded', () => {
-  renderSiteData();
-  renderAnnouncements();
-  renderClassics();
-  renderStats();
-  renderFeatured();
-  renderProjects();
-  setupWindowButtons();
-  setupStartMenu();
-  setupVisitorCounter();
-  setupToSModal();
-  setupCRTToggle();
-  setupChatWidget();
-  updateTaskbarClock();
-  setInterval(updateTaskbarClock, 1000);
-});
-
-sortToggle.addEventListener('click', () => {
-  sortMode = sortMode === 'type' ? 'default' : 'type';
-  safeSet(SORT_KEY, sortMode);
-  renderProjects();
-});
-
-searchInput.addEventListener('input', debounce(() => {
-  searchTerm = searchInput.value;
-  safeSet(SEARCH_KEY, searchTerm);
-  renderProjects();
-}, 250));
-
-statusFilter.addEventListener('change', () => {
-  statusValue = statusFilter.value;
-  safeSet(STATUS_KEY, statusValue);
-  renderProjects();
-});
-
 function setupToSModal() {
   const tosOverlay = document.getElementById("tos-modal-overlay");
   const acceptBtn = document.getElementById("tos-accept-btn");
@@ -505,5 +657,48 @@ function setupToSModal() {
     safeSet("tosAccepted", "true");
     tosOverlay.style.display = "none";
     document.body.style.overflow = "auto";
+  });
+}
+
+// ===== INIT =====
+document.addEventListener('DOMContentLoaded', () => {
+  renderSiteData();
+  renderAnnouncements();
+  renderClassics();
+  renderStats();
+  renderFeatured();
+  renderProjects();
+  setupWindowButtons();
+  setupStartMenu();
+  setupVisitorCounter();
+  setupToSModal();
+  setupCRTToggle();
+  setupChatWidget();
+  setupAppletsAndFloatingWindows();
+  updateTaskbarClock();
+  setInterval(updateTaskbarClock, 1000);
+});
+
+if (sortToggle) {
+  sortToggle.addEventListener('click', () => {
+    sortMode = sortMode === 'type' ? 'default' : 'type';
+    safeSet(SORT_KEY, sortMode);
+    renderProjects();
+  });
+}
+
+if (searchInput) {
+  searchInput.addEventListener('input', debounce(() => {
+    searchTerm = searchInput.value;
+    safeSet(SEARCH_KEY, searchTerm);
+    renderProjects();
+  }, 250));
+}
+
+if (statusFilter) {
+  statusFilter.addEventListener('change', () => {
+    statusValue = statusFilter.value;
+    safeSet(STATUS_KEY, statusValue);
+    renderProjects();
   });
 }
