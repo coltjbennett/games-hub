@@ -23,7 +23,7 @@ const announcements = [
   },
   {
     title: "Site updates",
-    content: " - It's been over three months since moving to Github becuase of a prime example of the 'Scunthorpe Problem' on OneCompiler.com, and it's been going great! Github is also easier to manage. - (09/02/26)"
+    content: " - It's been over three months since moving to Github becuase of a prime example of the 'Scunthorpe Problem' on OneCompiler.com, and it's been going great! Github is also easier to manage. - (09/02/26)<br> - OFFICIAL WEB GAMES ARE NOW ADDED! COOKIE CLICKER, BITLIFE, AND 200 MORE POPULAR GAMES AVAIABLE <a href=\"https://coltjbennett.github.io/games-hub/games.html\">here.</a>"
   }
 ];
 
