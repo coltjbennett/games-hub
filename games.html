@@ -9,8 +9,6 @@
   <link rel="stylesheet" href="styles.css" />
   <style>
     /* ===== SUPPLEMENTARY STYLES FOR GAMES.HTML ===== */
-    /* Adds specific grid sizing on top of existing styles.css framework */
-    
     .arcade-grid {
       display: grid;
       gap: 12px;
@@ -105,7 +103,7 @@
             <p class="hint">Type to filter games below.</p>
             <div class="toolbar">
               <input type="text" id="search" class="search-input" placeholder="Search games..." style="width: 250px;">
-              <button id="refresh-btn" class="sort-btn w95-text" onclick="fetchGames()">Refresh Lib</button>
+              <button id="refresh-btn" class="sort-btn w95-text" onclick="fetchGames(true)">Refresh API</button>
             </div>
           </div>
 
@@ -138,6 +136,24 @@
     </div>
   </div>
 
+  <!-- Game Modal Overlay (Injected via JS for SWF files) -->
+  <div id="game-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 9999; align-items: center; justify-content: center; backdrop-filter: blur(2px);">
+    <div class="panel" style="width: 95vw; height: 95vh; display: flex; flex-direction: column; padding: 2px;">
+      <!-- Modal Title Bar -->
+      <div class="panel-title-bar w95-text">
+        <span id="modal-title">Ruffle Player</span>
+        <span class="win-btns">
+          <!-- Close Button -->
+          <button type="button" class="win-btn btn-close" onclick="closeModal()" aria-label="Close" style="cursor:pointer;">✕</button>
+        </span>
+      </div>
+      <!-- Iframe Container -->
+      <div class="panel-body" style="flex: 1; padding: 0; display: flex; border: 2px inset var(--win-border-dark);">
+        <iframe id="game-iframe" style="flex: 1; width: 100%; border: none; background: #000;"></iframe>
+      </div>
+    </div>
+  </div>
+
   <script>
     const REPO_OWNER = 'coltjbennett';
     const REPO_NAME = 'source';
@@ -150,14 +166,50 @@
     // Fallback icon path
     const FALLBACK_ICON = 'images/missing.png'; 
 
-    async function fetchGames() {
+    async function fetchGames(forceRefresh = false) {
       const grid = document.getElementById('grid');
-      grid.innerHTML = `<div class="status-container">Loading arcade library... please wait.</div>`;
+      if (forceRefresh) {
+        grid.innerHTML = `<div class="status-container">Forcing API refresh... please wait.</div>`;
+      } else {
+        grid.innerHTML = `<div class="status-container">Loading arcade library... please wait.</div>`;
+      }
+      
       try {
-        const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/`);
-        if (!response.ok) throw new Error('Failed to fetch repo contents.');
+        let data;
+        // Retrieve persistent cache and the date it was last updated
+        const cachedData = localStorage.getItem('arcade_games_cache');
+        const lastFetchDate = localStorage.getItem('arcade_games_cache_date');
+        
+        // Get today's date as a simple string (e.g., "Thu Apr 11 2024")
+        const today = new Date().toDateString();
+        
+        // Determine if we need to auto-update based on the day changing
+        const needsDailyUpdate = lastFetchDate !== today;
 
-        const data = await response.json();
+        if (cachedData && !forceRefresh && !needsDailyUpdate) {
+          // Use cache if it exists, it's not a forced refresh, and we've already fetched today
+          data = JSON.parse(cachedData);
+        } else {
+          // Otherwise, hit the API
+          const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/`);
+          
+          if (response.status === 403 || response.status === 429) {
+            // Rate limit hit. If we have cached data, fall back to it gracefully.
+            if (cachedData) {
+              console.warn('API rate limit reached. Falling back to cached data.');
+              data = JSON.parse(cachedData);
+            } else {
+              throw new Error('GitHub API rate limit exceeded (60 requests per hour). No local cache available to load.');
+            }
+          } else if (!response.ok) {
+            throw new Error('Failed to fetch repo contents.');
+          } else {
+            // Success! Parse the JSON and update the persistent cache
+            data = await response.json();
+            localStorage.setItem('arcade_games_cache', JSON.stringify(data));
+            localStorage.setItem('arcade_games_cache_date', today);
+          }
+        }
 
         // Filter directories AND .swf files
         const validItems = data.filter(item => {
@@ -187,7 +239,7 @@
 
         renderGrid(games);
       } catch (err) {
-        grid.innerHTML = `<div class="status-container">Error loading games. Please check repository settings or API limits.</div>`;
+        grid.innerHTML = `<div class="status-container">${err.message}</div>`;
         console.error(err);
       }
     }
@@ -239,17 +291,22 @@
       renderGrid(filtered);
     });
 
-    // Handle opening games in a new tab
+    // Handle opening games
     function openGame(url, isSwf, title) {
       if (isSwf) {
-        // Dynamically build a new tab featuring the official Ruffle web player
-        const newWindow = window.open('', '_blank');
-        newWindow.document.write(`
+        // Target the modal and iframe
+        const modal = document.getElementById('game-modal');
+        const iframe = document.getElementById('game-iframe');
+        
+        // Update the Window Title
+        document.getElementById('modal-title').innerText = title + ' - Ruffle Arcade';
+        
+        // Inject Ruffle HTML safely via srcdoc
+        iframe.srcdoc = `
           <!DOCTYPE html>
           <html lang="en">
           <head>
               <meta charset="UTF-8">
-              <title>${title} - Ruffle Arcade</title>
               <style>
                   body { 
                       margin: 0; 
@@ -267,33 +324,47 @@
           </head>
           <body>
               <div id="ruffle-container"></div>
-              <!-- Official Ruffle Script -->
-              <script src="https://unpkg.com/@ruffle-rs/ruffle"><\\/script>
+              
+              <!-- Setup Ruffle configuration BEFORE loading the script -->
               <script>
                   window.RufflePlayer = window.RufflePlayer || {};
-                  window.addEventListener("load", () => {
+                  window.addEventListener("load", (event) => {
                       const ruffle = window.RufflePlayer.newest();
                       const player = ruffle.createPlayer();
+                      const container = document.getElementById("ruffle-container");
+                      container.appendChild(player);
                       player.style.width = "100%";
                       player.style.height = "100%";
-                      document.getElementById("ruffle-container").appendChild(player);
                       
                       // Load the SWF from the raw URL
                       player.load("${url}");
                   });
               <\\/script>
+              
+              <!-- Load Official Ruffle Script -->
+              <script src="https://unpkg.com/@ruffle-rs/ruffle"><\\/script>
           </body>
           </html>
-        `);
-        newWindow.document.close();
+        `;
+        
+        // Display the modal overlay
+        modal.style.display = 'flex';
       } else {
         // Standard HTML5 games just open directly
         window.open(url, '_blank');
       }
     }
 
+    // Close Modal and clear iframe memory/audio
+    function closeModal() {
+      const modal = document.getElementById('game-modal');
+      const iframe = document.getElementById('game-iframe');
+      modal.style.display = 'none';
+      iframe.srcdoc = ''; // Clears the player to stop the game and kill audio
+    }
+
     // Initialize
-    fetchGames();
+    fetchGames(false);
   </script>
 </body>
 </html>
