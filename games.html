@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="styles.css" />
   <style>
     /* ===== SUPPLEMENTARY STYLES FOR GAMES.HTML ===== */
-    /* Adds specific grid and modal sizing on top of existing styles.css framework */
+    /* Adds specific grid sizing on top of existing styles.css framework */
     
     .arcade-grid {
       display: grid;
@@ -56,33 +56,11 @@
       color: var(--win-text-dark);
       font-size: 1.1rem;
     }
-
-    /* Adjusted Modal for Games */
-    .game-modal-box {
-      max-width: 850px;
-      width: 95%;
-      height: 85vh;
-    }
-
-    .game-modal-box .panel-body {
-      padding: 0;
-      display: flex;
-      flex-direction: column;
-      height: calc(100% - 28px); /* Account for title bar */
-      background: var(--win-text-dark);
-    }
-
-    .game-modal-iframe {
-      flex: 1;
-      width: 100%;
-      border: none;
-      background: #000;
-    }
   </style>
 </head>
 <body>
 
-  <!-- SVG CRT Subpixel Blur Filter (Copied from index.html) -->
+  <!-- SVG CRT Subpixel Blur Filter -->
   <svg style="display: none;">
     <filter id="subpixel-blur">
       <feGaussianBlur stdDeviation="0.0425" />
@@ -148,23 +126,7 @@
 
   </div>
 
-  <!-- Game Modal (Modeled after tos-overlay) -->
-  <div id="game-modal" class="tos-overlay">
-    <div class="panel game-modal-box">
-      <div class="panel-title-bar w95-text">
-        <span id="modal-title">Game Title</span>
-        <span class="win-btns">
-          <a id="modal-external-link" href="#" target="_blank" class="win-btn" style="text-decoration: none; line-height: 10px; font-size: 0.7rem;" title="Launch in New Tab">↗</a>
-          <button id="modal-close" type="button" class="win-btn" title="Close">✕</button>
-        </span>
-      </div>
-      <div class="panel-body">
-        <iframe id="game-iframe" class="game-modal-iframe" src="" allow="autoplay; keyboard; fullscreen"></iframe>
-      </div>
-    </div>
-  </div>
-
-  <!-- Optional Static Taskbar for aesthetic consistency -->
+  <!-- Static Taskbar for aesthetic consistency -->
   <div class="taskbar">
     <button type="button" class="taskbar-start" onclick="window.location.href='index.html'">
       <img src="images/windows.png" alt="" width="16" height="16" style="vertical-align: middle; margin-right: 4px;" onerror="this.src='images/missing.png';" />
@@ -185,7 +147,7 @@
 
     let games = [];
 
-    // Base64 or standard URL for fallback icon (Can be replaced with a path to a generic icon in your images/ folder)
+    // Fallback icon path
     const FALLBACK_ICON = 'images/missing.png'; 
 
     async function fetchGames() {
@@ -197,19 +159,31 @@
 
         const data = await response.json();
 
-        // Filter only directories (excluding hidden ones like .github)
-        const folders = data.filter(item => item.type === 'dir' && !item.name.startsWith('.'));
+        // Filter directories AND .swf files
+        const validItems = data.filter(item => {
+          if (item.name.startsWith('.')) return false;
+          return item.type === 'dir' || (item.type === 'file' && item.name.toLowerCase().endsWith('.swf'));
+        });
 
-        if (folders.length === 0) {
-          grid.innerHTML = `<div class="status-container">No game folders found in repository.</div>`;
+        if (validItems.length === 0) {
+          grid.innerHTML = `<div class="status-container">No games or SWF files found in repository.</div>`;
           return;
         }
 
-        games = folders.map(folder => ({
-          name: folder.name,
-          title: formatTitle(folder.name),
-          path: `https://coltjbennett.github.io/source/${folder.name}/index.html`
-        }));
+        games = validItems.map(item => {
+          const isSwf = item.type === 'file' && item.name.toLowerCase().endsWith('.swf');
+          const baseName = isSwf ? item.name.replace(/\.swf$/i, '') : item.name;
+
+          return {
+            name: item.name,
+            baseName: baseName, // Used for icon fetching
+            title: formatTitle(baseName),
+            path: isSwf 
+              ? `https://coltjbennett.github.io/source/${item.name}` 
+              : `https://coltjbennett.github.io/source/${item.name}/index.html`,
+            isSwf: isSwf
+          };
+        });
 
         renderGrid(games);
       } catch (err) {
@@ -232,12 +206,12 @@
       }
 
       grid.innerHTML = gameList.map((game) => `
-        <div class="project-card arcade-card" onclick="openGame('${game.path}', '${game.title.replace(/'/g, "\\'")}')">
+        <div class="project-card arcade-card" onclick="openGame('${game.path}', ${game.isSwf}, '${game.title.replace(/'/g, "\\'")}')">
           <div class="card-image">
             <img 
-              src="https://coltjbennett.github.io/source/${game.name}/icon.png" 
+              src="https://coltjbennett.github.io/source/${game.baseName}/icon.png" 
               alt="${game.title}"
-              onerror="tryNextIcon(this, '${game.name}', 1)"
+              onerror="tryNextIcon(this, '${game.baseName}', 1)"
             />
           </div>
           <div class="card-body">
@@ -265,37 +239,58 @@
       renderGrid(filtered);
     });
 
-    // Modal Player Handling
-    const modal = document.getElementById('game-modal');
-    const iframe = document.getElementById('game-iframe');
-    const modalTitle = document.getElementById('modal-title');
-    const externalLink = document.getElementById('modal-external-link');
-    const closeBtn = document.getElementById('modal-close');
-
-    function openGame(url, title) {
-      iframe.src = url;
-      modalTitle.textContent = title;
-      externalLink.href = url;
-      modal.style.display = 'flex'; // Uses flex to center similar to tos-overlay
-      document.body.style.overflow = 'hidden';
-    }
-
-    function closeModal() {
-      modal.style.display = 'none';
-      iframe.src = '';
-      document.body.style.overflow = '';
-    }
-
-    closeBtn.addEventListener('click', closeModal);
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) closeModal();
-    });
-
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && modal.style.display === 'flex') {
-        closeModal();
+    // Handle opening games in a new tab
+    function openGame(url, isSwf, title) {
+      if (isSwf) {
+        // Dynamically build a new tab featuring the official Ruffle web player
+        const newWindow = window.open('', '_blank');
+        newWindow.document.write(`
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <title>${title} - Ruffle Arcade</title>
+              <style>
+                  body { 
+                      margin: 0; 
+                      padding: 0; 
+                      background-color: #000; 
+                      overflow: hidden; 
+                      height: 100vh; 
+                      width: 100vw; 
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                  }
+                  #ruffle-container { width: 100%; height: 100%; }
+              </style>
+          </head>
+          <body>
+              <div id="ruffle-container"></div>
+              <!-- Official Ruffle Script -->
+              <script src="https://unpkg.com/@ruffle-rs/ruffle"><\\/script>
+              <script>
+                  window.RufflePlayer = window.RufflePlayer || {};
+                  window.addEventListener("load", () => {
+                      const ruffle = window.RufflePlayer.newest();
+                      const player = ruffle.createPlayer();
+                      player.style.width = "100%";
+                      player.style.height = "100%";
+                      document.getElementById("ruffle-container").appendChild(player);
+                      
+                      // Load the SWF from the raw URL
+                      player.load("${url}");
+                  });
+              <\\/script>
+          </body>
+          </html>
+        `);
+        newWindow.document.close();
+      } else {
+        // Standard HTML5 games just open directly
+        window.open(url, '_blank');
       }
-    });
+    }
 
     // Initialize
     fetchGames();
