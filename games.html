@@ -15,6 +15,24 @@
   <script src="https://unpkg.com/@ruffle-rs/ruffle"></script>
 
   <style>
+    /* ===== DISABLE CRT & SCANLINE OVERLAYS FOR THIS PAGE ===== */
+    body, body::before, body::after,
+    .page-shell, .page-shell::before, .page-shell::after,
+    header, main, footer, .panel, .panel-dark, * {
+      filter: none !important;
+      backdrop-filter: none !important;
+      animation: none !important;
+      text-shadow: none !important;
+    }
+
+    body::before, body::after,
+    .page-shell::before, .page-shell::after,
+    .crt::before, .crt::after {
+      display: none !important;
+      content: none !important;
+      background: none !important;
+    }
+
     /* ===== SUPPLEMENTARY STYLES FOR GAMES.HTML ===== */
     .arcade-grid {
       display: grid;
@@ -64,13 +82,6 @@
   </style>
 </head>
 <body>
-
-  <!-- SVG CRT Subpixel Blur Filter -->
-  <svg style="display: none;">
-    <filter id="subpixel-blur">
-      <feGaussianBlur stdDeviation="0.0425" />
-    </filter>
-  </svg>
 
   <div class="page-shell">
     
@@ -144,7 +155,7 @@
   </div>
 
   <!-- Game Modal Overlay -->
-  <div id="game-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 9999; align-items: center; justify-content: center; backdrop-filter: blur(2px);">
+  <div id="game-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 9999; align-items: center; justify-content: center;">
     <div class="panel" style="width: 95vw; height: 95vh; display: flex; flex-direction: column; padding: 2px;">
       <!-- Modal Title Bar -->
       <div class="panel-title-bar w95-text">
@@ -154,7 +165,7 @@
           <button type="button" class="win-btn btn-close" onclick="closeModal()" aria-label="Close" style="cursor:pointer;">✕</button>
         </span>
       </div>
-      <!-- Direct Container for Ruffle (No Iframe) -->
+      <!-- Direct Container for Ruffle -->
       <div class="panel-body" style="flex: 1; padding: 0; display: flex; border: 2px inset var(--win-border-dark);">
         <div id="game-container" style="flex: 1; width: 100%; height: 100%; background: #000;"></div>
       </div>
@@ -165,13 +176,10 @@
     const REPO_OWNER = 'coltjbennett';
     const REPO_NAME = 'source';
     
-    // Extensions/filenames to check for game icons
     const ICON_CANDIDATES = ['icon.png', 'icon.webp', 'icon.jpg', 'icon.svg', 'logo.png', 'app.png'];
+    const FALLBACK_ICON = 'images/missing.png'; 
 
     let games = [];
-
-    // Fallback icon path
-    const FALLBACK_ICON = 'images/missing.png'; 
 
     async function fetchGames(forceRefresh = false) {
       const grid = document.getElementById('grid');
@@ -286,48 +294,37 @@
       renderGrid(filtered);
     });
 
-    // Handle opening games
     function openGame(url, isSwf, title) {
       if (isSwf) {
         const modal = document.getElementById('game-modal');
         const container = document.getElementById('game-container');
         
-        // Update Title
         document.getElementById('modal-title').innerText = title + ' - Ruffle Arcade';
         
-        // 1. Clear out any old player instance
         container.innerHTML = '';
         
-        // 2. Create the Ruffle player natively in the DOM
         const ruffle = window.RufflePlayer.newest();
         const player = ruffle.createPlayer();
         player.style.width = '100%';
         player.style.height = '100%';
         
-        // 3. Attach it to the modal
         container.appendChild(player);
-        
-        // 4. Load the SWF
         player.load(url);
         
-        // 5. Show the modal
         modal.style.display = 'flex';
       } else {
-        // Standard HTML5 games
         window.open(url, '_blank');
       }
     }
 
-    // Close Modal and clear memory/audio
     function closeModal() {
       const modal = document.getElementById('game-modal');
       const container = document.getElementById('game-container');
       
       modal.style.display = 'none';
-      container.innerHTML = ''; // Destroys the player to kill the game process and audio
+      container.innerHTML = '';
     }
 
-    // Initialize
     fetchGames(false);
   </script>
 </body>
