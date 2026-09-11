@@ -7,6 +7,13 @@
   <title>Arcade Hub - Project Launcher</title>
   <link rel="icon" href="images/icon.JPG">
   <link rel="stylesheet" href="styles.css" />
+  
+  <!-- Initialize Ruffle Globally -->
+  <script>
+    window.RufflePlayer = window.RufflePlayer || {};
+  </script>
+  <script src="https://unpkg.com/@ruffle-rs/ruffle"></script>
+
   <style>
     /* ===== SUPPLEMENTARY STYLES FOR GAMES.HTML ===== */
     .arcade-grid {
@@ -136,7 +143,7 @@
     </div>
   </div>
 
-  <!-- Game Modal Overlay (Injected via JS for SWF files) -->
+  <!-- Game Modal Overlay -->
   <div id="game-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.8); z-index: 9999; align-items: center; justify-content: center; backdrop-filter: blur(2px);">
     <div class="panel" style="width: 95vw; height: 95vh; display: flex; flex-direction: column; padding: 2px;">
       <!-- Modal Title Bar -->
@@ -147,9 +154,9 @@
           <button type="button" class="win-btn btn-close" onclick="closeModal()" aria-label="Close" style="cursor:pointer;">✕</button>
         </span>
       </div>
-      <!-- Iframe Container -->
+      <!-- Direct Container for Ruffle (No Iframe) -->
       <div class="panel-body" style="flex: 1; padding: 0; display: flex; border: 2px inset var(--win-border-dark);">
-        <iframe id="game-iframe" style="flex: 1; width: 100%; border: none; background: #000;"></iframe>
+        <div id="game-container" style="flex: 1; width: 100%; height: 100%; background: #000;"></div>
       </div>
     </div>
   </div>
@@ -176,25 +183,17 @@
       
       try {
         let data;
-        // Retrieve persistent cache and the date it was last updated
         const cachedData = localStorage.getItem('arcade_games_cache');
         const lastFetchDate = localStorage.getItem('arcade_games_cache_date');
-        
-        // Get today's date as a simple string (e.g., "Thu Apr 11 2024")
         const today = new Date().toDateString();
-        
-        // Determine if we need to auto-update based on the day changing
         const needsDailyUpdate = lastFetchDate !== today;
 
         if (cachedData && !forceRefresh && !needsDailyUpdate) {
-          // Use cache if it exists, it's not a forced refresh, and we've already fetched today
           data = JSON.parse(cachedData);
         } else {
-          // Otherwise, hit the API
           const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/`);
           
           if (response.status === 403 || response.status === 429) {
-            // Rate limit hit. If we have cached data, fall back to it gracefully.
             if (cachedData) {
               console.warn('API rate limit reached. Falling back to cached data.');
               data = JSON.parse(cachedData);
@@ -204,14 +203,12 @@
           } else if (!response.ok) {
             throw new Error('Failed to fetch repo contents.');
           } else {
-            // Success! Parse the JSON and update the persistent cache
             data = await response.json();
             localStorage.setItem('arcade_games_cache', JSON.stringify(data));
             localStorage.setItem('arcade_games_cache_date', today);
           }
         }
 
-        // Filter directories AND .swf files
         const validItems = data.filter(item => {
           if (item.name.startsWith('.')) return false;
           return item.type === 'dir' || (item.type === 'file' && item.name.toLowerCase().endsWith('.swf'));
@@ -228,7 +225,7 @@
 
           return {
             name: item.name,
-            baseName: baseName, // Used for icon fetching
+            baseName: baseName, 
             title: formatTitle(baseName),
             path: isSwf 
               ? `https://coltjbennett.github.io/source/${item.name}` 
@@ -273,7 +270,6 @@
       `).join('');
     }
 
-    // Function to handle cascading fallback for game icons
     function tryNextIcon(imgElement, folderName, index) {
       if (index < ICON_CANDIDATES.length) {
         imgElement.onerror = () => tryNextIcon(imgElement, folderName, index + 1);
@@ -284,7 +280,6 @@
       }
     }
 
-    // Search Filtering
     document.getElementById('search').addEventListener('input', (e) => {
       const term = e.target.value.toLowerCase();
       const filtered = games.filter(g => g.title.toLowerCase().includes(term) || g.name.toLowerCase().includes(term));
@@ -294,73 +289,42 @@
     // Handle opening games
     function openGame(url, isSwf, title) {
       if (isSwf) {
-        // Target the modal and iframe
         const modal = document.getElementById('game-modal');
-        const iframe = document.getElementById('game-iframe');
+        const container = document.getElementById('game-container');
         
-        // Update the Window Title
+        // Update Title
         document.getElementById('modal-title').innerText = title + ' - Ruffle Arcade';
         
-        // Inject Ruffle HTML safely via srcdoc
-        iframe.srcdoc = `
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-              <meta charset="UTF-8">
-              <style>
-                  body { 
-                      margin: 0; 
-                      padding: 0; 
-                      background-color: #000; 
-                      overflow: hidden; 
-                      height: 100vh; 
-                      width: 100vw; 
-                      display: flex;
-                      align-items: center;
-                      justify-content: center;
-                  }
-                  #ruffle-container { width: 100%; height: 100%; }
-              </style>
-          </head>
-          <body>
-              <div id="ruffle-container"></div>
-              
-              <!-- Setup Ruffle configuration BEFORE loading the script -->
-              <script>
-                  window.RufflePlayer = window.RufflePlayer || {};
-                  window.addEventListener("load", (event) => {
-                      const ruffle = window.RufflePlayer.newest();
-                      const player = ruffle.createPlayer();
-                      const container = document.getElementById("ruffle-container");
-                      container.appendChild(player);
-                      player.style.width = "100%";
-                      player.style.height = "100%";
-                      
-                      // Load the SWF from the raw URL
-                      player.load("${url}");
-                  });
-              <\\/script>
-              
-              <!-- Load Official Ruffle Script -->
-              <script src="https://unpkg.com/@ruffle-rs/ruffle"><\\/script>
-          </body>
-          </html>
-        `;
+        // 1. Clear out any old player instance
+        container.innerHTML = '';
         
-        // Display the modal overlay
+        // 2. Create the Ruffle player natively in the DOM
+        const ruffle = window.RufflePlayer.newest();
+        const player = ruffle.createPlayer();
+        player.style.width = '100%';
+        player.style.height = '100%';
+        
+        // 3. Attach it to the modal
+        container.appendChild(player);
+        
+        // 4. Load the SWF
+        player.load(url);
+        
+        // 5. Show the modal
         modal.style.display = 'flex';
       } else {
-        // Standard HTML5 games just open directly
+        // Standard HTML5 games
         window.open(url, '_blank');
       }
     }
 
-    // Close Modal and clear iframe memory/audio
+    // Close Modal and clear memory/audio
     function closeModal() {
       const modal = document.getElementById('game-modal');
-      const iframe = document.getElementById('game-iframe');
+      const container = document.getElementById('game-container');
+      
       modal.style.display = 'none';
-      iframe.srcdoc = ''; // Clears the player to stop the game and kill audio
+      container.innerHTML = ''; // Destroys the player to kill the game process and audio
     }
 
     // Initialize
