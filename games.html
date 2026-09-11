@@ -8,25 +8,22 @@
   <link rel="icon" href="images/icon.JPG">
   <link rel="stylesheet" href="styles.css" />
   
-  <!-- Initialize Ruffle Globally -->
+  <!-- Preload Ruffle Globally -->
   <script>
     window.RufflePlayer = window.RufflePlayer || {};
   </script>
   <script src="https://unpkg.com/@ruffle-rs/ruffle"></script>
 
   <style>
-    /* ===== CRT & PERFORMANCE OVERRIDES FOR GAMES.HTML ===== */
-    /* Disable scanline overlays, vignettes, and CRT pseudo-elements */
-    body::before, body::after,
-    .page-shell::before, .page-shell::after,
-    .panel::before, .panel::after,
-    header::before, header::after {
+    /* ===== DISABLE CRT OVERLAYS & FILTERS (PRESERVES TILED BACKGROUND) ===== */
+    /* Target html::after specifically to eliminate scanlines & vignette */
+    html::after {
       display: none !important;
       content: none !important;
       background: none !important;
     }
 
-    /* Strip blurs, chromatic aberration, flickering, and backdrop filters */
+    /* Remove heavy SVG blur, chromatic aberration, flickering, and text shadows */
     html, body, .page-shell, .panel, .panel-dark, .arcade-card, #game-modal, * {
       filter: none !important;
       backdrop-filter: none !important;
@@ -172,7 +169,7 @@
           <button type="button" class="win-btn btn-close" onclick="closeModal()" aria-label="Close" style="cursor:pointer;">✕</button>
         </span>
       </div>
-      <!-- Direct Container for Ruffle (No Iframe) -->
+      <!-- Direct Container for Ruffle -->
       <div class="panel-body" style="flex: 1; padding: 0; display: flex; border: 2px inset var(--win-border-dark);">
         <div id="game-container" style="flex: 1; width: 100%; height: 100%; background: #000;"></div>
       </div>
@@ -313,22 +310,20 @@
         // Update Title
         document.getElementById('modal-title').innerText = title + ' - Ruffle Arcade';
         
-        // 1. Clear out any old player instance
+        // Clear out any old player instance
         container.innerHTML = '';
         
-        // 2. Create the Ruffle player natively in the DOM
+        // Create the Ruffle player natively in the DOM
         const ruffle = window.RufflePlayer.newest();
         const player = ruffle.createPlayer();
         player.style.width = '100%';
         player.style.height = '100%';
         
-        // 3. Attach it to the modal
+        // Attach and load
         container.appendChild(player);
-        
-        // 4. Load the SWF
         player.load(url);
         
-        // 5. Show the modal
+        // Show the modal
         modal.style.display = 'flex';
       } else {
         // Standard HTML5 games
@@ -336,13 +331,13 @@
       }
     }
 
-    // Close Modal and clear memory/audio
+    // Close Modal and destroy player
     function closeModal() {
       const modal = document.getElementById('game-modal');
       const container = document.getElementById('game-container');
       
       modal.style.display = 'none';
-      container.innerHTML = ''; // Destroys the player to kill the game process and audio
+      container.innerHTML = ''; 
     }
 
     // Initialize
