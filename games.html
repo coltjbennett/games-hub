@@ -9,8 +9,6 @@
   <link rel="stylesheet" href="styles.css" />
   <style>
     /* ===== SUPPLEMENTARY STYLES FOR GAMES.HTML ===== */
-    /* Adds specific grid sizing on top of existing styles.css framework */
-    
     .arcade-grid {
       display: grid;
       gap: 12px;
@@ -69,16 +67,10 @@
 
   <div class="page-shell">
     
-    <!-- Header -->
     <header>
       <div class="panel-dark">
         <div class="panel-title-bar w95-text">
           <span>ARCADE HUB</span>
-          <span class="win-btns">
-            <button type="button" class="win-btn btn-minimize" aria-label="Minimize">-</button>
-            <button type="button" class="win-btn btn-maximize" aria-label="Maximize" disabled>□</button>
-            <button type="button" class="win-btn btn-close" aria-label="Close" disabled>✕</button>
-          </span>
         </div>
         <div class="panel-body">
           <div class="header-top-banner">GAME DIRECTORY</div>
@@ -88,19 +80,13 @@
       </div>
     </header>
 
-    <!-- Main Content -->
     <main>
       <div class="panel">
         <div class="panel-title-bar w95-text">
           <span>GAME LIBRARY</span>
-          <span class="win-btns">
-            <button type="button" class="win-btn btn-minimize" aria-label="Minimize">-</button>
-            <button type="button" class="win-btn btn-maximize" aria-label="Maximize" disabled>□</button>
-          </span>
         </div>
         <div class="panel-body">
           
-          <!-- Search Toolbar -->
           <div class="controls-row">
             <p class="hint">Type to filter games below.</p>
             <div class="toolbar">
@@ -109,7 +95,6 @@
             </div>
           </div>
 
-          <!-- Game Grid -->
           <div id="grid" class="arcade-grid">
             <div class="status-container">Loading arcade library... please wait.</div>
           </div>
@@ -118,7 +103,6 @@
       </div>
     </main>
     
-    <!-- Footer -->
     <footer>
       <p>Powered by GitHub API</p>
       <p class="footer-note w95-text">Best viewed with a monitor</p>
@@ -126,7 +110,6 @@
 
   </div>
 
-  <!-- Static Taskbar for aesthetic consistency -->
   <div class="taskbar">
     <button type="button" class="taskbar-start" onclick="window.location.href='index.html'">
       <img src="images/windows.png" alt="" width="16" height="16" style="vertical-align: middle; margin-right: 4px;" onerror="this.src='images/missing.png';" />
@@ -141,14 +124,10 @@
   <script>
     const REPO_OWNER = 'coltjbennett';
     const REPO_NAME = 'source';
-    
-    // Extensions/filenames to check for game icons
     const ICON_CANDIDATES = ['icon.png', 'icon.webp', 'icon.jpg', 'icon.svg', 'logo.png', 'app.png'];
+    const FALLBACK_ICON = 'images/missing.png'; 
 
     let games = [];
-
-    // Fallback icon path
-    const FALLBACK_ICON = 'images/missing.png'; 
 
     async function fetchGames() {
       const grid = document.getElementById('grid');
@@ -159,31 +138,34 @@
 
         const data = await response.json();
 
-        // Filter directories AND .swf files
-        const validItems = data.filter(item => {
-          if (item.name.startsWith('.')) return false;
-          return item.type === 'dir' || (item.type === 'file' && item.name.toLowerCase().endsWith('.swf'));
-        });
+        // 1. Fetch HTML folders
+        const htmlGames = data
+          .filter(item => item.type === 'dir' && !item.name.startsWith('.'))
+          .map(folder => ({
+            name: folder.name,
+            title: formatTitle(folder.name),
+            path: `https://coltjbennett.github.io/source/${folder.name}/index.html`,
+            type: 'html',
+            iconBase: folder.name
+          }));
 
-        if (validItems.length === 0) {
-          grid.innerHTML = `<div class="status-container">No games or SWF files found in repository.</div>`;
+        // 2. Fetch SWF files at root
+        const swfGames = data
+          .filter(item => item.type === 'file' && item.name.toLowerCase().endsWith('.swf'))
+          .map(file => ({
+            name: file.name,
+            title: formatTitle(file.name.replace(/\.swf$/i, '')),
+            path: `https://coltjbennett.github.io/source/${file.name}`,
+            type: 'swf',
+            iconBase: file.name.replace(/\.swf$/i, '') // Assumes an icon might be named like the swf file folder if it existed
+          }));
+
+        games = [...htmlGames, ...swfGames];
+
+        if (games.length === 0) {
+          grid.innerHTML = `<div class="status-container">No games found in repository.</div>`;
           return;
         }
-
-        games = validItems.map(item => {
-          const isSwf = item.type === 'file' && item.name.toLowerCase().endsWith('.swf');
-          const baseName = isSwf ? item.name.replace(/\.swf$/i, '') : item.name;
-
-          return {
-            name: item.name,
-            baseName: baseName, // Used for icon fetching
-            title: formatTitle(baseName),
-            path: isSwf 
-              ? `https://coltjbennett.github.io/source/${item.name}` 
-              : `https://coltjbennett.github.io/source/${item.name}/index.html`,
-            isSwf: isSwf
-          };
-        });
 
         renderGrid(games);
       } catch (err) {
@@ -192,8 +174,8 @@
       }
     }
 
-    function formatTitle(folderName) {
-      return folderName
+    function formatTitle(str) {
+      return str
         .replace(/[-_]/g, ' ')
         .replace(/\b\w/g, char => char.toUpperCase());
     }
@@ -206,12 +188,12 @@
       }
 
       grid.innerHTML = gameList.map((game) => `
-        <div class="project-card arcade-card" onclick="openGame('${game.path}', ${game.isSwf}, '${game.title.replace(/'/g, "\\'")}')">
+        <div class="project-card arcade-card" onclick="openGame('${game.path}', '${game.title.replace(/'/g, "\\'")}', '${game.type}')">
           <div class="card-image">
             <img 
-              src="https://coltjbennett.github.io/source/${game.baseName}/icon.png" 
+              src="https://coltjbennett.github.io/source/${game.iconBase}/icon.png" 
               alt="${game.title}"
-              onerror="tryNextIcon(this, '${game.baseName}', 1)"
+              onerror="tryNextIcon(this, '${game.iconBase}', 1)"
             />
           </div>
           <div class="card-body">
@@ -221,7 +203,6 @@
       `).join('');
     }
 
-    // Function to handle cascading fallback for game icons
     function tryNextIcon(imgElement, folderName, index) {
       if (index < ICON_CANDIDATES.length) {
         imgElement.onerror = () => tryNextIcon(imgElement, folderName, index + 1);
@@ -232,62 +213,51 @@
       }
     }
 
-    // Search Filtering
     document.getElementById('search').addEventListener('input', (e) => {
       const term = e.target.value.toLowerCase();
       const filtered = games.filter(g => g.title.toLowerCase().includes(term) || g.name.toLowerCase().includes(term));
       renderGrid(filtered);
     });
 
-    // Handle opening games in a new tab
-    function openGame(url, isSwf, title) {
-      if (isSwf) {
-        // Dynamically build a new tab featuring the official Ruffle web player
-        const newWindow = window.open('', '_blank');
-        newWindow.document.write(`
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
+    function openGame(url, title, type) {
+      if (type === 'swf') {
+        // Create a new tab and inject Ruffle Player dynamically
+        const newWin = window.open('', '_blank');
+        if (newWin) {
+          newWin.document.write(`
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
               <meta charset="UTF-8">
-              <title>${title} - Ruffle Arcade</title>
+              <title>${title}</title>
               <style>
-                  body { 
-                      margin: 0; 
-                      padding: 0; 
-                      background-color: #000; 
-                      overflow: hidden; 
-                      height: 100vh; 
-                      width: 100vw; 
-                      display: flex;
-                      align-items: center;
-                      justify-content: center;
-                  }
-                  #ruffle-container { width: 100%; height: 100%; }
+                body, html { margin: 0; padding: 0; width: 100vw; height: 100vh; background: #000; overflow: hidden; }
+                #ruffle-container { width: 100%; height: 100%; }
               </style>
-          </head>
-          <body>
+            </head>
+            <body>
               <div id="ruffle-container"></div>
-              <!-- Official Ruffle Script -->
-              <script src="https://unpkg.com/@ruffle-rs/ruffle"><\\/script>
+              <script src="https://unpkg.com/@ruffle-rs/ruffle"><\/script>
               <script>
-                  window.RufflePlayer = window.RufflePlayer || {};
-                  window.addEventListener("load", () => {
-                      const ruffle = window.RufflePlayer.newest();
-                      const player = ruffle.createPlayer();
-                      player.style.width = "100%";
-                      player.style.height = "100%";
-                      document.getElementById("ruffle-container").appendChild(player);
-                      
-                      // Load the SWF from the raw URL
-                      player.load("${url}");
-                  });
-              <\\/script>
-          </body>
-          </html>
-        `);
-        newWindow.document.close();
+                window.addEventListener('DOMContentLoaded', () => {
+                  const ruffle = window.RufflePlayer.newest();
+                  const player = ruffle.createPlayer();
+                  const container = document.getElementById('ruffle-container');
+                  container.appendChild(player);
+                  player.style.width = '100%';
+                  player.style.height = '100%';
+                  player.load({ url: '${url}', allowScriptAccess: true });
+                });
+              <\/script>
+            </body>
+            </html>
+          `);
+          newWin.document.close();
+        } else {
+          alert("Popup blocked! Please allow popups to open this game.");
+        }
       } else {
-        // Standard HTML5 games just open directly
+        // Standard HTML game opening
         window.open(url, '_blank');
       }
     }
