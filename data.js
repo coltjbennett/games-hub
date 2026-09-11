@@ -1,15 +1,15 @@
 // data.js
 
 const siteData = {
-  version: "v2.2",
+  version: "v3.1.3",
   author: "COLTON BENNETT",
-  location: "WAUKESHA, WI",
+  location: "WSD",
   heroTitle: "Project Launcher",
   heroCopy: "<strong>Welcome to my catalog!</strong> These are the projects I have been building lately.",
-  heroNote: "Feel free to browse the current lineup, see what's there, and if anything's changed.<br>Please excuse any bugs you find; I am still learning.",
+  heroNote: "These are all made by me over the last year, and I do hope you enjoy!<br>Please excuse any bugs you find; I am still ironing things out.",
   marqueeText: "★★★ WELCOME TO COLTON'S PROJECT LAUNCHER ★★★ &nbsp;|&nbsp; BEST VIEWED IN 1024x768 &nbsp;|&nbsp; NETSCAPE NAVIGATOR 4.0 RECOMMENDED &nbsp;|&nbsp; ★★★ SIGN MY GUESTBOOK ★★★",
   footerCopyright: "© 2026 Colton Bennett",
-  footerLastUpdated: "September 2, 2026, 09:35:43"
+  footerLastUpdated: "September 10, 2026, 23:58:43"
 };
 
 const announcements = [
