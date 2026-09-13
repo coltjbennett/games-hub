@@ -16,14 +16,12 @@
 
   <style>
     /* ===== DISABLE CRT OVERLAYS & FILTERS (PRESERVES TILED BACKGROUND) ===== */
-    /* Target html::after specifically to eliminate scanlines & vignette */
     html::after {
       display: none !important;
       content: none !important;
       background: none !important;
     }
 
-    /* Remove heavy SVG blur, chromatic aberration, flickering, and text shadows */
     html, body, .page-shell, .panel, .panel-dark, .arcade-card, #game-modal, * {
       filter: none !important;
       backdrop-filter: none !important;
@@ -31,7 +29,6 @@
       animation: none !important;
     }
 
-    /* Ensure clean image rendering */
     img {
       filter: none !important;
       image-rendering: auto !important;
@@ -146,7 +143,7 @@
 
   </div>
 
-  <!-- Static Taskbar for aesthetic consistency -->
+  <!-- Taskbar -->
   <div class="taskbar">
     <button type="button" class="taskbar-start" onclick="window.location.href='index.html'">
       <img src="images/windows.png" alt="" width="16" height="16" style="vertical-align: middle; margin-right: 4px;" onerror="this.src='images/missing.png';" />
@@ -158,18 +155,17 @@
     </div>
   </div>
 
-  <!-- Game Modal Overlay -->
+  <!-- Unified Game Modal Window (Handles Flash & HTML5) -->
   <div id="game-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 9999; align-items: center; justify-content: center;">
     <div class="panel" style="width: 95vw; height: 95vh; display: flex; flex-direction: column; padding: 2px;">
-      <!-- Modal Title Bar -->
+      <!-- Title Bar -->
       <div class="panel-title-bar w95-text">
-        <span id="modal-title">Ruffle Player</span>
+        <span id="modal-title">Game Player</span>
         <span class="win-btns">
-          <!-- Close Button -->
           <button type="button" class="win-btn btn-close" onclick="closeModal()" aria-label="Close" style="cursor:pointer;">✕</button>
         </span>
       </div>
-      <!-- Direct Container for Ruffle -->
+      <!-- Viewport Container -->
       <div class="panel-body" style="flex: 1; padding: 0; display: flex; border: 2px inset var(--win-border-dark);">
         <div id="game-container" style="flex: 1; width: 100%; height: 100%; background: #000;"></div>
       </div>
@@ -180,13 +176,10 @@
     const REPO_OWNER = 'coltjbennett';
     const REPO_NAME = 'source';
     
-    // Extensions/filenames to check for game icons
     const ICON_CANDIDATES = ['icon.png', 'icon.webp', 'icon.jpg', 'icon.svg', 'logo.png', 'app.png'];
+    const FALLBACK_ICON = 'images/missing.png'; 
 
     let games = [];
-
-    // Fallback icon path
-    const FALLBACK_ICON = 'images/missing.png'; 
 
     async function fetchGames(forceRefresh = false) {
       const grid = document.getElementById('grid');
@@ -301,37 +294,43 @@
       renderGrid(filtered);
     });
 
-    // Handle opening games
+    // Opens both HTML5 and Flash/SWF games inside the custom window modal
     function openGame(url, isSwf, title) {
+      const modal = document.getElementById('game-modal');
+      const container = document.getElementById('game-container');
+      
+      // Update Title Bar
+      document.getElementById('modal-title').innerText = title + (isSwf ? ' - Flash Arcade' : ' - HTML Arcade');
+      
+      // Clear previous content
+      container.innerHTML = '';
+      
       if (isSwf) {
-        const modal = document.getElementById('game-modal');
-        const container = document.getElementById('game-container');
-        
-        // Update Title
-        document.getElementById('modal-title').innerText = title + ' - Ruffle Arcade';
-        
-        // Clear out any old player instance
-        container.innerHTML = '';
-        
-        // Create the Ruffle player natively in the DOM
+        // Embed Ruffle Player for SWF files
         const ruffle = window.RufflePlayer.newest();
         const player = ruffle.createPlayer();
         player.style.width = '100%';
         player.style.height = '100%';
         
-        // Attach and load
         container.appendChild(player);
         player.load(url);
-        
-        // Show the modal
-        modal.style.display = 'flex';
       } else {
-        // Standard HTML5 games
-        window.open(url, '_blank');
+        // Embed iframe for HTML5 games
+        const iframe = document.createElement('iframe');
+        iframe.src = url;
+        iframe.style.width = '100%';
+        iframe.style.height = '100%';
+        iframe.style.border = 'none';
+        iframe.allow = 'autoplay; fullscreen; keyboard';
+        
+        container.appendChild(iframe);
       }
+      
+      // Display window modal
+      modal.style.display = 'flex';
     }
 
-    // Close Modal and destroy player
+    // Close Modal and unload game frame/sound
     function closeModal() {
       const modal = document.getElementById('game-modal');
       const container = document.getElementById('game-container');
@@ -340,7 +339,6 @@
       container.innerHTML = ''; 
     }
 
-    // Initialize
     fetchGames(false);
   </script>
 </body>
