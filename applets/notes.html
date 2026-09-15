@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notes</title>
+  <link rel="stylesheet" href="../styles.css">
+  <style>
+    body {
+      margin: 0;
+      padding: 8px;
+      font-family: inherit;
+      background: transparent;
+      color: #fff;
+      display: flex;
+      height: 100vh;
+      box-sizing: border-box;
+      gap: 8px;
+    }
+    .sidebar {
+      width: 130px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      border-right: 1px solid rgba(255, 255, 255, 0.15);
+      padding-right: 8px;
+    }
+    .note-list {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .note-item {
+      padding: 6px 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      user-select: none;
+    }
+    .note-item:hover { background: rgba(255, 255, 255, 0.15); }
+    .note-item.active {
+      background: rgba(0, 162, 255, 0.3);
+      border-color: rgba(0, 162, 255, 0.5);
+      font-weight: bold;
+    }
+    .main-pane {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    input[type="text"] {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+      color: #fff;
+      padding: 6px;
+      font-family: inherit;
+      font-size: 0.9rem;
+      outline: none;
+    }
+    textarea {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 6px;
+      color: #fff;
+      padding: 8px;
+      font-family: inherit;
+      font-size: 0.85rem;
+      line-height: 1.4;
+      resize: none;
+      outline: none;
+    }
+    .actions {
+      display: flex;
+      gap: 6px;
+    }
+    button {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+      color: #fff;
+      padding: 5px 10px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: background 0.2s;
+    }
+    button:hover { background: rgba(255, 255, 255, 0.25); }
+    button.danger { background: rgba(255, 75, 75, 0.3); }
+    button.danger:hover { background: rgba(255, 75, 75, 0.5); }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <button onclick="createNewNote()">+ New Note</button>
+    <div class="note-list" id="noteList"></div>
+  </div>
+  <div class="main-pane">
+    <input type="text" id="noteTitle" placeholder="Note title..." oninput="autoSave()">
+    <textarea id="noteContent" placeholder="Write your note here..." oninput="autoSave()"></textarea>
+    <div class="actions">
+      <button class="danger" onclick="deleteCurrentNote()">Delete Note</button>
+    </div>
+  </div>
+
+  <script>
+    let notes = JSON.parse(localStorage.getItem('desktop_notes_app') || '[]');
+    let activeNoteId = null;
+
+    const noteListEl = document.getElementById('noteList');
+    const titleEl = document.getElementById('noteTitle');
+    const contentEl = document.getElementById('noteContent');
+
+    function init() {
+      if (notes.length === 0) {
+        createNewNote();
+      } else {
+        renderList();
+        selectNote(notes[0].id);
+      }
+    }
+
+    function renderList() {
+      noteListEl.innerHTML = '';
+      notes.forEach(note => {
+        const item = document.createElement('div');
+        item.className = `note-item ${note.id === activeNoteId ? 'active' : ''}`;
+        item.innerText = note.title || 'Untitled Note';
+        item.onclick = () => selectNote(note.id);
+        noteListEl.appendChild(item);
+      });
+    }
+
+    function selectNote(id) {
+      activeNoteId = id;
+      const note = notes.find(n => n.id === id);
+      if (note) {
+        titleEl.value = note.title;
+        contentEl.value = note.content;
+      }
+      renderList();
+    }
+
+    function createNewNote() {
+      const newNote = {
+        id: Date.now(),
+        title: 'Untitled Note',
+        content: ''
+      };
+      notes.unshift(newNote);
+      activeNoteId = newNote.id;
+      saveToStorage();
+      selectNote(newNote.id);
+    }
+
+    function autoSave() {
+      if (!activeNoteId) return;
+      const note = notes.find(n => n.id === activeNoteId);
+      if (note) {
+        note.title = titleEl.value.trim() || 'Untitled Note';
+        note.content = contentEl.value;
+        saveToStorage();
+        renderList();
+      }
+    }
+
+    function deleteCurrentNote() {
+      if (!activeNoteId) return;
+      notes = notes.filter(n => n.id !== activeNoteId);
+      saveToStorage();
+      if (notes.length > 0) {
+        selectNote(notes[0].id);
+      } else {
+        createNewNote();
+      }
+    }
+
+    function saveToStorage() {
+      localStorage.setItem('desktop_notes_app', JSON.stringify(notes));
+    }
+
+    init();
+  </script>
+</body>
+</html>
