@@ -549,6 +549,24 @@ function setupAppletsAndFloatingWindows() {
     iframeId: 'weather-frame',
     triggerBtnId: 'taskbar-weather-btn'
   });
+
+  createAppletWindow('notes.html', {
+    id: 'notes-window',
+    iframeId: 'notes-frame',
+    triggerBtnId: 'taskbar-notes-btn'
+  });
+
+  createAppletWindow('calculator.html', {
+    id: 'calculator-window',
+    iframeId: 'calculator-frame',
+    triggerBtnId: 'taskbar-calculator-btn'
+  });
+
+  createAppletWindow('clock.html', {
+    id: 'clock-window',
+    iframeId: 'clock-frame',
+    triggerBtnId: 'taskbar-clock-btn'
+  });
 }
 
 // ===== START MENU =====
