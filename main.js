@@ -412,66 +412,142 @@ function makeWindowDraggableAndResizable(win) {
   }
 }
 
-// ===== TASKBAR & APPLETS SETUP =====
-function setupAppletsAndFloatingWindows() {
-  const windowsConfig = [
-    { winId: 'chat-window', btnId: 'taskbar-chat-btn' },
-    { winId: 'paint-window', btnId: 'taskbar-paint-btn' },
-    { winId: 'weather-window', btnId: 'taskbar-weather-btn' }
-  ];
+// ===== UNIVERSAL DYNAMIC APPLET WINDOW CREATOR =====
+function createAppletWindow(appletPath, options = {}) {
+  const src = appletPath.startsWith('applets/') ? appletPath : `applets/${appletPath}`;
+  const winId = options.id || ('applet-win-' + Math.random().toString(36).substring(2, 9));
+  const frameId = options.iframeId || (winId + '-frame');
+  const initialTitle = options.title || 'Applet';
 
-  windowsConfig.forEach(cfg => {
-    const win = document.getElementById(cfg.winId);
-    if (!win) return;
+  const win = document.createElement('div');
+  win.id = winId;
+  win.className = `app-window panel floating-window ${options.className || ''}`;
+  win.role = 'dialog';
+  win.setAttribute('aria-labelledby', `${winId}-title`);
+  win.hidden = options.hidden !== undefined ? options.hidden : true;
 
-    makeWindowDraggableAndResizable(win);
+  if (options.width) win.style.width = options.width;
+  if (options.height) win.style.height = options.height;
 
-    const taskbarBtn = document.getElementById(cfg.btnId);
-    const minBtn = win.querySelector('.btn-minimize') || win.querySelector('[id$="-minimize-btn"]');
-    const closeBtn = win.querySelector('.btn-close') || win.querySelector('[id$="-close-btn"]');
+  win.innerHTML = `
+    <div class="panel-title-bar" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">
+      <span id="${winId}-title" class="applet-win-title" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">${esc(initialTitle)}</span>
+      <span class="win-btns">
+        <button type="button" class="win-btn btn-minimize" aria-label="Minimize">-</button>
+        <button type="button" class="win-btn btn-close" aria-label="Close">✕</button>
+      </span>
+    </div>
+    <div class="app-window-body">
+      <iframe id="${frameId}" class="app-frame" src="${src}" title="${esc(initialTitle)}"></iframe>
+    </div>
+  `;
 
-    function updateBtnState() {
-      if (!taskbarBtn) return;
-      const isVisible = !win.hidden && !win.classList.contains('minimized');
-      if (isVisible) {
-        taskbarBtn.classList.add('active');
-      } else {
-        taskbarBtn.classList.remove('active');
-      }
-    }
+  document.body.appendChild(win);
 
-    function openWin() {
-      win.hidden = false;
-      win.classList.remove('minimized');
-      highestZIndex++;
-      win.style.zIndex = highestZIndex;
-      updateBtnState();
-    }
+  const titleSpan = win.querySelector('.applet-win-title');
+  const iframe = win.querySelector(`#${frameId}`);
+  const minBtn = win.querySelector('.btn-minimize');
+  const closeBtn = win.querySelector('.btn-close');
 
-    function closeWin() {
-      win.hidden = true;
-      win.classList.remove('minimized');
-      updateBtnState();
-    }
-
-    function minimizeWin() {
-      win.classList.add('minimized');
-      win.hidden = true;
-      updateBtnState();
-    }
-
-    if (taskbarBtn) {
-      taskbarBtn.addEventListener('click', () => {
-        if (win.hidden || win.classList.contains('minimized')) {
-          openWin();
-        } else {
-          minimizeWin();
+  iframe.addEventListener('load', () => {
+    try {
+      if (iframe.contentDocument && iframe.contentDocument.title) {
+        const docTitle = iframe.contentDocument.title.trim();
+        if (docTitle) {
+          titleSpan.textContent = docTitle;
+          iframe.title = docTitle;
         }
-      });
+      }
+    } catch (e) {
+      console.warn("Could not read applet title:", e);
     }
+  });
 
-    if (minBtn) minBtn.addEventListener('click', (e) => { e.stopPropagation(); minimizeWin(); });
-    if (closeBtn) closeBtn.addEventListener('click', (e) => { e.stopPropagation(); closeWin(); });
+  makeWindowDraggableAndResizable(win);
+
+  let triggerBtn = null;
+  if (options.triggerBtnId) {
+    triggerBtn = document.getElementById(options.triggerBtnId);
+  }
+
+  function updateBtnState() {
+    if (triggerBtn) {
+      const isVisible = !win.hidden && !win.classList.contains('minimized');
+      triggerBtn.classList.toggle('active', isVisible);
+    }
+  }
+
+  function openWin() {
+    win.hidden = false;
+    win.classList.remove('minimized');
+    highestZIndex++;
+    win.style.zIndex = highestZIndex;
+    updateBtnState();
+  }
+
+  function closeWin() {
+    win.hidden = true;
+    win.classList.remove('minimized');
+    updateBtnState();
+  }
+
+  function minimizeWin() {
+    win.classList.add('minimized');
+    win.hidden = true;
+    updateBtnState();
+  }
+
+  function toggleWin() {
+    if (win.hidden || win.classList.contains('minimized')) {
+      openWin();
+    } else {
+      minimizeWin();
+    }
+  }
+
+  minBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    minimizeWin();
+  });
+
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeWin();
+  });
+
+  if (triggerBtn) {
+    triggerBtn.addEventListener('click', toggleWin);
+  }
+
+  return {
+    win,
+    iframe,
+    open: openWin,
+    close: closeWin,
+    minimize: minimizeWin,
+    toggle: toggleWin
+  };
+}
+
+// ===== TASKBAR & APPLETS INITIALIZATION =====
+function setupAppletsAndFloatingWindows() {
+  createAppletWindow('chatroom.html', {
+    id: 'chat-window',
+    iframeId: 'chat-frame',
+    className: 'chat-window',
+    triggerBtnId: 'chat-launcher-btn'
+  });
+
+  createAppletWindow('paint.html', {
+    id: 'paint-window',
+    iframeId: 'paint-frame',
+    triggerBtnId: 'taskbar-paint-btn'
+  });
+
+  createAppletWindow('weather.html', {
+    id: 'weather-window',
+    iframeId: 'weather-frame',
+    triggerBtnId: 'taskbar-weather-btn'
   });
 }
 
@@ -591,29 +667,11 @@ function setupChatWidget() {
     if (pendingDot) pendingDot.hidden = !show;
   }
 
-  function openChatWindow() {
-    chatWindow.hidden = false;
-    chatWindow.classList.remove('minimized');
-    launcherBtn.setAttribute('aria-expanded', 'true');
-    setPendingDot(false);
-    sendWindowStateToFrame(true);
-    highestZIndex++;
-    chatWindow.style.zIndex = highestZIndex;
-  }
-
-  function closeChatWindow() {
-    chatWindow.hidden = true;
-    chatWindow.classList.remove('minimized');
-    launcherBtn.setAttribute('aria-expanded', 'false');
-    sendWindowStateToFrame(false);
-  }
-
   launcherBtn.addEventListener('click', () => {
-    if (chatWindow.hidden || chatWindow.classList.contains('minimized')) {
-      openChatWindow();
-    } else {
-      closeChatWindow();
-    }
+    const isOpen = windowIsVisibleAndOpen();
+    launcherBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    if (isOpen) setPendingDot(false);
+    sendWindowStateToFrame(isOpen);
   });
 
   chatFrame.addEventListener('load', () => {
@@ -673,8 +731,8 @@ document.addEventListener('DOMContentLoaded', () => {
   setupVisitorCounter();
   setupToSModal();
   setupCRTToggle();
-  setupChatWidget();
   setupAppletsAndFloatingWindows();
+  setupChatWidget();
   updateTaskbarClock();
   setInterval(updateTaskbarClock, 1000);
 });
