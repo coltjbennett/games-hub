@@ -420,13 +420,21 @@
 
             broadcast(data) {
                 if (!this.mqttClient) return;
-                this.mqttClient.publish(this.roomTopic, JSON.stringify({ __senderId: this.myId, payload: data }));
+                // qos 0 on the hot path (transform/shoot) keeps the public broker from
+                // queueing/retrying stale packets under load; everything else defaults to qos 0 too
+                // since the app-level presence/timeout logic already tolerates loss.
+                this.mqttClient.publish(this.roomTopic, JSON.stringify({ __senderId: this.myId, payload: data }), { qos: 0 });
             }
 
             send(connId, data) { this.broadcast(Object.assign({ __targetId: connId }, data)); }
 
             handleData(senderId, data) {
                 if (data.__targetId && data.__targetId !== this.myId) return;
+                // NOTE: MQTT pub/sub already fans a single publish out to every subscriber on the
+                // topic. The old code additionally had the host re-publish every transform/shoot to
+                // each connection individually, which multiplied broker traffic by the player count
+                // for no benefit (everyone already got the original message). That relay is removed
+                // below — the host no longer re-broadcasts what the broker already delivered.
 
                 if (data.type === 'presence') {}
                 else if (data.type === 'join' && this.isHost) {
@@ -445,19 +453,9 @@
                 else if (data.type === 'start_game') { startGameLoop(); }
                 else if (data.type === 'transform' && GAME_STATE === 'PLAYING') {
                     game.updateRemotePlayer(senderId, data);
-                    if (this.isHost) {
-                        Object.keys(this.connections).forEach(id => {
-                            if (id !== senderId) this.send(id, data);
-                        });
-                    }
                 } 
                 else if (data.type === 'shoot' && GAME_STATE === 'PLAYING') {
                     game.spawnRemoteBullet(data.origin, data.direction, senderId, data.power);
-                    if (this.isHost) {
-                        Object.keys(this.connections).forEach(id => {
-                            if (id !== senderId) this.send(id, data);
-                        });
-                    }
                 }
                 else if (data.type === 'damage' && GAME_STATE === 'PLAYING') {
                     if (data.targetId === this.myId) game.takeDamage(data.damage, data.attackerId);
@@ -580,10 +578,10 @@
                     }
                 `;
                 const uniforms = {
-                    topColor: { value: new THREE.Color(0x1a3045) },
-                    bottomColor: { value: new THREE.Color(0xa0b8d0) },
+                    topColor: { value: new THREE.Color(0x3a6ea8) },
+                    bottomColor: { value: new THREE.Color(0xd8e6f2) },
                     offset: { value: 33 },
-                    exponent: { value: 0.6 }
+                    exponent: { value: 0.55 }
                 };
                 const skyGeo = new THREE.SphereGeometry(1000, 32, 15);
                 const skyMat = new THREE.ShaderMaterial({
@@ -592,7 +590,7 @@
                 });
                 const sky = new THREE.Mesh(skyGeo, skyMat);
                 this.scene.add(sky);
-                this.scene.fog = new THREE.FogExp2(0x8098b0, 0.005);
+                this.scene.fog = new THREE.FogExp2(0xaec4da, 0.0035);
 
                 this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1500);
                 this.camera.rotation.order = 'YXZ'; 
@@ -603,17 +601,29 @@
                 this.renderer.shadowMap.enabled = true;
                 this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-                const ambient = new THREE.AmbientLight(0xffffff, 0.35);
-                this.scene.add(ambient);
+                // Brighter, warmer three-point-ish setup: hemisphere for soft sky/ground bounce,
+                // a strong key sun, and a faint cool fill so shadowed interiors (tower ground floors)
+                // don't go pitch black — the old flat ambient + single dim sun left the whole map dim.
+                const hemi = new THREE.HemisphereLight(0xdcebff, 0x30404a, 0.55);
+                this.scene.add(hemi);
 
-                const sun = new THREE.DirectionalLight(0xaaccff, 0.65);
-                sun.position.set(50, 150, 50);
+                const sun = new THREE.DirectionalLight(0xfff3d6, 1.15);
+                sun.position.set(60, 150, 40);
                 sun.castShadow = true;
                 sun.shadow.mapSize.width = 2048; sun.shadow.mapSize.height = 2048;
                 sun.shadow.camera.left = -150; sun.shadow.camera.right = 150;
                 sun.shadow.camera.top = 150; sun.shadow.camera.bottom = -150;
                 sun.shadow.camera.near = 0.5; sun.shadow.camera.far = 600;
+                sun.shadow.bias = -0.0015;
                 this.scene.add(sun);
+
+                const fill = new THREE.DirectionalLight(0x6699cc, 0.35);
+                fill.position.set(-60, 80, -60);
+                this.scene.add(fill);
+
+                this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                this.renderer.toneMappingExposure = 1.15;
+                this.renderer.outputEncoding = THREE.sRGBEncoding;
                 
                 this.launcherAnchor = new THREE.Group();
                 this.camera.add(this.launcherAnchor);
@@ -694,23 +704,40 @@
                 this.world.addBody(groundBody);
                 this.worldObjects.push({ mesh: groundMesh, body: groundBody });
 
-                // Map Architecture: Multi-Story Hollow Towers
+                // Map Architecture: Multi-Story Hollow Towers.
+                // Each floor slab is now built from FOUR separate box segments that leave a real
+                // rectangular gap in one corner — the ramp climbs through that gap instead of
+                // overlapping a solid slab, so it's an actual walkable path rather than clipping into
+                // the floor above/below it (the old single 24x24 slab per floor had no opening at all).
                 const createHollowTower = (cx, cz, isRotated) => {
                     const bw = 24, bd = 24;
-                    // Floors
-                    for(let f = 1; f <= 3; f++) {
-                        let y = f * 12;
-                        this.createBox(new THREE.Vector3(cx, y, cz), new THREE.Vector3(bw, 1, bd), boxMat);
-                        // Interior Ramp
-                        this.createRamp(new THREE.Vector3(cx + (isRotated?4:0), y-6, cz + (isRotated?0:4)), new THREE.Vector3(6, 1, 16), isRotated?'z':'x', isRotated?-Math.PI/4:Math.PI/4, boxMat);
+                    // Opening sits in the corner nearest the entry side, sized to fit the ramp's footprint
+                    const openW = 7, openD = 7;
+                    const openX = isRotated ? (bw/2 - openW/2 - 1) : -(bw/2 - openW/2 - 1);
+                    const openZ = -(bd/2 - openD/2 - 1);
+
+                    for (let f = 1; f <= 3; f++) {
+                        const y = f * 12;
+                        this.buildFloorWithHole(new THREE.Vector3(cx, y, cz), bw, bd, openX, openZ, openW, openD, boxMat);
+                        // Ramp climbs from this floor up to the opening in the floor above, aligned
+                        // under the hole so a player walking up it emerges cleanly through the gap.
+                        const rampLen = 13.5;
+                        const rampCenter = new THREE.Vector3(cx + openX, y - 6, cz + openZ);
+                        this.createRamp(rampCenter, new THREE.Vector3(openW - 0.6, 0.6, rampLen), 'x', -0.42, boxMat);
                     }
                     // Walls (Hollow Center)
                     this.createBox(new THREE.Vector3(cx-12, 18, cz), new THREE.Vector3(1, 36, 24), buildingMat);
                     this.createBox(new THREE.Vector3(cx+12, 18, cz), new THREE.Vector3(1, 36, 24), buildingMat);
                     this.createBox(new THREE.Vector3(cx, 18, cz-12), new THREE.Vector3(24, 36, 1), buildingMat);
-                    // Partial front wall for entry
+                    // Partial front wall for entry, with a gap for a low cover ledge
                     this.createBox(new THREE.Vector3(cx-8, 18, cz+12), new THREE.Vector3(8, 36, 1), buildingMat);
                     this.createBox(new THREE.Vector3(cx+8, 18, cz+12), new THREE.Vector3(8, 36, 1), buildingMat);
+                    // Low cover ledge across the entry gap — crouch-height wall players can peek/shoot over
+                    this.createBox(new THREE.Vector3(cx, 1, cz+12), new THREE.Vector3(8, 1.1, 1), boxMat);
+
+                    // Rooftop cover: a couple of low walls so the top floor isn't a flat killzone
+                    this.createBox(new THREE.Vector3(cx-6, 12 * 3 + 0.7, cz+6), new THREE.Vector3(5, 1.4, 1), boxMat);
+                    this.createBox(new THREE.Vector3(cx+5, 12 * 3 + 0.7, cz-5), new THREE.Vector3(1, 1.4, 5), boxMat);
                 };
 
                 const towers = [[30, 30], [-30, 30], [30, -30], [-30, -30]];
@@ -775,6 +802,36 @@
                 }
             }
 
+            // Builds a floor slab out of up to 4 rectangular segments around a rectangular hole,
+            // so the slab has a genuine walkable opening instead of being one solid box the ramp
+            // has to clip through. openX/openZ are the hole's center offset from the floor center.
+            buildFloorWithHole(center, bw, bd, openX, openZ, openW, openD, mat) {
+                const left = openX - openW / 2, right = openX + openW / 2;
+                const front = openZ - openD / 2, back = openZ + openD / 2;
+                const halfW = bw / 2, halfD = bd / 2;
+
+                // Segment spanning full depth to the "west" of the hole (if any width remains)
+                if (left > -halfW) {
+                    const w = left - (-halfW);
+                    this.createBox(new THREE.Vector3(center.x + (-halfW + left) / 2, center.y, center.z), new THREE.Vector3(w, 1, bd), mat);
+                }
+                // Segment spanning full depth to the "east" of the hole
+                if (right < halfW) {
+                    const w = halfW - right;
+                    this.createBox(new THREE.Vector3(center.x + (right + halfW) / 2, center.y, center.z), new THREE.Vector3(w, 1, bd), mat);
+                }
+                // Segment "south" of the hole, spanning just the hole's width band
+                if (front > -halfD) {
+                    const d = front - (-halfD);
+                    this.createBox(new THREE.Vector3(center.x + openX, center.y, center.z + (-halfD + front) / 2), new THREE.Vector3(openW, 1, d), mat);
+                }
+                // Segment "north" of the hole, spanning just the hole's width band
+                if (back < halfD) {
+                    const d = halfD - back;
+                    this.createBox(new THREE.Vector3(center.x + openX, center.y, center.z + (back + halfD) / 2), new THREE.Vector3(openW, 1, d), mat);
+                }
+            }
+
             createBox(pos, size, mat) {
                 const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), mat);
                 mesh.position.copy(pos); mesh.castShadow = true; mesh.receiveShadow = true;
@@ -806,11 +863,15 @@
                 
                 window.addEventListener('keydown', (e) => { 
                     if(GAME_STATE !== 'PLAYING') return;
+                    const wasDown = this.keys[e.code];
                     this.keys[e.code] = true; 
                     if (e.code === 'Space') this.jump(); 
                     if (e.code === 'KeyR') this.reloadLauncher();
                     if (e.code === 'KeyF' || e.code === 'KeyQ') this.swapLauncher();
-                    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') this.isAiming = !this.isAiming;
+                    // Shift is sprint-only now (held) — it used to also toggle ADS on every press,
+                    // which fought with the sprint check in updatePhysics and made holding Shift to
+                    // run randomly flip you in/out of aim-down-sights. Right-click remains the ADS toggle.
+                    if ((e.code === 'ControlLeft' || e.code === 'KeyC') && !wasDown) this.toggleCrouch();
                 });
                 window.addEventListener('keyup', (e) => this.keys[e.code] = false);
 
@@ -915,8 +976,32 @@
 
             clampPitch() { this.input.pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, this.input.pitch)); }
 
+            // New mechanic: crouch (toggle) doubles as cover — camera drops, hitbox shrinks, and
+            // movement slows, giving a real way to duck behind the low walls/props. Crouching while
+            // sprinting instead triggers a slide: a burst of speed with a brief camera dip that keeps
+            // your momentum low to the ground, useful for closing distance or ducking under fire.
+            toggleCrouch() {
+                if (this.isSliding) return;
+                if (!this.isCrouching && this.isSprinting) {
+                    this.startSlide();
+                    return;
+                }
+                this.isCrouching = !this.isCrouching;
+            }
+
+            startSlide() {
+                this.isSliding = true; this.isCrouching = true;
+                this.slideStart = performance.now(); this.slideDuration = 500;
+                const viewForward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+                viewForward.y = 0; viewForward.normalize();
+                this.slideDir = viewForward;
+                this.playerBody.velocity.x = viewForward.x * SETTINGS.moveSpeed * 2.1;
+                this.playerBody.velocity.z = viewForward.z * SETTINGS.moveSpeed * 2.1;
+            }
+
             jump() {
                 if (GAME_STATE !== 'PLAYING') return;
+                if (this.isCrouching) { this.isCrouching = false; this.isSliding = false; }
                 const grounded = performance.now() < this.groundedUntil;
                 if (grounded) {
                     this.playerBody.velocity.y = SETTINGS.jumpForce;
@@ -1201,27 +1286,18 @@
                     const playerInfo = network.lobbyPlayers.find(p => p.id === id);
                     const uname = playerInfo ? playerInfo.username : "Player";
                     const mesh = this.createPlayerModel(uname);
+                    mesh.position.set(data.x, data.y, data.z);
                     this.scene.add(mesh); this.remotePlayers[id] = { mesh };
                     mesh.tag.querySelector('.remote-hp-fill').id = `hp-fill-${id}`;
                 }
 
                 const rp = this.remotePlayers[id].mesh;
-                const dx = data.x - rp.position.x; const dz = data.z - rp.position.z;
-                const speed = Math.sqrt(dx*dx + dz*dz);
-                
-                // Adjust animation speed based on whether they are sprinting
-                const animSpeed = data.sprint ? 0.6 : 0.4;
-                if (speed > 0.05) rp.animTime += animSpeed;
-                else rp.animTime += (Math.round(rp.animTime / Math.PI) * Math.PI - rp.animTime) * 0.2;
-
-                const swing = Math.sin(rp.animTime) * 0.8;
-                rp.leftArm.rotation.x = swing;
-                rp.rightArm.rotation.x = data.pitch - Math.PI/4; 
-                rp.leftLeg.rotation.x = -swing; rp.rightLeg.rotation.x = swing;
-
-                rp.position.set(data.x, data.y, data.z);
-                rp.rotation.set(0, data.yaw, 0);
-                if(rp.head) rp.head.rotation.set(data.pitch, 0, 0);
+                // Network updates now arrive at ~20Hz (throttled sender). Rather than snapping the
+                // mesh to each packet, store it as an interpolation target and smoothly chase it every
+                // render frame in updateNametags/animate — this is what keeps remote players looking
+                // fluid instead of choppy at the lower send rate.
+                rp.netTarget = { x: data.x, y: data.y, z: data.z, yaw: data.yaw, pitch: data.pitch, sprint: data.sprint };
+                rp.netUpdatedAt = performance.now();
 
                 if (data.wIdx !== undefined && rp.weaponIdx !== data.wIdx && WEAPONS[data.wIdx]) {
                     if (rp.weaponMesh) { rp.rightArm.remove(rp.weaponMesh); }
@@ -1230,6 +1306,36 @@
                     wMesh.position.set(0.05, -0.65, 0.25); wMesh.rotation.x = -0.3; wMesh.scale.set(0.8, 0.8, 0.8);
                     rp.rightArm.add(wMesh); rp.weaponMesh = wMesh;
                 }
+            }
+
+            // Chases each remote player's mesh toward its latest network target every render frame,
+            // and drives their walk-cycle animation locally so it stays smooth between packets.
+            interpolateRemotePlayers(dt) {
+                Object.values(this.remotePlayers).forEach(({ mesh: rp }) => {
+                    if (!rp.netTarget) return;
+                    const t = rp.netTarget;
+                    const dx = t.x - rp.position.x, dz = t.z - rp.position.z;
+                    const dist = Math.hypot(dx, dz);
+                    const LERP = 1 - Math.pow(0.001, dt); // frame-rate independent smoothing
+                    rp.position.x += (t.x - rp.position.x) * LERP;
+                    rp.position.y += (t.y - rp.position.y) * LERP;
+                    rp.position.z += (t.z - rp.position.z) * LERP;
+
+                    let dyaw = t.yaw - (rp.curYaw ?? t.yaw);
+                    while (dyaw > Math.PI) dyaw -= Math.PI * 2;
+                    while (dyaw < -Math.PI) dyaw += Math.PI * 2;
+                    rp.curYaw = (rp.curYaw ?? t.yaw) + dyaw * LERP;
+                    rp.rotation.set(0, rp.curYaw, 0);
+                    if (rp.head) rp.head.rotation.set(t.pitch, 0, 0);
+
+                    const animSpeed = t.sprint ? 0.6 : 0.4;
+                    if (dist > 0.02) rp.animTime += animSpeed;
+                    else rp.animTime += (Math.round(rp.animTime / Math.PI) * Math.PI - rp.animTime) * 0.2;
+                    const swing = Math.sin(rp.animTime) * 0.8;
+                    rp.leftArm.rotation.x = swing;
+                    rp.rightArm.rotation.x = t.pitch - Math.PI / 4;
+                    rp.leftLeg.rotation.x = -swing; rp.rightLeg.rotation.x = swing;
+                });
             }
 
             removeRemotePlayer(id) {
@@ -1284,16 +1390,27 @@
                     }
                 });
 
-                // Soft Touch Aim Assist (Soft-lock cone)
-                if (this.isTouchDevice() && !this.isFiring) {
+                // Soft Touch Aim Assist (Soft-lock cone) — tightened considerably from the original.
+                // Old values (0.25 screen-radius cone, 0.15 lerp/frame) tracked targets from nearly a
+                // quarter of the screen away and snapped onto them almost instantly at 60fps, which
+                // felt like aimbot. Now: a much narrower cone, weaker pull, a line-of-sight check so it
+                // doesn't drag your aim onto someone behind a wall, and it only nudges while you're
+                // already firing (assist while tracking a fight) rather than passively magnetizing.
+                if (this.isTouchDevice() && this.isFiring) {
                     let bestTarget = null;
-                    let minScreenDist = 0.25; 
+                    let minScreenDist = 0.09;
                     Object.values(this.remotePlayers).forEach(rp => {
-                        const targetPos = rp.mesh.position.clone(); targetPos.y += 1.0; 
+                        const targetPos = rp.mesh.position.clone(); targetPos.y += 1.0;
                         const screenPos = targetPos.clone().project(this.camera);
                         if (screenPos.z < 1) {
                             const dist = Math.hypot(screenPos.x, screenPos.y);
-                            if (dist < minScreenDist) { minScreenDist = dist; bestTarget = targetPos; }
+                            if (dist < minScreenDist) {
+                                // Line-of-sight check so assist never pulls through walls/cover
+                                const toTarget = targetPos.clone().sub(this.camera.position);
+                                const los = new THREE.Raycaster(this.camera.position, toTarget.clone().normalize(), 0, toTarget.length() - 0.5);
+                                const blocked = los.intersectObjects(this.worldObjects.map(o => o.mesh), false).length > 0;
+                                if (!blocked) { minScreenDist = dist; bestTarget = targetPos; }
+                            }
                         }
                     });
                     if (bestTarget) {
@@ -1305,8 +1422,8 @@
                         while (dy > Math.PI) dy -= Math.PI*2;
                         while (dy < -Math.PI) dy += Math.PI*2;
                         
-                        this.input.yaw += dy * 0.15;
-                        this.input.pitch += (targetPitch - this.input.pitch) * 0.15;
+                        this.input.yaw += dy * 0.06;
+                        this.input.pitch += (targetPitch - this.input.pitch) * 0.06;
                     }
                 }
 
@@ -1328,35 +1445,60 @@
                 let moveX = this.input.moveX; let moveZ = this.input.moveZ;
                 if (this.keys['KeyW']) moveZ = -1; if (this.keys['KeyS']) moveZ = 1;
                 if (this.keys['KeyA']) moveX = -1; if (this.keys['KeyD']) moveX = 1;
-                if (this.keys['ShiftLeft']) this.isSprinting = true; else if(!this.isTouchDevice()) this.isSprinting = false;
+                // Shift is sprint-only (held) now — it no longer also toggles ADS, see initInput.
+                if (this.keys['ShiftLeft'] || this.keys['ShiftRight']) this.isSprinting = true; else if(!this.isTouchDevice()) this.isSprinting = false;
+                if (this.isCrouching) this.isSprinting = false;
+
+                // Slide: a short, decaying speed burst along the direction it started in. Expires on
+                // a timer or automatically once it's slowed down, dropping back into normal crouch-walk.
+                if (this.isSliding) {
+                    const slideT = (performance.now() - this.slideStart) / this.slideDuration;
+                    if (slideT >= 1 || Math.hypot(this.playerBody.velocity.x, this.playerBody.velocity.z) < SETTINGS.moveSpeed * 0.7) {
+                        this.isSliding = false;
+                    } else {
+                        const decay = 1 - slideT;
+                        this.playerBody.velocity.x = this.slideDir.x * SETTINGS.moveSpeed * (1.2 + decay * 0.9);
+                        this.playerBody.velocity.z = this.slideDir.z * SETTINGS.moveSpeed * (1.2 + decay * 0.9);
+                    }
+                }
 
                 const moveVector = new THREE.Vector3(moveX, 0, moveZ);
                 if (moveVector.length() > 1) moveVector.normalize();
                 const yawRotation = new THREE.Euler(0, this.input.yaw, 0, 'YXZ');
                 moveVector.applyEuler(yawRotation);
 
-                if (moveX === 0 && moveZ === 0) {
-                    this.playerBody.velocity.x = 0; this.playerBody.velocity.z = 0;
-                    this.isSprinting = false; 
-                } else {
-                    let speedMult = 1.0;
-                    if (this.isAiming) speedMult = 0.6;
-                    else if (this.isSprinting) speedMult = SETTINGS.sprintMultiplier;
-                    
-                    this.playerBody.velocity.x = moveVector.x * SETTINGS.moveSpeed * speedMult;
-                    this.playerBody.velocity.z = moveVector.z * SETTINGS.moveSpeed * speedMult;
+                if (!this.isSliding) {
+                    if (moveX === 0 && moveZ === 0) {
+                        this.playerBody.velocity.x = 0; this.playerBody.velocity.z = 0;
+                        this.isSprinting = false; 
+                    } else {
+                        let speedMult = 1.0;
+                        if (this.isCrouching) speedMult = 0.5;
+                        else if (this.isAiming) speedMult = 0.6;
+                        else if (this.isSprinting) speedMult = SETTINGS.sprintMultiplier;
+                        
+                        this.playerBody.velocity.x = moveVector.x * SETTINGS.moveSpeed * speedMult;
+                        this.playerBody.velocity.z = moveVector.z * SETTINGS.moveSpeed * speedMult;
+                    }
                 }
 
                 const speed = Math.sqrt(this.playerBody.velocity.x ** 2 + this.playerBody.velocity.z ** 2);
-                if (speed > 2 && Math.abs(this.playerBody.velocity.y) < 1) this.bobTime += dt * (this.isSprinting ? 15 : (this.isAiming ? 8 : 12));
+                if (speed > 2 && Math.abs(this.playerBody.velocity.y) < 1) this.bobTime += dt * (this.isSliding ? 2 : this.isSprinting ? 15 : (this.isAiming ? 8 : 12));
                 else this.bobTime += (Math.round(this.bobTime / Math.PI) * Math.PI - this.bobTime) * 0.1;
-                const bobOffset = Math.sin(this.bobTime) * (this.isAiming ? 0.05 : 0.15);
+                const bobOffset = this.isSliding ? 0 : Math.sin(this.bobTime) * (this.isAiming ? 0.05 : 0.15);
 
                 if (this.recoilPitchOffset > 0) this.recoilPitchOffset = Math.max(0, this.recoilPitchOffset - w.recoilRecover * dt);
                 if (this.launcherRecoilOffset < 0) this.launcherRecoilOffset = Math.min(0, this.launcherRecoilOffset + w.recoilRecover * dt);
                 if (this.currentSpread > w.baseSpread) this.currentSpread = Math.max(w.baseSpread, this.currentSpread - w.recoilRecover * dt);
 
-                this.camera.position.set(this.playerBody.position.x, this.playerBody.position.y + 0.6 + bobOffset, this.playerBody.position.z);
+                // Crouch/slide lower the camera so players can drop behind the low cover walls and
+                // props — the eye-height offset is what actually gets a head below a ~1.4-unit-tall
+                // ledge; the collision sphere stays fixed since Cannon 0.6.2 doesn't cleanly support
+                // resizing a live shape.
+                const targetCrouchOffset = this.isSliding ? -0.75 : (this.isCrouching ? -0.55 : 0);
+                this._crouchOffset = THREE.MathUtils.lerp(this._crouchOffset ?? 0, targetCrouchOffset, 0.25);
+
+                this.camera.position.set(this.playerBody.position.x, this.playerBody.position.y + 0.6 + this._crouchOffset + bobOffset, this.playerBody.position.z);
                 this.camera.rotation.set(this.input.pitch + this.recoilPitchOffset, this.input.yaw, 0, 'YXZ');
 
                 const targetPos = this.isAiming ? new THREE.Vector3(w.ads.x, w.ads.y, w.ads.z) : new THREE.Vector3(.35, -.35 + (this.isReloading ? -.5 : 0), -.6);
@@ -1370,13 +1512,28 @@
                 this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, targetFov, ADS_SPEED);
                 this.camera.updateProjectionMatrix();
 
-                // Broadcast Transform & Sprint State Cleanly
+                // Broadcast Transform & Sprint State — throttled and delta-gated.
+                // The public MQTT broker chokes when every client publishes 60 packets/sec each;
+                // sending on a fixed ~20Hz tick (and skipping ticks where nothing moved enough to
+                // matter) cuts steady-state traffic by roughly 3x-5x with remote interpolation (below)
+                // hiding the lower update rate.
                 if (network.peer && network.peer.open) {
-                    network.broadcast({
-                        type: 'transform', id: network.myId,
-                        x: this.playerBody.position.x, y: this.playerBody.position.y - 0.8, z: this.playerBody.position.z,
-                        yaw: this.input.yaw, pitch: this.input.pitch, wIdx: this.curWIdx, sprint: this.isSprinting
-                    });
+                    const px = this.playerBody.position.x, py = this.playerBody.position.y - 0.8, pz = this.playerBody.position.z;
+                    const nowMs = performance.now();
+                    if (!this._lastSentPos) this._lastSentPos = { x: px, y: py, z: pz, yaw: this.input.yaw };
+                    const moved = Math.abs(px - this._lastSentPos.x) > 0.02 || Math.abs(pz - this._lastSentPos.z) > 0.02
+                        || Math.abs(py - this._lastSentPos.y) > 0.02 || Math.abs(this.input.yaw - this._lastSentPos.yaw) > 0.01;
+                    if ((!this._nextTransformAt || nowMs >= this._nextTransformAt) && (moved || !this._sentIdleFrame)) {
+                        this._nextTransformAt = nowMs + 50; // 20Hz
+                        this._sentIdleFrame = !moved;
+                        this._lastSentPos = { x: px, y: py, z: pz, yaw: this.input.yaw };
+                        network.broadcast({
+                            type: 'transform', id: network.myId,
+                            x: Math.round(px * 100) / 100, y: Math.round(py * 100) / 100, z: Math.round(pz * 100) / 100,
+                            yaw: Math.round(this.input.yaw * 1000) / 1000, pitch: Math.round(this.input.pitch * 1000) / 1000,
+                            wIdx: this.curWIdx, sprint: this.isSprinting, crouch: this.isCrouching || this.isSliding
+                        });
+                    }
                 }
 
                 // Projectiles Raycast Collisions (Props & Players)
@@ -1487,8 +1644,11 @@
 
             animate() {
                 requestAnimationFrame(() => this.animate());
+                const nowT = performance.now();
+                const frameDt = Math.min((nowT - (this._lastFrameT || nowT)) / 1000, 0.1);
+                this._lastFrameT = nowT;
                 if (GAME_STATE === 'PLAYING') {
-                    this.updatePhysics(); this.updateNametags();
+                    this.updatePhysics(); this.interpolateRemotePlayers(frameDt); this.updateNametags();
                 } else {
                     this.camera.position.set(Math.sin(Date.now()*0.0003)*80, 40, Math.cos(Date.now()*0.0003)*80);
                     this.camera.lookAt(0,10,0);
