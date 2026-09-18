@@ -1,21 +1,21 @@
 // data.js
 
 const siteData = {
-  version: "v3.1.3",
+  version: "v3.1.4",
   author: "COLTON BENNETT",
-  location: "WSD",
+  location: "Waukesha, WI",
   heroTitle: "Project Launcher",
   heroCopy: "<strong>Welcome to my catalog!</strong> These are the projects I have been building lately.",
   heroNote: "These are all made by me over the last year, and I do hope you enjoy!<br>Please excuse any bugs you find; I am still ironing things out.",
   marqueeText: "★★★ WELCOME TO COLTON'S PROJECT LAUNCHER ★★★ &nbsp;|&nbsp; BEST VIEWED IN 1024x768 &nbsp;|&nbsp; NETSCAPE NAVIGATOR 4.0 RECOMMENDED &nbsp;|&nbsp; ★★★ SIGN MY GUESTBOOK ★★★",
   footerCopyright: "© 2026 Colton Bennett",
-  footerLastUpdated: "September 10, 2026, 23:58:43"
+  footerLastUpdated: "September 18, 2026, 10:32:00"
 };
 
 const announcements = [
   {
     title: "New releases",
-    content: " - A Universal Chatroom has been fully implemented, press the 'chat' button in the bottom right to open it! It connects all users that are currently on the site. Private messages to individual users, audio messages, file sharing, and replying to messages have all been added. - (09/03/2026)<br> - New beta out for a multiplayer PvP FPS game"
+    content: " - A Universal Chatroom has been fully implemented, press the 'chat' button in the bottom right to open it! It connects all users that are currently on the site. Private messages to individual users, audio messages, file sharing, and replying to messages have all been added.<br> - New beta out for a multiplayer PvP FPS game"
   },
   {
     title: "Game updates",
@@ -23,7 +23,7 @@ const announcements = [
   },
   {
     title: "Site updates",
-    content: " - It's been over three months since moving to Github becuase of a prime example of the 'Scunthorpe Problem' on OneCompiler.com, and it's been going great! Github is also easier to manage. - (09/02/26)<br> - OFFICIAL WEB GAMES ARE NOW ADDED! COOKIE CLICKER, BITLIFE, AND 200 MORE POPULAR GAMES AVAILABLE BELOW!"
+    content: " - <b>IMPORTANT FOR ALL USERS!!!</b> THE WEB GAMES SECTION HAS BEEN REMOVED DUE TO IT EXCEEDING GITHUB RATE LIMITS. THIS WAS NOT MY DECISION AND UNFORTUNATELY THERE IS ABSOLUTELY NOTHING I CAN DO ABOUT IT."
   }
 ];
 
