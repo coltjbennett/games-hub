@@ -23,21 +23,21 @@ const announcements = [
   },
   {
     title: "Site updates",
-    content: " - It's been over three months since moving to Github becuase of a prime example of the 'Scunthorpe Problem' on OneCompiler.com, and it's been going great! Github is also easier to manage. - (09/02/26)<br> - OFFICIAL WEB GAMES ARE NOW ADDED! COOKIE CLICKER, BITLIFE, AND 200 MORE POPULAR GAMES AVAIABLE <a href=\"https://coltjbennett.github.io/games-hub/games.html\">here.</a>"
+    content: " - It's been over three months since moving to Github becuase of a prime example of the 'Scunthorpe Problem' on OneCompiler.com, and it's been going great! Github is also easier to manage. - (09/02/26)<br> - OFFICIAL WEB GAMES ARE NOW ADDED! COOKIE CLICKER, BITLIFE, AND 200 MORE POPULAR GAMES AVAILABLE BELOW!"
   }
 ];
 
 const projects = [
   {
-  title: 'FPS beta',
-  url: 'games/fps.html',
-  image: 'images/missing.png',
-  alt: 'FPS beta',
-  statusKey: 'beta',
-  type: 'FPS',
-  tags: ['Shooter', 'Multiplayer', 'Under development'],
-  description: 'THIS IS NOT A COMPLETE GAME; THIS IS A TEST OF A NEW ENGINE I AM ROLLING OUT FOR MULTIPLAYER FPS GAMES',
-  featured: false
+    title: 'FPS beta',
+    url: 'games/fps.html',
+    image: 'images/missing.png',
+    alt: 'FPS beta',
+    statusKey: 'beta',
+    type: 'FPS',
+    tags: ['Shooter', 'Multiplayer', 'Under development'],
+    description: 'THIS IS NOT A COMPLETE GAME; THIS IS A TEST OF A NEW ENGINE I AM ROLLING OUT FOR MULTIPLAYER FPS GAMES',
+    featured: false
   },
   {
     title: 'Pixel Ops',
@@ -188,7 +188,7 @@ const classics = [
   {
     title: "Alien Invaders",
     url: "games/classics/alieninvaders.html",
-    image: "images/IMG_1802.jpeg", // Add image path when ready
+    image: "images/IMG_1802.jpeg",
     alt: "Alien Invaders"
   },
   {
