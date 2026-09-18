@@ -15,54 +15,23 @@
   <script src="https://unpkg.com/@ruffle-rs/ruffle"></script>
 
   <style>
-    /* ===== CRT TOGGLE & IFRAME EXEMPTION STYLES ===== */
-
-    /* Completely exempt the game modal, container, iframe, and SWF player from CRT filters/effects */
-    #game-modal,
-    #game-modal *,
-    #game-container,
-    #game-container *,
-    iframe,
-    ruffle-player {
-      filter: none !important;
-      backdrop-filter: none !important;
-      text-shadow: none !important;
-      animation: none !important;
-      mix-blend-mode: normal !important;
-    }
-
-    /* Elevate game modal above full-screen CRT scanlines or overlay pseudo-elements */
-    #game-modal {
-      z-index: 999999 !important;
-    }
-
-    /* CRT OFF State (Toggled by the square 'C' button) */
-    html.crt-off,
-    html.crt-off body,
-    html.crt-off .page-shell,
-    html.crt-off .panel,
-    html.crt-off .panel-dark,
-    html.crt-off .arcade-card,
-    html.crt-off * {
-      filter: none !important;
-      backdrop-filter: none !important;
-      text-shadow: none !important;
-      animation: none !important;
-    }
-
-    html.crt-off::before,
-    html.crt-off::after,
-    html.crt-off body::before,
-    html.crt-off body::after {
+    /* ===== DISABLE CRT OVERLAYS & FILTERS (PRESERVES TILED BACKGROUND) ===== */
+    html::after {
       display: none !important;
       content: none !important;
       background: none !important;
     }
 
-    /* CRT Toggle Button Style */
-    .win-btn.btn-crt {
-      font-weight: bold;
-      font-family: monospace, sans-serif;
+    html, body, .page-shell, .panel, .panel-dark, .arcade-card, #game-modal, * {
+      filter: none !important;
+      backdrop-filter: none !important;
+      text-shadow: none !important;
+      animation: none !important;
+    }
+
+    img {
+      filter: none !important;
+      image-rendering: auto !important;
     }
 
     /* ===== SUPPLEMENTARY STYLES FOR GAMES.HTML ===== */
@@ -123,7 +92,6 @@
         <div class="panel-title-bar w95-text">
           <span>ARCADE HUB</span>
           <span class="win-btns">
-            <button type="button" class="win-btn btn-crt" onclick="toggleCRT()" aria-label="Toggle CRT" title="Toggle CRT Effects">C</button>
             <button type="button" class="win-btn btn-minimize" aria-label="Minimize">-</button>
             <button type="button" class="win-btn btn-maximize" aria-label="Maximize" disabled>□</button>
             <button type="button" class="win-btn btn-close" aria-label="Close" disabled>✕</button>
@@ -143,7 +111,6 @@
         <div class="panel-title-bar w95-text">
           <span>GAME LIBRARY</span>
           <span class="win-btns">
-            <button type="button" class="win-btn btn-crt" onclick="toggleCRT()" aria-label="Toggle CRT" title="Toggle CRT Effects">C</button>
             <button type="button" class="win-btn btn-minimize" aria-label="Minimize">-</button>
             <button type="button" class="win-btn btn-maximize" aria-label="Maximize" disabled>□</button>
           </span>
@@ -189,13 +156,12 @@
   </div>
 
   <!-- Unified Game Modal Window (Handles Flash & HTML5) -->
-  <div id="game-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); align-items: center; justify-content: center;">
+  <div id="game-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 9999; align-items: center; justify-content: center;">
     <div class="panel" style="width: 95vw; height: 95vh; display: flex; flex-direction: column; padding: 2px;">
       <!-- Title Bar -->
       <div class="panel-title-bar w95-text">
         <span id="modal-title">Game Player</span>
         <span class="win-btns">
-          <button type="button" class="win-btn btn-crt" onclick="toggleCRT()" aria-label="Toggle CRT" title="Toggle CRT Effects">C</button>
           <button type="button" class="win-btn btn-close" onclick="closeModal()" aria-label="Close" style="cursor:pointer;">✕</button>
         </span>
       </div>
@@ -214,11 +180,6 @@
     const FALLBACK_ICON = 'images/missing.png'; 
 
     let games = [];
-
-    // Toggle CRT filters on/off for the main page
-    function toggleCRT() {
-      document.documentElement.classList.toggle('crt-off');
-    }
 
     async function fetchGames(forceRefresh = false) {
       const grid = document.getElementById('grid');
