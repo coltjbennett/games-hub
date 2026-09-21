@@ -334,6 +334,143 @@
   </button>
 
   <script src="data.js"></script> 
-  <script src="main.js"></script> 
+  <script src="main.js"></script>
+
+  <!-- Google Analytics Detailed Event Tracking -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      function sendGAEvent(eventName, params) {
+        if (typeof gtag === 'function') {
+          gtag('event', eventName, params || {});
+        }
+      }
+
+      // Delegate click events across the page
+      document.addEventListener('click', function (e) {
+        // 1. KEY EVENT: Launch Web Games Hub
+        var hubBtn = e.target.closest('#arcade-launcher-btn');
+        if (hubBtn) {
+          sendGAEvent('open_games_hub', {
+            event_category: 'Navigation',
+            event_label: 'Web Games Hub Button'
+          });
+          return;
+        }
+
+        // 2. KEY EVENT: Open Chatroom
+        var chatBtn = e.target.closest('#chat-launcher-btn');
+        if (chatBtn) {
+          sendGAEvent('open_chat', {
+            event_category: 'Engagement',
+            event_label: 'Chat Room Launcher'
+          });
+          return;
+        }
+
+        // 3. KEY EVENT: Launch Game (Project Library, Featured, or Classic)
+        var playBtn = e.target.closest('.play-btn');
+        if (playBtn) {
+          var card = playBtn.closest('.project-card, .featured-card');
+          var gameTitle = card && card.querySelector('h3') ? card.querySelector('h3').textContent.trim() : 'Unknown Game';
+          sendGAEvent('launch_game', {
+            event_category: 'Games',
+            game_title: gameTitle,
+            game_url: playBtn.getAttribute('href')
+          });
+          return;
+        }
+
+        var classicGame = e.target.closest('.classic-item');
+        if (classicGame) {
+          var classicTitle = classicGame.querySelector('h3') ? classicGame.querySelector('h3').textContent.trim() : 'Classic Game';
+          sendGAEvent('launch_game', {
+            event_category: 'Classic Games',
+            game_title: classicTitle,
+            game_url: classicGame.getAttribute('href')
+          });
+          return;
+        }
+
+        // 4. KEY EVENT: Open Widget / Taskbar App
+        var widgetBtn = e.target.closest('.taskbar-app-btn');
+        if (widgetBtn) {
+          var widgetName = widgetBtn.getAttribute('title') || (widgetBtn.querySelector('.taskbar-app-label') ? widgetBtn.querySelector('.taskbar-app-label').textContent.trim() : widgetBtn.id);
+          sendGAEvent('open_widget', {
+            event_category: 'Widgets',
+            widget_name: widgetName
+          });
+          return;
+        }
+
+        // --- SECONDARY / LESS IMPORTANT EVENTS ---
+        var startBtn = e.target.closest('#taskbar-start-btn');
+        if (startBtn) {
+          sendGAEvent('toggle_start_menu', { event_category: 'System' });
+          return;
+        }
+
+        var crtBtn = e.target.closest('#crt-toggle-btn');
+        if (crtBtn) {
+          sendGAEvent('toggle_crt_mode', { event_category: 'UI Settings' });
+          return;
+        }
+
+        var tosBtn = e.target.closest('#tos-accept-btn');
+        if (tosBtn) {
+          sendGAEvent('accept_terms_of_service', { event_category: 'Legal' });
+          return;
+        }
+
+        var sortBtn = e.target.closest('#sort-toggle');
+        if (sortBtn) {
+          sendGAEvent('sort_projects', { event_category: 'Filters' });
+          return;
+        }
+
+        var startItem = e.target.closest('.start-item');
+        if (startItem) {
+          sendGAEvent('start_menu_navigate', {
+            event_category: 'Navigation',
+            destination: startItem.textContent.trim()
+          });
+          return;
+        }
+
+        // Generic fallback for any other button or win-btn press
+        var genericButton = e.target.closest('button, .win-btn');
+        if (genericButton) {
+          var btnName = genericButton.getAttribute('aria-label') || genericButton.id || genericButton.textContent.trim().substring(0, 30) || 'Button';
+          sendGAEvent('button_click', {
+            event_category: 'General Interaction',
+            button_identifier: btnName
+          });
+        }
+      });
+
+      // Track status filter dropdown selection
+      var statusFilter = document.getElementById('status-filter');
+      if (statusFilter) {
+        statusFilter.addEventListener('change', function (e) {
+          sendGAEvent('filter_projects', {
+            event_category: 'Filters',
+            selected_status: e.target.value
+          });
+        });
+      }
+
+      // Track search terms when user submits or moves off the search input
+      var searchInput = document.getElementById('search-input');
+      if (searchInput) {
+        searchInput.addEventListener('change', function (e) {
+          if (e.target.value.trim() !== '') {
+            sendGAEvent('search_projects', {
+              event_category: 'Search',
+              search_term: e.target.value.trim()
+            });
+          }
+        });
+      }
+    });
+  </script>
 </body>
 </html>
