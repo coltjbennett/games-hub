@@ -542,12 +542,79 @@
             }
         }
 
-        document.getElementById("universal-upload").addEventListener("change", function(e) {
+        // Lossy compression algorithm for images: incrementally downscales and compresses JPEG quality until payload fits under limit
+        function compressImageToFit(file, maxLength = 125000) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const rawUrl = e.target.result;
+                    const initialComp = LZString.compressToUTF16(rawUrl);
+                    
+                    // If image is already small enough, send as-is
+                    if (initialComp.length <= maxLength) {
+                        return resolve({ raw: rawUrl, preCompressed: initialComp });
+                    }
+
+                    const img = new Image();
+                    img.onload = function() {
+                        let canvas = document.createElement("canvas");
+                        let ctx = canvas.getContext("2d");
+                        let width = img.width;
+                        let height = img.height;
+                        let quality = 0.85;
+
+                        let currentRaw = rawUrl;
+                        let currentComp = initialComp;
+
+                        // Iteratively reduce JPEG quality and resolution until compressed string fits
+                        while (currentComp.length > maxLength && (width > 10 && height > 10)) {
+                            canvas.width = width;
+                            canvas.height = height;
+
+                            // Fill background white in case source image was transparent PNG
+                            ctx.fillStyle = "#ffffff";
+                            ctx.fillRect(0, 0, width, height);
+                            ctx.drawImage(img, 0, 0, width, height);
+
+                            currentRaw = canvas.toDataURL("image/jpeg", quality);
+                            currentComp = LZString.compressToUTF16(currentRaw);
+
+                            if (quality > 0.25) {
+                                quality -= 0.15;
+                            } else {
+                                // Downscale dimensions when quality alone is insufficient
+                                width = Math.floor(width * 0.75);
+                                height = Math.floor(height * 0.75);
+                                quality = 0.75;
+                            }
+                        }
+                        resolve({ raw: currentRaw, preCompressed: currentComp });
+                    };
+                    img.onerror = reject;
+                    img.src = rawUrl;
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        document.getElementById("universal-upload").addEventListener("change", async function(e) {
             const file = e.target.files[0];
             if (!file) return;
             const isVideo = file.type.startsWith("video/");
             const isImage = file.type.startsWith("image/");
             const isFile = !isImage && !isVideo;
+
+            if (isImage) {
+                try {
+                    const { raw, preCompressed } = await compressImageToFit(file, 125000);
+                    sendPayload(raw, { isImage: true, isVideo: false, isFile: false, fileName: file.name, preCompressed });
+                } catch(err) {
+                    customAlert("Failed to process image.");
+                }
+                e.target.value = "";
+                return;
+            }
 
             const reader = new FileReader();
             reader.onload = function(event) { 
