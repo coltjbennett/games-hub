@@ -414,7 +414,7 @@ function makeWindowDraggableAndResizable(win) {
 
 // ===== UNIVERSAL DYNAMIC APPLET WINDOW CREATOR =====
 function createAppletWindow(appletPath, options = {}) {
-  const src = appletPath.startsWith('applets/') ? appletPath : `applets/${appletPath}`;
+  const src = options.isRootPath ? appletPath : (appletPath.startsWith('applets/') ? appletPath : `applets/${appletPath}`);
   const winId = options.id || ('applet-win-' + Math.random().toString(36).substring(2, 9));
   const frameId = options.iframeId || (winId + '-frame');
   const initialTitle = options.title || 'Applet';
@@ -531,6 +531,15 @@ function createAppletWindow(appletPath, options = {}) {
 
 // ===== TASKBAR & APPLETS INITIALIZATION =====
 function setupAppletsAndFloatingWindows() {
+  createAppletWindow('games.html', {
+    id: 'arcade-window',
+    iframeId: 'arcade-frame',
+    className: 'arcade-window',
+    triggerBtnId: 'arcade-launcher-btn',
+    isRootPath: true,
+    title: 'Arcade Hub'
+  });
+
   createAppletWindow('chatroom.html', {
     id: 'chat-window',
     iframeId: 'chat-frame',

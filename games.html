@@ -84,7 +84,7 @@
 </head>
 <body>
 
-  <div class="page-shell">
+  <div class="page-shell" style="padding-bottom: 20px;">
     
     <!-- Header -->
     <header>
@@ -143,33 +143,15 @@
 
   </div>
 
-  <!-- Taskbar -->
-  <div class="taskbar">
-    <button type="button" class="taskbar-start" onclick="window.location.href='index.html'">
-      <img src="images/windows.png" alt="" width="16" height="16" style="vertical-align: middle; margin-right: 4px;" onerror="this.src='images/missing.png';" />
-      Start
-    </button>
-    <div class="taskbar-spacer"></div>
-    <div class="taskbar-status">
-      <div class="taskbar-clock w95-text">Arcade Hub Active</div>
+  <!-- Full-Window Game Viewport (Replaces Modal Window) -->
+  <div id="game-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #000000; z-index: 9999; flex-direction: column;">
+    <div class="panel-title-bar w95-text" style="flex-shrink: 0; height: 28px; padding: 4px 8px; display: flex; justify-content: space-between; align-items: center; background: var(--win-blue); color: var(--win-text-light);">
+      <span id="modal-title" style="font-weight: bold; font-size: 0.9rem;">Game Player</span>
+      <span class="win-btns">
+        <button type="button" class="win-btn btn-close" onclick="closeModal()" aria-label="Close" style="cursor:pointer; width: 18px; height: 16px; line-height: 12px;">✕</button>
+      </span>
     </div>
-  </div>
-
-  <!-- Unified Game Modal Window (Handles Flash & HTML5) -->
-  <div id="game-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 9999; align-items: center; justify-content: center;">
-    <div class="panel" style="width: 95vw; height: 95vh; display: flex; flex-direction: column; padding: 2px;">
-      <!-- Title Bar -->
-      <div class="panel-title-bar w95-text">
-        <span id="modal-title">Game Player</span>
-        <span class="win-btns">
-          <button type="button" class="win-btn btn-close" onclick="closeModal()" aria-label="Close" style="cursor:pointer;">✕</button>
-        </span>
-      </div>
-      <!-- Viewport Container -->
-      <div class="panel-body" style="flex: 1; padding: 0; display: flex; border: 2px inset var(--win-border-dark);">
-        <div id="game-container" style="flex: 1; width: 100%; height: 100%; background: #000;"></div>
-      </div>
-    </div>
+    <div id="game-container" style="flex: 1; width: 100%; height: calc(100% - 28px); background: #000000; overflow: hidden;"></div>
   </div>
 
   <script>
@@ -298,7 +280,7 @@
       renderGrid(filtered);
     });
 
-    // Opens both HTML5 and Flash/SWF games inside the custom window modal
+    // Opens both HTML5 and Flash/SWF games to fill the entire Arcade Hub window
     function openGame(url, isSwf, title) {
       const modal = document.getElementById('game-modal');
       const container = document.getElementById('game-container');
@@ -330,11 +312,11 @@
         container.appendChild(iframe);
       }
       
-      // Display window modal
+      // Display full game viewport
       modal.style.display = 'flex';
     }
 
-    // Close Modal and unload game frame/sound
+    // Close Game Viewport and return to game library
     function closeModal() {
       const modal = document.getElementById('game-modal');
       const container = document.getElementById('game-container');
