@@ -433,10 +433,15 @@ function createAppletWindow(appletPath, options = {}) {
   if (options.width) win.style.width = options.width;
   if (options.height) win.style.height = options.height;
 
+  const iconHtml = options.icon ? `<img src="${options.icon}" class="win-title-icon" alt="" onerror="this.style.display='none';" />` : '';
+
   // Render Window - Removed minimize button specifically from applet windows
   win.innerHTML = `
     <div class="panel-title-bar" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">
-      <span id="${winId}-title" class="applet-win-title" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">${esc(initialTitle)}</span>
+      <span style="display: flex; align-items: center;">
+        ${iconHtml}
+        <span id="${winId}-title" class="applet-win-title" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">${esc(initialTitle)}</span>
+      </span>
       <span class="win-btns">
         <button type="button" class="win-btn btn-maximize" aria-label="Maximize">□</button>
         <button type="button" class="win-btn btn-close" aria-label="Close">✕</button>
@@ -622,37 +627,43 @@ function setupAppletsAndFloatingWindows() {
     id: 'chat-window',
     iframeId: 'chat-frame',
     className: 'chat-window',
-    triggerBtnId: 'chat-launcher-btn'
+    triggerBtnId: 'chat-launcher-btn',
+    icon: 'images/icons/chatroom.png'
   });
 
   createAppletWindow('paint.html', {
     id: 'paint-window',
     iframeId: 'paint-frame',
-    triggerBtnId: 'taskbar-paint-btn'
+    triggerBtnId: 'taskbar-paint-btn',
+    icon: 'images/icons/paint.png'
   });
 
   createAppletWindow('weather.html', {
     id: 'weather-window',
     iframeId: 'weather-frame',
-    triggerBtnId: 'taskbar-weather-btn'
+    triggerBtnId: 'taskbar-weather-btn',
+    icon: 'images/icons/weather.png'
   });
 
   createAppletWindow('notes.html', {
     id: 'notes-window',
     iframeId: 'notes-frame',
-    triggerBtnId: 'taskbar-notes-btn'
+    triggerBtnId: 'taskbar-notes-btn',
+    icon: 'images/icons/notes.png'
   });
 
   createAppletWindow('calculator.html', {
     id: 'calculator-window',
     iframeId: 'calculator-frame',
-    triggerBtnId: 'taskbar-calculator-btn'
+    triggerBtnId: 'taskbar-calculator-btn',
+    icon: 'images/icons/calculator.png'
   });
 
   createAppletWindow('clock.html', {
     id: 'clock-window',
     iframeId: 'clock-frame',
-    triggerBtnId: 'taskbar-clock-btn'
+    triggerBtnId: 'taskbar-clock-btn',
+    icon: 'images/icons/clock.png'
   });
 }
 
