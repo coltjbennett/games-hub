@@ -256,7 +256,7 @@ function makeWindowDraggableAndResizable(win) {
   const titleBar = win.querySelector('.panel-title-bar');
   const iframe = win.querySelector('iframe');
 
-  // Bring window to top on click
+  // Bring to top natively on clicking outer window borders/title
   win.addEventListener('mousedown', () => {
     if (!win.classList.contains('maximized')) {
       highestZIndex++;
@@ -433,11 +433,11 @@ function createAppletWindow(appletPath, options = {}) {
   if (options.width) win.style.width = options.width;
   if (options.height) win.style.height = options.height;
 
+  // Render Window - Removed minimize button specifically from applet windows
   win.innerHTML = `
     <div class="panel-title-bar" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">
       <span id="${winId}-title" class="applet-win-title" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">${esc(initialTitle)}</span>
       <span class="win-btns">
-        <button type="button" class="win-btn btn-minimize" aria-label="Minimize">-</button>
         <button type="button" class="win-btn btn-maximize" aria-label="Maximize">□</button>
         <button type="button" class="win-btn btn-close" aria-label="Close">✕</button>
       </span>
@@ -451,9 +451,20 @@ function createAppletWindow(appletPath, options = {}) {
 
   const titleSpan = win.querySelector('.applet-win-title');
   const iframe = win.querySelector(`#${frameId}`);
-  const minBtn = win.querySelector('.btn-minimize');
   const maxBtn = win.querySelector('.btn-maximize');
   const closeBtn = win.querySelector('.btn-close');
+
+  // Intelligent window z-index layering for internal iframe clicks
+  window.addEventListener('blur', () => {
+    setTimeout(() => {
+      if (document.activeElement === iframe) {
+        if (!win.classList.contains('maximized')) {
+          highestZIndex++;
+          win.style.zIndex = highestZIndex;
+        }
+      }
+    }, 0);
+  });
 
   iframe.addEventListener('load', () => {
     try {
@@ -464,8 +475,21 @@ function createAppletWindow(appletPath, options = {}) {
           iframe.title = docTitle;
         }
       }
+      // Supplemental event capture for same-origin iframes
+      iframe.contentWindow.addEventListener('mousedown', () => {
+        if (!win.classList.contains('maximized')) {
+          highestZIndex++;
+          win.style.zIndex = highestZIndex;
+        }
+      });
+      iframe.contentWindow.addEventListener('touchstart', () => {
+        if (!win.classList.contains('maximized')) {
+          highestZIndex++;
+          win.style.zIndex = highestZIndex;
+        }
+      });
     } catch (e) {
-      console.warn("Could not read applet title:", e);
+      console.warn("Could not read applet title or inject events:", e);
     }
   });
 
@@ -553,14 +577,15 @@ function createAppletWindow(appletPath, options = {}) {
     if (win.hidden || win.classList.contains('minimized')) {
       openWin();
     } else {
-      minimizeWin();
+      // Smart taskbar behavior: bring to front if open but beneath another window
+      if (win.style.zIndex < highestZIndex) {
+        highestZIndex++;
+        win.style.zIndex = highestZIndex;
+      } else {
+        minimizeWin();
+      }
     }
   }
-
-  minBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    minimizeWin();
-  });
 
   closeBtn.addEventListener('click', (e) => {
     e.stopPropagation();
