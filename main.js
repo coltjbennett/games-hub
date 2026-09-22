@@ -258,8 +258,10 @@ function makeWindowDraggableAndResizable(win) {
 
   // Bring window to top on click
   win.addEventListener('mousedown', () => {
-    highestZIndex++;
-    win.style.zIndex = highestZIndex;
+    if (!win.classList.contains('maximized')) {
+      highestZIndex++;
+      win.style.zIndex = highestZIndex;
+    }
   });
 
   // Attach Resize Handles
@@ -276,6 +278,7 @@ function makeWindowDraggableAndResizable(win) {
     let startX, startY, startW, startH, startLeft, startTop;
 
     const startResize = (e) => {
+      if (win.classList.contains('maximized')) return;
       e.stopPropagation();
       if (e.cancelable) e.preventDefault();
       isResizing = true;
@@ -356,6 +359,7 @@ function makeWindowDraggableAndResizable(win) {
 
     const startDrag = (e) => {
       if (e.target.closest('button')) return;
+      if (win.classList.contains('maximized')) return;
       isDragging = true;
 
       const clientX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
@@ -434,6 +438,7 @@ function createAppletWindow(appletPath, options = {}) {
       <span id="${winId}-title" class="applet-win-title" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">${esc(initialTitle)}</span>
       <span class="win-btns">
         <button type="button" class="win-btn btn-minimize" aria-label="Minimize">-</button>
+        <button type="button" class="win-btn btn-maximize" aria-label="Maximize">□</button>
         <button type="button" class="win-btn btn-close" aria-label="Close">✕</button>
       </span>
     </div>
@@ -447,6 +452,7 @@ function createAppletWindow(appletPath, options = {}) {
   const titleSpan = win.querySelector('.applet-win-title');
   const iframe = win.querySelector(`#${frameId}`);
   const minBtn = win.querySelector('.btn-minimize');
+  const maxBtn = win.querySelector('.btn-maximize');
   const closeBtn = win.querySelector('.btn-close');
 
   iframe.addEventListener('load', () => {
@@ -464,6 +470,52 @@ function createAppletWindow(appletPath, options = {}) {
   });
 
   makeWindowDraggableAndResizable(win);
+
+  let isMaximized = false;
+  let savedStyle = {
+    top: '',
+    left: '',
+    width: '',
+    height: '',
+    right: '',
+    bottom: '',
+    transform: ''
+  };
+
+  function toggleMaximize() {
+    if (!isMaximized) {
+      savedStyle.top = win.style.top;
+      savedStyle.left = win.style.left;
+      savedStyle.width = win.style.width;
+      savedStyle.height = win.style.height;
+      savedStyle.right = win.style.right;
+      savedStyle.bottom = win.style.bottom;
+      savedStyle.transform = win.style.transform;
+
+      win.classList.add('maximized');
+      isMaximized = true;
+      if (maxBtn) maxBtn.setAttribute('aria-label', 'Restore');
+    } else {
+      win.classList.remove('maximized');
+      win.style.top = savedStyle.top;
+      win.style.left = savedStyle.left;
+      win.style.width = savedStyle.width;
+      win.style.height = savedStyle.height;
+      win.style.right = savedStyle.right;
+      win.style.bottom = savedStyle.bottom;
+      win.style.transform = savedStyle.transform;
+
+      isMaximized = false;
+      if (maxBtn) maxBtn.setAttribute('aria-label', 'Maximize');
+    }
+  }
+
+  if (maxBtn) {
+    maxBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleMaximize();
+    });
+  }
 
   let triggerBtn = null;
   if (options.triggerBtnId) {
@@ -525,7 +577,8 @@ function createAppletWindow(appletPath, options = {}) {
     open: openWin,
     close: closeWin,
     minimize: minimizeWin,
-    toggle: toggleWin
+    toggle: toggleWin,
+    toggleMaximize: toggleMaximize
   };
 }
 
