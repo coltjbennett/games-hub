@@ -136,7 +136,7 @@ function renderFeatured() {
       <h3>${esc(featured.title)}</h3>
       <p>${esc(featured.description)}</p>
       <div class="featured-meta">${featured.tags.map(tag => `<span class="tag ${tag.includes('Top Pick') ? 'tag--featured' : ''}">${esc(tag)}</span>`).join('')}</div>
-      <a class="play-btn" href="${featured.url}" aria-label="Play ${esc(featured.title)}" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">Launch</a>
+      <a class="play-btn" href="${featured.url}" target="_blank" rel="noopener noreferrer" aria-label="Play ${esc(featured.title)}" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">Launch</a>
     </div>
   `;
 }
@@ -249,24 +249,6 @@ function setupWindowButtons() {
       }
     });
   });
-}
-
-// ===== DYNAMIC CRT FULLSCREEN OVERRIDE =====
-function updateCRTState() {
-  const maximizedWindows = document.querySelectorAll('.floating-window.maximized');
-  let isAnyFullscreenActive = false;
-  
-  maximizedWindows.forEach(win => {
-    if (!win.hidden && !win.classList.contains('minimized')) {
-      isAnyFullscreenActive = true;
-    }
-  });
-
-  if (isAnyFullscreenActive) {
-    document.documentElement.classList.add('fullscreen-no-crt');
-  } else {
-    document.documentElement.classList.remove('fullscreen-no-crt');
-  }
 }
 
 // ===== DRAGGABLE & RESIZABLE FLOATING WINDOW ENGINE =====
@@ -436,7 +418,7 @@ function makeWindowDraggableAndResizable(win) {
 
 // ===== UNIVERSAL DYNAMIC APPLET WINDOW CREATOR =====
 function createAppletWindow(appletPath, options = {}) {
-  const src = options.isRootPath ? appletPath : (appletPath.startsWith('applets/') || appletPath === '' ? appletPath : `applets/${appletPath}`);
+  const src = options.isRootPath ? appletPath : (appletPath.startsWith('applets/') ? appletPath : `applets/${appletPath}`);
   const winId = options.id || ('applet-win-' + Math.random().toString(36).substring(2, 9));
   const frameId = options.iframeId || (winId + '-frame');
   const initialTitle = options.title || 'Applet';
@@ -555,7 +537,6 @@ function createAppletWindow(appletPath, options = {}) {
       isMaximized = false;
       if (maxBtn) maxBtn.setAttribute('aria-label', 'Maximize');
     }
-    updateCRTState();
   }
 
   if (maxBtn) {
@@ -583,21 +564,18 @@ function createAppletWindow(appletPath, options = {}) {
     highestZIndex++;
     win.style.zIndex = highestZIndex;
     updateBtnState();
-    updateCRTState();
   }
 
   function closeWin() {
     win.hidden = true;
     win.classList.remove('minimized');
     updateBtnState();
-    updateCRTState();
   }
 
   function minimizeWin() {
     win.classList.add('minimized');
     win.hidden = true;
     updateBtnState();
-    updateCRTState();
   }
 
   function toggleWin() {
@@ -644,15 +622,6 @@ function setupAppletsAndFloatingWindows() {
     isRootPath: true,
     title: 'Arcade Hub'
   });
-  
-  // Reusable Main Game Launcher Window (Re-uses Arcade Window sizing)
-  window.gameWindowApplet = createAppletWindow('', {
-    id: 'game-window',
-    iframeId: 'game-frame',
-    className: 'arcade-window',
-    isRootPath: true,
-    title: 'Game'
-  });
 
   createAppletWindow('chatroom.html', {
     id: 'chat-window',
@@ -695,45 +664,6 @@ function setupAppletsAndFloatingWindows() {
     iframeId: 'clock-frame',
     triggerBtnId: 'taskbar-clock-btn',
     icon: 'images/icons/clock.png'
-  });
-
-  // Dynamic Event Delegator for Game Clicks
-  document.addEventListener('click', (e) => {
-    const playBtn = e.target.closest('.play-btn');
-    const classicGame = e.target.closest('.classic-item');
-
-    if (playBtn || classicGame) {
-      e.preventDefault();
-
-      let url = '';
-      let title = 'Game';
-
-      if (playBtn) {
-        url = playBtn.getAttribute('href');
-        const card = playBtn.closest('.project-card, .featured-card');
-        if (card) {
-           const h3 = card.querySelector('h3');
-           if (h3) title = h3.textContent;
-        }
-      } else if (classicGame) {
-        url = classicGame.getAttribute('href');
-        const h3 = classicGame.querySelector('h3');
-        if (h3) title = h3.textContent;
-      }
-
-      if (window.gameWindowApplet && url) {
-        const iframe = window.gameWindowApplet.iframe;
-        // Only trigger a reload if the game actually changes
-        if (iframe.getAttribute('src') !== url) {
-          iframe.setAttribute('src', url);
-        }
-        
-        const titleSpan = window.gameWindowApplet.win.querySelector('.applet-win-title');
-        if (titleSpan) titleSpan.textContent = title;
-        
-        window.gameWindowApplet.open();
-      }
-    }
   });
 }
 
