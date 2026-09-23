@@ -485,11 +485,7 @@
         let messageHistory = [];
         let dmHistories = {};
         let activeUsers = new Map();
-        // Fast lookup of message ids already present in messageHistory, kept in sync
-        // alongside the array so hot paths (PING/MSG handling) don't need an O(n) scan.
         let messageHistoryIdSet = new Set();
-        // Memoized username -> color, since the hash was being recomputed on every
-        // single message render (every render of every line, every re-render).
         const usernameColorCache = new Map();
         function rebuildMessageHistoryIdSet() {
             messageHistoryIdSet = new Set(messageHistory.map(m => m.id).filter(Boolean));
@@ -499,7 +495,7 @@
         let closedDMs = new Set();
         let pendingDMs = {};
         let lastPingFrom = {};
-        let dmReadWatermarks = {}; // otherUser -> timestamp
+        let dmReadWatermarks = {};
 
         let currentTab = "global";
         let unreadTabs = new Set();
@@ -579,11 +575,11 @@
             localStorage.setItem('mqtt_mute_sounds', document.getElementById('mute-sounds-chk').checked);
         }
 
-        function triggerMention(author) {
+        function triggerMention(author, isEveryone = false) {
             let muteSounds = localStorage.getItem('mqtt_mute_sounds') === 'true';
             if (muteSounds || currentStatus === 'DND') return; 
 
-            document.getElementById("mention-text").innerText = `@${author} mentioned you!`;
+            document.getElementById("mention-text").innerText = isEveryone ? `@${author} pinged @everyone!` : `@${author} mentioned you!`;
             openModal("mention-modal");
             try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -798,13 +794,6 @@
             }
         }
 
-        // Debounce persistence per storage key. Several call sites (every incoming
-        // message, ping-triggered presence changes, etc.) call saveLocalHistory /
-        // saveDmHistory back-to-back with no await, so without this a burst of N events
-        // triggered N full JSON.stringify + LZString-compress + IndexedDB-write cycles of
-        // the *entire* history. Coalescing to one write per short burst removes that cost
-        // without changing what ends up persisted - it always saves the latest data,
-        // just slightly deferred (150ms), same as the existing fire-and-forget usage.
         const pendingStorageWrites = new Map();
         function saveToStorageDebounced(key, getArray) {
             const existing = pendingStorageWrites.get(key);
@@ -932,7 +921,7 @@
             if (msg.isFile) return `<br><a href="${rawText}" download="${escapeHTML(msg.fileName)}" class="btn-w95" style="text-decoration:none; margin-top:4px; padding:4px;">Download ${escapeHTML(msg.fileName)}</a>`;
             
             let txt = escapeHTML(rawText);
-            
+
             // Basic Markdown Parsing
             txt = txt.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
             txt = txt.replace(/\*(.*?)\*/g, '<i>$1</i>');
@@ -1012,9 +1001,6 @@
         function filterMessages() {
             const term = document.getElementById("search-input").value.toLowerCase();
             const msgs = ui.chatBox.children;
-            // Empty search term means every message is visible with no filtering needed -
-            // skip the per-message .innerText reads (each one forces a layout reflow),
-            // which were running on every single render even when the user isn't searching.
             if (!term) {
                 for (let i = 0; i < msgs.length; i++) {
                     if (msgs[i].id === 'typing-indicator') continue;
@@ -1053,9 +1039,6 @@
         }
 
         function renderActiveTabMessages() {
-            // Distance from the bottom of the scrollable content (in px). Preserving this
-            // value across a full re-render keeps the viewport pinned to the same messages,
-            // regardless of how much content is added/removed above.
             const oldDistanceFromBottom = ui.chatBox.scrollHeight - ui.chatBox.scrollTop;
             const wasAtBottom = isChatNearBottom();
 
@@ -1108,8 +1091,6 @@
             return `${existingTimeHtml}${replyHtml}${deleteBtn}<b style="color: ${color};">${msg.author}:</b> ${formattedContent}${editTag}${readReceiptTag}${reactionsHtml}`;
         }
 
-        // Patches a single message's DOM node in place (used for edits/reactions) instead of
-        // wiping and rebuilding the entire chat box, which is what made those actions laggy.
         function patchMsgDOM(msg) {
             const el = document.getElementById(`msg-${msg.id}`);
             if (!el) return false;
@@ -1276,7 +1257,14 @@
             lastSeenTime = Date.now();
             try { localStorage.setItem("mqtt_last_seen_time", String(lastSeenTime)); } catch(e){}
 
-            if (pendingMentionAuthor) { triggerMention(pendingMentionAuthor); pendingMentionAuthor = null; }
+            if (pendingMentionAuthor) { 
+                if (typeof pendingMentionAuthor === 'object' && pendingMentionAuthor !== null) {
+                    triggerMention(pendingMentionAuthor.author, pendingMentionAuthor.isEveryone); 
+                } else {
+                    triggerMention(pendingMentionAuthor);
+                }
+                pendingMentionAuthor = null; 
+            }
             
             if (currentTab.startsWith("dm:")) {
                 const targetUser = currentTab.replace("dm:", "");
@@ -1431,14 +1419,15 @@
                         renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
                     }
 
-                    if (!isGhost && data.author !== myUsername && !blockedUsers.has(data.author)) {
-                        const isDM = (data.type === "DM" && data.target === myUsername);
-                        const isMention = (data.type === "MSG" && data.text && data.text.includes(`@${myUsername}`));
+                    if (data.author !== myUsername && !blockedUsers.has(data.author)) {
+                        const isDM = (!isGhost && data.type === "DM" && data.target === myUsername);
+                        const isEveryone = (data.type === "MSG" && data.text && data.text.includes("@everyone"));
+                        const isMention = (data.type === "MSG" && data.text && (isEveryone || (!isGhost && data.text.includes(`@${myUsername}`))));
                         if (isDM || isMention) {
                             const now = Date.now();
                             if (now - (lastPingFrom[data.author] || 0) >= 3000) {
                                 lastPingFrom[data.author] = now;
-                                let notifText = isDM ? `You received a DM from ${data.author}` : `You were pinged by ${data.author}`;
+                                let notifText = isDM ? `You received a DM from ${data.author}` : (isEveryone ? `${data.author} pinged @everyone` : `You were pinged by ${data.author}`);
                                 
                                 let muteSounds = localStorage.getItem('mqtt_mute_sounds') === 'true';
                                 if (!muteSounds && currentStatus !== 'DND') {
@@ -1448,7 +1437,13 @@
                                 let storedPings = JSON.parse(localStorage.getItem('mqtt_pings') || '{}');
                                 storedPings[data.id] = true; localStorage.setItem('mqtt_pings', JSON.stringify(storedPings));
 
-                                if (isMention) { if (!isOnHomepage) { triggerMention(data.author); } else { pendingMentionAuthor = data.author; } }
+                                if (isMention) { 
+                                    if (!isOnHomepage) { 
+                                        triggerMention(data.author, isEveryone); 
+                                    } else { 
+                                        pendingMentionAuthor = { author: data.author, isEveryone: isEveryone }; 
+                                    } 
+                                }
                             }
                         }
                     }
@@ -1634,11 +1629,6 @@
         }
 
         function mergeHistory(localHistory, remoteHistory) {
-            // Fast path: this is by far the hottest call (every JOIN/LEAVE/MSG event runs
-            // it with localHistory === messageHistory and a single-item remoteHistory).
-            // If the incoming item is a genuinely new id, we can splice it in and update
-            // the id index instead of paying for a full array spread + Map rebuild + full
-            // re-sort + full re-scan of the entire history on every single event.
             if (localHistory === messageHistory && remoteHistory.length === 1) {
                 const msg = remoteHistory[0];
                 const key = msg.id;
@@ -1647,34 +1637,30 @@
                         (msg.timestamp && msg.timestamp <= nukeMarker) ||
                         rangeTombstones.some(r => msg.timestamp >= r.from && msg.timestamp <= r.to && (r.targetType === "all" || (r.targetType === "system") === !!msg.isSystem));
                     if (!isTombstoned) {
-                        if (!isGhost && msg.author !== myUsername && !blockedUsers.has(msg.author)) {
-                            const isMention = msg.text && msg.text.includes(`@${myUsername}`);
+                        if (msg.author !== myUsername && !blockedUsers.has(msg.author)) {
+                            const isEveryone = msg.text && msg.text.includes("@everyone");
+                            const isMention = msg.text && (isEveryone || (!isGhost && msg.text.includes(`@${myUsername}`)));
                             if (isMention) {
                                 let storedPings = JSON.parse(localStorage.getItem('mqtt_pings') || '{}');
                                 if (!storedPings[msg.id]) {
                                     storedPings[msg.id] = true; localStorage.setItem('mqtt_pings', JSON.stringify(storedPings));
                                     let muteSounds = localStorage.getItem('mqtt_mute_sounds') === 'true';
                                     if (!muteSounds && currentStatus !== 'DND') {
-                                        window.parent.postMessage({ source: 'universal-chat', kind: 'ping', user: msg.author, text: `You were pinged by ${msg.author} while offline` }, '*');
+                                        let notifText = isEveryone ? `${msg.author} pinged @everyone while offline` : `You were pinged by ${msg.author} while offline`;
+                                        window.parent.postMessage({ source: 'universal-chat', kind: 'ping', user: msg.author, text: notifText }, '*');
                                     }
-                                    pendingMentionAuthor = msg.author;
+                                    pendingMentionAuthor = { author: msg.author, isEveryone: isEveryone };
                                 }
                             }
                         }
                         messageHistoryIdSet.add(key);
-                        // Insertion-sort the single new item into place rather than
-                        // sorting the whole array; history arrives close to in-order
-                        // (network jitter aside), so this is typically near O(1).
                         let i = localHistory.length - 1;
                         while (i >= 0 && (localHistory[i].timestamp || 0) > (msg.timestamp || 0)) i--;
                         localHistory.splice(i + 1, 0, msg);
                         return localHistory;
                     }
-                    // Tombstoned: nothing to add, history unchanged.
                     return localHistory;
                 }
-                // Existing id (edit/reaction update) or no id at all - fall through to
-                // the general path below, which is still cheap for a single-element merge.
             }
 
             const combined = [...localHistory, ...remoteHistory];
@@ -1688,17 +1674,19 @@
                 if (!uniqueMessages.has(key)) {
                     uniqueMessages.set(key, msg);
                     
-                    if (!localIds.has(msg.id) && !isGhost && msg.author !== myUsername && !blockedUsers.has(msg.author)) {
-                        const isMention = msg.text && msg.text.includes(`@${myUsername}`);
+                    if (!localIds.has(msg.id) && msg.author !== myUsername && !blockedUsers.has(msg.author)) {
+                        const isEveryone = msg.text && msg.text.includes("@everyone");
+                        const isMention = msg.text && (isEveryone || (!isGhost && msg.text.includes(`@${myUsername}`)));
                         if (isMention) {
                             let storedPings = JSON.parse(localStorage.getItem('mqtt_pings') || '{}');
                             if (!storedPings[msg.id]) {
                                 storedPings[msg.id] = true; localStorage.setItem('mqtt_pings', JSON.stringify(storedPings));
                                 let muteSounds = localStorage.getItem('mqtt_mute_sounds') === 'true';
                                 if (!muteSounds && currentStatus !== 'DND') {
-                                    window.parent.postMessage({ source: 'universal-chat', kind: 'ping', user: msg.author, text: `You were pinged by ${msg.author} while offline` }, '*');
+                                    let notifText = isEveryone ? `${msg.author} pinged @everyone while offline` : `You were pinged by ${msg.author} while offline`;
+                                    window.parent.postMessage({ source: 'universal-chat', kind: 'ping', user: msg.author, text: notifText }, '*');
                                 }
-                                pendingMentionAuthor = msg.author;
+                                pendingMentionAuthor = { author: msg.author, isEveryone: isEveryone };
                             }
                         }
                     }
@@ -1813,7 +1801,6 @@
 
         function handleManifestRequest(data) {
             if (data.author === myUsername) {
-                // If it's our own request from another device, we still want to backfill it mutually!
                 publishMessage(buildManifest(myUsername));
             } else {
                 publishMessage(buildManifest(data.author));
@@ -1847,7 +1834,6 @@
                 diffAndQueue(channelKey("dm", data.author), data.author, dmHistories[data.author] || [], theirDmWithUs);
             }
             
-            // Sync our OWN devices across DMs
             if (data.author === myUsername && data.dms) {
                 Object.keys(data.dms).forEach(otherUser => {
                     diffAndQueue(channelKey("dm", otherUser), data.author, dmHistories[otherUser] || [], data.dms[otherUser]);
@@ -1965,11 +1951,6 @@
         }
 
         function renderUserList() {
-            // Build the whole list as one string and assign innerHTML once. The old code
-            // did ui.userList.innerHTML += "..." inside the loop, which forces the browser
-            // to re-serialize and re-parse the ENTIRE accumulated list on every single
-            // user (O(n^2) for n users) - and this function runs on every PING, from every
-            // connected user, every 5 seconds.
             const now = Date.now();
             let html = "";
             activeUsers.forEach((userData, user) => {
