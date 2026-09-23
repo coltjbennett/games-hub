@@ -229,6 +229,16 @@ function renderProjects() {
   updateHelperText(items.length);
 }
 
+// ===== WINDOW MANAGER UTILS =====
+function updateCRTState() {
+  const anyMaximized = document.querySelectorAll('.app-window.maximized:not([hidden]):not(.minimized)').length > 0;
+  if (anyMaximized) {
+    document.documentElement.classList.add('temp-no-crt');
+  } else {
+    document.documentElement.classList.remove('temp-no-crt');
+  }
+}
+
 // ===== IN-PAGE WINDOW BUTTONS (FOR REGULAR PAGE PANELS) =====
 function setupWindowButtons() {
   document.querySelectorAll('.page-shell .btn-minimize').forEach((btn) => {
@@ -435,7 +445,6 @@ function createAppletWindow(appletPath, options = {}) {
 
   const iconHtml = options.icon ? `<img src="${options.icon}" class="win-title-icon" alt="" onerror="this.style.display='none';" />` : '';
 
-  // Render Window - Removed minimize button specifically from applet windows
   win.innerHTML = `
     <div class="panel-title-bar" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">
       <span style="display: flex; align-items: center;">
@@ -459,7 +468,6 @@ function createAppletWindow(appletPath, options = {}) {
   const maxBtn = win.querySelector('.btn-maximize');
   const closeBtn = win.querySelector('.btn-close');
 
-  // Intelligent window z-index layering for internal iframe clicks
   window.addEventListener('blur', () => {
     setTimeout(() => {
       if (document.activeElement === iframe) {
@@ -480,7 +488,6 @@ function createAppletWindow(appletPath, options = {}) {
           iframe.title = docTitle;
         }
       }
-      // Supplemental event capture for same-origin iframes
       iframe.contentWindow.addEventListener('mousedown', () => {
         if (!win.classList.contains('maximized')) {
           highestZIndex++;
@@ -537,6 +544,7 @@ function createAppletWindow(appletPath, options = {}) {
       isMaximized = false;
       if (maxBtn) maxBtn.setAttribute('aria-label', 'Maximize');
     }
+    updateCRTState();
   }
 
   if (maxBtn) {
@@ -564,25 +572,27 @@ function createAppletWindow(appletPath, options = {}) {
     highestZIndex++;
     win.style.zIndex = highestZIndex;
     updateBtnState();
+    updateCRTState();
   }
 
   function closeWin() {
     win.hidden = true;
     win.classList.remove('minimized');
     updateBtnState();
+    updateCRTState();
   }
 
   function minimizeWin() {
     win.classList.add('minimized');
     win.hidden = true;
     updateBtnState();
+    updateCRTState();
   }
 
   function toggleWin() {
     if (win.hidden || win.classList.contains('minimized')) {
       openWin();
     } else {
-      // Smart taskbar behavior: bring to front if open but beneath another window
       if (win.style.zIndex < highestZIndex) {
         highestZIndex++;
         win.style.zIndex = highestZIndex;
@@ -610,6 +620,48 @@ function createAppletWindow(appletPath, options = {}) {
     toggle: toggleWin,
     toggleMaximize: toggleMaximize
   };
+}
+
+// ===== UNIVERSAL GAME WINDOW LAUNCHER =====
+const activeGameWindows = {};
+
+function openGameWindow(url, title) {
+  if (activeGameWindows[url]) {
+    activeGameWindows[url].open();
+  } else {
+    const slug = url.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    const winObj = createAppletWindow(url, {
+      id: 'game-win-' + slug,
+      title: title,
+      className: 'arcade-window', // Makes it act and size identically to the arcade hub
+      isRootPath: true
+    });
+    activeGameWindows[url] = winObj;
+    winObj.open();
+  }
+}
+
+function setupGameLaunchers() {
+  document.addEventListener('click', (e) => {
+    const playBtn = e.target.closest('.play-btn');
+    if (playBtn) {
+      e.preventDefault();
+      const url = playBtn.getAttribute('href');
+      if (!url) return;
+      const card = playBtn.closest('.project-card, .featured-card');
+      const title = card && card.querySelector('h3') ? card.querySelector('h3').textContent.trim() : 'Game';
+      openGameWindow(url, title);
+    }
+
+    const classicItem = e.target.closest('.classic-item');
+    if (classicItem) {
+      e.preventDefault();
+      const url = classicItem.getAttribute('href');
+      if (!url) return;
+      const title = classicItem.querySelector('h3') ? classicItem.querySelector('h3').textContent.trim() : 'Classic Game';
+      openGameWindow(url, title);
+    }
+  });
 }
 
 // ===== TASKBAR & APPLETS INITIALIZATION =====
@@ -848,6 +900,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupToSModal();
   setupCRTToggle();
   setupAppletsAndFloatingWindows();
+  setupGameLaunchers();
   setupChatWidget();
   updateTaskbarClock();
   setInterval(updateTaskbarClock, 1000);
