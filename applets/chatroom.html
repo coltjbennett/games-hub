@@ -430,7 +430,10 @@
                     <input type="text" id="search-input" placeholder="Search messages in current tab..." oninput="filterMessages()" style="flex: 1; padding: 2px 4px; font-size: 12px;" />
                 </div>
                 
-                <div id="chat-box" class="inset-panel" style="flex: 1; padding: 4px;"></div>
+                <div style="position: relative; flex: 1; min-height: 0; display: flex;">
+                    <div id="chat-box" class="inset-panel" style="flex: 1; padding: 4px;"></div>
+                    <div id="new-msg-popup" onclick="scrollToBottomAndClear()" style="display: none; position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: var(--win-blue); color: #fff; padding: 4px 12px; font-size: 12px; border: 2px outset var(--win-border-light); cursor: pointer; white-space: nowrap; z-index: 5; box-shadow: 1px 1px 4px rgba(0,0,0,0.4);"></div>
+                </div>
                 <div id="typing-indicator" style="height: 18px; font-size: 12px; color: #555; line-height: 18px;"></div>
 
                 <div id="reply-preview" class="outset-panel" style="display: none; font-size: 12px; padding: 3px 6px; justify-content: space-between; align-items: center; margin-bottom: 4px;">
@@ -510,6 +513,8 @@
         let pendingAction = "unban";
         let pendingName = "";
         let lastDisplayedTimestamp = 0;
+        let newMessageCount = 0;
+        const NEAR_BOTTOM_PX = 50;
         const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
         let ghostId = "ghost-" + generateId();
 
@@ -524,6 +529,7 @@
             userIp: document.getElementById("username-input"),
             status: document.getElementById("status"),
             chatBox: document.getElementById("chat-box"),
+            newMsgPopup: document.getElementById("new-msg-popup"),
             msgIp: document.getElementById("msg-input"),
             userList: document.getElementById("user-list"),
             typing: document.getElementById("typing-indicator"),
@@ -550,6 +556,7 @@
             ui.msgContextMenu.style.display = "none";
             ui.reactionPickerMenu.style.display = "none"; 
         });
+        ui.chatBox.addEventListener("scroll", () => { if (isChatNearBottom()) hideNewMsgPopup(); });
         function openModal(id) { document.getElementById(id).style.display = "flex"; }
         function closeModal(id) { document.getElementById(id).style.display = "none"; }
         function customAlert(text) { document.getElementById('alert-text').innerText = text; openModal('alert-modal'); }
@@ -919,6 +926,7 @@
             const activeEl = document.getElementById(`tab-${tabId.replace(':', '-')}`);
             if (activeEl) { activeEl.classList.add("active"); const dot = activeEl.querySelector(".unread-dot"); if (dot) dot.remove(); }
             document.getElementById("search-input").value = "";
+            hideNewMsgPopup();
             renderActiveTabMessages();
 
             if (tabId.startsWith("dm:")) {
@@ -983,23 +991,91 @@
             }
         }
 
+        function isChatNearBottom() {
+            return ui.chatBox.scrollHeight - ui.chatBox.clientHeight <= ui.chatBox.scrollTop + NEAR_BOTTOM_PX;
+        }
+
+        function showNewMsgPopup() {
+            if (newMessageCount <= 0) { ui.newMsgPopup.style.display = "none"; return; }
+            ui.newMsgPopup.innerText = `${newMessageCount} new message${newMessageCount > 1 ? "s" : ""} ▼`;
+            ui.newMsgPopup.style.display = "block";
+        }
+
+        function hideNewMsgPopup() {
+            newMessageCount = 0;
+            ui.newMsgPopup.style.display = "none";
+        }
+
+        function scrollToBottomAndClear() {
+            ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
+            hideNewMsgPopup();
+        }
+
         function renderActiveTabMessages() {
-            const oldScrollTop = ui.chatBox.scrollTop;
-            const oldScrollHeight = ui.chatBox.scrollHeight;
-            const isAtBottom = oldScrollHeight - ui.chatBox.clientHeight <= oldScrollTop + 50;
+            // Distance from the bottom of the scrollable content (in px). Preserving this
+            // value across a full re-render keeps the viewport pinned to the same messages,
+            // regardless of how much content is added/removed above.
+            const oldDistanceFromBottom = ui.chatBox.scrollHeight - ui.chatBox.scrollTop;
+            const wasAtBottom = isChatNearBottom();
 
             ui.chatBox.innerHTML = "";
             lastDisplayedTimestamp = 0;
             let list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
             list.forEach(msg => { if (blockedUsers.has(msg.author)) return; if (msg.isSystem) appendSystemDOM(msg, true); else appendMsgDOM(msg, true); });
             
-            if (isAtBottom) { 
+            if (wasAtBottom) { 
                 ui.chatBox.scrollTop = ui.chatBox.scrollHeight; 
+                hideNewMsgPopup();
             } else { 
-                const heightDiff = ui.chatBox.scrollHeight - oldScrollHeight;
-                ui.chatBox.scrollTop = oldScrollTop + heightDiff; 
+                ui.chatBox.scrollTop = ui.chatBox.scrollHeight - oldDistanceFromBottom; 
             }
             filterMessages();
+        }
+
+        function buildMsgInnerHTML(msg, existingTimeHtml) {
+            const color = getUsernameColor(msg.author);
+            let deleteBtn = (!isGhost && (msg.author === myUsername || isAdmin)) ? `<button onclick="deleteAnyMessage('${msg.id}')" style="font-size: 10px; padding: 0 3px; margin-right: 4px;">x</button>` : "";
+            let replyHtml = msg.replyTo ? `<div class="reply-quote"><b>@${escapeHTML(msg.replyTo.author)}:</b> ${msg.replyTo.isImage ? "[Image]" : msg.replyTo.isVideo ? "[Video]" : msg.replyTo.isAudio ? "[Voice Memo]" : msg.replyTo.isFile ? "[File]" : escapeHTML(msg.replyTo.text)}</div>` : "";
+            const formattedContent = formatMessageContent(msg.text, msg);
+
+            let editTag = msg.edited ? `<span style="font-size: 10px; color: #888; font-style: italic;"> (edited)</span>` : "";
+
+            let readReceiptTag = "";
+            if (currentTab.startsWith("dm:") && msg.author === myUsername) {
+                const target = currentTab.replace("dm:", "");
+                const targetReadTime = dmReadWatermarks[target] || 0;
+                const msgTimestamp = msg.timestamp || Date.now();
+                if (msgTimestamp <= targetReadTime) {
+                    readReceiptTag = `<span class="read-receipt">✓✓</span>`;
+                } else {
+                    readReceiptTag = `<span class="read-receipt" style="color:#888;">✓</span>`;
+                }
+            }
+
+            let reactionsHtml = "";
+            if (msg.reactions && Object.keys(msg.reactions).length > 0) {
+                reactionsHtml = `<div class="reactions-container">`;
+                for (const [emoji, users] of Object.entries(msg.reactions)) {
+                    if (users.length > 0) {
+                        const selfReacted = users.includes(myUsername) ? 'reacted-self' : '';
+                        reactionsHtml += `<span class="reaction-badge ${selfReacted}" onclick="toggleReaction('${msg.id}', '${emoji}')">${emoji} ${users.length}</span>`;
+                    }
+                }
+                reactionsHtml += `</div>`;
+            }
+
+            return `${existingTimeHtml}${replyHtml}${deleteBtn}<b style="color: ${color};">${msg.author}:</b> ${formattedContent}${editTag}${readReceiptTag}${reactionsHtml}`;
+        }
+
+        // Patches a single message's DOM node in place (used for edits/reactions) instead of
+        // wiping and rebuilding the entire chat box, which is what made those actions laggy.
+        function patchMsgDOM(msg) {
+            const el = document.getElementById(`msg-${msg.id}`);
+            if (!el) return false;
+            const existingTimeEl = el.querySelector(".msg-time");
+            const existingTimeHtml = existingTimeEl ? existingTimeEl.outerHTML : "";
+            el.innerHTML = buildMsgInnerHTML(msg, existingTimeHtml);
+            return true;
         }
 
         function appendSystemDOM(arg, isBatch = false) {
@@ -1018,11 +1094,13 @@
 
             line.innerHTML = `${timeHtml}${deleteBtn}[SYSTEM] ${sysObj.text}`;
             
-            const oldScrollHeight = ui.chatBox.scrollHeight;
-            const isAtBottom = oldScrollHeight - ui.chatBox.clientHeight <= ui.chatBox.scrollTop + 50;
+            const wasAtBottom = isChatNearBottom();
             ui.chatBox.appendChild(line); 
             
-            if (!isBatch && isAtBottom) { ui.chatBox.scrollTop = ui.chatBox.scrollHeight; }
+            if (!isBatch) {
+                if (wasAtBottom) { ui.chatBox.scrollTop = ui.chatBox.scrollHeight; hideNewMsgPopup(); }
+                else { newMessageCount++; showNewMsgPopup(); }
+            }
         }
 
         function showMsgContextMenu(e, msg) {
@@ -1100,10 +1178,6 @@
                 line.ontouchmove = () => clearTimeout(longPressTimer);
             }
 
-            const color = getUsernameColor(msg.author);
-            let deleteBtn = (!isGhost && (msg.author === myUsername || isAdmin)) ? `<button onclick="deleteAnyMessage('${msg.id}')" style="font-size: 10px; padding: 0 3px; margin-right: 4px;">x</button>` : "";
-            let replyHtml = msg.replyTo ? `<div class="reply-quote"><b>@${escapeHTML(msg.replyTo.author)}:</b> ${msg.replyTo.isImage ? "[Image]" : msg.replyTo.isVideo ? "[Video]" : msg.replyTo.isAudio ? "[Voice Memo]" : msg.replyTo.isFile ? "[File]" : escapeHTML(msg.replyTo.text)}</div>` : "";
-            const formattedContent = formatMessageContent(msg.text, msg);
             let msgTimestamp = msg.timestamp || Date.now();
             const timeStr = new Date(msgTimestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
             
@@ -1113,41 +1187,20 @@
                 timeHtml = `<div class="msg-time">${timeStr}</div>`;
             }
 
-            let editTag = msg.edited ? `<span style="font-size: 10px; color: #888; font-style: italic;"> (edited)</span>` : "";
-
-            let readReceiptTag = "";
-            if (currentTab.startsWith("dm:") && msg.author === myUsername) {
-                const target = currentTab.replace("dm:", "");
-                const targetReadTime = dmReadWatermarks[target] || 0;
-                if (msgTimestamp <= targetReadTime) {
-                    readReceiptTag = `<span class="read-receipt">✓✓</span>`;
-                } else {
-                    readReceiptTag = `<span class="read-receipt" style="color:#888;">✓</span>`;
-                }
-            }
-
-            let reactionsHtml = "";
-            if (msg.reactions && Object.keys(msg.reactions).length > 0) {
-                reactionsHtml = `<div class="reactions-container">`;
-                for (const [emoji, users] of Object.entries(msg.reactions)) {
-                    if (users.length > 0) {
-                        const selfReacted = users.includes(myUsername) ? 'reacted-self' : '';
-                        reactionsHtml += `<span class="reaction-badge ${selfReacted}" onclick="toggleReaction('${msg.id}', '${emoji}')">${emoji} ${users.length}</span>`;
-                    }
-                }
-                reactionsHtml += `</div>`;
-            }
-
-            line.innerHTML = `${timeHtml}${replyHtml}${deleteBtn}<b style="color: ${color};">${msg.author}:</b> ${formattedContent}${editTag}${readReceiptTag}${reactionsHtml}`;
+            line.innerHTML = buildMsgInnerHTML(msg, timeHtml);
             
-            const oldScrollTop = ui.chatBox.scrollTop;
-            const oldScrollHeight = ui.chatBox.scrollHeight;
-            const isAtBottom = oldScrollHeight - ui.chatBox.clientHeight <= oldScrollTop + 50;
+            const wasAtBottom = isChatNearBottom();
             
             ui.chatBox.appendChild(line);
             
-            if (!isBatch && (isAtBottom || msg.author === myUsername)) {
-                ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
+            if (!isBatch) {
+                if (wasAtBottom || msg.author === myUsername) {
+                    ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
+                    hideNewMsgPopup();
+                } else {
+                    newMessageCount++;
+                    showNewMsgPopup();
+                }
             }
         }
 
@@ -1394,7 +1447,9 @@
                     else if (data.type === "MSG") {
                         if (blockedUsers.has(data.author) && data.author !== myUsername) return;
                         const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), isSystem: false, edited: false, reactions: data.reactions || {} };
-                        messageHistory = mergeHistory(messageHistory, [msgObj]); saveLocalHistory(); if (currentTab === "global") renderActiveTabMessages();
+                        const isNew = !messageHistory.some(m => m.id === msgObj.id);
+                        messageHistory = mergeHistory(messageHistory, [msgObj]); saveLocalHistory();
+                        if (currentTab === "global") { if (isNew) appendMsgDOM(msgObj); else renderActiveTabMessages(); }
                         if (data.author !== myUsername && isOnHomepage) { window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*'); }
                     }
                     else if (data.type === "EDIT_MSG") {
@@ -1406,7 +1461,11 @@
                         let updated = updateMsgList(messageHistory);
                         if (updated) saveLocalHistory();
                         Object.keys(dmHistories).forEach(user => { if (updateMsgList(dmHistories[user])) { saveDmHistory(user); updated = true; } });
-                        if (updated) renderActiveTabMessages();
+                        if (updated) {
+                            const list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
+                            const m = list.find(x => x.id === data.id);
+                            if (!m || !patchMsgDOM(m)) renderActiveTabMessages();
+                        }
                     }
                     else if (data.type === "REACT_MSG") {
                         const updateReacts = (list) => {
@@ -1427,7 +1486,11 @@
                         let updated = updateReacts(messageHistory);
                         if (updated) saveLocalHistory();
                         Object.keys(dmHistories).forEach(user => { if (updateReacts(dmHistories[user])) { saveDmHistory(user); updated = true; } });
-                        if (updated) renderActiveTabMessages();
+                        if (updated) {
+                            const list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
+                            const m = list.find(x => x.id === data.id);
+                            if (!m || !patchMsgDOM(m)) renderActiveTabMessages();
+                        }
                     }
                     else if (data.type === "DM_READ") {
                         if (data.target === myUsername) {
@@ -1912,7 +1975,7 @@
             publishMessage(payload); 
             ui.msgIp.value = ""; ui.typing.innerText = ""; cancelReply();
             
-            if (currentTab !== "global") renderActiveTabMessages();
+            if (currentTab !== "global") { renderActiveTabMessages(); scrollToBottomAndClear(); }
         }
     </script>
 </body>
