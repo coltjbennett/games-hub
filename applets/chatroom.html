@@ -485,6 +485,15 @@
         let messageHistory = [];
         let dmHistories = {};
         let activeUsers = new Map();
+        // Fast lookup of message ids already present in messageHistory, kept in sync
+        // alongside the array so hot paths (PING/MSG handling) don't need an O(n) scan.
+        let messageHistoryIdSet = new Set();
+        // Memoized username -> color, since the hash was being recomputed on every
+        // single message render (every render of every line, every re-render).
+        const usernameColorCache = new Map();
+        function rebuildMessageHistoryIdSet() {
+            messageHistoryIdSet = new Set(messageHistory.map(m => m.id).filter(Boolean));
+        }
         
         let blockedUsers = new Set();
         let closedDMs = new Set();
@@ -789,6 +798,23 @@
             }
         }
 
+        // Debounce persistence per storage key. Several call sites (every incoming
+        // message, ping-triggered presence changes, etc.) call saveLocalHistory /
+        // saveDmHistory back-to-back with no await, so without this a burst of N events
+        // triggered N full JSON.stringify + LZString-compress + IndexedDB-write cycles of
+        // the *entire* history. Coalescing to one write per short burst removes that cost
+        // without changing what ends up persisted - it always saves the latest data,
+        // just slightly deferred (150ms), same as the existing fire-and-forget usage.
+        const pendingStorageWrites = new Map();
+        function saveToStorageDebounced(key, getArray) {
+            const existing = pendingStorageWrites.get(key);
+            if (existing) clearTimeout(existing);
+            pendingStorageWrites.set(key, setTimeout(() => {
+                pendingStorageWrites.delete(key);
+                saveToStorageWithCompression(key, getArray());
+            }, 150));
+        }
+
         async function loadFromStorageWithCompression(key) {
             try {
                 let stored = await localforage.getItem(key);
@@ -811,11 +837,12 @@
 
         async function loadLocalHistory() { 
             messageHistory = await loadFromStorageWithCompression(STORAGE_KEY);
+            rebuildMessageHistoryIdSet();
             if(currentTab === "global") renderActiveTabMessages(); 
         }
-        function saveLocalHistory() { saveToStorageWithCompression(STORAGE_KEY, messageHistory); }
+        function saveLocalHistory() { saveToStorageDebounced(STORAGE_KEY, () => messageHistory); }
         async function loadDmHistory(otherUser) { return await loadFromStorageWithCompression(`mqtt_dm_${myUsername}_${otherUser}`); }
-        function saveDmHistory(otherUser) { saveToStorageWithCompression(`mqtt_dm_${myUsername}_${otherUser}`, dmHistories[otherUser] || []); }
+        function saveDmHistory(otherUser) { saveToStorageDebounced(`mqtt_dm_${myUsername}_${otherUser}`, () => dmHistories[otherUser] || []); }
 
         async function loadSettingsAndDMs() {
             try { const s = localStorage.getItem(BLOCKED_KEY);
@@ -888,9 +915,13 @@
         }
 
         function getUsernameColor(username) {
+            const cached = usernameColorCache.get(username);
+            if (cached) return cached;
             let hash = 5381;
             for (let i = 0; i < username.length; i++) hash = ((hash << 5) + hash) + username.charCodeAt(i);
-            return `rgb(${Math.abs((hash ^ 0xDEADBEEF) % 150)}, ${Math.abs((hash ^ 0xCAFEBABE) % 150)}, ${Math.abs((hash ^ 0x8BADF00D) % 150)})`;
+            const color = `rgb(${Math.abs((hash ^ 0xDEADBEEF) % 150)}, ${Math.abs((hash ^ 0xCAFEBABE) % 150)}, ${Math.abs((hash ^ 0x8BADF00D) % 150)})`;
+            usernameColorCache.set(username, color);
+            return color;
         }
         function escapeHTML(str) { return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)); }
 
@@ -981,6 +1012,16 @@
         function filterMessages() {
             const term = document.getElementById("search-input").value.toLowerCase();
             const msgs = ui.chatBox.children;
+            // Empty search term means every message is visible with no filtering needed -
+            // skip the per-message .innerText reads (each one forces a layout reflow),
+            // which were running on every single render even when the user isn't searching.
+            if (!term) {
+                for (let i = 0; i < msgs.length; i++) {
+                    if (msgs[i].id === 'typing-indicator') continue;
+                    if (msgs[i].style.display === "none") msgs[i].style.display = "";
+                }
+                return;
+            }
             for (let i = 0; i < msgs.length; i++) {
                 if (msgs[i].id === 'typing-indicator') continue;
                 if (msgs[i].innerText.toLowerCase().includes(term)) {
@@ -1292,6 +1333,7 @@
                 await loadLocalHistory();
                 await loadTombstones();
                 messageHistory = applyTombstonesToList(messageHistory);
+                rebuildMessageHistoryIdSet();
             } else {
                 let storedGhost = safeGet("mqtt_ghost_id");
                 if (!storedGhost) { storedGhost = "ghost-" + generateId(); safeSet("mqtt_ghost_id", storedGhost); }
@@ -1301,6 +1343,7 @@
                 await loadLocalHistory();
                 await loadTombstones();
                 messageHistory = applyTombstonesToList(messageHistory);
+                rebuildMessageHistoryIdSet();
             }
 
             activeUsers.set(myUsername, { lastSeen: Date.now(), joinTime: Date.now(), isOnHomepage: true, isGhost: isGhost, status: currentStatus });
@@ -1345,6 +1388,7 @@
             await loadLocalHistory();
             await loadTombstones();
             messageHistory = applyTombstonesToList(messageHistory);
+            rebuildMessageHistoryIdSet();
 
             const now = Date.now();
             activeUsers.set(myUsername, { lastSeen: now, joinTime: now, isOnHomepage: false, isGhost: false, status: currentStatus });
@@ -1447,7 +1491,7 @@
                     else if (data.type === "MSG") {
                         if (blockedUsers.has(data.author) && data.author !== myUsername) return;
                         const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), isSystem: false, edited: false, reactions: data.reactions || {} };
-                        const isNew = !messageHistory.some(m => m.id === msgObj.id);
+                        const isNew = !messageHistoryIdSet.has(msgObj.id);
                         messageHistory = mergeHistory(messageHistory, [msgObj]); saveLocalHistory();
                         if (currentTab === "global") { if (isNew) appendMsgDOM(msgObj); else renderActiveTabMessages(); }
                         if (data.author !== myUsername && isOnHomepage) { window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*'); }
@@ -1531,7 +1575,7 @@
                         const idxG = messageHistory.findIndex(m => m.id === data.id);
                         if (idxG !== -1 && (messageHistory[idxG].author === data.deleter || ADMINS.includes(data.deleter))) {
                             addMsgTombstone(data.id);
-                            messageHistory.splice(idxG, 1); saveLocalHistory();
+                            messageHistory.splice(idxG, 1); messageHistoryIdSet.delete(data.id); saveLocalHistory();
                         }
                         Object.keys(dmHistories).forEach(user => {
                             const idxD = dmHistories[user].findIndex(m => m.id === data.id);
@@ -1548,17 +1592,18 @@
                         addRangeTombstone(cutoff, anchor, data.targetType === "system" ? "system" : "all");
 
                         messageHistory = applyTombstonesToList(messageHistory);
+                        rebuildMessageHistoryIdSet();
                         Object.keys(dmHistories).forEach(user => { dmHistories[user] = applyTombstonesToList(dmHistories[user]); saveDmHistory(user); });
                         const sysObj = { id: data.id || generateId(), isSystem: true, text: `Admin (${data.author}) cleared ${data.targetType} messages from the last ${data.hours} hour(s).`, timestamp: Date.now() };
-                        messageHistory.push(sysObj); saveLocalHistory(); renderActiveTabMessages();
+                        messageHistory.push(sysObj); messageHistoryIdSet.add(sysObj.id); saveLocalHistory(); renderActiveTabMessages();
                     }
                     else if (data.type === "CLEAR_ALL") {
                         const anchor = data.timestamp || Date.now();
                         raiseNukeMarker(anchor);
-                        messageHistory = []; try { await localforage.removeItem(STORAGE_KEY); } catch (e) {}
+                        messageHistory = []; messageHistoryIdSet.clear(); try { await localforage.removeItem(STORAGE_KEY); } catch (e) {}
                         Object.keys(dmHistories).forEach(user => { dmHistories[user] = []; saveDmHistory(user); });
                         const sysObj = { id: data.id || generateId(), isSystem: true, text: `Chat histories were completely purged by Admin (${data.author}).`, timestamp: Date.now() };
-                        messageHistory.push(sysObj); saveLocalHistory(); renderActiveTabMessages(); 
+                        messageHistory.push(sysObj); messageHistoryIdSet.add(sysObj.id); saveLocalHistory(); renderActiveTabMessages(); 
                     }
                     else if (data.type === "TYPING") {
                         if (!isGhost && data.author !== myUsername && !blockedUsers.has(data.author)) {
@@ -1581,7 +1626,7 @@
                             if (oldTab) { const wasActive = (currentTab === `dm:${oldName}`); oldTab.remove(); ensureDmTab(newName); if (wasActive) switchTab(`dm:${newName}`); }
                         }
                         const sysObj = { id: data.id || generateId(), isSystem: true, text: `${oldName} changed name to ${newName}`, timestamp: data.timestamp || Date.now() };
-                        messageHistory.push(sysObj); saveLocalHistory(); if (currentTab === "global") renderActiveTabMessages();
+                        messageHistory.push(sysObj); messageHistoryIdSet.add(sysObj.id); saveLocalHistory(); if (currentTab === "global") renderActiveTabMessages();
                         renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
                     }
                 } catch (e) {}
@@ -1589,6 +1634,49 @@
         }
 
         function mergeHistory(localHistory, remoteHistory) {
+            // Fast path: this is by far the hottest call (every JOIN/LEAVE/MSG event runs
+            // it with localHistory === messageHistory and a single-item remoteHistory).
+            // If the incoming item is a genuinely new id, we can splice it in and update
+            // the id index instead of paying for a full array spread + Map rebuild + full
+            // re-sort + full re-scan of the entire history on every single event.
+            if (localHistory === messageHistory && remoteHistory.length === 1) {
+                const msg = remoteHistory[0];
+                const key = msg.id;
+                if (key && !messageHistoryIdSet.has(key)) {
+                    const isTombstoned = msgTombstones.has(key) ||
+                        (msg.timestamp && msg.timestamp <= nukeMarker) ||
+                        rangeTombstones.some(r => msg.timestamp >= r.from && msg.timestamp <= r.to && (r.targetType === "all" || (r.targetType === "system") === !!msg.isSystem));
+                    if (!isTombstoned) {
+                        if (!isGhost && msg.author !== myUsername && !blockedUsers.has(msg.author)) {
+                            const isMention = msg.text && msg.text.includes(`@${myUsername}`);
+                            if (isMention) {
+                                let storedPings = JSON.parse(localStorage.getItem('mqtt_pings') || '{}');
+                                if (!storedPings[msg.id]) {
+                                    storedPings[msg.id] = true; localStorage.setItem('mqtt_pings', JSON.stringify(storedPings));
+                                    let muteSounds = localStorage.getItem('mqtt_mute_sounds') === 'true';
+                                    if (!muteSounds && currentStatus !== 'DND') {
+                                        window.parent.postMessage({ source: 'universal-chat', kind: 'ping', user: msg.author, text: `You were pinged by ${msg.author} while offline` }, '*');
+                                    }
+                                    pendingMentionAuthor = msg.author;
+                                }
+                            }
+                        }
+                        messageHistoryIdSet.add(key);
+                        // Insertion-sort the single new item into place rather than
+                        // sorting the whole array; history arrives close to in-order
+                        // (network jitter aside), so this is typically near O(1).
+                        let i = localHistory.length - 1;
+                        while (i >= 0 && (localHistory[i].timestamp || 0) > (msg.timestamp || 0)) i--;
+                        localHistory.splice(i + 1, 0, msg);
+                        return localHistory;
+                    }
+                    // Tombstoned: nothing to add, history unchanged.
+                    return localHistory;
+                }
+                // Existing id (edit/reaction update) or no id at all - fall through to
+                // the general path below, which is still cheap for a single-element merge.
+            }
+
             const combined = [...localHistory, ...remoteHistory];
             const uniqueMessages = new Map();
             const localIds = new Set(localHistory.map(m => m.id));
@@ -1629,6 +1717,9 @@
             let mergedArray = Array.from(uniqueMessages.values());
             mergedArray = applyTombstonesToList(mergedArray);
             mergedArray.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+            if (localHistory === messageHistory) {
+                messageHistoryIdSet = new Set(mergedArray.map(m => m.id).filter(Boolean));
+            }
             return mergedArray;
         }
 
@@ -1744,7 +1835,7 @@
             }
             if (tombChanged) {
                 saveTombstones();
-                messageHistory = applyTombstonesToList(messageHistory); saveLocalHistory();
+                messageHistory = applyTombstonesToList(messageHistory); rebuildMessageHistoryIdSet(); saveLocalHistory();
                 Object.keys(dmHistories).forEach(u => { dmHistories[u] = applyTombstonesToList(dmHistories[u]); saveDmHistory(u); });
                 renderActiveTabMessages();
             }
@@ -1874,8 +1965,13 @@
         }
 
         function renderUserList() {
-            ui.userList.innerHTML = "";
+            // Build the whole list as one string and assign innerHTML once. The old code
+            // did ui.userList.innerHTML += "..." inside the loop, which forces the browser
+            // to re-serialize and re-parse the ENTIRE accumulated list on every single
+            // user (O(n^2) for n users) - and this function runs on every PING, from every
+            // connected user, every 5 seconds.
             const now = Date.now();
+            let html = "";
             activeUsers.forEach((userData, user) => {
                 if (userData.isGhost || user.startsWith("ghost-")) return;
                 if (blockedUsers.has(user)) return;
@@ -1892,8 +1988,9 @@
                 
                 const inactiveBadge = (now - userData.lastSeen > 10000) && user !== myUsername ? " <span style='font-size:11px; color:#888;'>(Inactive)</span>" : "";
 
-                ui.userList.innerHTML += `<li class="user-item" onclick="showUserContextMenu(event, '${user}')" style="color: ${color};">${user}${adminBadge}${selfBadge}${statusBadge}${homepageTag}${inactiveBadge}</li>`;
+                html += `<li class="user-item" onclick="showUserContextMenu(event, '${user}')" style="color: ${color};">${user}${adminBadge}${selfBadge}${statusBadge}${homepageTag}${inactiveBadge}</li>`;
             });
+            ui.userList.innerHTML = html;
         }
         
         function showUserContextMenu(e, username) {
