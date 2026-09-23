@@ -519,6 +519,7 @@
         let pendingName = "";
         let lastDisplayedTimestamp = 0;
         let newMessageCount = 0;
+        let renderedMsgCount = 250; // Optimized windowing to eliminate initial render lag spike
         const NEAR_BOTTOM_PX = 50;
         const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
         let ghostId = "ghost-" + generateId();
@@ -561,7 +562,21 @@
             ui.msgContextMenu.style.display = "none";
             ui.reactionPickerMenu.style.display = "none"; 
         });
-        ui.chatBox.addEventListener("scroll", () => { if (isChatNearBottom()) hideNewMsgPopup(); });
+
+        // Infinite scroll up to load earlier history dynamically without initial DOM lag spike
+        ui.chatBox.addEventListener("scroll", () => { 
+            if (isChatNearBottom()) hideNewMsgPopup(); 
+            if (ui.chatBox.scrollTop === 0) {
+                let list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
+                if (renderedMsgCount < list.length) {
+                    renderedMsgCount += 200;
+                    const oldHeight = ui.chatBox.scrollHeight;
+                    renderActiveTabMessages(false);
+                    ui.chatBox.scrollTop = ui.chatBox.scrollHeight - oldHeight;
+                }
+            }
+        });
+
         function openModal(id) { document.getElementById(id).style.display = "flex"; }
         function closeModal(id) { document.getElementById(id).style.display = "none"; }
         function customAlert(text) { document.getElementById('alert-text').innerText = text; openModal('alert-modal'); }
@@ -801,7 +816,7 @@
             pendingStorageWrites.set(key, setTimeout(() => {
                 pendingStorageWrites.delete(key);
                 saveToStorageWithCompression(key, getArray());
-            }, 500));
+            }, 1000));
         }
 
         async function loadFromStorageWithCompression(key) {
@@ -939,6 +954,37 @@
             return txt;
         }
 
+        // Relative timestamp formatting: (3 seconds ago), (23 minutes ago), (13 hours ago), or Date if > 24h
+        function formatTimestamp(ts) {
+            const now = Date.now();
+            const diffMs = Math.max(0, now - ts);
+            const diffSec = Math.floor(diffMs / 1000);
+            const diffMin = Math.floor(diffSec / 60);
+            const diffHr = Math.floor(diffMin / 60);
+
+            if (diffMs >= 86400000) { // More than a day ago
+                return new Date(ts).toLocaleDateString();
+            }
+
+            const timeStr = new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            if (diffSec < 60) {
+                const sec = Math.max(1, diffSec);
+                return `${timeStr} (${sec} second${sec === 1 ? '' : 's'} ago)`;
+            } else if (diffMin < 60) {
+                return `${timeStr} (${diffMin} minute${diffMin === 1 ? '' : 's'} ago)`;
+            } else {
+                return `${timeStr} (${diffHr} hour${diffHr === 1 ? '' : 's'} ago)`;
+            }
+        }
+
+        // Periodically refresh visible relative timestamps
+        setInterval(() => {
+            document.querySelectorAll(".msg-time[data-ts]").forEach(el => {
+                const ts = parseInt(el.getAttribute("data-ts"), 10);
+                if (ts) el.innerText = formatTimestamp(ts);
+            });
+        }, 10000);
+
         function switchTab(tabId) {
             currentTab = tabId;
             unreadTabs.delete(tabId);
@@ -1048,16 +1094,20 @@
             });
         }
 
-        function renderActiveTabMessages() {
+        // Fast windowed rendering to ensure 0 lag spike even with thousands of history items
+        function renderActiveTabMessages(resetCount = true) {
+            if (resetCount) renderedMsgCount = 250;
             const oldDistanceFromBottom = ui.chatBox.scrollHeight - ui.chatBox.scrollTop;
             const wasAtBottom = isChatNearBottom();
 
+            let list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
+            let filteredList = list.filter(m => !blockedUsers.has(m.author));
+            let visibleList = filteredList.slice(Math.max(0, filteredList.length - renderedMsgCount));
+
             const fragment = document.createDocumentFragment();
             lastDisplayedTimestamp = 0;
-            let list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
             
-            list.forEach(msg => { 
-                if (blockedUsers.has(msg.author)) return; 
+            visibleList.forEach(msg => { 
                 const line = msg.isSystem ? createSystemDOMNode(msg) : createMsgDOMNode(msg);
                 if (line) fragment.appendChild(line);
             });
@@ -1122,12 +1172,12 @@
             let line = document.createElement("div");
             line.id = `msg-${sysObj.id}`; line.style.color = "#8b0000"; line.style.fontWeight = "bold"; line.style.margin = "2px 0"; line.style.fontSize = "15px";
             let deleteBtn = isAdmin ? `<button onclick="deleteAnyMessage('${sysObj.id}')" style="font-size: 10px; padding: 0 3px; margin-right: 4px;">x</button>` : "";
-            const timeStr = new Date(sysObj.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            const formattedTime = formatTimestamp(sysObj.timestamp);
             
             let timeHtml = "";
             if (sysObj.timestamp - lastDisplayedTimestamp > 15 * 60 * 1000) {
                 lastDisplayedTimestamp = sysObj.timestamp;
-                timeHtml = `<div class="msg-time">${timeStr}</div>`;
+                timeHtml = `<div class="msg-time" data-ts="${sysObj.timestamp}">${formattedTime}</div>`;
             }
 
             line.innerHTML = `${timeHtml}${deleteBtn}[SYSTEM] ${sysObj.text}`;
@@ -1224,12 +1274,12 @@
             }
 
             let msgTimestamp = msg.timestamp || Date.now();
-            const timeStr = new Date(msgTimestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            const formattedTime = formatTimestamp(msgTimestamp);
             
             let timeHtml = "";
             if (msgTimestamp - lastDisplayedTimestamp > 15 * 60 * 1000) {
                 lastDisplayedTimestamp = msgTimestamp;
-                timeHtml = `<div class="msg-time">${timeStr}</div>`;
+                timeHtml = `<div class="msg-time" data-ts="${msgTimestamp}">${formattedTime}</div>`;
             }
 
             line.innerHTML = buildMsgInnerHTML(msg, timeHtml);
@@ -1368,7 +1418,6 @@
                 isConnected = true;
                 client.subscribe(ROOM_TOPIC, (err) => {
                     if (!err) {
-                        publishMessage(buildManifest());
                         requestManifestBroadcast();
                         publishPing();
                         if (!window.pingInterval) { window.pingInterval = setInterval(() => { if (isConnected) publishPing(); }, 5000); }
@@ -1412,7 +1461,6 @@
             hasJoinedRoomWindow = true;
             if (isConnected) {
                 publishMessage({ type: "JOIN", author: myUsername, joinTime: now, id: generateId(), isOnHomepage: false, status: currentStatus });
-                publishMessage(buildManifest());
                 requestManifestBroadcast();
             }
 
@@ -1446,10 +1494,12 @@
                         renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
                     }
 
+                    // REAL-TIME Live Message Mention/Ping Logic:
                     if (data.author !== myUsername && !blockedUsers.has(data.author)) {
                         const isDM = (!isGhost && data.type === "DM" && data.target === myUsername);
                         const isEveryone = (data.type === "MSG" && data.text && data.text.includes("@everyone"));
                         const isMention = (data.type === "MSG" && data.text && (isEveryone || (!isGhost && data.text.includes(`@${myUsername}`))));
+                        
                         if (isDM || isMention) {
                             const now = Date.now();
                             if (now - (lastPingFrom[data.author] || 0) >= 3000) {
@@ -1476,11 +1526,15 @@
                     }
 
                     if (data.type === "SYNC_MANIFEST_REQ") {
-                        handleManifestRequest(data);
+                        // Add jitter delay before manifest response to prevent network/thread spike
+                        setTimeout(() => {
+                            if (isConnected) handleManifestRequest(data);
+                        }, Math.floor(Math.random() * 350));
                         if (!isGhost && data.author) processPendingOutbox(data.author);
                     }
                     else if (data.type === "SYNC_MANIFEST") {
-                        handleManifest(data);
+                        // Async yield processing for big manifests to keep UI completely smooth
+                        setTimeout(() => handleManifest(data), 0);
                     }
                     else if (data.type === "SYNC_PULL") {
                         handleSyncPull(data);
@@ -1492,8 +1546,13 @@
                         if (blockedUsers.has(data.author)) return;
                         if (!isGhost) processPendingOutbox(data.author);
                         const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} joined the room.`, timestamp: data.timestamp || Date.now() };
-                        messageHistory = mergeHistory(messageHistory, [sysObj]); saveLocalHistory(); if (currentTab === "global") appendSystemDOM(sysObj);
-                        if (data.author !== myUsername) publishMessage(buildManifest(data.author));
+                        messageHistory = mergeHistory(messageHistory, [sysObj], true); saveLocalHistory(); if (currentTab === "global") appendSystemDOM(sysObj);
+                        
+                        if (data.author !== myUsername) {
+                            setTimeout(() => {
+                                if (isConnected) publishMessage(buildManifest(data.author));
+                            }, Math.floor(Math.random() * 400));
+                        }
                     }
                     else if (data.type === "PING") {
                         if (!isGhost && data.author) processPendingOutbox(data.author);
@@ -1504,7 +1563,7 @@
                             activeUsers.delete(data.author);
                             if (!uData.isGhost) {
                                 const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} disconnected.`, timestamp: data.timestamp || Date.now() };
-                                messageHistory = mergeHistory(messageHistory, [sysObj]); saveLocalHistory();
+                                messageHistory = mergeHistory(messageHistory, [sysObj], true); saveLocalHistory();
                                 if (currentTab === "global") appendSystemDOM(sysObj);
                             }
                             renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
@@ -1514,7 +1573,7 @@
                         if (blockedUsers.has(data.author) && data.author !== myUsername) return;
                         const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), isSystem: false, edited: false, reactions: data.reactions || {} };
                         const isNew = !messageHistoryIdSet.has(msgObj.id);
-                        messageHistory = mergeHistory(messageHistory, [msgObj]); saveLocalHistory();
+                        messageHistory = mergeHistory(messageHistory, [msgObj], true); saveLocalHistory();
                         if (currentTab === "global") { if (isNew) appendMsgDOM(msgObj); else scheduleRenderActiveTabMessages(); }
                         if (data.author !== myUsername && isOnHomepage) { window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*'); }
                     }
@@ -1575,7 +1634,7 @@
                             if (closedDMs.has(otherUser)) { closedDMs.delete(otherUser); saveClosedDMs(); }
                             const tabId = ensureDmTab(otherUser); bumpDmTab(otherUser);
                             const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), edited: false, reactions: data.reactions || {} };
-                            dmHistories[otherUser] = mergeHistory(dmHistories[otherUser] || [], [msgObj]); saveDmHistory(otherUser);
+                            dmHistories[otherUser] = mergeHistory(dmHistories[otherUser] || [], [msgObj], true); saveDmHistory(otherUser);
                             if (currentTab === tabId) scheduleRenderActiveTabMessages(); else markUnread(tabId);
                             if (isOnHomepage && data.author !== myUsername) window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*');
                         }
@@ -1655,7 +1714,10 @@
             });
         }
 
-        function mergeHistory(localHistory, remoteHistory) {
+        // Optimized History Merging:
+        // - Specific user pings (@myUsername) sent while offline will trigger when coming online.
+        // - Offline @everyone pings are ignored (only affect users online at the exact time sent).
+        function mergeHistory(localHistory, remoteHistory, isRealtimeLive = false) {
             if (!remoteHistory || !remoteHistory.length) return localHistory;
 
             if (localHistory === messageHistory && remoteHistory.length === 1) {
@@ -1667,18 +1729,18 @@
                         rangeTombstones.some(r => msg.timestamp >= r.from && msg.timestamp <= r.to && (r.targetType === "all" || (r.targetType === "system") === !!msg.isSystem));
                     if (!isTombstoned) {
                         if (msg.author !== myUsername && !blockedUsers.has(msg.author)) {
-                            const isEveryone = msg.text && msg.text.includes("@everyone");
-                            const isMention = msg.text && (isEveryone || (!isGhost && msg.text.includes(`@${myUsername}`)));
-                            if (isMention) {
+                            // Specific mentions ping from offline, but @everyone does NOT ping from offline
+                            const isSpecificMention = msg.text && (!isGhost && msg.text.includes(`@${myUsername}`));
+                            if (isSpecificMention && !isRealtimeLive) {
                                 let storedPings = JSON.parse(localStorage.getItem('mqtt_pings') || '{}');
                                 if (!storedPings[msg.id]) {
                                     storedPings[msg.id] = true; localStorage.setItem('mqtt_pings', JSON.stringify(storedPings));
                                     let muteSounds = localStorage.getItem('mqtt_mute_sounds') === 'true';
                                     if (!muteSounds && currentStatus !== 'DND') {
-                                        let notifText = isEveryone ? `${msg.author} pinged @everyone while offline` : `You were pinged by ${msg.author} while offline`;
+                                        let notifText = `You were pinged by ${msg.author} while offline`;
                                         window.parent.postMessage({ source: 'universal-chat', kind: 'ping', user: msg.author, text: notifText }, '*');
                                     }
-                                    pendingMentionAuthor = { author: msg.author, isEveryone: isEveryone };
+                                    pendingMentionAuthor = { author: msg.author, isEveryone: false };
                                 }
                             }
                         }
@@ -1707,18 +1769,18 @@
                     uniqueMessages.set(key, msg);
                     
                     if (!localIds.has(msg.id) && msg.author !== myUsername && !blockedUsers.has(msg.author)) {
-                        const isEveryone = msg.text && msg.text.includes("@everyone");
-                        const isMention = msg.text && (isEveryone || (!isGhost && msg.text.includes(`@${myUsername}`)));
-                        if (isMention) {
+                        // Offline specific mentions trigger, offline @everyone pings are ignored
+                        const isSpecificMention = msg.text && (!isGhost && msg.text.includes(`@${myUsername}`));
+                        if (isSpecificMention && !isRealtimeLive) {
                             let storedPings = JSON.parse(localStorage.getItem('mqtt_pings') || '{}');
                             if (!storedPings[msg.id]) {
                                 storedPings[msg.id] = true; localStorage.setItem('mqtt_pings', JSON.stringify(storedPings));
                                 let muteSounds = localStorage.getItem('mqtt_mute_sounds') === 'true';
                                 if (!muteSounds && currentStatus !== 'DND') {
-                                    let notifText = isEveryone ? `${msg.author} pinged @everyone while offline` : `You were pinged by ${msg.author} while offline`;
+                                    let notifText = `You were pinged by ${msg.author} while offline`;
                                     window.parent.postMessage({ source: 'universal-chat', kind: 'ping', user: msg.author, text: notifText }, '*');
                                 }
-                                pendingMentionAuthor = { author: msg.author, isEveryone: isEveryone };
+                                pendingMentionAuthor = { author: msg.author, isEveryone: false };
                             }
                         }
                     }
@@ -1798,6 +1860,7 @@
         let syncOutbox = new Map();
         let syncDraining = new Set();
         let manifestBroadcastTimer = null;
+        let lastManifestBroadcastTime = 0;
 
         function channelKey(kind, name) { return kind === "global" ? "global" : `dm:${name}`; }
 
@@ -1827,8 +1890,12 @@
         function requestManifestBroadcast() {
             if (manifestBroadcastTimer) clearTimeout(manifestBroadcastTimer);
             manifestBroadcastTimer = setTimeout(() => {
-                publishMessage({ type: "SYNC_MANIFEST_REQ", author: myUsername });
-            }, SYNC_MANIFEST_DEBOUNCE_MS);
+                const now = Date.now();
+                if (now - lastManifestBroadcastTime > 3000) {
+                    lastManifestBroadcastTime = now;
+                    publishMessage({ type: "SYNC_MANIFEST_REQ", author: myUsername });
+                }
+            }, SYNC_MANIFEST_DEBOUNCE_MS + Math.floor(Math.random() * 300));
         }
 
         function handleManifestRequest(data) {
@@ -1942,12 +2009,12 @@
             data.messages.forEach(m => { if (m.compressed && m.text) { try { m.text = LZString.decompressFromUTF16(m.text) || m.text; } catch (e) {} } });
 
             if (data.channel === "global") {
-                messageHistory = mergeHistory(messageHistory, data.messages);
+                messageHistory = mergeHistory(messageHistory, data.messages, false);
                 saveLocalHistory();
                 if (currentTab === "global") scheduleRenderActiveTabMessages();
             } else {
                 const otherUser = data.channel.replace("dm:", "");
-                const merged = mergeHistory(dmHistories[otherUser] || [], data.messages);
+                const merged = mergeHistory(dmHistories[otherUser] || [], data.messages, false);
                 dmHistories[otherUser] = applyTombstonesToList(merged);
                 saveDmHistory(otherUser);
                 if (!closedDMs.has(otherUser) && !isGhost) ensureDmTab(otherUser);
@@ -1972,7 +2039,7 @@
                     activeUsers.delete(user);
                     if (!userData.isGhost) {
                         const sysObj = { id: generateId(), isSystem: true, text: `${user} disconnected.`, timestamp: Date.now() };
-                        messageHistory = mergeHistory(messageHistory, [sysObj]); saveLocalHistory();
+                        messageHistory = mergeHistory(messageHistory, [sysObj], true); saveLocalHistory();
                         if (currentTab === "global") appendSystemDOM(sysObj);
                     }
                     changed = true;
@@ -2071,21 +2138,23 @@
             
             if (currentTab !== "global") {
                 payload.target = currentTab.replace("dm:", "");
-                if (closedDMs.has(payload.target)) { closedDMs.delete(payload.target); saveClosedDMs(); ensureDmTab(payload.target); }
-                bumpDmTab(payload.target);
-                dmHistories[payload.target] = mergeHistory(dmHistories[payload.target] || [], [payload]);
-                saveDmHistory(payload.target); 
-                
-                if (!activeUsers.has(payload.target)) {
-                    pendingDMs[payload.target] = pendingDMs[payload.target] || [];
-                    pendingDMs[payload.target].push(payload);
-                    saveToStorageWithCompression('mqtt_pending_dms', pendingDMs);
+                if (closedDMs.has(payload.target)) { 
+                    closedDMs.delete(payload.target); 
+                    saveClosedDMs(); 
                 }
+                ensureDmTab(payload.target);
+                dmHistories[payload.target] = mergeHistory(dmHistories[payload.target] || [], [payload], true);
+                saveDmHistory(payload.target);
+                if (currentTab === `dm:${payload.target}`) scheduleRenderActiveTabMessages();
+            } else {
+                messageHistory = mergeHistory(messageHistory, [payload], true);
+                saveLocalHistory();
+                scheduleRenderActiveTabMessages();
             }
-            publishMessage(payload); 
-            ui.msgIp.value = ""; ui.typing.innerText = ""; cancelReply();
-            
-            if (currentTab !== "global") { renderActiveTabMessages(); scrollToBottomAndClear(); }
+
+            publishMessage(payload);
+            ui.msgIp.value = "";
+            cancelReply();
         }
     </script>
 </body>
