@@ -143,10 +143,12 @@
             padding-left: 4px; margin-bottom: 2px; background: #e0e0e0; color: #000;
         }
 
-        .clickable-msg { padding: 2px 4px; }
+        .clickable-msg { padding: 2px 4px; position: relative; }
         .clickable-msg:hover { background: var(--win-blue); color: #ffffff; }
         .clickable-msg:hover .reply-quote { color: #000000; }
         .clickable-msg:hover code { color: #000000; }
+        .clickable-msg:hover .msg-time { color: #ddd; }
+        .clickable-msg:hover .reaction-badge { background: #e0e0e0; color: #000; border-color: var(--win-border-dark); }
         
         /* Clean Timestamps */
         .msg-time {
@@ -160,7 +162,6 @@
             -moz-osx-font-smoothing: auto;
             font-smooth: auto;
         }
-        .clickable-msg:hover .msg-time { color: #ddd; }
 
         .user-item { 
             cursor: pointer;
@@ -223,6 +224,54 @@
         .admin-only { display: none; color: #8b0000; }
         .admin-only:hover { color: #ffffff; background: #8b0000; }
         audio { height: 25px; outline: none; margin-top: 4px; }
+
+        .reactions-container {
+            display: flex;
+            justify-content: flex-end;
+            gap: 4px;
+            margin-top: 4px;
+            flex-wrap: wrap-reverse;
+        }
+        .reaction-badge {
+            background: var(--win-bg);
+            border: 1px outset var(--win-border-light);
+            padding: 1px 4px;
+            font-size: 11px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+            color: var(--win-text-dark);
+            font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif !important;
+        }
+        .reaction-badge.reacted-self {
+            background: #ffffff;
+            border: 1px inset var(--win-border-dark);
+        }
+        
+        .reaction-picker-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 4px;
+            padding: 4px;
+        }
+        .emoji-btn {
+            cursor: pointer;
+            text-align: center;
+            padding: 4px;
+            border: 1px transparent solid;
+            font-family: "Segoe UI Emoji", "Apple Color Emoji", sans-serif !important;
+        }
+        .emoji-btn:hover {
+            background: var(--win-blue);
+            border: 1px outset var(--win-border-light);
+        }
+        .read-receipt {
+            font-size: 10px;
+            color: #8b0000;
+            margin-left: 6px;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -237,9 +286,26 @@
         <div class="context-item admin-only" onclick="contextAction('BAN')">Permaban User</div>
     </div>
 
-    <!-- Message Edit Context Menu -->
+    <!-- Message Edit/React Context Menu -->
     <div id="msg-context-menu" class="context-menu">
-        <div class="context-item" onclick="executeMsgEdit()">Edit Message</div>
+        <div id="ctx-edit-msg" class="context-item" onclick="executeMsgEdit()">Edit Message</div>
+        <div id="ctx-react-msg" class="context-item" onclick="openReactionPicker(event)">React</div>
+    </div>
+    
+    <!-- Reaction Picker Menu -->
+    <div id="reaction-picker-menu" class="context-menu">
+        <div class="reaction-picker-grid">
+            <span class="emoji-btn" onclick="sendReaction('👍')">👍</span>
+            <span class="emoji-btn" onclick="sendReaction('❤️')">❤️</span>
+            <span class="emoji-btn" onclick="sendReaction('😂')">😂</span>
+            <span class="emoji-btn" onclick="sendReaction('😮')">😮</span>
+            <span class="emoji-btn" onclick="sendReaction('😢')">😢</span>
+            <span class="emoji-btn" onclick="sendReaction('🔥')">🔥</span>
+            <span class="emoji-btn" onclick="sendReaction('👀')">👀</span>
+            <span class="emoji-btn" onclick="sendReaction('💯')">💯</span>
+            <span class="emoji-btn" onclick="sendReaction('🎉')">🎉</span>
+            <span class="emoji-btn" onclick="sendReaction('👎')">👎</span>
+        </div>
     </div>
 
     <!-- Admin Tools Modal -->
@@ -399,6 +465,7 @@
         const USERNAME_KEY = "mqtt_chat_username_v1";
         const BLOCKED_KEY = "mqtt_chat_blocked_v1";
         const CLOSED_DMS_KEY = "mqtt_closed_dms_v1";
+        const DM_READ_STATE_KEY = "mqtt_dm_reads_v1";
         const ADMINS = ["Colton", "mr_puffy_5312"];
 
         let client = null;
@@ -420,11 +487,12 @@
         let closedDMs = new Set();
         let pendingDMs = {};
         let lastPingFrom = {};
+        let dmReadWatermarks = {}; // otherUser -> timestamp
 
         let currentTab = "global";
         let unreadTabs = new Set();
         let activeReply = null;
-        let activeEditMsgId = null;
+        let activeContextMsgId = null;
         let typingTimeout = null;
 
         let isMuted = false;
@@ -470,13 +538,18 @@
             blockedList: document.getElementById("blocked-list"),
             btnRecord: document.getElementById("btn-record"),
             userContextMenu: document.getElementById("user-context-menu"),
-            msgContextMenu: document.getElementById("msg-context-menu")
+            msgContextMenu: document.getElementById("msg-context-menu"),
+            reactionPickerMenu: document.getElementById("reaction-picker-menu")
         };
 
         function safeGet(k) { try { return localStorage.getItem(k); } catch(e){ return null; } }
         function safeSet(k, v) { try { localStorage.setItem(k, v); } catch(e){} }
 
-        document.addEventListener("click", () => { ui.userContextMenu.style.display = "none"; ui.msgContextMenu.style.display = "none"; });
+        document.addEventListener("click", () => { 
+            ui.userContextMenu.style.display = "none"; 
+            ui.msgContextMenu.style.display = "none";
+            ui.reactionPickerMenu.style.display = "none"; 
+        });
         function openModal(id) { document.getElementById(id).style.display = "flex"; }
         function closeModal(id) { document.getElementById(id).style.display = "none"; }
         function customAlert(text) { document.getElementById('alert-text').innerText = text; openModal('alert-modal'); }
@@ -713,7 +786,6 @@
             try {
                 let stored = await localforage.getItem(key);
                 
-                // MIGRATION: Auto-pull and port over existing localStorage elements if localForage is empty
                 if (!stored) {
                     stored = localStorage.getItem(key);
                     if (stored) {
@@ -743,6 +815,8 @@
                 if (s) blockedUsers = new Set(JSON.parse(s)); } catch (e) {}
             try { const c = localStorage.getItem(CLOSED_DMS_KEY);
                 if (c) closedDMs = new Set(JSON.parse(c)); } catch (e) {}
+            try { const r = localStorage.getItem(DM_READ_STATE_KEY);
+                if (r) dmReadWatermarks = JSON.parse(r); } catch (e) {}
             
             document.getElementById('mute-sounds-chk').checked = localStorage.getItem('mqtt_mute_sounds') === 'true';
             
@@ -767,6 +841,7 @@
         }
         function saveBlockedUsers() { try { localStorage.setItem(BLOCKED_KEY, JSON.stringify(Array.from(blockedUsers))); } catch (e) {} renderBlockedUI(); }
         function saveClosedDMs() { try { localStorage.setItem(CLOSED_DMS_KEY, JSON.stringify(Array.from(closedDMs))); } catch (e) {} }
+        function saveDmReads() { try { localStorage.setItem(DM_READ_STATE_KEY, JSON.stringify(dmReadWatermarks)); } catch(e){} }
 
         function renderBlockedUI() {
             ui.blockedList.innerHTML = "";
@@ -845,6 +920,11 @@
             if (activeEl) { activeEl.classList.add("active"); const dot = activeEl.querySelector(".unread-dot"); if (dot) dot.remove(); }
             document.getElementById("search-input").value = "";
             renderActiveTabMessages();
+
+            if (tabId.startsWith("dm:")) {
+                const targetUser = tabId.replace("dm:", "");
+                publishMessage({ type: "DM_READ", author: myUsername, target: targetUser, timestamp: Date.now() });
+            }
         }
 
         function ensureDmTab(username) {
@@ -904,16 +984,21 @@
         }
 
         function renderActiveTabMessages() {
-            const isAtBottom = ui.chatBox.scrollHeight - ui.chatBox.clientHeight <= ui.chatBox.scrollTop + 50;
-            const currentScroll = ui.chatBox.scrollTop;
+            const oldScrollTop = ui.chatBox.scrollTop;
+            const oldScrollHeight = ui.chatBox.scrollHeight;
+            const isAtBottom = oldScrollHeight - ui.chatBox.clientHeight <= oldScrollTop + 50;
 
             ui.chatBox.innerHTML = "";
             lastDisplayedTimestamp = 0;
             let list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
             list.forEach(msg => { if (blockedUsers.has(msg.author)) return; if (msg.isSystem) appendSystemDOM(msg, true); else appendMsgDOM(msg, true); });
             
-            if (isAtBottom) { ui.chatBox.scrollTop = ui.chatBox.scrollHeight; } 
-            else { ui.chatBox.scrollTop = currentScroll; }
+            if (isAtBottom) { 
+                ui.chatBox.scrollTop = ui.chatBox.scrollHeight; 
+            } else { 
+                const heightDiff = ui.chatBox.scrollHeight - oldScrollHeight;
+                ui.chatBox.scrollTop = oldScrollTop + heightDiff; 
+            }
             filterMessages();
         }
 
@@ -933,31 +1018,69 @@
 
             line.innerHTML = `${timeHtml}${deleteBtn}[SYSTEM] ${sysObj.text}`;
             
-            const isAtBottom = ui.chatBox.scrollHeight - ui.chatBox.clientHeight <= ui.chatBox.scrollTop + 50;
+            const oldScrollHeight = ui.chatBox.scrollHeight;
+            const isAtBottom = oldScrollHeight - ui.chatBox.clientHeight <= ui.chatBox.scrollTop + 50;
             ui.chatBox.appendChild(line); 
+            
             if (!isBatch && isAtBottom) { ui.chatBox.scrollTop = ui.chatBox.scrollHeight; }
         }
 
         function showMsgContextMenu(e, msg) {
             if (e.preventDefault) e.preventDefault();
-            if (msg.author !== myUsername || isGhost) return;
-            activeEditMsgId = msg.id;
+            if (isGhost) return;
+            activeContextMsgId = msg.id;
+            
+            if (msg.author === myUsername) {
+                document.getElementById('ctx-edit-msg').style.display = "block";
+            } else {
+                document.getElementById('ctx-edit-msg').style.display = "none";
+            }
+
+            ui.reactionPickerMenu.style.display = "none";
             ui.msgContextMenu.style.display = "block";
             ui.msgContextMenu.style.left = (e.pageX || e.touches[0].pageX) + "px";
             ui.msgContextMenu.style.top = (e.pageY || e.touches[0].pageY) + "px";
         }
 
+        function openReactionPicker(e) {
+            if (e.stopPropagation) e.stopPropagation();
+            ui.msgContextMenu.style.display = "none";
+            ui.reactionPickerMenu.style.display = "block";
+            ui.reactionPickerMenu.style.left = e.pageX + "px";
+            ui.reactionPickerMenu.style.top = e.pageY + "px";
+        }
+
         function executeMsgEdit() {
             ui.msgContextMenu.style.display = "none";
-            if (!activeEditMsgId) return;
-            let msg = messageHistory.find(m => m.id === activeEditMsgId) || Object.values(dmHistories).flat().find(m => m.id === activeEditMsgId);
+            if (!activeContextMsgId) return;
+            let msg = messageHistory.find(m => m.id === activeContextMsgId) || Object.values(dmHistories).flat().find(m => m.id === activeContextMsgId);
             if (!msg || msg.author !== myUsername) return;
             
             let newText = prompt("Edit your message:", msg.text);
             if (newText !== null && newText.trim() !== "" && newText !== msg.text) {
                 publishMessage({ type: "EDIT_MSG", id: msg.id, text: newText.trim(), author: myUsername });
             }
-            activeEditMsgId = null;
+            activeContextMsgId = null;
+        }
+
+        function sendReaction(emoji) {
+            ui.reactionPickerMenu.style.display = "none";
+            if (!activeContextMsgId || isGhost) return;
+            let msg = messageHistory.find(m => m.id === activeContextMsgId) || Object.values(dmHistories).flat().find(m => m.id === activeContextMsgId);
+            if (!msg) return;
+
+            let action = "add";
+            if (msg.reactions && msg.reactions[emoji] && msg.reactions[emoji].includes(myUsername)) {
+                action = "remove";
+            }
+            
+            publishMessage({ type: "REACT_MSG", id: msg.id, emoji: emoji, author: myUsername, action: action });
+            activeContextMsgId = null;
+        }
+
+        function toggleReaction(id, emoji) {
+            activeContextMsgId = id;
+            sendReaction(emoji);
         }
 
         function appendMsgDOM(msg, isBatch = false) {
@@ -965,11 +1088,11 @@
             line.id = `msg-${msg.id}`; line.className = "clickable-msg"; line.style.margin = "2px 0"; line.style.fontSize = "15px";
             
             line.onclick = (e) => { 
-                if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A' && e.target.tagName !== 'AUDIO' && e.target.tagName !== 'VIDEO' && e.target.tagName !== 'IMG' && !e.target.classList.contains('close-tab-btn')) 
+                if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A' && e.target.tagName !== 'AUDIO' && e.target.tagName !== 'VIDEO' && e.target.tagName !== 'IMG' && !e.target.classList.contains('close-tab-btn') && !e.target.classList.contains('reaction-badge')) 
                     setReplyTarget(msg); 
             };
 
-            if (msg.author === myUsername && !msg.isSystem) {
+            if (!msg.isSystem) {
                 let longPressTimer;
                 line.oncontextmenu = (e) => showMsgContextMenu(e, msg);
                 line.ontouchstart = (e) => { longPressTimer = setTimeout(() => showMsgContextMenu(e, msg), 600); };
@@ -992,9 +1115,35 @@
 
             let editTag = msg.edited ? `<span style="font-size: 10px; color: #888; font-style: italic;"> (edited)</span>` : "";
 
-            line.innerHTML = `${timeHtml}${replyHtml}${deleteBtn}<b style="color: ${color};">${msg.author}:</b> ${formattedContent}${editTag}`;
+            let readReceiptTag = "";
+            if (currentTab.startsWith("dm:") && msg.author === myUsername) {
+                const target = currentTab.replace("dm:", "");
+                const targetReadTime = dmReadWatermarks[target] || 0;
+                if (msgTimestamp <= targetReadTime) {
+                    readReceiptTag = `<span class="read-receipt">✓✓</span>`;
+                } else {
+                    readReceiptTag = `<span class="read-receipt" style="color:#888;">✓</span>`;
+                }
+            }
+
+            let reactionsHtml = "";
+            if (msg.reactions && Object.keys(msg.reactions).length > 0) {
+                reactionsHtml = `<div class="reactions-container">`;
+                for (const [emoji, users] of Object.entries(msg.reactions)) {
+                    if (users.length > 0) {
+                        const selfReacted = users.includes(myUsername) ? 'reacted-self' : '';
+                        reactionsHtml += `<span class="reaction-badge ${selfReacted}" onclick="toggleReaction('${msg.id}', '${emoji}')">${emoji} ${users.length}</span>`;
+                    }
+                }
+                reactionsHtml += `</div>`;
+            }
+
+            line.innerHTML = `${timeHtml}${replyHtml}${deleteBtn}<b style="color: ${color};">${msg.author}:</b> ${formattedContent}${editTag}${readReceiptTag}${reactionsHtml}`;
             
-            const isAtBottom = ui.chatBox.scrollHeight - ui.chatBox.clientHeight <= ui.chatBox.scrollTop + 50;
+            const oldScrollTop = ui.chatBox.scrollTop;
+            const oldScrollHeight = ui.chatBox.scrollHeight;
+            const isAtBottom = oldScrollHeight - ui.chatBox.clientHeight <= oldScrollTop + 50;
+            
             ui.chatBox.appendChild(line);
             
             if (!isBatch && (isAtBottom || msg.author === myUsername)) {
@@ -1034,6 +1183,11 @@
             try { localStorage.setItem("mqtt_last_seen_time", String(lastSeenTime)); } catch(e){}
 
             if (pendingMentionAuthor) { triggerMention(pendingMentionAuthor); pendingMentionAuthor = null; }
+            
+            if (currentTab.startsWith("dm:")) {
+                const targetUser = currentTab.replace("dm:", "");
+                publishMessage({ type: "DM_READ", author: myUsername, target: targetUser, timestamp: Date.now() });
+            }
 
             if (!isGhost) {
                 if (!hasJoinedRoomWindow) {
@@ -1103,8 +1257,6 @@
                 isConnected = true;
                 client.subscribe(ROOM_TOPIC, (err) => {
                     if (!err) {
-                        // Broadcast our own manifest so every peer can diff against it and mutually
-                        // backfill each other -- and also ask everyone else for theirs.
                         publishMessage(buildManifest());
                         requestManifestBroadcast();
                         publishPing();
@@ -1115,9 +1267,6 @@
 
             setupMqttListeners();
             setInterval(checkPresence, 5000);
-            // Periodic mutual re-sync: catches anything missed if a prior sync batch was interrupted
-            // (e.g. a peer's tab closed mid-transfer) or if messages arrived while briefly disconnected.
-            // Infrequent and manifest-only (not full history), so it stays cheap on bandwidth.
             setInterval(() => { if (isConnected && !document.hidden) publishMessage(buildManifest()); }, 60000);
         })();
 
@@ -1225,8 +1374,6 @@
                         if (!isGhost) processPendingOutbox(data.author);
                         const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} joined the room.`, timestamp: data.timestamp || Date.now() };
                         messageHistory = mergeHistory(messageHistory, [sysObj]); saveLocalHistory(); if (currentTab === "global") appendSystemDOM(sysObj);
-                        // Proactively share our manifest with the joiner (and ask for theirs) so sync is
-                        // mutual and starts immediately rather than waiting on their own broadcast.
                         if (data.author !== myUsername) publishMessage(buildManifest(data.author));
                     }
                     else if (data.type === "PING") {
@@ -1245,9 +1392,9 @@
                         }
                     }
                     else if (data.type === "MSG") {
-                        if (blockedUsers.has(data.author)) return;
-                        const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), isSystem: false, edited: false };
-                        messageHistory = mergeHistory(messageHistory, [msgObj]); saveLocalHistory(); if (currentTab === "global") appendMsgDOM(msgObj);
+                        if (blockedUsers.has(data.author) && data.author !== myUsername) return;
+                        const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), isSystem: false, edited: false, reactions: data.reactions || {} };
+                        messageHistory = mergeHistory(messageHistory, [msgObj]); saveLocalHistory(); if (currentTab === "global") renderActiveTabMessages();
                         if (data.author !== myUsername && isOnHomepage) { window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*'); }
                     }
                     else if (data.type === "EDIT_MSG") {
@@ -1261,15 +1408,47 @@
                         Object.keys(dmHistories).forEach(user => { if (updateMsgList(dmHistories[user])) { saveDmHistory(user); updated = true; } });
                         if (updated) renderActiveTabMessages();
                     }
+                    else if (data.type === "REACT_MSG") {
+                        const updateReacts = (list) => {
+                            let m = list.find(x => x.id === data.id);
+                            if (m) {
+                                if (!m.reactions) m.reactions = {};
+                                if (!m.reactions[data.emoji]) m.reactions[data.emoji] = [];
+                                if (data.action === "add" && !m.reactions[data.emoji].includes(data.author)) {
+                                    m.reactions[data.emoji].push(data.author);
+                                } else if (data.action === "remove") {
+                                    m.reactions[data.emoji] = m.reactions[data.emoji].filter(u => u !== data.author);
+                                    if (m.reactions[data.emoji].length === 0) delete m.reactions[data.emoji];
+                                }
+                                return true;
+                            }
+                            return false;
+                        };
+                        let updated = updateReacts(messageHistory);
+                        if (updated) saveLocalHistory();
+                        Object.keys(dmHistories).forEach(user => { if (updateReacts(dmHistories[user])) { saveDmHistory(user); updated = true; } });
+                        if (updated) renderActiveTabMessages();
+                    }
+                    else if (data.type === "DM_READ") {
+                        if (data.target === myUsername) {
+                            const newTs = data.timestamp || Date.now();
+                            if (newTs > (dmReadWatermarks[data.author] || 0)) {
+                                dmReadWatermarks[data.author] = newTs;
+                                saveDmReads();
+                                if (currentTab === `dm:${data.author}`) renderActiveTabMessages();
+                            }
+                        }
+                    }
                     else if (data.type === "DM") {
-                        if (blockedUsers.has(data.author)) return;
-                        if (!isGhost && data.target === myUsername) {
-                            if (closedDMs.has(data.author)) { closedDMs.delete(data.author); saveClosedDMs(); }
-                            const tabId = ensureDmTab(data.author); bumpDmTab(data.author);
-                            const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), edited: false };
-                            dmHistories[data.author] = mergeHistory(dmHistories[data.author] || [], [msgObj]); saveDmHistory(data.author);
-                            if (currentTab === tabId) appendMsgDOM(msgObj); else markUnread(tabId);
-                            if (isOnHomepage) window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*');
+                        if (blockedUsers.has(data.author) && data.author !== myUsername) return;
+                        if (!isGhost && (data.target === myUsername || data.author === myUsername)) {
+                            const otherUser = data.target === myUsername ? data.author : data.target;
+                            if (closedDMs.has(otherUser)) { closedDMs.delete(otherUser); saveClosedDMs(); }
+                            const tabId = ensureDmTab(otherUser); bumpDmTab(otherUser);
+                            const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), edited: false, reactions: data.reactions || {} };
+                            dmHistories[otherUser] = mergeHistory(dmHistories[otherUser] || [], [msgObj]); saveDmHistory(otherUser);
+                            if (currentTab === tabId) renderActiveTabMessages(); else markUnread(tabId);
+                            if (isOnHomepage && data.author !== myUsername) window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*');
                         }
                     }
                     else if (data.type === "CMD" && data.target === myUsername && ADMINS.includes(data.author)) {
@@ -1301,9 +1480,6 @@
                         const el = document.getElementById(`msg-${data.id}`); if (el) el.remove(); renderActiveTabMessages();
                     }
                     else if (data.type === "CLEAR_RECENT") {
-                        // Use the sender's timestamp as the anchor (not our local Date.now()) so every
-                        // peer -- including ones who apply this event much later during sync -- computes
-                        // the exact same tombstone window and converges on the same result.
                         const anchor = data.timestamp || Date.now();
                         const cutoff = anchor - (data.hours * 3600000);
                         addRangeTombstone(cutoff, anchor, data.targetType === "system" ? "system" : "all");
@@ -1355,7 +1531,6 @@
             const localIds = new Set(localHistory.map(m => m.id));
 
             combined.forEach(msg => {
-                // Ensure duplicate protection based on fingerprint and id
                 const msgFingerprint = `${msg.timestamp}-${msg.author}-${msg.text || msg.fileName || 'sys'}`;
                 const key = msg.id || msgFingerprint;
                 
@@ -1377,8 +1552,14 @@
                         }
                     }
                 } else {
-                    // Update if newer version exists (edits)
-                    if (msg.edited) uniqueMessages.set(key, msg);
+                    let existing = uniqueMessages.get(key);
+                    if (msg.edited) {
+                        existing.text = msg.text; existing.edited = true;
+                    }
+                    if (msg.reactions && Object.keys(msg.reactions).length > 0) {
+                        existing.reactions = msg.reactions;
+                    }
+                    uniqueMessages.set(key, existing);
                 }
             });
 
@@ -1388,16 +1569,6 @@
             return mergedArray;
         }
 
-        // =====================================================================
-        // TOMBSTONE SYSTEM
-        // Deletions are additive facts, never destructive merges. A tombstone
-        // is itself synced like a message, so a peer that missed the original
-        // delete event still converges to the same end state once it arrives.
-        //   - msgTombstones:   Set of individually-deleted message ids
-        //   - rangeTombstones: [{ from, to, scope }] wipe-window records
-        //                      scope: "system" | "all" (mirrors CLEAR_RECENT)
-        //   - nukeMarker:      timestamp; everything with ts <= nukeMarker is gone
-        // =====================================================================
         let msgTombstones = new Set();
         let rangeTombstones = [];
         let nukeMarker = 0;
@@ -1425,16 +1596,11 @@
         function raiseNukeMarker(ts) {
             if (ts > nukeMarker) {
                 nukeMarker = ts;
-                // Anything under the nuke line is permanently gone; drop now-redundant finer-grained
-                // tombstones (both ranges and individual message ids) to keep tombstone storage bounded.
                 rangeTombstones = rangeTombstones.filter(r => r.to > nukeMarker);
                 saveTombstones();
             }
         }
 
-        // Applies all known tombstones to a message list. Used after every merge so
-        // that a message re-learned from a peer (who never saw the delete) is
-        // immediately suppressed again rather than resurrected.
         function applyTombstonesToList(list) {
             if (!msgTombstones.size && !rangeTombstones.length && !nukeMarker) return list;
             return list.filter(m => {
@@ -1451,52 +1617,16 @@
             });
         }
 
-        // =====================================================================
-        // MUTUAL, CHUNKED, NEWEST-FIRST SYNC ENGINE
-        //
-        // Replaces the old one-shot SYNC_REQ/SYNC_RES (which dumped one peer's
-        // *entire* history in a single MQTT packet, was "first responder wins"
-        // rather than mutual, and had no concept of deletions).
-        //
-        // How it works:
-        //  1. On join / seeing a peer, both sides exchange a lightweight
-        //     MANIFEST: just {id, ts} pairs (+ tombstone ids/ranges/nuke),
-        //     never full message bodies. This is cheap even for large logs.
-        //  2. Each side diffs the peer's manifest against its own local set,
-        //     per channel (global + every DM channel it has with that peer),
-        //     and works out exactly which ids it is missing.
-        //  3. Missing ids are requested oldest-gap-tolerant but delivered
-        //     NEWEST FIRST: sorted descending by timestamp, sliced into small
-        //     batches (SYNC_BATCH_SIZE), and drip-fed on a timer
-        //     (SYNC_BATCH_INTERVAL_MS) so it never floods the connection.
-        //     This means the most recent missed messages appear almost
-        //     instantly, while older history fills in gradually behind them.
-        //  4. Because both peers run this same logic on each other's
-        //     manifest, sync is fully mutual: A backfills B AND B backfills A,
-        //     without waiting for one "winner" to respond.
-        //  5. The merge is additive (mergeHistory / Map-based unique-by-id),
-        //     so a peer with a gap never deletes what it already has -- it
-        //     only ever gains messages. Only explicit tombstones remove
-        //     anything, and tombstones themselves sync the same way.
-        // =====================================================================
+        const SYNC_BATCH_SIZE = 15;             
+        const SYNC_BATCH_INTERVAL_MS = 700;      
+        const SYNC_MANIFEST_DEBOUNCE_MS = 1200;  
 
-        const SYNC_BATCH_SIZE = 15;             // messages per network chunk
-        const SYNC_BATCH_INTERVAL_MS = 700;      // pacing delay between chunks (throttles bandwidth)
-        const SYNC_MANIFEST_DEBOUNCE_MS = 1200;  // avoid manifest spam when many JOINs arrive close together
-
-        // Per-peer outbound delivery queues: peerId -> { channel -> [msgs newest-first] }
         let syncOutbox = new Map();
-        // Are we currently draining outbox for a given peer+channel? prevents overlapping timers
         let syncDraining = new Set();
         let manifestBroadcastTimer = null;
 
         function channelKey(kind, name) { return kind === "global" ? "global" : `dm:${name}`; }
 
-        // Build a compact manifest of what we currently hold. `forPeer` (optional) restricts the
-        // DM section to just the channel that peer is entitled to see (their own DM with us) --
-        // note DM message bodies already travel over the shared public MQTT topic in this app's
-        // existing design (filtered only client-side by `target`), so this isn't a new exposure,
-        // just keeping the broadcast-to-everyone manifest lean by default.
         function buildManifest(forPeer) {
             const manifest = {
                 type: "SYNC_MANIFEST",
@@ -1511,13 +1641,8 @@
                 }
             };
             if (forPeer) {
-                // Targeted manifest (e.g. answering their SYNC_MANIFEST_REQ or reacting to their JOIN):
-                // include just our DM channel with them.
                 if (dmHistories[forPeer]) manifest.dms[forPeer] = dmHistories[forPeer].map(m => ({ id: m.id, ts: m.timestamp || 0 }));
             } else {
-                // General broadcast (e.g. our own connect/join): include all DM channels so every
-                // participant of each DM can mutually diff, same tradeoff the app already makes by
-                // putting DM bodies on the shared topic.
                 Object.keys(dmHistories).forEach(otherUser => {
                     manifest.dms[otherUser] = (dmHistories[otherUser] || []).map(m => ({ id: m.id, ts: m.timestamp || 0 }));
                 });
@@ -1525,7 +1650,6 @@
             return manifest;
         }
 
-        // Ask everyone to send their manifest (debounced so a burst of JOINs doesn't cause a manifest storm)
         function requestManifestBroadcast() {
             if (manifestBroadcastTimer) clearTimeout(manifestBroadcastTimer);
             manifestBroadcastTimer = setTimeout(() => {
@@ -1533,21 +1657,19 @@
             }, SYNC_MANIFEST_DEBOUNCE_MS);
         }
 
-        // Handle an incoming request for our manifest -- just answer with our own manifest.
         function handleManifestRequest(data) {
-            if (data.author === myUsername) return;
-            publishMessage(buildManifest(data.author));
+            if (data.author === myUsername) {
+                // If it's our own request from another device, we still want to backfill it mutually!
+                publishMessage(buildManifest(myUsername));
+            } else {
+                publishMessage(buildManifest(data.author));
+            }
         }
 
-        // Core mutual-diff step: given a peer's manifest, figure out (a) what WE are missing from
-        // THEM (queue a request), and (b) what THEY are missing from US (queue to send). Both run
-        // regardless of who initiated, which is what makes this mutual rather than one-directional.
         function handleManifest(data) {
-            if (!data.author || data.author === myUsername) return;
-            if (blockedUsers.has(data.author)) return;
+            if (!data.author) return;
+            if (blockedUsers.has(data.author) && data.author !== myUsername) return;
 
-            // Merge in their tombstones immediately -- these are small and safety-critical,
-            // so they aren't rate-limited like message bodies.
             let tombChanged = false;
             if (data.tomb) {
                 (data.tomb.ids || []).forEach(id => { if (!msgTombstones.has(id)) { msgTombstones.add(id); tombChanged = true; } });
@@ -1564,37 +1686,34 @@
                 renderActiveTabMessages();
             }
 
-            // ---- Global channel diff ----
             diffAndQueue("global", data.author, messageHistory, data.global || []);
 
-            // ---- DM channel diff: only the channel between us and them ----
-            // From our side that's dmHistories[data.author]; their manifest.dms[myUsername] tells us what they hold with us.
             const theirDmWithUs = (data.dms && data.dms[myUsername]) ? data.dms[myUsername] : null;
-            if (theirDmWithUs !== null) {
+            if (theirDmWithUs !== null && data.author !== myUsername) {
                 diffAndQueue(channelKey("dm", data.author), data.author, dmHistories[data.author] || [], theirDmWithUs);
+            }
+            
+            // Sync our OWN devices across DMs
+            if (data.author === myUsername && data.dms) {
+                Object.keys(data.dms).forEach(otherUser => {
+                    diffAndQueue(channelKey("dm", otherUser), data.author, dmHistories[otherUser] || [], data.dms[otherUser]);
+                });
             }
         }
 
-        // Compares our local list against a peer's manifest for one channel.
-        // - Anything WE have that THEY lack (by id) gets queued into syncOutbox for that peer (we'll send it to them).
-        // - Anything THEY have that WE lack gets requested via SYNC_PULL (they'll then queue it back to us).
-        // Both directions run every time, so sync is mutual regardless of who has more.
         function diffAndQueue(channel, peer, localList, peerManifestEntries) {
             const peerIds = new Set(peerManifestEntries.map(e => e.id));
             const localIds = new Set(localList.map(m => m.id));
 
-            // What we can give them
             const toGive = localList.filter(m => m.id && !peerIds.has(m.id));
             if (toGive.length) queueOutbound(peer, channel, toGive);
 
-            // What we should ask them for (they told us the id+ts, we don't have it)
             const toRequestIds = peerManifestEntries.filter(e => e.id && !localIds.has(e.id) && !msgTombstones.has(e.id)).map(e => e.id);
             if (toRequestIds.length) {
                 publishMessage({ type: "SYNC_PULL", author: myUsername, target: peer, channel: channel, ids: toRequestIds });
             }
         }
 
-        // Someone is asking US to send specific ids on a specific channel.
         function handleSyncPull(data) {
             if (data.target !== myUsername) return;
             const sourceList = data.channel === "global" ? messageHistory : (dmHistories[data.channel.replace("dm:", "")] || []);
@@ -1603,7 +1722,6 @@
             if (matches.length) queueOutbound(data.author, data.channel, matches);
         }
 
-        // Adds messages to a peer's delivery queue (newest-first) and (re)starts the throttled drain.
         function queueOutbound(peer, channel, msgs) {
             if (!syncOutbox.has(peer)) syncOutbox.set(peer, {});
             const perPeer = syncOutbox.get(peer);
@@ -1612,17 +1730,13 @@
             const existingIds = new Set(perPeer[channel].map(m => m.id));
             msgs.forEach(m => { if (!existingIds.has(m.id)) { perPeer[channel].push(m); existingIds.add(m.id); } });
 
-            // Newest-first delivery: most recently missed messages arrive (and get placed) first,
-            // oldest history trickles in behind them.
             perPeer[channel].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-
             drainOutboxFor(peer, channel);
         }
 
-        // Sends one throttled batch at a time to avoid bursting the connection / eating bandwidth.
         function drainOutboxFor(peer, channel) {
             const drainKey = `${peer}::${channel}`;
-            if (syncDraining.has(drainKey)) return; // already ticking
+            if (syncDraining.has(drainKey)) return;
             syncDraining.add(drainKey);
 
             const step = () => {
@@ -1649,14 +1763,10 @@
             step();
         }
 
-        // Receiving a chunk from a peer: merge it in (additive, tombstone-filtered), and place it
-        // immediately by re-rendering the active tab if it's the channel currently being viewed --
-        // so the "oldest messages fill in slowly, most recent missed ones show up fast" behavior is visible live.
         function handleSyncChunk(data) {
             if (data.target !== myUsername) return;
             if (!data.messages || !data.messages.length) return;
 
-            // Decompress any compressed message bodies (images/audio/files) same as normal MSG handling
             data.messages.forEach(m => { if (m.compressed && m.text) { try { m.text = LZString.decompressFromUTF16(m.text) || m.text; } catch (e) {} } });
 
             if (data.channel === "global") {
@@ -1673,7 +1783,6 @@
             }
             checkUnreadMessages(messageHistory);
         }
-
 
         function openAdminTools() { document.getElementById('sys-hr-count').innerText = sysClearHours; document.getElementById('all-hr-count').innerText = allClearHours; openModal('admin-tools-modal'); }
         function doClearSystem() { if (!isAdmin) return; publishMessage({ type: "CLEAR_RECENT", targetType: "system", hours: sysClearHours, author: myUsername, id: generateId(), timestamp: Date.now() }); sysClearHours++; document.getElementById('sys-hr-count').innerText = sysClearHours; }
@@ -1785,7 +1894,7 @@
             
             if (opts.isFile || opts.isImage || opts.isAudio || opts.isVideo) { finalText = opts.preCompressed || LZString.compressToUTF16(content); compressedFlag = true; }
             
-            const payload = { type: currentTab === "global" ? "MSG" : "DM", id: msgId, author: myUsername, text: finalText, compressed: compressedFlag, isImage: opts.isImage, isVideo: opts.isVideo, isAudio: opts.isAudio, isFile: opts.isFile, fileName: opts.fileName, timestamp: Date.now(), replyTo: cleanReply, edited: false };
+            const payload = { type: currentTab === "global" ? "MSG" : "DM", id: msgId, author: myUsername, text: finalText, compressed: compressedFlag, isImage: opts.isImage, isVideo: opts.isVideo, isAudio: opts.isAudio, isFile: opts.isFile, fileName: opts.fileName, timestamp: Date.now(), replyTo: cleanReply, edited: false, reactions: {} };
             
             if (currentTab !== "global") {
                 payload.target = currentTab.replace("dm:", "");
@@ -1793,7 +1902,6 @@
                 bumpDmTab(payload.target);
                 dmHistories[payload.target] = mergeHistory(dmHistories[payload.target] || [], [payload]);
                 saveDmHistory(payload.target); 
-                const renderPayload = {...payload, text: content}; appendMsgDOM(renderPayload);
                 
                 if (!activeUsers.has(payload.target)) {
                     pendingDMs[payload.target] = pendingDMs[payload.target] || [];
@@ -1801,7 +1909,10 @@
                     saveToStorageWithCompression('mqtt_pending_dms', pendingDMs);
                 }
             }
-            publishMessage(payload); ui.msgIp.value = ""; ui.typing.innerText = ""; cancelReply();
+            publishMessage(payload); 
+            ui.msgIp.value = ""; ui.typing.innerText = ""; cancelReply();
+            
+            if (currentTab !== "global") renderActiveTabMessages();
         }
     </script>
 </body>
