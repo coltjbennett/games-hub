@@ -801,7 +801,7 @@
             pendingStorageWrites.set(key, setTimeout(() => {
                 pendingStorageWrites.delete(key);
                 saveToStorageWithCompression(key, getArray());
-            }, 150));
+            }, 500));
         }
 
         async function loadFromStorageWithCompression(key) {
@@ -1038,15 +1038,33 @@
             hideNewMsgPopup();
         }
 
+        let renderScheduled = false;
+        function scheduleRenderActiveTabMessages() {
+            if (renderScheduled) return;
+            renderScheduled = true;
+            requestAnimationFrame(() => {
+                renderScheduled = false;
+                renderActiveTabMessages();
+            });
+        }
+
         function renderActiveTabMessages() {
             const oldDistanceFromBottom = ui.chatBox.scrollHeight - ui.chatBox.scrollTop;
             const wasAtBottom = isChatNearBottom();
 
-            ui.chatBox.innerHTML = "";
+            const fragment = document.createDocumentFragment();
             lastDisplayedTimestamp = 0;
             let list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
-            list.forEach(msg => { if (blockedUsers.has(msg.author)) return; if (msg.isSystem) appendSystemDOM(msg, true); else appendMsgDOM(msg, true); });
             
+            list.forEach(msg => { 
+                if (blockedUsers.has(msg.author)) return; 
+                const line = msg.isSystem ? createSystemDOMNode(msg) : createMsgDOMNode(msg);
+                if (line) fragment.appendChild(line);
+            });
+            
+            ui.chatBox.innerHTML = "";
+            ui.chatBox.appendChild(fragment);
+
             if (wasAtBottom) { 
                 ui.chatBox.scrollTop = ui.chatBox.scrollHeight; 
                 hideNewMsgPopup();
@@ -1100,9 +1118,7 @@
             return true;
         }
 
-        function appendSystemDOM(arg, isBatch = false) {
-            let sysObj = typeof arg === "string" ? { id: generateId(), text: arg, isSystem: true, localOnly: true, timestamp: Date.now() } : arg;
-            if (!sysObj.timestamp) sysObj.timestamp = Date.now();
+        function createSystemDOMNode(sysObj) {
             let line = document.createElement("div");
             line.id = `msg-${sysObj.id}`; line.style.color = "#8b0000"; line.style.fontWeight = "bold"; line.style.margin = "2px 0"; line.style.fontSize = "15px";
             let deleteBtn = isAdmin ? `<button onclick="deleteAnyMessage('${sysObj.id}')" style="font-size: 10px; padding: 0 3px; margin-right: 4px;">x</button>` : "";
@@ -1115,6 +1131,13 @@
             }
 
             line.innerHTML = `${timeHtml}${deleteBtn}[SYSTEM] ${sysObj.text}`;
+            return line;
+        }
+
+        function appendSystemDOM(arg, isBatch = false) {
+            let sysObj = typeof arg === "string" ? { id: generateId(), text: arg, isSystem: true, localOnly: true, timestamp: Date.now() } : arg;
+            if (!sysObj.timestamp) sysObj.timestamp = Date.now();
+            const line = createSystemDOMNode(sysObj);
             
             const wasAtBottom = isChatNearBottom();
             ui.chatBox.appendChild(line); 
@@ -1183,7 +1206,7 @@
             sendReaction(emoji);
         }
 
-        function appendMsgDOM(msg, isBatch = false) {
+        function createMsgDOMNode(msg) {
             let line = document.createElement("div");
             line.id = `msg-${msg.id}`; line.className = "clickable-msg"; line.style.margin = "2px 0"; line.style.fontSize = "15px";
             
@@ -1210,7 +1233,11 @@
             }
 
             line.innerHTML = buildMsgInnerHTML(msg, timeHtml);
-            
+            return line;
+        }
+
+        function appendMsgDOM(msg, isBatch = false) {
+            const line = createMsgDOMNode(msg);
             const wasAtBottom = isChatNearBottom();
             
             ui.chatBox.appendChild(line);
@@ -1488,7 +1515,7 @@
                         const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), isSystem: false, edited: false, reactions: data.reactions || {} };
                         const isNew = !messageHistoryIdSet.has(msgObj.id);
                         messageHistory = mergeHistory(messageHistory, [msgObj]); saveLocalHistory();
-                        if (currentTab === "global") { if (isNew) appendMsgDOM(msgObj); else renderActiveTabMessages(); }
+                        if (currentTab === "global") { if (isNew) appendMsgDOM(msgObj); else scheduleRenderActiveTabMessages(); }
                         if (data.author !== myUsername && isOnHomepage) { window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*'); }
                     }
                     else if (data.type === "EDIT_MSG") {
@@ -1503,7 +1530,7 @@
                         if (updated) {
                             const list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
                             const m = list.find(x => x.id === data.id);
-                            if (!m || !patchMsgDOM(m)) renderActiveTabMessages();
+                            if (!m || !patchMsgDOM(m)) scheduleRenderActiveTabMessages();
                         }
                     }
                     else if (data.type === "REACT_MSG") {
@@ -1528,7 +1555,7 @@
                         if (updated) {
                             const list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
                             const m = list.find(x => x.id === data.id);
-                            if (!m || !patchMsgDOM(m)) renderActiveTabMessages();
+                            if (!m || !patchMsgDOM(m)) scheduleRenderActiveTabMessages();
                         }
                     }
                     else if (data.type === "DM_READ") {
@@ -1537,7 +1564,7 @@
                             if (newTs > (dmReadWatermarks[data.author] || 0)) {
                                 dmReadWatermarks[data.author] = newTs;
                                 saveDmReads();
-                                if (currentTab === `dm:${data.author}`) renderActiveTabMessages();
+                                if (currentTab === `dm:${data.author}`) scheduleRenderActiveTabMessages();
                             }
                         }
                     }
@@ -1549,7 +1576,7 @@
                             const tabId = ensureDmTab(otherUser); bumpDmTab(otherUser);
                             const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), edited: false, reactions: data.reactions || {} };
                             dmHistories[otherUser] = mergeHistory(dmHistories[otherUser] || [], [msgObj]); saveDmHistory(otherUser);
-                            if (currentTab === tabId) renderActiveTabMessages(); else markUnread(tabId);
+                            if (currentTab === tabId) scheduleRenderActiveTabMessages(); else markUnread(tabId);
                             if (isOnHomepage && data.author !== myUsername) window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*');
                         }
                     }
@@ -1579,7 +1606,7 @@
                                 dmHistories[user].splice(idxD, 1); saveDmHistory(user);
                             }
                         });
-                        const el = document.getElementById(`msg-${data.id}`); if (el) el.remove(); renderActiveTabMessages();
+                        const el = document.getElementById(`msg-${data.id}`); if (el) el.remove(); scheduleRenderActiveTabMessages();
                     }
                     else if (data.type === "CLEAR_RECENT") {
                         const anchor = data.timestamp || Date.now();
@@ -1590,7 +1617,7 @@
                         rebuildMessageHistoryIdSet();
                         Object.keys(dmHistories).forEach(user => { dmHistories[user] = applyTombstonesToList(dmHistories[user]); saveDmHistory(user); });
                         const sysObj = { id: data.id || generateId(), isSystem: true, text: `Admin (${data.author}) cleared ${data.targetType} messages from the last ${data.hours} hour(s).`, timestamp: Date.now() };
-                        messageHistory.push(sysObj); messageHistoryIdSet.add(sysObj.id); saveLocalHistory(); renderActiveTabMessages();
+                        messageHistory.push(sysObj); messageHistoryIdSet.add(sysObj.id); saveLocalHistory(); scheduleRenderActiveTabMessages();
                     }
                     else if (data.type === "CLEAR_ALL") {
                         const anchor = data.timestamp || Date.now();
@@ -1598,7 +1625,7 @@
                         messageHistory = []; messageHistoryIdSet.clear(); try { await localforage.removeItem(STORAGE_KEY); } catch (e) {}
                         Object.keys(dmHistories).forEach(user => { dmHistories[user] = []; saveDmHistory(user); });
                         const sysObj = { id: data.id || generateId(), isSystem: true, text: `Chat histories were completely purged by Admin (${data.author}).`, timestamp: Date.now() };
-                        messageHistory.push(sysObj); messageHistoryIdSet.add(sysObj.id); saveLocalHistory(); renderActiveTabMessages(); 
+                        messageHistory.push(sysObj); messageHistoryIdSet.add(sysObj.id); saveLocalHistory(); scheduleRenderActiveTabMessages(); 
                     }
                     else if (data.type === "TYPING") {
                         if (!isGhost && data.author !== myUsername && !blockedUsers.has(data.author)) {
@@ -1621,7 +1648,7 @@
                             if (oldTab) { const wasActive = (currentTab === `dm:${oldName}`); oldTab.remove(); ensureDmTab(newName); if (wasActive) switchTab(`dm:${newName}`); }
                         }
                         const sysObj = { id: data.id || generateId(), isSystem: true, text: `${oldName} changed name to ${newName}`, timestamp: data.timestamp || Date.now() };
-                        messageHistory.push(sysObj); messageHistoryIdSet.add(sysObj.id); saveLocalHistory(); if (currentTab === "global") renderActiveTabMessages();
+                        messageHistory.push(sysObj); messageHistoryIdSet.add(sysObj.id); saveLocalHistory(); if (currentTab === "global") scheduleRenderActiveTabMessages();
                         renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
                     }
                 } catch (e) {}
@@ -1629,6 +1656,8 @@
         }
 
         function mergeHistory(localHistory, remoteHistory) {
+            if (!remoteHistory || !remoteHistory.length) return localHistory;
+
             if (localHistory === messageHistory && remoteHistory.length === 1) {
                 const msg = remoteHistory[0];
                 const key = msg.id;
@@ -1663,14 +1692,17 @@
                 }
             }
 
-            const combined = [...localHistory, ...remoteHistory];
             const uniqueMessages = new Map();
-            const localIds = new Set(localHistory.map(m => m.id));
+            const localIds = new Set();
+            
+            localHistory.forEach(m => {
+                const key = m.id || `${m.timestamp}-${m.author}-${m.text || m.fileName || 'sys'}`;
+                uniqueMessages.set(key, m);
+                if (m.id) localIds.add(m.id);
+            });
 
-            combined.forEach(msg => {
-                const msgFingerprint = `${msg.timestamp}-${msg.author}-${msg.text || msg.fileName || 'sys'}`;
-                const key = msg.id || msgFingerprint;
-                
+            remoteHistory.forEach(msg => {
+                const key = msg.id || `${msg.timestamp}-${msg.author}-${msg.text || msg.fileName || 'sys'}`;
                 if (!uniqueMessages.has(key)) {
                     uniqueMessages.set(key, msg);
                     
@@ -1759,8 +1791,8 @@
             });
         }
 
-        const SYNC_BATCH_SIZE = 15;             
-        const SYNC_BATCH_INTERVAL_MS = 700;      
+        const SYNC_BATCH_SIZE = 50;             
+        const SYNC_BATCH_INTERVAL_MS = 150;      
         const SYNC_MANIFEST_DEBOUNCE_MS = 1200;  
 
         let syncOutbox = new Map();
@@ -1824,7 +1856,7 @@
                 saveTombstones();
                 messageHistory = applyTombstonesToList(messageHistory); rebuildMessageHistoryIdSet(); saveLocalHistory();
                 Object.keys(dmHistories).forEach(u => { dmHistories[u] = applyTombstonesToList(dmHistories[u]); saveDmHistory(u); });
-                renderActiveTabMessages();
+                scheduleRenderActiveTabMessages();
             }
 
             diffAndQueue("global", data.author, messageHistory, data.global || []);
@@ -1912,14 +1944,14 @@
             if (data.channel === "global") {
                 messageHistory = mergeHistory(messageHistory, data.messages);
                 saveLocalHistory();
-                if (currentTab === "global") renderActiveTabMessages();
+                if (currentTab === "global") scheduleRenderActiveTabMessages();
             } else {
                 const otherUser = data.channel.replace("dm:", "");
                 const merged = mergeHistory(dmHistories[otherUser] || [], data.messages);
                 dmHistories[otherUser] = applyTombstonesToList(merged);
                 saveDmHistory(otherUser);
                 if (!closedDMs.has(otherUser) && !isGhost) ensureDmTab(otherUser);
-                if (currentTab === data.channel) renderActiveTabMessages();
+                if (currentTab === data.channel) scheduleRenderActiveTabMessages();
             }
             checkUnreadMessages(messageHistory);
         }
@@ -1929,7 +1961,7 @@
         function doClearAllRecent() { if (!isAdmin) return; if (confirm(`Are you sure you want to delete ALL messages (system and user) from the last ${allClearHours} hour(s)?`)) { publishMessage({ type: "CLEAR_RECENT", targetType: "all", hours: allClearHours, author: myUsername, id: generateId(), timestamp: Date.now() }); allClearHours++; document.getElementById('all-hr-count').innerText = allClearHours; } }
         function deleteAnyMessage(id) { publishMessage({ type: "DELETE_MSG", id: id, deleter: myUsername }); }
         function confirmClearAll() { if (isAdmin && confirm("Are you sure you want to completely NUKE all messages forever?")) publishMessage({ type: "CLEAR_ALL", author: myUsername, id: generateId(), timestamp: Date.now() }); }
-        function evaluateAdminRole() { const wasAdmin = isAdmin; isAdmin = ADMINS.includes(myUsername); updateStatusText(); if (wasAdmin !== isAdmin) renderActiveTabMessages(); }
+        function evaluateAdminRole() { const wasAdmin = isAdmin; isAdmin = ADMINS.includes(myUsername); updateStatusText(); if (wasAdmin !== isAdmin) scheduleRenderActiveTabMessages(); }
         function updateStatusText() { ui.status.innerText = `${isAdmin ? "[ADMIN]" : "[USER]"} Connected as "${myUsername}"`; ui.adminClearBtn.style.display = isAdmin ? "block" : "none"; }
 
         function checkPresence() {
