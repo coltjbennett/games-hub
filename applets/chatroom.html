@@ -390,6 +390,7 @@
         </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
     <script>
@@ -491,7 +492,7 @@
 
         function triggerMention(author) {
             let muteSounds = localStorage.getItem('mqtt_mute_sounds') === 'true';
-            if (muteSounds || currentStatus === 'DND') return; // Skip audio if muted or DND
+            if (muteSounds || currentStatus === 'DND') return; 
 
             document.getElementById("mention-text").innerText = `@${author} mentioned you!`;
             openModal("mention-modal");
@@ -617,7 +618,7 @@
                         reader.onloadend = () => {
                             const raw = reader.result;
                             const comp = LZString.compressToUTF16(raw);
-                            if (comp.length > 500000) return customAlert("Audio recording too long! (<1MB limit)");
+                            if (comp.length > 50000000) return customAlert("Audio recording too long! (<50MB limit)");
                             sendPayload(raw, { isAudio: true, preCompressed: comp });
                         };
                         reader.readAsDataURL(blob);
@@ -634,7 +635,7 @@
             }
         }
 
-        function compressImageToFit(file, maxLength = 125000) {
+        function compressImageToFit(file, maxLength = 50000000) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onload = function(e) {
@@ -683,7 +684,7 @@
 
             if (isImage) {
                 try {
-                    const { raw, preCompressed } = await compressImageToFit(file, 125000);
+                    const { raw, preCompressed } = await compressImageToFit(file, 50000000);
                     sendPayload(raw, { isImage: true, isVideo: false, isFile: false, fileName: file.name, preCompressed });
                 } catch(err) { customAlert("Failed to process image."); }
                 e.target.value = ""; return;
@@ -693,43 +694,51 @@
             reader.onload = function(event) { 
                 const raw = event.target.result;
                 const comp = LZString.compressToUTF16(raw);
-                if (comp.length > 125000) { return customAlert("File too large. Compression could not fit it under ~2.5MB."); }
+                if (comp.length > 50000000) { return customAlert("File too large. Compression could not fit it under 50MB limit."); }
                 sendPayload(raw, { isImage, isVideo, isFile, fileName: file.name, preCompressed: comp }); 
             };
             reader.readAsDataURL(file); e.target.value = "";
         });
 
-        function saveToLocalWithCompression(key, historyArray) {
+        async function saveToStorageWithCompression(key, historyArray) {
             let compressed = LZString.compressToUTF16(JSON.stringify(historyArray));
             try { 
-                localStorage.setItem(key, compressed);
+                await localforage.setItem(key, compressed);
             } catch(e) {
-                if (e.name === 'QuotaExceededError' || e.code === 22) {
-                    while (historyArray.length > 10) { historyArray.shift(); }
-                    try { localStorage.setItem(key, LZString.compressToUTF16(JSON.stringify(historyArray))); } catch(err) {}
-                }
+                console.error('Failed to save history to IndexedDB:', e);
             }
         }
 
-        function loadFromLocalWithCompression(key) {
-            let stored = localStorage.getItem(key);
-            if (!stored) return [];
+        async function loadFromStorageWithCompression(key) {
             try {
+                let stored = await localforage.getItem(key);
+                
+                // MIGRATION: Auto-pull and port over existing localStorage elements if localForage is empty
+                if (!stored) {
+                    stored = localStorage.getItem(key);
+                    if (stored) {
+                        await localforage.setItem(key, stored);
+                        localStorage.removeItem(key); 
+                    }
+                }
+
+                if (!stored) return [];
+                
                 let decompressed = LZString.decompressFromUTF16(stored);
                 if (decompressed) return JSON.parse(decompressed);
                 return JSON.parse(stored);
             } catch(e) { return []; }
         }
 
-        function loadLocalHistory() { 
-            messageHistory = loadFromLocalWithCompression(STORAGE_KEY);
+        async function loadLocalHistory() { 
+            messageHistory = await loadFromStorageWithCompression(STORAGE_KEY);
             if(currentTab === "global") renderActiveTabMessages(); 
         }
-        function saveLocalHistory() { saveToLocalWithCompression(STORAGE_KEY, messageHistory); }
-        function loadDmHistory(otherUser) { return loadFromLocalWithCompression(`mqtt_dm_${myUsername}_${otherUser}`); }
-        function saveDmHistory(otherUser) { saveToLocalWithCompression(`mqtt_dm_${myUsername}_${otherUser}`, dmHistories[otherUser] || []); }
+        function saveLocalHistory() { saveToStorageWithCompression(STORAGE_KEY, messageHistory); }
+        async function loadDmHistory(otherUser) { return await loadFromStorageWithCompression(`mqtt_dm_${myUsername}_${otherUser}`); }
+        function saveDmHistory(otherUser) { saveToStorageWithCompression(`mqtt_dm_${myUsername}_${otherUser}`, dmHistories[otherUser] || []); }
 
-        function loadSettingsAndDMs() {
+        async function loadSettingsAndDMs() {
             try { const s = localStorage.getItem(BLOCKED_KEY);
                 if (s) blockedUsers = new Set(JSON.parse(s)); } catch (e) {}
             try { const c = localStorage.getItem(CLOSED_DMS_KEY);
@@ -737,18 +746,23 @@
             
             document.getElementById('mute-sounds-chk').checked = localStorage.getItem('mqtt_mute_sounds') === 'true';
             
-            pendingDMs = loadFromLocalWithCompression('mqtt_pending_dms') || {};
+            pendingDMs = await loadFromStorageWithCompression('mqtt_pending_dms') || {};
             if (Array.isArray(pendingDMs)) pendingDMs = {};
             
             renderBlockedUI();
             if (myUsername && !isGhost) {
-                Object.keys(localStorage).forEach(key => {
+                const keys = new Set();
+                for (let i = 0; i < localStorage.length; i++) keys.add(localStorage.key(i));
+                const lfKeys = await localforage.keys();
+                lfKeys.forEach(k => keys.add(k));
+
+                for (let key of keys) {
                     if (key.startsWith(`mqtt_dm_${myUsername}_`)) {
                         let target = key.replace(`mqtt_dm_${myUsername}_`, "");
-                        let hist = loadFromLocalWithCompression(key);
+                        let hist = await loadFromStorageWithCompression(key);
                         if (hist.length > 0) { dmHistories[target] = hist; if (!closedDMs.has(target)) ensureDmTab(target); }
                     }
-                });
+                }
             }
         }
         function saveBlockedUsers() { try { localStorage.setItem(BLOCKED_KEY, JSON.stringify(Array.from(blockedUsers))); } catch (e) {} renderBlockedUI(); }
@@ -836,7 +850,7 @@
         function ensureDmTab(username) {
             if (!myUsername || isGhost) return;
             const tabId = `dm:${username}`;
-            if (!dmHistories[username]) dmHistories[username] = loadDmHistory(username);
+            if (!dmHistories[username]) dmHistories[username] = [];
             const elementId = `tab-dm-${username}`;
             if (!document.getElementById(elementId)) {
                 const tab = document.createElement("div");
@@ -1046,7 +1060,7 @@
             else if (data.action === 'chatWindowClosed') { handleChatWindowClosed(); }
         });
 
-        (function init() {
+        (async function init() {
             if(checkPenalties()) return;
 
             try {
@@ -1067,13 +1081,19 @@
 
                 ui.userScreen.style.display = "none";
                 ui.chatScreen.style.display = "flex";
-                loadSettingsAndDMs(); loadLocalHistory();
+                await loadSettingsAndDMs(); 
+                await loadLocalHistory();
+                await loadTombstones();
+                messageHistory = applyTombstonesToList(messageHistory);
             } else {
                 let storedGhost = safeGet("mqtt_ghost_id");
                 if (!storedGhost) { storedGhost = "ghost-" + generateId(); safeSet("mqtt_ghost_id", storedGhost); }
                 ghostId = storedGhost; myUsername = ghostId; isGhost = true;
                 ui.userScreen.style.display = "block"; ui.chatScreen.style.display = "none";
-                loadSettingsAndDMs(); loadLocalHistory();
+                await loadSettingsAndDMs(); 
+                await loadLocalHistory();
+                await loadTombstones();
+                messageHistory = applyTombstonesToList(messageHistory);
             }
 
             activeUsers.set(myUsername, { lastSeen: Date.now(), joinTime: Date.now(), isOnHomepage: true, isGhost: isGhost, status: currentStatus });
@@ -1083,7 +1103,10 @@
                 isConnected = true;
                 client.subscribe(ROOM_TOPIC, (err) => {
                     if (!err) {
-                        publishMessage({ type: "SYNC_REQ", author: myUsername, isGhost: isGhost, isOnHomepage: isOnHomepage });
+                        // Broadcast our own manifest so every peer can diff against it and mutually
+                        // backfill each other -- and also ask everyone else for theirs.
+                        publishMessage(buildManifest());
+                        requestManifestBroadcast();
                         publishPing();
                         if (!window.pingInterval) { window.pingInterval = setInterval(() => { if (isConnected) publishPing(); }, 5000); }
                     }
@@ -1092,16 +1115,20 @@
 
             setupMqttListeners();
             setInterval(checkPresence, 5000);
+            // Periodic mutual re-sync: catches anything missed if a prior sync batch was interrupted
+            // (e.g. a peer's tab closed mid-transfer) or if messages arrived while briefly disconnected.
+            // Infrequent and manifest-only (not full history), so it stays cheap on bandwidth.
+            setInterval(() => { if (isConnected && !document.hidden) publishMessage(buildManifest()); }, 60000);
         })();
 
-        function joinChat() {
+        async function joinChat() {
             let val = ui.userIp.value.trim();
             if (!val) return alert("Username required!");
             val = val.replace(/[\s/]/g, '_');
             if (ADMINS.includes(val)) openPasswordModal('join_admin', val); else executeJoin(val);
         }
 
-        function executeJoin(val) {
+        async function executeJoin(val) {
             const oldName = myUsername;
             if (isGhost && oldName) {
                 activeUsers.delete(oldName);
@@ -1112,7 +1139,10 @@
             isGhost = false;
             try { localStorage.setItem(USERNAME_KEY, myUsername); } catch (e) {}
             ui.userScreen.style.display = "none"; ui.chatScreen.style.display = "flex";
-            loadSettingsAndDMs(); loadLocalHistory();
+            await loadSettingsAndDMs(); 
+            await loadLocalHistory();
+            await loadTombstones();
+            messageHistory = applyTombstonesToList(messageHistory);
 
             const now = Date.now();
             activeUsers.set(myUsername, { lastSeen: now, joinTime: now, isOnHomepage: false, isGhost: false, status: currentStatus });
@@ -1121,7 +1151,8 @@
             hasJoinedRoomWindow = true;
             if (isConnected) {
                 publishMessage({ type: "JOIN", author: myUsername, joinTime: now, id: generateId(), isOnHomepage: false, status: currentStatus });
-                publishMessage({ type: "SYNC_REQ", author: myUsername });
+                publishMessage(buildManifest());
+                requestManifestBroadcast();
             }
 
             if (!window.pingInterval) { window.pingInterval = setInterval(() => { if (isConnected) publishPing(); }, 5000); }
@@ -1131,13 +1162,13 @@
             if (pendingDMs[targetUser]) {
                 pendingDMs[targetUser].forEach(msg => publishMessage(msg));
                 delete pendingDMs[targetUser];
-                saveToLocalWithCompression('mqtt_pending_dms', pendingDMs);
+                saveToStorageWithCompression('mqtt_pending_dms', pendingDMs);
             }
         }
 
         function setupMqttListeners() {
             window.addEventListener("beforeunload", () => { if (isConnected && !isGhost) publishMessage({ type: "LEAVE", author: myUsername, id: generateId() }); });
-            client.on("message", (topic, payload) => {
+            client.on("message", async (topic, payload) => {
                 try {
                     const data = JSON.parse(payload.toString());
                     if (data.compressed && data.text) data.text = LZString.decompressFromUTF16(data.text) || data.text;
@@ -1176,20 +1207,27 @@
                         }
                     }
 
-                    if (data.type === "SYNC_REQ") { 
-                        if (data.author !== myUsername) publishMessage({ type: "SYNC_RES", target: data.author, history: messageHistory }); 
+                    if (data.type === "SYNC_MANIFEST_REQ") {
+                        handleManifestRequest(data);
                         if (!isGhost && data.author) processPendingOutbox(data.author);
                     }
-                    else if (data.type === "SYNC_RES" && data.target === myUsername) { 
-                        messageHistory = mergeHistory(messageHistory, data.history); saveLocalHistory(); 
-                        if (currentTab === "global") renderActiveTabMessages();
-                        checkUnreadMessages(messageHistory);
+                    else if (data.type === "SYNC_MANIFEST") {
+                        handleManifest(data);
+                    }
+                    else if (data.type === "SYNC_PULL") {
+                        handleSyncPull(data);
+                    }
+                    else if (data.type === "SYNC_CHUNK") {
+                        handleSyncChunk(data);
                     }
                     else if (data.type === "JOIN") {
                         if (blockedUsers.has(data.author)) return;
                         if (!isGhost) processPendingOutbox(data.author);
                         const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} joined the room.`, timestamp: data.timestamp || Date.now() };
-                        messageHistory.push(sysObj); saveLocalHistory(); if (currentTab === "global") appendSystemDOM(sysObj);
+                        messageHistory = mergeHistory(messageHistory, [sysObj]); saveLocalHistory(); if (currentTab === "global") appendSystemDOM(sysObj);
+                        // Proactively share our manifest with the joiner (and ask for theirs) so sync is
+                        // mutual and starts immediately rather than waiting on their own broadcast.
+                        if (data.author !== myUsername) publishMessage(buildManifest(data.author));
                     }
                     else if (data.type === "PING") {
                         if (!isGhost && data.author) processPendingOutbox(data.author);
@@ -1200,7 +1238,7 @@
                             activeUsers.delete(data.author);
                             if (!uData.isGhost) {
                                 const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} disconnected.`, timestamp: data.timestamp || Date.now() };
-                                messageHistory.push(sysObj); saveLocalHistory();
+                                messageHistory = mergeHistory(messageHistory, [sysObj]); saveLocalHistory();
                                 if (currentTab === "global") appendSystemDOM(sysObj);
                             }
                             renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
@@ -1209,7 +1247,7 @@
                     else if (data.type === "MSG") {
                         if (blockedUsers.has(data.author)) return;
                         const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), isSystem: false, edited: false };
-                        messageHistory.push(msgObj); saveLocalHistory(); if (currentTab === "global") appendMsgDOM(msgObj);
+                        messageHistory = mergeHistory(messageHistory, [msgObj]); saveLocalHistory(); if (currentTab === "global") appendMsgDOM(msgObj);
                         if (data.author !== myUsername && isOnHomepage) { window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*'); }
                     }
                     else if (data.type === "EDIT_MSG") {
@@ -1249,27 +1287,38 @@
                     else if (data.type === "MUTE_ATTEMPT" && isAdmin) { appendSystemDOM({ id: data.id || generateId(), isSystem: true, text: `${data.author} tried to send a message while muted (Attempt #${data.count})`, timestamp: data.timestamp || Date.now() }); }
                     else if (data.type === "DELETE_MSG") {
                         const idxG = messageHistory.findIndex(m => m.id === data.id);
-                        if (idxG !== -1 && (messageHistory[idxG].author === data.deleter || ADMINS.includes(data.deleter))) { messageHistory.splice(idxG, 1); saveLocalHistory(); }
+                        if (idxG !== -1 && (messageHistory[idxG].author === data.deleter || ADMINS.includes(data.deleter))) {
+                            addMsgTombstone(data.id);
+                            messageHistory.splice(idxG, 1); saveLocalHistory();
+                        }
                         Object.keys(dmHistories).forEach(user => {
                             const idxD = dmHistories[user].findIndex(m => m.id === data.id);
-                            if (idxD !== -1 && (dmHistories[user][idxD].author === data.deleter || ADMINS.includes(data.deleter))) { dmHistories[user].splice(idxD, 1); saveDmHistory(user); }
+                            if (idxD !== -1 && (dmHistories[user][idxD].author === data.deleter || ADMINS.includes(data.deleter))) {
+                                addMsgTombstone(data.id);
+                                dmHistories[user].splice(idxD, 1); saveDmHistory(user);
+                            }
                         });
                         const el = document.getElementById(`msg-${data.id}`); if (el) el.remove(); renderActiveTabMessages();
                     }
                     else if (data.type === "CLEAR_RECENT") {
-                        const cutoff = Date.now() - (data.hours * 3600000);
-                        if (data.targetType === "system") { messageHistory = messageHistory.filter(m => !(m.isSystem && m.timestamp >= cutoff)); } 
-                        else if (data.targetType === "all") {
-                            messageHistory = messageHistory.filter(m => m.timestamp < cutoff);
-                            Object.keys(dmHistories).forEach(user => { dmHistories[user] = dmHistories[user].filter(m => m.timestamp < cutoff); saveDmHistory(user); });
-                        }
+                        // Use the sender's timestamp as the anchor (not our local Date.now()) so every
+                        // peer -- including ones who apply this event much later during sync -- computes
+                        // the exact same tombstone window and converges on the same result.
+                        const anchor = data.timestamp || Date.now();
+                        const cutoff = anchor - (data.hours * 3600000);
+                        addRangeTombstone(cutoff, anchor, data.targetType === "system" ? "system" : "all");
+
+                        messageHistory = applyTombstonesToList(messageHistory);
+                        Object.keys(dmHistories).forEach(user => { dmHistories[user] = applyTombstonesToList(dmHistories[user]); saveDmHistory(user); });
                         const sysObj = { id: data.id || generateId(), isSystem: true, text: `Admin (${data.author}) cleared ${data.targetType} messages from the last ${data.hours} hour(s).`, timestamp: Date.now() };
                         messageHistory.push(sysObj); saveLocalHistory(); renderActiveTabMessages();
                     }
                     else if (data.type === "CLEAR_ALL") {
-                        messageHistory = []; try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+                        const anchor = data.timestamp || Date.now();
+                        raiseNukeMarker(anchor);
+                        messageHistory = []; try { await localforage.removeItem(STORAGE_KEY); } catch (e) {}
                         Object.keys(dmHistories).forEach(user => { dmHistories[user] = []; saveDmHistory(user); });
-                        const sysObj = { id: data.id || generateId(), isSystem: true, text: `Chat histories were completely purged by Admin (${data.author}).`, timestamp: data.timestamp || Date.now() };
+                        const sysObj = { id: data.id || generateId(), isSystem: true, text: `Chat histories were completely purged by Admin (${data.author}).`, timestamp: Date.now() };
                         messageHistory.push(sysObj); saveLocalHistory(); renderActiveTabMessages(); 
                     }
                     else if (data.type === "TYPING") {
@@ -1287,7 +1336,7 @@
                         if (dmHistories[oldName]) {
                             dmHistories[newName] = dmHistories[oldName]; delete dmHistories[oldName];
                             dmHistories[newName].forEach(m => { if (m.author === oldName) m.author = newName; if (m.replyTo && m.replyTo.author === oldName) m.replyTo.author = newName; });
-                            saveDmHistory(newName); try { localStorage.removeItem(`mqtt_dm_${myUsername}_${oldName}`); } catch(e){}
+                            saveDmHistory(newName); try { await localforage.removeItem(`mqtt_dm_${myUsername}_${oldName}`); } catch(e){}
                             if (closedDMs.has(oldName)) { closedDMs.delete(oldName); closedDMs.add(newName); saveClosedDMs(); }
                             const oldTab = document.getElementById(`tab-dm-${oldName}`);
                             if (oldTab) { const wasActive = (currentTab === `dm:${oldName}`); oldTab.remove(); ensureDmTab(newName); if (wasActive) switchTab(`dm:${newName}`); }
@@ -1300,36 +1349,337 @@
             });
         }
 
-        function mergeHistory(local, remote) {
-            const map = new Map();
-            local.forEach(m => { if (m.id) map.set(m.id, m); });
-            remote.forEach(m => { 
-                if (m.id && !map.has(m.id)) {
-                    map.set(m.id, m); 
-                    if (!isGhost && m.author !== myUsername && !blockedUsers.has(m.author)) {
-                        const isMention = m.text && m.text.includes(`@${myUsername}`);
+        function mergeHistory(localHistory, remoteHistory) {
+            const combined = [...localHistory, ...remoteHistory];
+            const uniqueMessages = new Map();
+            const localIds = new Set(localHistory.map(m => m.id));
+
+            combined.forEach(msg => {
+                // Ensure duplicate protection based on fingerprint and id
+                const msgFingerprint = `${msg.timestamp}-${msg.author}-${msg.text || msg.fileName || 'sys'}`;
+                const key = msg.id || msgFingerprint;
+                
+                if (!uniqueMessages.has(key)) {
+                    uniqueMessages.set(key, msg);
+                    
+                    if (!localIds.has(msg.id) && !isGhost && msg.author !== myUsername && !blockedUsers.has(msg.author)) {
+                        const isMention = msg.text && msg.text.includes(`@${myUsername}`);
                         if (isMention) {
                             let storedPings = JSON.parse(localStorage.getItem('mqtt_pings') || '{}');
-                            if (!storedPings[m.id]) {
-                                storedPings[m.id] = true; localStorage.setItem('mqtt_pings', JSON.stringify(storedPings));
+                            if (!storedPings[msg.id]) {
+                                storedPings[msg.id] = true; localStorage.setItem('mqtt_pings', JSON.stringify(storedPings));
                                 let muteSounds = localStorage.getItem('mqtt_mute_sounds') === 'true';
                                 if (!muteSounds && currentStatus !== 'DND') {
-                                    window.parent.postMessage({ source: 'universal-chat', kind: 'ping', user: m.author, text: `You were pinged by ${m.author} while offline` }, '*');
+                                    window.parent.postMessage({ source: 'universal-chat', kind: 'ping', user: msg.author, text: `You were pinged by ${msg.author} while offline` }, '*');
                                 }
-                                pendingMentionAuthor = m.author;
+                                pendingMentionAuthor = msg.author;
                             }
                         }
                     }
-                } 
+                } else {
+                    // Update if newer version exists (edits)
+                    if (msg.edited) uniqueMessages.set(key, msg);
+                }
             });
-            return Array.from(map.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+            let mergedArray = Array.from(uniqueMessages.values());
+            mergedArray = applyTombstonesToList(mergedArray);
+            mergedArray.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+            return mergedArray;
         }
 
+        // =====================================================================
+        // TOMBSTONE SYSTEM
+        // Deletions are additive facts, never destructive merges. A tombstone
+        // is itself synced like a message, so a peer that missed the original
+        // delete event still converges to the same end state once it arrives.
+        //   - msgTombstones:   Set of individually-deleted message ids
+        //   - rangeTombstones: [{ from, to, scope }] wipe-window records
+        //                      scope: "system" | "all" (mirrors CLEAR_RECENT)
+        //   - nukeMarker:      timestamp; everything with ts <= nukeMarker is gone
+        // =====================================================================
+        let msgTombstones = new Set();
+        let rangeTombstones = [];
+        let nukeMarker = 0;
+        const TOMBSTONE_KEY = "mqtt_tombstones_v1";
+
+        async function loadTombstones() {
+            try {
+                const raw = await loadFromStorageWithCompression(TOMBSTONE_KEY);
+                if (raw && !Array.isArray(raw)) {
+                    msgTombstones = new Set(raw.msgIds || []);
+                    rangeTombstones = raw.ranges || [];
+                    nukeMarker = raw.nuke || 0;
+                }
+            } catch (e) {}
+        }
+        function saveTombstones() {
+            saveToStorageWithCompression(TOMBSTONE_KEY, { msgIds: Array.from(msgTombstones), ranges: rangeTombstones, nuke: nukeMarker });
+        }
+
+        function addMsgTombstone(id) { if (!msgTombstones.has(id)) { msgTombstones.add(id); saveTombstones(); } }
+        function addRangeTombstone(from, to, scope) {
+            rangeTombstones.push({ from, to, scope });
+            saveTombstones();
+        }
+        function raiseNukeMarker(ts) {
+            if (ts > nukeMarker) {
+                nukeMarker = ts;
+                // Anything under the nuke line is permanently gone; drop now-redundant finer-grained
+                // tombstones (both ranges and individual message ids) to keep tombstone storage bounded.
+                rangeTombstones = rangeTombstones.filter(r => r.to > nukeMarker);
+                saveTombstones();
+            }
+        }
+
+        // Applies all known tombstones to a message list. Used after every merge so
+        // that a message re-learned from a peer (who never saw the delete) is
+        // immediately suppressed again rather than resurrected.
+        function applyTombstonesToList(list) {
+            if (!msgTombstones.size && !rangeTombstones.length && !nukeMarker) return list;
+            return list.filter(m => {
+                const ts = m.timestamp || 0;
+                if (ts <= nukeMarker) return false;
+                if (m.id && msgTombstones.has(m.id)) return false;
+                for (const r of rangeTombstones) {
+                    if (ts >= r.from && ts <= r.to) {
+                        if (r.scope === "all") return false;
+                        if (r.scope === "system" && m.isSystem) return false;
+                    }
+                }
+                return true;
+            });
+        }
+
+        // =====================================================================
+        // MUTUAL, CHUNKED, NEWEST-FIRST SYNC ENGINE
+        //
+        // Replaces the old one-shot SYNC_REQ/SYNC_RES (which dumped one peer's
+        // *entire* history in a single MQTT packet, was "first responder wins"
+        // rather than mutual, and had no concept of deletions).
+        //
+        // How it works:
+        //  1. On join / seeing a peer, both sides exchange a lightweight
+        //     MANIFEST: just {id, ts} pairs (+ tombstone ids/ranges/nuke),
+        //     never full message bodies. This is cheap even for large logs.
+        //  2. Each side diffs the peer's manifest against its own local set,
+        //     per channel (global + every DM channel it has with that peer),
+        //     and works out exactly which ids it is missing.
+        //  3. Missing ids are requested oldest-gap-tolerant but delivered
+        //     NEWEST FIRST: sorted descending by timestamp, sliced into small
+        //     batches (SYNC_BATCH_SIZE), and drip-fed on a timer
+        //     (SYNC_BATCH_INTERVAL_MS) so it never floods the connection.
+        //     This means the most recent missed messages appear almost
+        //     instantly, while older history fills in gradually behind them.
+        //  4. Because both peers run this same logic on each other's
+        //     manifest, sync is fully mutual: A backfills B AND B backfills A,
+        //     without waiting for one "winner" to respond.
+        //  5. The merge is additive (mergeHistory / Map-based unique-by-id),
+        //     so a peer with a gap never deletes what it already has -- it
+        //     only ever gains messages. Only explicit tombstones remove
+        //     anything, and tombstones themselves sync the same way.
+        // =====================================================================
+
+        const SYNC_BATCH_SIZE = 15;             // messages per network chunk
+        const SYNC_BATCH_INTERVAL_MS = 700;      // pacing delay between chunks (throttles bandwidth)
+        const SYNC_MANIFEST_DEBOUNCE_MS = 1200;  // avoid manifest spam when many JOINs arrive close together
+
+        // Per-peer outbound delivery queues: peerId -> { channel -> [msgs newest-first] }
+        let syncOutbox = new Map();
+        // Are we currently draining outbox for a given peer+channel? prevents overlapping timers
+        let syncDraining = new Set();
+        let manifestBroadcastTimer = null;
+
+        function channelKey(kind, name) { return kind === "global" ? "global" : `dm:${name}`; }
+
+        // Build a compact manifest of what we currently hold. `forPeer` (optional) restricts the
+        // DM section to just the channel that peer is entitled to see (their own DM with us) --
+        // note DM message bodies already travel over the shared public MQTT topic in this app's
+        // existing design (filtered only client-side by `target`), so this isn't a new exposure,
+        // just keeping the broadcast-to-everyone manifest lean by default.
+        function buildManifest(forPeer) {
+            const manifest = {
+                type: "SYNC_MANIFEST",
+                author: myUsername,
+                isGhost: isGhost,
+                global: messageHistory.map(m => ({ id: m.id, ts: m.timestamp || 0 })),
+                dms: {},
+                tomb: {
+                    ids: Array.from(msgTombstones),
+                    ranges: rangeTombstones,
+                    nuke: nukeMarker
+                }
+            };
+            if (forPeer) {
+                // Targeted manifest (e.g. answering their SYNC_MANIFEST_REQ or reacting to their JOIN):
+                // include just our DM channel with them.
+                if (dmHistories[forPeer]) manifest.dms[forPeer] = dmHistories[forPeer].map(m => ({ id: m.id, ts: m.timestamp || 0 }));
+            } else {
+                // General broadcast (e.g. our own connect/join): include all DM channels so every
+                // participant of each DM can mutually diff, same tradeoff the app already makes by
+                // putting DM bodies on the shared topic.
+                Object.keys(dmHistories).forEach(otherUser => {
+                    manifest.dms[otherUser] = (dmHistories[otherUser] || []).map(m => ({ id: m.id, ts: m.timestamp || 0 }));
+                });
+            }
+            return manifest;
+        }
+
+        // Ask everyone to send their manifest (debounced so a burst of JOINs doesn't cause a manifest storm)
+        function requestManifestBroadcast() {
+            if (manifestBroadcastTimer) clearTimeout(manifestBroadcastTimer);
+            manifestBroadcastTimer = setTimeout(() => {
+                publishMessage({ type: "SYNC_MANIFEST_REQ", author: myUsername });
+            }, SYNC_MANIFEST_DEBOUNCE_MS);
+        }
+
+        // Handle an incoming request for our manifest -- just answer with our own manifest.
+        function handleManifestRequest(data) {
+            if (data.author === myUsername) return;
+            publishMessage(buildManifest(data.author));
+        }
+
+        // Core mutual-diff step: given a peer's manifest, figure out (a) what WE are missing from
+        // THEM (queue a request), and (b) what THEY are missing from US (queue to send). Both run
+        // regardless of who initiated, which is what makes this mutual rather than one-directional.
+        function handleManifest(data) {
+            if (!data.author || data.author === myUsername) return;
+            if (blockedUsers.has(data.author)) return;
+
+            // Merge in their tombstones immediately -- these are small and safety-critical,
+            // so they aren't rate-limited like message bodies.
+            let tombChanged = false;
+            if (data.tomb) {
+                (data.tomb.ids || []).forEach(id => { if (!msgTombstones.has(id)) { msgTombstones.add(id); tombChanged = true; } });
+                (data.tomb.ranges || []).forEach(r => {
+                    const exists = rangeTombstones.some(x => x.from === r.from && x.to === r.to && x.scope === r.scope);
+                    if (!exists) { rangeTombstones.push(r); tombChanged = true; }
+                });
+                if (data.tomb.nuke && data.tomb.nuke > nukeMarker) { nukeMarker = data.tomb.nuke; tombChanged = true; }
+            }
+            if (tombChanged) {
+                saveTombstones();
+                messageHistory = applyTombstonesToList(messageHistory); saveLocalHistory();
+                Object.keys(dmHistories).forEach(u => { dmHistories[u] = applyTombstonesToList(dmHistories[u]); saveDmHistory(u); });
+                renderActiveTabMessages();
+            }
+
+            // ---- Global channel diff ----
+            diffAndQueue("global", data.author, messageHistory, data.global || []);
+
+            // ---- DM channel diff: only the channel between us and them ----
+            // From our side that's dmHistories[data.author]; their manifest.dms[myUsername] tells us what they hold with us.
+            const theirDmWithUs = (data.dms && data.dms[myUsername]) ? data.dms[myUsername] : null;
+            if (theirDmWithUs !== null) {
+                diffAndQueue(channelKey("dm", data.author), data.author, dmHistories[data.author] || [], theirDmWithUs);
+            }
+        }
+
+        // Compares our local list against a peer's manifest for one channel.
+        // - Anything WE have that THEY lack (by id) gets queued into syncOutbox for that peer (we'll send it to them).
+        // - Anything THEY have that WE lack gets requested via SYNC_PULL (they'll then queue it back to us).
+        // Both directions run every time, so sync is mutual regardless of who has more.
+        function diffAndQueue(channel, peer, localList, peerManifestEntries) {
+            const peerIds = new Set(peerManifestEntries.map(e => e.id));
+            const localIds = new Set(localList.map(m => m.id));
+
+            // What we can give them
+            const toGive = localList.filter(m => m.id && !peerIds.has(m.id));
+            if (toGive.length) queueOutbound(peer, channel, toGive);
+
+            // What we should ask them for (they told us the id+ts, we don't have it)
+            const toRequestIds = peerManifestEntries.filter(e => e.id && !localIds.has(e.id) && !msgTombstones.has(e.id)).map(e => e.id);
+            if (toRequestIds.length) {
+                publishMessage({ type: "SYNC_PULL", author: myUsername, target: peer, channel: channel, ids: toRequestIds });
+            }
+        }
+
+        // Someone is asking US to send specific ids on a specific channel.
+        function handleSyncPull(data) {
+            if (data.target !== myUsername) return;
+            const sourceList = data.channel === "global" ? messageHistory : (dmHistories[data.channel.replace("dm:", "")] || []);
+            const idSet = new Set(data.ids || []);
+            const matches = sourceList.filter(m => idSet.has(m.id));
+            if (matches.length) queueOutbound(data.author, data.channel, matches);
+        }
+
+        // Adds messages to a peer's delivery queue (newest-first) and (re)starts the throttled drain.
+        function queueOutbound(peer, channel, msgs) {
+            if (!syncOutbox.has(peer)) syncOutbox.set(peer, {});
+            const perPeer = syncOutbox.get(peer);
+            if (!perPeer[channel]) perPeer[channel] = [];
+
+            const existingIds = new Set(perPeer[channel].map(m => m.id));
+            msgs.forEach(m => { if (!existingIds.has(m.id)) { perPeer[channel].push(m); existingIds.add(m.id); } });
+
+            // Newest-first delivery: most recently missed messages arrive (and get placed) first,
+            // oldest history trickles in behind them.
+            perPeer[channel].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+            drainOutboxFor(peer, channel);
+        }
+
+        // Sends one throttled batch at a time to avoid bursting the connection / eating bandwidth.
+        function drainOutboxFor(peer, channel) {
+            const drainKey = `${peer}::${channel}`;
+            if (syncDraining.has(drainKey)) return; // already ticking
+            syncDraining.add(drainKey);
+
+            const step = () => {
+                const perPeer = syncOutbox.get(peer);
+                const queue = perPeer && perPeer[channel];
+                if (!queue || !queue.length) { syncDraining.delete(drainKey); return; }
+
+                const batch = queue.splice(0, SYNC_BATCH_SIZE);
+                publishMessage({
+                    type: "SYNC_CHUNK",
+                    author: myUsername,
+                    target: peer,
+                    channel: channel,
+                    messages: batch,
+                    remaining: queue.length
+                });
+
+                if (queue.length) {
+                    setTimeout(step, SYNC_BATCH_INTERVAL_MS);
+                } else {
+                    syncDraining.delete(drainKey);
+                }
+            };
+            step();
+        }
+
+        // Receiving a chunk from a peer: merge it in (additive, tombstone-filtered), and place it
+        // immediately by re-rendering the active tab if it's the channel currently being viewed --
+        // so the "oldest messages fill in slowly, most recent missed ones show up fast" behavior is visible live.
+        function handleSyncChunk(data) {
+            if (data.target !== myUsername) return;
+            if (!data.messages || !data.messages.length) return;
+
+            // Decompress any compressed message bodies (images/audio/files) same as normal MSG handling
+            data.messages.forEach(m => { if (m.compressed && m.text) { try { m.text = LZString.decompressFromUTF16(m.text) || m.text; } catch (e) {} } });
+
+            if (data.channel === "global") {
+                messageHistory = mergeHistory(messageHistory, data.messages);
+                saveLocalHistory();
+                if (currentTab === "global") renderActiveTabMessages();
+            } else {
+                const otherUser = data.channel.replace("dm:", "");
+                const merged = mergeHistory(dmHistories[otherUser] || [], data.messages);
+                dmHistories[otherUser] = applyTombstonesToList(merged);
+                saveDmHistory(otherUser);
+                if (!closedDMs.has(otherUser) && !isGhost) ensureDmTab(otherUser);
+                if (currentTab === data.channel) renderActiveTabMessages();
+            }
+            checkUnreadMessages(messageHistory);
+        }
+
+
         function openAdminTools() { document.getElementById('sys-hr-count').innerText = sysClearHours; document.getElementById('all-hr-count').innerText = allClearHours; openModal('admin-tools-modal'); }
-        function doClearSystem() { if (!isAdmin) return; publishMessage({ type: "CLEAR_RECENT", targetType: "system", hours: sysClearHours, author: myUsername, id: generateId() }); sysClearHours++; document.getElementById('sys-hr-count').innerText = sysClearHours; }
-        function doClearAllRecent() { if (!isAdmin) return; if (confirm(`Are you sure you want to delete ALL messages (system and user) from the last ${allClearHours} hour(s)?`)) { publishMessage({ type: "CLEAR_RECENT", targetType: "all", hours: allClearHours, author: myUsername, id: generateId() }); allClearHours++; document.getElementById('all-hr-count').innerText = allClearHours; } }
+        function doClearSystem() { if (!isAdmin) return; publishMessage({ type: "CLEAR_RECENT", targetType: "system", hours: sysClearHours, author: myUsername, id: generateId(), timestamp: Date.now() }); sysClearHours++; document.getElementById('sys-hr-count').innerText = sysClearHours; }
+        function doClearAllRecent() { if (!isAdmin) return; if (confirm(`Are you sure you want to delete ALL messages (system and user) from the last ${allClearHours} hour(s)?`)) { publishMessage({ type: "CLEAR_RECENT", targetType: "all", hours: allClearHours, author: myUsername, id: generateId(), timestamp: Date.now() }); allClearHours++; document.getElementById('all-hr-count').innerText = allClearHours; } }
         function deleteAnyMessage(id) { publishMessage({ type: "DELETE_MSG", id: id, deleter: myUsername }); }
-        function confirmClearAll() { if (isAdmin && confirm("Are you sure you want to completely NUKE all messages forever?")) publishMessage({ type: "CLEAR_ALL", author: myUsername, id: generateId() }); }
+        function confirmClearAll() { if (isAdmin && confirm("Are you sure you want to completely NUKE all messages forever?")) publishMessage({ type: "CLEAR_ALL", author: myUsername, id: generateId(), timestamp: Date.now() }); }
         function evaluateAdminRole() { const wasAdmin = isAdmin; isAdmin = ADMINS.includes(myUsername); updateStatusText(); if (wasAdmin !== isAdmin) renderActiveTabMessages(); }
         function updateStatusText() { ui.status.innerText = `${isAdmin ? "[ADMIN]" : "[USER]"} Connected as "${myUsername}"`; ui.adminClearBtn.style.display = isAdmin ? "block" : "none"; }
 
@@ -1341,7 +1691,7 @@
                     activeUsers.delete(user);
                     if (!userData.isGhost) {
                         const sysObj = { id: generateId(), isSystem: true, text: `${user} disconnected.`, timestamp: Date.now() };
-                        messageHistory.push(sysObj); saveLocalHistory();
+                        messageHistory = mergeHistory(messageHistory, [sysObj]); saveLocalHistory();
                         if (currentTab === "global") appendSystemDOM(sysObj);
                     }
                     changed = true;
@@ -1448,7 +1798,7 @@
                 if (!activeUsers.has(payload.target)) {
                     pendingDMs[payload.target] = pendingDMs[payload.target] || [];
                     pendingDMs[payload.target].push(payload);
-                    saveToLocalWithCompression('mqtt_pending_dms', pendingDMs);
+                    saveToStorageWithCompression('mqtt_pending_dms', pendingDMs);
                 }
             }
             publishMessage(payload); ui.msgIp.value = ""; ui.typing.innerText = ""; cancelReply();
