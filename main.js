@@ -266,7 +266,6 @@ function makeWindowDraggableAndResizable(win) {
   const titleBar = win.querySelector('.panel-title-bar');
   const iframe = win.querySelector('iframe');
 
-  // Bring to top natively on clicking outer window borders/title
   win.addEventListener('mousedown', () => {
     if (!win.classList.contains('maximized')) {
       highestZIndex++;
@@ -274,7 +273,6 @@ function makeWindowDraggableAndResizable(win) {
     }
   });
 
-  // Attach Resize Handles
   const directions = ['e', 's', 'w', 'se', 'sw'];
   directions.forEach(dir => {
     let handle = win.querySelector(`.win-resize-handle-${dir}`);
@@ -333,12 +331,8 @@ function makeWindowDraggableAndResizable(win) {
       const minW = 280;
       const minH = 200;
 
-      if (dir.includes('e')) {
-        win.style.width = Math.max(minW, startW + dx) + 'px';
-      }
-      if (dir.includes('s')) {
-        win.style.height = Math.max(minH, startH + dy) + 'px';
-      }
+      if (dir.includes('e')) win.style.width = Math.max(minW, startW + dx) + 'px';
+      if (dir.includes('s')) win.style.height = Math.max(minH, startH + dy) + 'px';
       if (dir.includes('w')) {
         const newW = Math.max(minW, startW - dx);
         if (newW > minW) {
@@ -362,7 +356,6 @@ function makeWindowDraggableAndResizable(win) {
     handle.addEventListener('touchstart', startResize, { passive: false });
   });
 
-  // Attach Title Bar Dragging
   if (titleBar) {
     let isDragging = false;
     let startX, startY, initialLeft, initialTop;
@@ -428,10 +421,11 @@ function makeWindowDraggableAndResizable(win) {
 
 // ===== UNIVERSAL DYNAMIC APPLET WINDOW CREATOR =====
 function createAppletWindow(appletPath, options = {}) {
-  const src = options.isRootPath ? appletPath : (appletPath.startsWith('applets/') ? appletPath : `applets/${appletPath}`);
+  const targetSrc = options.isRootPath ? appletPath : (appletPath.startsWith('applets/') ? appletPath : `applets/${appletPath}`);
   const winId = options.id || ('applet-win-' + Math.random().toString(36).substring(2, 9));
   const frameId = options.iframeId || (winId + '-frame');
   const initialTitle = options.title || 'Applet';
+  const keepAlive = options.keepAlive || false; // Used to prevent iframe destruction
 
   const win = document.createElement('div');
   win.id = winId;
@@ -445,19 +439,21 @@ function createAppletWindow(appletPath, options = {}) {
 
   const iconHtml = options.icon ? `<img src="${options.icon}" class="win-title-icon" alt="" onerror="this.style.display='none';" />` : '';
 
+  // Added flex styling to win-btns to guarantee the refresh button squeezes in perfectly
   win.innerHTML = `
     <div class="panel-title-bar" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">
       <span style="display: flex; align-items: center;">
         ${iconHtml}
         <span id="${winId}-title" class="applet-win-title" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">${esc(initialTitle)}</span>
       </span>
-      <span class="win-btns">
+      <span class="win-btns" style="display: flex; gap: 4px;">
+        <button type="button" class="win-btn btn-refresh" aria-label="Refresh">↻</button>
         <button type="button" class="win-btn btn-maximize" aria-label="Maximize">□</button>
         <button type="button" class="win-btn btn-close" aria-label="Close">✕</button>
       </span>
     </div>
     <div class="app-window-body">
-      <iframe id="${frameId}" class="app-frame" src="${src}" title="${esc(initialTitle)}"></iframe>
+      <iframe id="${frameId}" class="app-frame" src="${targetSrc}" title="${esc(initialTitle)}"></iframe>
     </div>
   `;
 
@@ -465,6 +461,7 @@ function createAppletWindow(appletPath, options = {}) {
 
   const titleSpan = win.querySelector('.applet-win-title');
   const iframe = win.querySelector(`#${frameId}`);
+  const refreshBtn = win.querySelector('.btn-refresh');
   const maxBtn = win.querySelector('.btn-maximize');
   const closeBtn = win.querySelector('.btn-close');
 
@@ -508,15 +505,7 @@ function createAppletWindow(appletPath, options = {}) {
   makeWindowDraggableAndResizable(win);
 
   let isMaximized = false;
-  let savedStyle = {
-    top: '',
-    left: '',
-    width: '',
-    height: '',
-    right: '',
-    bottom: '',
-    transform: ''
-  };
+  let savedStyle = { top: '', left: '', width: '', height: '', right: '', bottom: '', transform: '' };
 
   function toggleMaximize() {
     if (!isMaximized) {
@@ -547,6 +536,27 @@ function createAppletWindow(appletPath, options = {}) {
     updateCRTState();
   }
 
+  // --- TERMINATION AND RELOAD LOGIC ---
+  function terminateIframe() {
+    if (!keepAlive) {
+      iframe.src = 'about:blank'; // Forcefully destroys page memory and audio
+    }
+  }
+
+  function restoreIframe() {
+    if (!keepAlive && iframe.src.includes('about:blank')) {
+      iframe.src = targetSrc;
+    }
+  }
+
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      iframe.src = 'about:blank'; // Terminate
+      setTimeout(() => { iframe.src = targetSrc; }, 50); // Relaunch immediately after GC
+    });
+  }
+
   if (maxBtn) {
     maxBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -567,6 +577,7 @@ function createAppletWindow(appletPath, options = {}) {
   }
 
   function openWin() {
+    restoreIframe(); // Boots the app if it was closed previously
     win.hidden = false;
     win.classList.remove('minimized');
     highestZIndex++;
@@ -578,11 +589,13 @@ function createAppletWindow(appletPath, options = {}) {
   function closeWin() {
     win.hidden = true;
     win.classList.remove('minimized');
+    terminateIframe(); // Kills audio and resources, unless keepAlive is true
     updateBtnState();
     updateCRTState();
   }
 
   function minimizeWin() {
+    // Minimize simply hides the window, leaving it running (useful for Paint or similar)
     win.classList.add('minimized');
     win.hidden = true;
     updateBtnState();
@@ -611,15 +624,7 @@ function createAppletWindow(appletPath, options = {}) {
     triggerBtn.addEventListener('click', toggleWin);
   }
 
-  return {
-    win,
-    iframe,
-    open: openWin,
-    close: closeWin,
-    minimize: minimizeWin,
-    toggle: toggleWin,
-    toggleMaximize: toggleMaximize
-  };
+  return { win, iframe, open: openWin, close: closeWin, minimize: minimizeWin, toggle: toggleWin, toggleMaximize: toggleMaximize };
 }
 
 // ===== UNIVERSAL GAME WINDOW LAUNCHER =====
@@ -633,8 +638,9 @@ function openGameWindow(url, title) {
     const winObj = createAppletWindow(url, {
       id: 'game-win-' + slug,
       title: title,
-      className: 'arcade-window', // Makes it act and size identically to the arcade hub
-      isRootPath: true
+      className: 'arcade-window', 
+      isRootPath: true,
+      keepAlive: false // Games will terminate when closed to stop audio
     });
     activeGameWindows[url] = winObj;
     winObj.open();
@@ -672,7 +678,8 @@ function setupAppletsAndFloatingWindows() {
     className: 'arcade-window',
     triggerBtnId: 'arcade-launcher-btn',
     isRootPath: true,
-    title: 'Arcade Hub'
+    title: 'Arcade Hub',
+    keepAlive: false // Arcade hub can be terminated and reloaded safely
   });
 
   createAppletWindow('chatroom.html', {
@@ -680,42 +687,48 @@ function setupAppletsAndFloatingWindows() {
     iframeId: 'chat-frame',
     className: 'chat-window',
     triggerBtnId: 'chat-launcher-btn',
-    icon: 'images/icons/chatroom.png'
+    icon: 'images/icons/chatroom.png',
+    keepAlive: true // CRITICAL: Exempts chat from termination so it receives pings while closed
   });
 
   createAppletWindow('paint.html', {
     id: 'paint-window',
     iframeId: 'paint-frame',
     triggerBtnId: 'taskbar-paint-btn',
-    icon: 'images/icons/paint.png'
+    icon: 'images/icons/paint.png',
+    keepAlive: false
   });
 
   createAppletWindow('weather.html', {
     id: 'weather-window',
     iframeId: 'weather-frame',
     triggerBtnId: 'taskbar-weather-btn',
-    icon: 'images/icons/weather.png'
+    icon: 'images/icons/weather.png',
+    keepAlive: false
   });
 
   createAppletWindow('notes.html', {
     id: 'notes-window',
     iframeId: 'notes-frame',
     triggerBtnId: 'taskbar-notes-btn',
-    icon: 'images/icons/notes.png'
+    icon: 'images/icons/notes.png',
+    keepAlive: false
   });
 
   createAppletWindow('calculator.html', {
     id: 'calculator-window',
     iframeId: 'calculator-frame',
     triggerBtnId: 'taskbar-calculator-btn',
-    icon: 'images/icons/calculator.png'
+    icon: 'images/icons/calculator.png',
+    keepAlive: false
   });
 
   createAppletWindow('clock.html', {
     id: 'clock-window',
     iframeId: 'clock-frame',
     triggerBtnId: 'taskbar-clock-btn',
-    icon: 'images/icons/clock.png'
+    icon: 'images/icons/clock.png',
+    keepAlive: false
   });
 }
 
