@@ -519,7 +519,7 @@
         let pendingName = "";
         let lastDisplayedTimestamp = 0;
         let newMessageCount = 0;
-        let renderedMsgCount = 250; // Optimized windowing to eliminate initial render lag spike
+        let renderedMsgCount = 250; 
         const NEAR_BOTTOM_PX = 50;
         const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
         let ghostId = "ghost-" + generateId();
@@ -563,7 +563,6 @@
             ui.reactionPickerMenu.style.display = "none"; 
         });
 
-        // Infinite scroll up to load earlier history dynamically without initial DOM lag spike
         ui.chatBox.addEventListener("scroll", () => { 
             if (isChatNearBottom()) hideNewMsgPopup(); 
             if (ui.chatBox.scrollTop === 0) {
@@ -839,8 +838,22 @@
             } catch(e) { return []; }
         }
 
+        function sanitizeHistoryLoaded(historyArray) {
+            if (!Array.isArray(historyArray)) return [];
+            historyArray.forEach(m => {
+                if (m.compressed && m.text) {
+                    try {
+                        m.text = LZString.decompressFromUTF16(m.text) || m.text;
+                        m.compressed = false;
+                    } catch(e) {}
+                }
+            });
+            return historyArray;
+        }
+
         async function loadLocalHistory() { 
-            messageHistory = await loadFromStorageWithCompression(STORAGE_KEY);
+            let loaded = await loadFromStorageWithCompression(STORAGE_KEY);
+            messageHistory = sanitizeHistoryLoaded(loaded);
             rebuildMessageHistoryIdSet();
             if(currentTab === "global") renderActiveTabMessages(); 
         }
@@ -872,6 +885,7 @@
                     if (key.startsWith(`mqtt_dm_${myUsername}_`)) {
                         let target = key.replace(`mqtt_dm_${myUsername}_`, "");
                         let hist = await loadFromStorageWithCompression(key);
+                        hist = sanitizeHistoryLoaded(hist);
                         if (hist.length > 0) { dmHistories[target] = hist; if (!closedDMs.has(target)) ensureDmTab(target); }
                     }
                 }
@@ -937,12 +951,10 @@
             
             let txt = escapeHTML(rawText);
 
-            // Basic Markdown Parsing
             txt = txt.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
             txt = txt.replace(/\*(.*?)\*/g, '<i>$1</i>');
             txt = txt.replace(/`(.*?)`/g, '<code style="background:#e0e0e0; padding:2px; font-family:monospace; color:#000;">$1</code>');
             
-            // Smart Link Embeds (YouTube)
             txt = txt.replace(/(https?:\/\/[^\s]+)/g, url => {
                 const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
                 if (ytMatch) {
@@ -954,7 +966,6 @@
             return txt;
         }
 
-        // Relative timestamp formatting: (3 seconds ago), (23 minutes ago), (13 hours ago), or Date if > 24h
         function formatTimestamp(ts) {
             const now = Date.now();
             const diffMs = Math.max(0, now - ts);
@@ -962,7 +973,7 @@
             const diffMin = Math.floor(diffSec / 60);
             const diffHr = Math.floor(diffMin / 60);
 
-            if (diffMs >= 86400000) { // More than a day ago
+            if (diffMs >= 86400000) { 
                 return new Date(ts).toLocaleDateString();
             }
 
@@ -977,7 +988,6 @@
             }
         }
 
-        // Periodically refresh visible relative timestamps
         setInterval(() => {
             document.querySelectorAll(".msg-time[data-ts]").forEach(el => {
                 const ts = parseInt(el.getAttribute("data-ts"), 10);
@@ -1094,7 +1104,6 @@
             });
         }
 
-        // Fast windowed rendering to ensure 0 lag spike even with thousands of history items
         function renderActiveTabMessages(resetCount = true) {
             if (resetCount) renderedMsgCount = 250;
             const oldDistanceFromBottom = ui.chatBox.scrollHeight - ui.chatBox.scrollTop;
@@ -1480,7 +1489,10 @@
             client.on("message", async (topic, payload) => {
                 try {
                     const data = JSON.parse(payload.toString());
-                    if (data.compressed && data.text) data.text = LZString.decompressFromUTF16(data.text) || data.text;
+                    if (data.compressed && data.text) {
+                        data.text = LZString.decompressFromUTF16(data.text) || data.text;
+                        data.compressed = false;
+                    }
                     
                     if (data.author && !blockedUsers.has(data.author)) {
                         const existing = activeUsers.get(data.author);
@@ -1494,7 +1506,6 @@
                         renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
                     }
 
-                    // REAL-TIME Live Message Mention/Ping Logic:
                     if (data.author !== myUsername && !blockedUsers.has(data.author)) {
                         const isDM = (!isGhost && data.type === "DM" && data.target === myUsername);
                         const isEveryone = (data.type === "MSG" && data.text && data.text.includes("@everyone"));
@@ -1526,14 +1537,12 @@
                     }
 
                     if (data.type === "SYNC_MANIFEST_REQ") {
-                        // Add jitter delay before manifest response to prevent network/thread spike
                         setTimeout(() => {
                             if (isConnected) handleManifestRequest(data);
                         }, Math.floor(Math.random() * 350));
                         if (!isGhost && data.author) processPendingOutbox(data.author);
                     }
                     else if (data.type === "SYNC_MANIFEST") {
-                        // Async yield processing for big manifests to keep UI completely smooth
                         setTimeout(() => handleManifest(data), 0);
                     }
                     else if (data.type === "SYNC_PULL") {
@@ -1714,9 +1723,6 @@
             });
         }
 
-        // Optimized History Merging:
-        // - Specific user pings (@myUsername) sent while offline will trigger when coming online.
-        // - Offline @everyone pings are ignored (only affect users online at the exact time sent).
         function mergeHistory(localHistory, remoteHistory, isRealtimeLive = false) {
             if (!remoteHistory || !remoteHistory.length) return localHistory;
 
@@ -1729,7 +1735,6 @@
                         rangeTombstones.some(r => msg.timestamp >= r.from && msg.timestamp <= r.to && (r.targetType === "all" || (r.targetType === "system") === !!msg.isSystem));
                     if (!isTombstoned) {
                         if (msg.author !== myUsername && !blockedUsers.has(msg.author)) {
-                            // Specific mentions ping from offline, but @everyone does NOT ping from offline
                             const isSpecificMention = msg.text && (!isGhost && msg.text.includes(`@${myUsername}`));
                             if (isSpecificMention && !isRealtimeLive) {
                                 let storedPings = JSON.parse(localStorage.getItem('mqtt_pings') || '{}');
@@ -1769,7 +1774,6 @@
                     uniqueMessages.set(key, msg);
                     
                     if (!localIds.has(msg.id) && msg.author !== myUsername && !blockedUsers.has(msg.author)) {
-                        // Offline specific mentions trigger, offline @everyone pings are ignored
                         const isSpecificMention = msg.text && (!isGhost && msg.text.includes(`@${myUsername}`));
                         if (isSpecificMention && !isRealtimeLive) {
                             let storedPings = JSON.parse(localStorage.getItem('mqtt_pings') || '{}');
@@ -1984,12 +1988,21 @@
                 if (!queue || !queue.length) { syncDraining.delete(drainKey); return; }
 
                 const batch = queue.splice(0, SYNC_BATCH_SIZE);
+                
+                // Re-compress the batch before sending it out so MQTT bounds aren't exceeded
+                const compressedBatch = batch.map(m => {
+                    if ((m.isImage || m.isVideo || m.isAudio || m.isFile) && !m.compressed) {
+                        return { ...m, text: LZString.compressToUTF16(m.text), compressed: true };
+                    }
+                    return m;
+                });
+
                 publishMessage({
                     type: "SYNC_CHUNK",
                     author: myUsername,
                     target: peer,
                     channel: channel,
-                    messages: batch,
+                    messages: compressedBatch,
                     remaining: queue.length
                 });
 
@@ -2006,7 +2019,14 @@
             if (data.target !== myUsername) return;
             if (!data.messages || !data.messages.length) return;
 
-            data.messages.forEach(m => { if (m.compressed && m.text) { try { m.text = LZString.decompressFromUTF16(m.text) || m.text; } catch (e) {} } });
+            data.messages.forEach(m => { 
+                if (m.compressed && m.text) { 
+                    try { 
+                        m.text = LZString.decompressFromUTF16(m.text) || m.text; 
+                        m.compressed = false; 
+                    } catch (e) {} 
+                } 
+            });
 
             if (data.channel === "global") {
                 messageHistory = mergeHistory(messageHistory, data.messages, false);
@@ -2130,29 +2150,38 @@
             }
             const msgId = Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
             const cleanReply = activeReply ? { author: activeReply.author, text: activeReply.text, isImage: activeReply.isImage, isVideo: activeReply.isVideo, isAudio: activeReply.isAudio, isFile: activeReply.isFile } : null;
+            
             let finalText = content; let compressedFlag = false;
+            if (opts.isFile || opts.isImage || opts.isAudio || opts.isVideo) { 
+                finalText = opts.preCompressed || LZString.compressToUTF16(content); 
+                compressedFlag = true; 
+            }
             
-            if (opts.isFile || opts.isImage || opts.isAudio || opts.isVideo) { finalText = opts.preCompressed || LZString.compressToUTF16(content); compressedFlag = true; }
+            // localPayload gets UNCOMPRESSED content so it renders correctly locally
+            const localPayload = { type: currentTab === "global" ? "MSG" : "DM", id: msgId, author: myUsername, text: content, compressed: false, isImage: opts.isImage, isVideo: opts.isVideo, isAudio: opts.isAudio, isFile: opts.isFile, fileName: opts.fileName, timestamp: Date.now(), replyTo: cleanReply, edited: false, reactions: {} };
             
-            const payload = { type: currentTab === "global" ? "MSG" : "DM", id: msgId, author: myUsername, text: finalText, compressed: compressedFlag, isImage: opts.isImage, isVideo: opts.isVideo, isAudio: opts.isAudio, isFile: opts.isFile, fileName: opts.fileName, timestamp: Date.now(), replyTo: cleanReply, edited: false, reactions: {} };
+            // publishPayload gets the COMPRESSED content to send over MQTT
+            const publishPayload = { ...localPayload, text: finalText, compressed: compressedFlag };
             
             if (currentTab !== "global") {
-                payload.target = currentTab.replace("dm:", "");
-                if (closedDMs.has(payload.target)) { 
-                    closedDMs.delete(payload.target); 
+                const target = currentTab.replace("dm:", "");
+                publishPayload.target = target;
+                localPayload.target = target;
+                if (closedDMs.has(target)) { 
+                    closedDMs.delete(target); 
                     saveClosedDMs(); 
                 }
-                ensureDmTab(payload.target);
-                dmHistories[payload.target] = mergeHistory(dmHistories[payload.target] || [], [payload], true);
-                saveDmHistory(payload.target);
-                if (currentTab === `dm:${payload.target}`) scheduleRenderActiveTabMessages();
+                ensureDmTab(target);
+                dmHistories[target] = mergeHistory(dmHistories[target] || [], [localPayload], true);
+                saveDmHistory(target);
+                if (currentTab === `dm:${target}`) scheduleRenderActiveTabMessages();
             } else {
-                messageHistory = mergeHistory(messageHistory, [payload], true);
+                messageHistory = mergeHistory(messageHistory, [localPayload], true);
                 saveLocalHistory();
                 scheduleRenderActiveTabMessages();
             }
 
-            publishMessage(payload);
+            publishMessage(publishPayload);
             ui.msgIp.value = "";
             cancelReply();
         }
