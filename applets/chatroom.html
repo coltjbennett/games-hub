@@ -587,17 +587,33 @@
             localStorage.setItem('mqtt_mute_sounds', document.getElementById('mute-sounds-chk').checked);
         }
 
+        let sharedPingAudioCtx = null;
+
         function triggerMention(author, isEveryone = false) {
             let muteSounds = localStorage.getItem('mqtt_mute_sounds') === 'true';
             if (muteSounds || currentStatus === 'DND') return;
 
             // The parent-shell ping banner now handles the visual notification
             // (see postMessage 'ping' calls above); this just plays the alert tone.
+            // Reuse one AudioContext instead of creating a new one per ping -
+            // repeatedly spinning up unclosed contexts is what was causing the
+            // freezing/stutter.
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                if (!sharedPingAudioCtx || sharedPingAudioCtx.state === 'closed') {
+                    sharedPingAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                const ctx = sharedPingAudioCtx;
+                if (ctx.state === 'suspended') ctx.resume();
+
                 const osc = ctx.createOscillator();
-                osc.type = 'triangle'; osc.frequency.setValueAtTime(880, ctx.currentTime);
-                osc.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + 0.15);
+                const gain = ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(880, ctx.currentTime);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.15);
+                osc.onended = () => { osc.disconnect(); gain.disconnect(); };
             } catch (e) {}
         }
 
@@ -691,7 +707,7 @@
             }
 
             const label = escapeHTML(activity.name || "an active window");
-            return ` <span style='font-size:11px; color:#008000;'>[currently on ${label}]</span>`;
+            return ` <span style='font-size:11px; color:#008000;'>[currently active in ${label}]</span>`;
         }
 
         function buildPingNotificationText(author, messageText, isEveryone = false, isOffline = false) {
