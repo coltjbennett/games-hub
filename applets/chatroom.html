@@ -366,13 +366,6 @@
         </div>
     </div>
 
-    <div id="mention-modal" class="modal-overlay">
-        <div class="w95-window">
-            <div class="w95-titlebar"><span>Mention Notification</span><button onclick="closeModal('mention-modal')" style="height: 18px; line-height: 10px;">X</button></div>
-            <div class="w95-content"><p id="mention-text" style="margin-bottom: 12px; font-weight: bold; color: var(--win-blue);"></p><button onclick="closeModal('mention-modal')">Acknowledge</button></div>
-        </div>
-    </div>
-
     <div id="username-screen" class="outset-panel" style="padding: 15px; margin: 20px auto; max-width: 320px;">
         <h4 style="margin-bottom: 8px;">Create Username</h4>
         <input type="text" id="username-input" placeholder="Enter a username..." style="width: 100%; margin-bottom: 10px;" onkeydown="if(event.key==='Enter') joinChat()" />
@@ -596,10 +589,10 @@
 
         function triggerMention(author, isEveryone = false) {
             let muteSounds = localStorage.getItem('mqtt_mute_sounds') === 'true';
-            if (muteSounds || currentStatus === 'DND') return; 
+            if (muteSounds || currentStatus === 'DND') return;
 
-            document.getElementById("mention-text").innerText = isEveryone ? `@${author} pinged @everyone!` : `@${author} mentioned you!`;
-            openModal("mention-modal");
+            // The parent-shell ping banner now handles the visual notification
+            // (see postMessage 'ping' calls above); this just plays the alert tone.
             try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
                 const osc = ctx.createOscillator();
@@ -703,8 +696,8 @@
 
         function buildPingNotificationText(author, messageText, isEveryone = false, isOffline = false) {
             const base = isEveryone
-                ? `${author} pinged @everyone`
-                : `You were pinged by ${author}`;
+                ? `@${author} pinged everyone!`
+                : `@${author} pinged you!`;
 
             let content = typeof messageText === "string" ? messageText.trim() : "";
 
@@ -718,18 +711,21 @@
                 content = content.trim();
             }
 
+            if (isOffline && content) {
+                content += " (while you were offline)";
+            } else if (isOffline) {
+                content = "(while you were offline)";
+            }
+
             let notification = base;
 
             if (content) {
-                const MAX_PREVIEW_LENGTH = 180;
+                // Roughly fills two lines' worth of text in the popup window
+                const MAX_PREVIEW_LENGTH = 90;
                 const preview = content.length > MAX_PREVIEW_LENGTH
                     ? content.slice(0, MAX_PREVIEW_LENGTH - 1).trimEnd() + "…"
                     : content;
-                notification += `: ${preview}`;
-            }
-
-            if (isOffline) {
-                notification += " while you were offline";
+                notification += `\nThey said "${preview}"`;
             }
 
             return notification;
@@ -757,8 +753,29 @@
                     textData += `[${timeStr}] SYSTEM: ${m.text}\n`;
                 } else {
                     let content = m.isImage ? "[Image]" : m.isVideo ? "[Video]" : m.isAudio ? "[Voice Memo]" : m.isFile ? `[File: ${m.fileName}]` : m.text;
-                    let edit = m.edited ? " (edited)" : "";
-                    textData += `[${timeStr}] ${m.author}: ${content}${edit}\n`;
+
+                    let replyTag = "";
+                    if (m.replyTo) {
+                        const replyTime = m.replyTo.timestamp ? new Date(m.replyTo.timestamp).toLocaleString() : "";
+                        const replyContent = m.replyTo.isImage ? "[Image]" : m.replyTo.isVideo ? "[Video]" : m.replyTo.isAudio ? "[Voice Memo]" : m.replyTo.isFile ? "[File]" : (m.replyTo.text || "");
+                        const REPLY_PREVIEW_LENGTH = 40;
+                        const shortened = replyContent.length > REPLY_PREVIEW_LENGTH
+                            ? replyContent.slice(0, REPLY_PREVIEW_LENGTH - 1).trimEnd() + "…"
+                            : replyContent;
+                        replyTag = `[replying to: "${replyTime ? `[${replyTime}] ` : ""}${m.replyTo.author}: "${shortened}""] `;
+                    }
+
+                    let reactionTag = "";
+                    if (m.reactions && Object.keys(m.reactions).length > 0) {
+                        const reactionStr = Object.entries(m.reactions)
+                            .map(([emoji, users]) => `${emoji}*${users.length}`)
+                            .join(", ");
+                        reactionTag = ` [reactions: ${reactionStr}]`;
+                    }
+
+                    let editTag = m.edited ? " [edited]" : "";
+
+                    textData += `[${timeStr}] ${replyTag}${m.author}: "${content}"${reactionTag}${editTag}\n`;
                 }
             });
 
