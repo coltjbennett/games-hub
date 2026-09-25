@@ -1087,15 +1087,38 @@ function setupChatWidget() {
         setPendingDot(true);
       }
     } else if (data.kind === 'ping') {
-      const banner = document.getElementById('ping-banner');
-      const bannerText = document.getElementById('ping-banner-text');
-      if (banner && bannerText) {
-        bannerText.textContent = data.text;
-        banner.style.top = '10px';
-        setTimeout(() => { banner.style.top = '-100px'; }, 3000);
-      }
+      showPingBanner(data.text);
     }
   });
+}
+
+let pingBannerHideTimer = null;
+
+function hidePingBanner() {
+  const banner = document.getElementById('ping-banner');
+  if (!banner) return;
+  banner.style.top = '-140px';
+  clearTimeout(pingBannerHideTimer);
+  pingBannerHideTimer = null;
+}
+
+function showPingBanner(text) {
+  const banner = document.getElementById('ping-banner');
+  const bannerText = document.getElementById('ping-banner-text');
+  if (!banner || !bannerText) return;
+
+  bannerText.textContent = text;
+  banner.style.top = '10px';
+
+  // Reset the auto-dismiss timer so a fresh ping always gets its own full 3s.
+  clearTimeout(pingBannerHideTimer);
+  pingBannerHideTimer = setTimeout(hidePingBanner, 3000);
+}
+
+function setupPingBannerDismiss() {
+  const banner = document.getElementById('ping-banner');
+  if (!banner) return;
+  banner.addEventListener('click', hidePingBanner);
 }
 
 function setupToSModal() {
@@ -1134,6 +1157,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupAppletsAndFloatingWindows();
   setupGameLaunchers();
   setupChatWidget();
+  setupPingBannerDismiss();
   updateTaskbarClock();
   setInterval(updateTaskbarClock, 1000);
 });
