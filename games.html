@@ -285,26 +285,88 @@
       renderGrid(filtered);
     });
 
+    // ===== ACTIVE GAME SYNC =====
+    // Arcade Hub reports the game currently occupying its own viewport to the
+    // parent launcher. The parent then forwards the activity to the chatroom.
+    let activeArcadeGameTitle = "";
+    let arcadeActivityTimer = null;
+
+    function notifyParentActivity(name, active = true) {
+      if (!window.parent || window.parent === window) return;
+
+      window.parent.postMessage({
+        source: 'arcade-hub',
+        kind: 'activity',
+        active,
+        name: name || 'Arcade Hub',
+        activityKind: name && name !== 'Arcade Hub' ? 'arcade-game' : 'arcade'
+      }, '*');
+    }
+
+    function stopArcadeActivityMonitor() {
+      if (arcadeActivityTimer) {
+        clearInterval(arcadeActivityTimer);
+        arcadeActivityTimer = null;
+      }
+    }
+
+    function startArcadeActivityMonitor(title) {
+      stopArcadeActivityMonitor();
+
+      activeArcadeGameTitle = title || "";
+      notifyParentActivity(activeArcadeGameTitle || 'Arcade Hub', true);
+
+      // Cross-origin HTML5 game iframes cannot be inspected directly. The
+      // Arcade Hub can still see which child iframe currently has focus.
+      arcadeActivityTimer = setInterval(() => {
+        if (!activeArcadeGameTitle) return;
+
+        const modal = document.getElementById('game-modal');
+        if (!modal || modal.style.display === 'none') return;
+
+        const gameFrame = document.querySelector('#game-container iframe');
+        const rufflePlayer = document.querySelector('#game-container ruffle-player, #game-container > ruffle-player');
+
+        if (gameFrame && document.activeElement === gameFrame) {
+          notifyParentActivity(activeArcadeGameTitle, true);
+        } else if (rufflePlayer && (
+          document.activeElement === rufflePlayer ||
+          rufflePlayer.matches(':focus-within')
+        )) {
+          notifyParentActivity(activeArcadeGameTitle, true);
+        }
+      }, 500);
+    }
+
+    function notifyArcadeHubActivity() {
+      stopArcadeActivityMonitor();
+      activeArcadeGameTitle = "";
+      notifyParentActivity('Arcade Hub', true);
+    }
+
     // Opens both HTML5 and Flash/SWF games to fill the entire Arcade Hub window
     function openGame(url, isSwf, title) {
       const modal = document.getElementById('game-modal');
       const container = document.getElementById('game-container');
-      
+
       // Update Title Bar
       document.getElementById('modal-title').innerText = title + (isSwf ? ' - Flash Arcade' : ' - HTML Arcade');
-      
+
       // Clear previous content
       container.innerHTML = '';
-      
+
       if (isSwf) {
         // Embed Ruffle Player for SWF files
         const ruffle = window.RufflePlayer.newest();
         const player = ruffle.createPlayer();
         player.style.width = '100%';
         player.style.height = '100%';
-        
+
         container.appendChild(player);
         player.load(url);
+
+        player.addEventListener('mousedown', () => notifyParentActivity(title, true));
+        player.addEventListener('touchstart', () => notifyParentActivity(title, true), { passive: true });
       } else {
         // Embed iframe for HTML5 games
         const iframe = document.createElement('iframe');
@@ -313,22 +375,49 @@
         iframe.style.height = '100%';
         iframe.style.border = 'none';
         iframe.allow = 'autoplay; fullscreen; keyboard';
-        
+        iframe.title = title;
+
+        iframe.addEventListener('load', () => {
+          notifyParentActivity(title, true);
+        });
+
         container.appendChild(iframe);
       }
-      
+
       // Display full game viewport
       modal.style.display = 'flex';
+
+      // Tell the parent immediately, then keep checking child-frame focus.
+      startArcadeActivityMonitor(title);
     }
 
     // Close Game Viewport and return to game library
     function closeModal() {
       const modal = document.getElementById('game-modal');
       const container = document.getElementById('game-container');
-      
+
       modal.style.display = 'none';
-      container.innerHTML = ''; 
+      container.innerHTML = '';
+      notifyArcadeHubActivity();
     }
+
+    // The Arcade Hub itself is an active site window once it has loaded.
+    window.addEventListener('load', () => {
+      notifyArcadeHubActivity();
+    });
+
+    window.addEventListener('mousedown', (event) => {
+      // Clicking the game modal's controls or library means Arcade Hub is
+      // the active floating window. Opening a game immediately reasserts
+      // the game title through openGame().
+      if (event.target.closest('#game-modal') || event.target.closest('.arcade-card')) {
+        notifyParentActivity(activeArcadeGameTitle || 'Arcade Hub', true);
+      }
+    }, true);
+
+    window.addEventListener('beforeunload', () => {
+      notifyParentActivity('Arcade Hub', false);
+    });
 
     fetchGames(false);
   </script>

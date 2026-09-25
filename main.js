@@ -17,6 +17,163 @@ const CHAT_USERNAME_KEY = 'mqtt_chat_username_v1';
 
 let highestZIndex = 1000;
 
+// ===== SITE ACTIVITY / ACTIVE WINDOW SYNC =====
+// The browser does not expose the operating-system's active application to web
+// pages. This activity layer therefore tracks the site's own floating windows
+// and nested iframes, then shares that state with the chatroom.
+let activeWindowState = null;
+
+function getFloatingWindowActivityName(win, fallback = "Application") {
+  if (!win) return fallback;
+  const titleEl = win.querySelector('.applet-win-title');
+  const title = titleEl ? titleEl.textContent.trim() : "";
+  return win.__activityNameOverride || title || fallback;
+}
+
+function getFloatingWindowActivityKind(win) {
+  if (!win) return "window";
+  return win.dataset.activityKind || "window";
+}
+
+function isFloatingWindowVisible(win) {
+  return !!win && !win.hidden && !win.classList.contains('minimized');
+}
+
+function getTopmostVisibleFloatingWindow(excludeWin = null) {
+  const windows = Array.from(document.querySelectorAll('.floating-window'))
+    .filter(win => win !== excludeWin && isFloatingWindowVisible(win));
+
+  windows.sort((a, b) => {
+    const az = parseInt(a.style.zIndex || "0", 10) || 0;
+    const bz = parseInt(b.style.zIndex || "0", 10) || 0;
+    return bz - az;
+  });
+
+  return windows[0] || null;
+}
+
+function sendActivityStateToChat() {
+  const chatFrame = document.getElementById('chat-frame');
+  const chatWindow = document.getElementById('chat-window');
+
+  if (!chatFrame || !chatFrame.contentWindow) return;
+
+  const chatWindowOpen = isFloatingWindowVisible(chatWindow);
+  const activeWindow = activeWindowState ? { ...activeWindowState } : null;
+
+  chatFrame.contentWindow.postMessage({
+    source: 'parent-shell',
+    action: 'activityState',
+    activeWindow,
+    chatWindowOpen,
+    isHomepage: !chatWindowOpen && !activeWindow
+  }, '*');
+}
+
+function setActiveFloatingWindow(win, explicitName = "") {
+  if (!win || !isFloatingWindowVisible(win)) return;
+
+  const nextState = {
+    id: win.id,
+    kind: getFloatingWindowActivityKind(win),
+    name: explicitName || getFloatingWindowActivityName(win)
+  };
+
+  const changed =
+    !activeWindowState ||
+    activeWindowState.id !== nextState.id ||
+    activeWindowState.kind !== nextState.kind ||
+    activeWindowState.name !== nextState.name;
+
+  activeWindowState = nextState;
+
+  if (changed) {
+    sendActivityStateToChat();
+  }
+}
+
+function clearActiveFloatingWindow(win = null) {
+  if (win && activeWindowState && activeWindowState.id !== win.id) {
+    return;
+  }
+
+  const fallback = getTopmostVisibleFloatingWindow(win);
+
+  if (fallback) {
+    setActiveFloatingWindow(fallback, getFloatingWindowActivityName(fallback));
+    return;
+  }
+
+  if (activeWindowState !== null) {
+    activeWindowState = null;
+    sendActivityStateToChat();
+  }
+}
+
+function refreshActiveFloatingWindow() {
+  if (activeWindowState) {
+    const current = document.getElementById(activeWindowState.id);
+    if (isFloatingWindowVisible(current)) {
+      setActiveFloatingWindow(current, getFloatingWindowActivityName(current));
+      return;
+    }
+  }
+
+  const fallback = getTopmostVisibleFloatingWindow();
+  if (fallback) {
+    setActiveFloatingWindow(fallback, getFloatingWindowActivityName(fallback));
+  } else {
+    clearActiveFloatingWindow();
+  }
+}
+
+function setupActiveWindowTracking() {
+  document.addEventListener('mousedown', (event) => {
+    const win = event.target.closest ? event.target.closest('.floating-window') : null;
+
+    if (win) {
+      if (isFloatingWindowVisible(win)) {
+        setActiveFloatingWindow(win, getFloatingWindowActivityName(win));
+      }
+      return;
+    }
+
+    // Clicking the desktop/page itself means there is no active site window.
+    // Taskbar/start-menu clicks are intentionally left alone so the button
+    // handlers can open/focus their target window immediately afterward.
+    if (event.target.closest('.taskbar, #start-menu')) return;
+
+    clearActiveFloatingWindow();
+  }, true);
+}
+
+function setupActivityMessaging() {
+  window.addEventListener('message', (event) => {
+    const data = event.data || {};
+    if (data.source !== 'arcade-hub') return;
+
+    const arcadeFrame = document.getElementById('arcade-frame');
+    const arcadeWindow = document.getElementById('arcade-window');
+
+    if (!arcadeFrame || !arcadeWindow || event.source !== arcadeFrame.contentWindow) return;
+
+    if (data.active === false) {
+      arcadeWindow.__activityNameOverride = "";
+      if (activeWindowState && activeWindowState.id === arcadeWindow.id) {
+        clearActiveFloatingWindow(arcadeWindow);
+      }
+      return;
+    }
+
+    const activityName = typeof data.name === 'string' && data.name.trim()
+      ? data.name.trim()
+      : 'Arcade Hub';
+
+    arcadeWindow.__activityNameOverride = activityName === 'Arcade Hub' ? "" : activityName;
+    setActiveFloatingWindow(arcadeWindow, activityName);
+  });
+}
+
 const STATUS_META = {
   complete:   { label: 'Complete',      className: 'status--complete',   bucket: 'complete' },
   beta:       { label: 'Beta Release',  className: 'status--beta',       bucket: 'progress' },
@@ -267,6 +424,8 @@ function makeWindowDraggableAndResizable(win) {
   const iframe = win.querySelector('iframe');
 
   win.addEventListener('mousedown', () => {
+    setActiveFloatingWindow(win, getFloatingWindowActivityName(win));
+
     if (!win.classList.contains('maximized')) {
       highestZIndex++;
       win.style.zIndex = highestZIndex;
@@ -430,6 +589,12 @@ function createAppletWindow(appletPath, options = {}) {
   const win = document.createElement('div');
   win.id = winId;
   win.className = `app-window panel floating-window ${options.className || ''}`;
+  win.dataset.activityKind = options.activityKind || (
+    winId === 'chat-window' ? 'chatroom' :
+    winId === 'arcade-window' ? 'arcade' :
+    winId.startsWith('game-win-') ? 'game' :
+    'window'
+  );
   win.role = 'dialog';
   win.setAttribute('aria-labelledby', `${winId}-title`);
   win.hidden = options.hidden !== undefined ? options.hidden : true;
@@ -468,6 +633,8 @@ function createAppletWindow(appletPath, options = {}) {
   window.addEventListener('blur', () => {
     setTimeout(() => {
       if (document.activeElement === iframe) {
+        setActiveFloatingWindow(win, getFloatingWindowActivityName(win));
+
         if (!win.classList.contains('maximized')) {
           highestZIndex++;
           win.style.zIndex = highestZIndex;
@@ -485,20 +652,38 @@ function createAppletWindow(appletPath, options = {}) {
           iframe.title = docTitle;
         }
       }
+
+      if (!win.__activityNameOverride && activeWindowState && activeWindowState.id === win.id) {
+        setActiveFloatingWindow(win, getFloatingWindowActivityName(win));
+      }
+
+      iframe.contentWindow.addEventListener('focus', () => {
+        setActiveFloatingWindow(win, getFloatingWindowActivityName(win));
+      });
+
       iframe.contentWindow.addEventListener('mousedown', () => {
+        setActiveFloatingWindow(win, getFloatingWindowActivityName(win));
+
         if (!win.classList.contains('maximized')) {
           highestZIndex++;
           win.style.zIndex = highestZIndex;
         }
       });
+
       iframe.contentWindow.addEventListener('touchstart', () => {
+        setActiveFloatingWindow(win, getFloatingWindowActivityName(win));
+
         if (!win.classList.contains('maximized')) {
           highestZIndex++;
           win.style.zIndex = highestZIndex;
         }
       });
     } catch (e) {
-      console.warn("Could not read applet title or inject events:", e);
+      // Cross-origin frames may not allow direct event injection. The parent
+      // window's blur/document.activeElement path still handles normal iframe focus.
+      if (!win.__activityNameOverride && activeWindowState && activeWindowState.id === win.id) {
+        setActiveFloatingWindow(win, getFloatingWindowActivityName(win));
+      }
     }
   });
 
@@ -582,6 +767,7 @@ function createAppletWindow(appletPath, options = {}) {
     win.classList.remove('minimized');
     highestZIndex++;
     win.style.zIndex = highestZIndex;
+    setActiveFloatingWindow(win, getFloatingWindowActivityName(win));
     updateBtnState();
     updateCRTState();
   }
@@ -590,6 +776,13 @@ function createAppletWindow(appletPath, options = {}) {
     win.hidden = true;
     win.classList.remove('minimized');
     terminateIframe(); // Kills audio and resources, unless keepAlive is true
+
+    if (activeWindowState && activeWindowState.id === win.id) {
+      clearActiveFloatingWindow(win);
+    } else {
+      sendActivityStateToChat();
+    }
+
     updateBtnState();
     updateCRTState();
   }
@@ -598,6 +791,13 @@ function createAppletWindow(appletPath, options = {}) {
     // Minimize simply hides the window, leaving it running (useful for Paint or similar)
     win.classList.add('minimized');
     win.hidden = true;
+
+    if (activeWindowState && activeWindowState.id === win.id) {
+      clearActiveFloatingWindow(win);
+    } else {
+      sendActivityStateToChat();
+    }
+
     updateBtnState();
     updateCRTState();
   }
@@ -606,9 +806,12 @@ function createAppletWindow(appletPath, options = {}) {
     if (win.hidden || win.classList.contains('minimized')) {
       openWin();
     } else {
-      if (win.style.zIndex < highestZIndex) {
+      const currentZ = parseInt(win.style.zIndex || "0", 10) || 0;
+
+      if (currentZ < highestZIndex) {
         highestZIndex++;
         win.style.zIndex = highestZIndex;
+        setActiveFloatingWindow(win, getFloatingWindowActivityName(win));
       } else {
         minimizeWin();
       }
@@ -638,7 +841,8 @@ function openGameWindow(url, title) {
     const winObj = createAppletWindow(url, {
       id: 'game-win-' + slug,
       title: title,
-      className: 'arcade-window', 
+      className: 'arcade-window',
+      activityKind: 'game',
       isRootPath: true,
       keepAlive: false // Games will terminate when closed to stop audio
     });
@@ -676,6 +880,7 @@ function setupAppletsAndFloatingWindows() {
     id: 'arcade-window',
     iframeId: 'arcade-frame',
     className: 'arcade-window',
+    activityKind: 'arcade',
     triggerBtnId: 'arcade-launcher-btn',
     isRootPath: true,
     title: 'Arcade Hub',
@@ -686,8 +891,10 @@ function setupAppletsAndFloatingWindows() {
     id: 'chat-window',
     iframeId: 'chat-frame',
     className: 'chat-window',
+    activityKind: 'chatroom',
     triggerBtnId: 'chat-launcher-btn',
     icon: 'images/icons/chatroom.png',
+    title: 'Chatroom',
     keepAlive: true // CRITICAL: Exempts chat from termination so it receives pings while closed
   });
 
@@ -835,8 +1042,13 @@ function setupChatWidget() {
     if (chatFrame && chatFrame.contentWindow) {
       chatFrame.contentWindow.postMessage({
         source: 'parent-shell',
-        action: isOpen ? 'chatWindowOpened' : 'chatWindowClosed'
+        action: isOpen ? 'chatWindowOpened' : 'chatWindowClosed',
+        activeWindow: activeWindowState ? { ...activeWindowState } : null,
+        chatWindowOpen: isOpen,
+        isHomepage: !isOpen && !activeWindowState
       }, '*');
+
+      sendActivityStateToChat();
     }
   }
 
@@ -862,6 +1074,11 @@ function setupChatWidget() {
   window.addEventListener('message', (event) => {
     const data = event.data || {};
     if (data.source !== 'universal-chat') return;
+
+    if (data.kind === 'activityRequest') {
+      sendActivityStateToChat();
+      return;
+    }
 
     if (data.kind === 'presence') {
       if (onlineCountEl) onlineCountEl.textContent = String(data.count);
@@ -912,6 +1129,8 @@ document.addEventListener('DOMContentLoaded', () => {
   setupVisitorCounter();
   setupToSModal();
   setupCRTToggle();
+  setupActivityMessaging();
+  setupActiveWindowTracking();
   setupAppletsAndFloatingWindows();
   setupGameLaunchers();
   setupChatWidget();

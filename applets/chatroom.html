@@ -381,12 +381,14 @@
 
     <div id="chat-screen" style="display: none; height: 100%; width: 100%; flex-direction: column;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <span id="status" style="font-size: 13px; font-weight: bold;">Connecting to chatroom...</span>
+            <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+                <span id="status" style="font-size: 13px; font-weight: bold;">Connecting to chatroom...</span>
+                <span id="activity-status" style="font-size: 11px; color: #555;">On homepage</span>
+            </div>
             <div style="display: flex; gap: 4px; align-items: center;">
                 <select id="status-select" onchange="changeStatus()" style="font-size: 12px; height: 22px; padding: 0 4px;">
                     <option value="Online">Online</option>
                     <option value="AFK">AFK</option>
-                    <option value="In A Game">In A Game</option>
                     <option value="DND">Do Not Disturb</option>
                 </select>
                 <button onclick="toggleSettings()">Settings</button>
@@ -477,6 +479,8 @@
         let isConnected = false;
         let isAdmin = false;
         let isOnHomepage = true;
+        let isChatWindowOpen = false;
+        let currentActivity = { id: null, kind: "homepage", name: "" };
         let hasJoinedRoomWindow = false;
         let lastSeenTime = 0;
         let pendingMentionAuthor = null;
@@ -534,6 +538,7 @@
           
             userIp: document.getElementById("username-input"),
             status: document.getElementById("status"),
+            activityStatus: document.getElementById("activity-status"),
             chatBox: document.getElementById("chat-box"),
             newMsgPopup: document.getElementById("new-msg-popup"),
             msgIp: document.getElementById("msg-input"),
@@ -603,8 +608,140 @@
             } catch (e) {}
         }
 
+        function normalizeActivity(activity, isHomepageFallback = false) {
+            if (!activity || typeof activity !== 'object') {
+                return isHomepageFallback
+                    ? { id: null, kind: "homepage", name: "" }
+                    : { id: null, kind: "chatroom", name: "Chatroom" };
+            }
+
+            const kind = typeof activity.kind === "string" && activity.kind ? activity.kind : "window";
+            const name = typeof activity.name === "string" ? activity.name.trim() : "";
+            const id = typeof activity.id === "string" ? activity.id : null;
+
+            if (kind === "homepage") {
+                return { id: null, kind: "homepage", name: "" };
+            }
+
+            return { id, kind, name };
+        }
+
+        function getActivityDisplayLabel(activity = currentActivity) {
+            if (!activity || activity.kind === "homepage") {
+                return "On homepage";
+            }
+
+            if (activity.kind === "chatroom") {
+                return "Online";
+            }
+
+            const name = activity.name || "an active window";
+            return `currently active in ${name}`;
+        }
+
+        function updateActivityDisplay() {
+            if (ui.activityStatus) {
+                ui.activityStatus.innerText = getActivityDisplayLabel();
+            }
+        }
+
+        function applyParentActivityState(data, announcePresence = true) {
+            if (!data || typeof data !== "object") return;
+
+            isChatWindowOpen = data.chatWindowOpen !== undefined
+                ? !!data.chatWindowOpen
+                : isChatWindowOpen;
+
+            currentActivity = normalizeActivity(
+                data.activeWindow,
+                data.isHomepage === true
+            );
+
+            if (data.isHomepage === true) {
+                currentActivity = { id: null, kind: "homepage", name: "" };
+                isOnHomepage = true;
+            } else {
+                isOnHomepage = false;
+            }
+
+            updateActivityDisplay();
+
+            const selfData = activeUsers.get(myUsername);
+            if (selfData) {
+                selfData.lastSeen = Date.now();
+                selfData.isOnHomepage = isOnHomepage;
+                selfData.activity = { ...currentActivity };
+                selfData.status = currentStatus;
+                activeUsers.set(myUsername, selfData);
+            }
+
+            renderUserList();
+
+            if (announcePresence && isConnected) {
+                publishPing();
+            }
+        }
+
+        function getActivityPresenceBadge(userData) {
+            if (userData.isOnHomepage) {
+                return " <span style='font-size:11px; color:#555;'>[On homepage]</span>";
+            }
+
+            const activity = normalizeActivity(userData.activity, false);
+
+            if (activity.kind === "homepage") {
+                return " <span style='font-size:11px; color:#555;'>[On homepage]</span>";
+            }
+
+            if (activity.kind === "chatroom") {
+                return " <span style='font-size:11px; color:#008000;'>[Online]</span>";
+            }
+
+            const label = escapeHTML(activity.name || "an active window");
+            return ` <span style='font-size:11px; color:#008000;'>[currently active in ${label}]</span>`;
+        }
+
+        function buildPingNotificationText(author, messageText, isEveryone = false, isOffline = false) {
+            const base = isEveryone
+                ? `${author} pinged @everyone`
+                : `You were pinged by ${author}`;
+
+            let content = typeof messageText === "string" ? messageText.trim() : "";
+
+            if (content) {
+                const escapedUsername = String(myUsername || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                if (isEveryone) {
+                    content = content.replace(/@everyone\b/gi, "");
+                } else if (escapedUsername) {
+                    content = content.replace(new RegExp(`@${escapedUsername}(?=\\s|$|[.,!?;:)])`, "gi"), "");
+                }
+                content = content.trim();
+            }
+
+            let notification = base;
+
+            if (content) {
+                const MAX_PREVIEW_LENGTH = 180;
+                const preview = content.length > MAX_PREVIEW_LENGTH
+                    ? content.slice(0, MAX_PREVIEW_LENGTH - 1).trimEnd() + "…"
+                    : content;
+                notification += `: ${preview}`;
+            }
+
+            if (isOffline) {
+                notification += " while you were offline";
+            }
+
+            return notification;
+        }
+
         function changeStatus() {
             currentStatus = document.getElementById("status-select").value;
+            const selfData = activeUsers.get(myUsername);
+            if (selfData) {
+                selfData.status = currentStatus;
+                activeUsers.set(myUsername, selfData);
+            }
             if (isConnected) publishPing();
             updateAndBroadcastPresence();
             renderUserList();
@@ -926,7 +1063,14 @@
             try { localStorage.setItem(USERNAME_KEY, myUsername); } catch (e) {}
             const selfData = activeUsers.get(oldName) || { joinTime: Date.now() };
             activeUsers.delete(oldName); 
-            activeUsers.set(myUsername, { lastSeen: Date.now(), joinTime: selfData.joinTime, isOnHomepage: isOnHomepage, isGhost: false, status: currentStatus });
+            activeUsers.set(myUsername, {
+                lastSeen: Date.now(),
+                joinTime: selfData.joinTime,
+                isOnHomepage: isOnHomepage,
+                isGhost: false,
+                status: currentStatus,
+                activity: { ...currentActivity }
+            });
             publishMessage({ type: "RENAME", oldAuthor: oldName, author: myUsername, joinTime: selfData.joinTime, id: generateId() });
             renderUserList(); evaluateAdminRole(); updateStatusText(); updateAndBroadcastPresence();
             ui.newUsernameIp.value = ""; toggleSettings();
@@ -1313,7 +1457,7 @@
         }
 
         function checkUnreadMessages(messages) {
-            if (!isOnHomepage) return;
+            if (isChatWindowOpen) return;
             if (!lastSeenTime) return;
             let hasUnread = messages.some(m => !m.isSystem && m.author !== myUsername && m.timestamp > lastSeenTime && !blockedUsers.has(m.author));
             if (hasUnread) { window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*'); }
@@ -1327,8 +1471,10 @@
                     author: myUsername,
                     isGhost: isGhost,
                     isOnHomepage: isOnHomepage,
+                    chatWindowOpen: isChatWindowOpen,
                     joinTime: uData.joinTime,
-                    status: currentStatus
+                    status: currentStatus,
+                    activity: { ...currentActivity }
                 });
             }
         }
@@ -1338,8 +1484,17 @@
             window.parent.postMessage({ source: 'universal-chat', kind: 'presence', count: count }, '*');
         }
 
-        function handleChatWindowOpened() {
-            isOnHomepage = false;
+        function handleChatWindowOpened(data = null) {
+            isChatWindowOpen = true;
+
+            if (data && (data.activeWindow || data.isHomepage !== undefined || data.chatWindowOpen !== undefined)) {
+                applyParentActivityState({ ...data, chatWindowOpen: true }, false);
+            } else {
+                isOnHomepage = false;
+                currentActivity = { id: "chat-window", kind: "chatroom", name: "Chatroom" };
+                updateActivityDisplay();
+            }
+
             lastSeenTime = Date.now();
             try { localStorage.setItem("mqtt_last_seen_time", String(lastSeenTime)); } catch(e){}
 
@@ -1351,7 +1506,7 @@
                 }
                 pendingMentionAuthor = null; 
             }
-            
+
             if (currentTab.startsWith("dm:")) {
                 const targetUser = currentTab.replace("dm:", "");
                 publishMessage({ type: "DM_READ", author: myUsername, target: targetUser, timestamp: Date.now() });
@@ -1361,7 +1516,16 @@
                 if (!hasJoinedRoomWindow) {
                     hasJoinedRoomWindow = true;
                     const now = Date.now();
-                    publishMessage({ type: "JOIN", author: myUsername, joinTime: activeUsers.get(myUsername)?.joinTime || now, id: generateId(), isOnHomepage: false, status: currentStatus });
+                    publishMessage({
+                        type: "JOIN",
+                        author: myUsername,
+                        joinTime: activeUsers.get(myUsername)?.joinTime || now,
+                        id: generateId(),
+                        isOnHomepage: isOnHomepage,
+                        chatWindowOpen: true,
+                        status: currentStatus,
+                        activity: { ...currentActivity }
+                    });
                 }
                 publishPing();
             } else {
@@ -1369,8 +1533,18 @@
             }
         }
 
-        function handleChatWindowClosed() {
-            isOnHomepage = true; lastSeenTime = Date.now();
+        function handleChatWindowClosed(data = null) {
+            isChatWindowOpen = false;
+
+            if (data && (data.activeWindow || data.isHomepage !== undefined || data.chatWindowOpen !== undefined)) {
+                applyParentActivityState({ ...data, chatWindowOpen: false }, false);
+            } else {
+                isOnHomepage = true;
+                currentActivity = { id: null, kind: "homepage", name: "" };
+                updateActivityDisplay();
+            }
+
+            lastSeenTime = Date.now();
             try { localStorage.setItem("mqtt_last_seen_time", String(lastSeenTime)); } catch(e){}
             if (isConnected) publishPing();
         }
@@ -1378,9 +1552,22 @@
         window.addEventListener('message', (event) => {
             const data = event.data || {};
             if (data.source !== 'parent-shell') return;
-            if (data.action === 'chatWindowOpened') { handleChatWindowOpened(); } 
-            else if (data.action === 'chatWindowClosed') { handleChatWindowClosed(); }
+
+            if (data.action === 'activityState') {
+                applyParentActivityState(data, true);
+                return;
+            }
+
+            if (data.action === 'chatWindowOpened') {
+                handleChatWindowOpened(data);
+            } else if (data.action === 'chatWindowClosed') {
+                handleChatWindowClosed(data);
+            }
         });
+
+        function requestParentActivityState() {
+            window.parent.postMessage({ source: 'universal-chat', kind: 'activityRequest' }, '*');
+        }
 
         (async function init() {
             if(checkPenalties()) return;
@@ -1420,7 +1607,14 @@
                 rebuildMessageHistoryIdSet();
             }
 
-            activeUsers.set(myUsername, { lastSeen: Date.now(), joinTime: Date.now(), isOnHomepage: true, isGhost: isGhost, status: currentStatus });
+            activeUsers.set(myUsername, {
+                lastSeen: Date.now(),
+                joinTime: Date.now(),
+                isOnHomepage: isOnHomepage,
+                isGhost: isGhost,
+                status: currentStatus,
+                activity: { ...currentActivity }
+            });
 
             client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
             client.on("connect", () => {
@@ -1435,6 +1629,7 @@
             });
 
             setupMqttListeners();
+            requestParentActivityState();
             setInterval(checkPresence, 5000);
             setInterval(() => { if (isConnected && !document.hidden) publishMessage(buildManifest()); }, 60000);
         })();
@@ -1464,12 +1659,28 @@
             rebuildMessageHistoryIdSet();
 
             const now = Date.now();
-            activeUsers.set(myUsername, { lastSeen: now, joinTime: now, isOnHomepage: false, isGhost: false, status: currentStatus });
+            activeUsers.set(myUsername, {
+                lastSeen: now,
+                joinTime: now,
+                isOnHomepage: isOnHomepage,
+                isGhost: false,
+                status: currentStatus,
+                activity: { ...currentActivity }
+            });
             evaluateAdminRole(); renderUserList(); updateAndBroadcastPresence();
 
             hasJoinedRoomWindow = true;
             if (isConnected) {
-                publishMessage({ type: "JOIN", author: myUsername, joinTime: now, id: generateId(), isOnHomepage: false, status: currentStatus });
+                publishMessage({
+                    type: "JOIN",
+                    author: myUsername,
+                    joinTime: now,
+                    id: generateId(),
+                    isOnHomepage: isOnHomepage,
+                    chatWindowOpen: isChatWindowOpen,
+                    status: currentStatus,
+                    activity: { ...currentActivity }
+                });
                 requestManifestBroadcast();
             }
 
@@ -1496,12 +1707,23 @@
                     
                     if (data.author && !blockedUsers.has(data.author)) {
                         const existing = activeUsers.get(data.author);
+                        const incomingActivity = data.activity
+                            ? normalizeActivity(data.activity, data.isOnHomepage === true)
+                            : (existing?.activity
+                                ? { ...existing.activity }
+                                : (data.isOnHomepage === true
+                                    ? { id: null, kind: "homepage", name: "" }
+                                    : { id: null, kind: "chatroom", name: "Chatroom" }));
+
                         activeUsers.set(data.author, {
                             lastSeen: Date.now(),
                             joinTime: data.joinTime || (existing ? existing.joinTime : Date.now()),
-                            isOnHomepage: data.isOnHomepage !== undefined ? data.isOnHomepage : (existing ? existing.isOnHomepage : false),
+                            isOnHomepage: data.isOnHomepage !== undefined
+                                ? data.isOnHomepage
+                                : (existing ? existing.isOnHomepage : false),
                             isGhost: data.isGhost !== undefined ? data.isGhost : (data.author.startsWith("ghost-")),
-                            status: data.status || (existing ? existing.status : "Online")
+                            status: data.status || (existing ? existing.status : "Online"),
+                            activity: incomingActivity
                         });
                         renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
                     }
@@ -1515,7 +1737,9 @@
                             const now = Date.now();
                             if (now - (lastPingFrom[data.author] || 0) >= 3000) {
                                 lastPingFrom[data.author] = now;
-                                let notifText = isDM ? `You received a DM from ${data.author}` : (isEveryone ? `${data.author} pinged @everyone` : `You were pinged by ${data.author}`);
+                                let notifText = isDM
+                                    ? `You received a DM from ${data.author}`
+                                    : buildPingNotificationText(data.author, data.text, isEveryone, false);
                                 
                                 let muteSounds = localStorage.getItem('mqtt_mute_sounds') === 'true';
                                 if (!muteSounds && currentStatus !== 'DND') {
@@ -1584,7 +1808,7 @@
                         const isNew = !messageHistoryIdSet.has(msgObj.id);
                         messageHistory = mergeHistory(messageHistory, [msgObj], true); saveLocalHistory();
                         if (currentTab === "global") { if (isNew) appendMsgDOM(msgObj); else scheduleRenderActiveTabMessages(); }
-                        if (data.author !== myUsername && isOnHomepage) { window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*'); }
+                        if (data.author !== myUsername && !isChatWindowOpen) { window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*'); }
                     }
                     else if (data.type === "EDIT_MSG") {
                         const updateMsgList = (list) => {
@@ -1645,7 +1869,7 @@
                             const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), edited: false, reactions: data.reactions || {} };
                             dmHistories[otherUser] = mergeHistory(dmHistories[otherUser] || [], [msgObj], true); saveDmHistory(otherUser);
                             if (currentTab === tabId) scheduleRenderActiveTabMessages(); else markUnread(tabId);
-                            if (isOnHomepage && data.author !== myUsername) window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*');
+                            if (!isChatWindowOpen && data.author !== myUsername) window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, '*');
                         }
                     }
                     else if (data.type === "CMD" && data.target === myUsername && ADMINS.includes(data.author)) {
@@ -1704,7 +1928,14 @@
                     else if (data.type === "RENAME") {
                         const oldName = data.oldAuthor; const newName = data.author;
                         if (activeUsers.has(oldName)) { const uData = activeUsers.get(oldName); activeUsers.delete(oldName);
-                            activeUsers.set(newName, { lastSeen: Date.now(), joinTime: data.joinTime || uData.joinTime, isOnHomepage: uData.isOnHomepage, isGhost: false, status: uData.status }); }
+                            activeUsers.set(newName, {
+                                lastSeen: Date.now(),
+                                joinTime: data.joinTime || uData.joinTime,
+                                isOnHomepage: uData.isOnHomepage,
+                                isGhost: false,
+                                status: uData.status,
+                                activity: uData.activity ? { ...uData.activity } : { id: null, kind: "homepage", name: "" }
+                            }); }
                         messageHistory.forEach(m => { if (m.author === oldName) m.author = newName; if (m.replyTo && m.replyTo.author === oldName) m.replyTo.author = newName; });
                         saveLocalHistory();
                         if (dmHistories[oldName]) {
@@ -1742,7 +1973,7 @@
                                     storedPings[msg.id] = true; localStorage.setItem('mqtt_pings', JSON.stringify(storedPings));
                                     let muteSounds = localStorage.getItem('mqtt_mute_sounds') === 'true';
                                     if (!muteSounds && currentStatus !== 'DND') {
-                                        let notifText = `You were pinged by ${msg.author} while offline`;
+                                        let notifText = buildPingNotificationText(msg.author, msg.text, false, true);
                                         window.parent.postMessage({ source: 'universal-chat', kind: 'ping', user: msg.author, text: notifText }, '*');
                                     }
                                     pendingMentionAuthor = { author: msg.author, isEveryone: false };
@@ -1781,7 +2012,7 @@
                                 storedPings[msg.id] = true; localStorage.setItem('mqtt_pings', JSON.stringify(storedPings));
                                 let muteSounds = localStorage.getItem('mqtt_mute_sounds') === 'true';
                                 if (!muteSounds && currentStatus !== 'DND') {
-                                    let notifText = `You were pinged by ${msg.author} while offline`;
+                                    let notifText = buildPingNotificationText(msg.author, msg.text, false, true);
                                     window.parent.postMessage({ source: 'universal-chat', kind: 'ping', user: msg.author, text: notifText }, '*');
                                 }
                                 pendingMentionAuthor = { author: msg.author, isEveryone: false };
@@ -2079,16 +2310,15 @@
                 const color = getUsernameColor(user);
                 const adminBadge = ADMINS.includes(user) ? " [Admin]" : "";
                 const selfBadge = user === myUsername ? " [You]" : "";
-                const homepageTag = userData.isOnHomepage ? " <span style='font-size:11px; color:#555;'>[On homepage]</span>" : "";
-                
+                const activityBadge = getActivityPresenceBadge(userData);
+
                 let statusBadge = "";
                 if (userData.status === "AFK") statusBadge = " <span style='color: #888; font-size: 11px;'>[AFK]</span>";
-                else if (userData.status === "In A Game") statusBadge = " <span style='color: #008000; font-size: 11px;'>[In A Game]</span>";
                 else if (userData.status === "DND") statusBadge = " <span style='color: #8b0000; font-size: 11px;'>[DND]</span>";
-                
+
                 const inactiveBadge = (now - userData.lastSeen > 10000) && user !== myUsername ? " <span style='font-size:11px; color:#888;'>(Inactive)</span>" : "";
 
-                html += `<li class="user-item" onclick="showUserContextMenu(event, '${user}')" style="color: ${color};">${user}${adminBadge}${selfBadge}${statusBadge}${homepageTag}${inactiveBadge}</li>`;
+                html += `<li class="user-item" onclick="showUserContextMenu(event, '${user}')" style="color: ${color};">${user}${adminBadge}${selfBadge}${statusBadge}${activityBadge}${inactiveBadge}</li>`;
             });
             ui.userList.innerHTML = html;
         }
@@ -2185,6 +2415,8 @@
             ui.msgIp.value = "";
             cancelReply();
         }
+        window.addEventListener('pageshow', requestParentActivityState);
+
     </script>
 </body>
 </html>
