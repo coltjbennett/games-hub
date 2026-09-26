@@ -969,8 +969,11 @@
             reader.readAsDataURL(file); e.target.value = "";
         });
 
+        const STORAGE_MAX_PERSISTED = 1000; // cap how many messages get persisted/compressed per channel; avoids O(n) JSON+LZ work growing unbounded as history grows
+
         async function saveToStorageWithCompression(key, historyArray) {
-            let compressed = LZString.compressToUTF16(JSON.stringify(historyArray));
+            const toPersist = historyArray.length > STORAGE_MAX_PERSISTED ? historyArray.slice(-STORAGE_MAX_PERSISTED) : historyArray;
+            let compressed = LZString.compressToUTF16(JSON.stringify(toPersist));
             try { 
                 await localforage.setItem(key, compressed);
             } catch(e) {
@@ -2132,12 +2135,15 @@
 
         function channelKey(kind, name) { return kind === "global" ? "global" : `dm:${name}`; }
 
+        const MANIFEST_MAX_ENTRIES = 300; // cap how many id/ts pairs a manifest carries per channel; full sync still works via SYNC_PULL for anything older that's actually missing
+
         function buildManifest(forPeer) {
+            const globalSlice = messageHistory.length > MANIFEST_MAX_ENTRIES ? messageHistory.slice(-MANIFEST_MAX_ENTRIES) : messageHistory;
             const manifest = {
                 type: "SYNC_MANIFEST",
                 author: myUsername,
                 isGhost: isGhost,
-                global: messageHistory.map(m => ({ id: m.id, ts: m.timestamp || 0 })),
+                global: globalSlice.map(m => ({ id: m.id, ts: m.timestamp || 0 })),
                 dms: {},
                 tomb: {
                     ids: Array.from(msgTombstones),
@@ -2145,11 +2151,12 @@
                     nuke: nukeMarker
                 }
             };
+            const sliceDm = (arr) => (arr.length > MANIFEST_MAX_ENTRIES ? arr.slice(-MANIFEST_MAX_ENTRIES) : arr);
             if (forPeer) {
-                if (dmHistories[forPeer]) manifest.dms[forPeer] = dmHistories[forPeer].map(m => ({ id: m.id, ts: m.timestamp || 0 }));
+                if (dmHistories[forPeer]) manifest.dms[forPeer] = sliceDm(dmHistories[forPeer]).map(m => ({ id: m.id, ts: m.timestamp || 0 }));
             } else {
                 Object.keys(dmHistories).forEach(otherUser => {
-                    manifest.dms[otherUser] = (dmHistories[otherUser] || []).map(m => ({ id: m.id, ts: m.timestamp || 0 }));
+                    manifest.dms[otherUser] = sliceDm(dmHistories[otherUser] || []).map(m => ({ id: m.id, ts: m.timestamp || 0 }));
                 });
             }
             return manifest;
