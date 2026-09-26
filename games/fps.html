@@ -1,9 +1,9 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Multiplayer FPS Beta</title>
+    <title>3D FPS - Vertical Cityscape Update</title>
     <style>
         * {
             box-sizing: border-box;
@@ -958,6 +958,28 @@
                     }
                 };
                 window.addEventListener('touchend', handleTouchEnd); window.addEventListener('touchcancel', handleTouchEnd);
+
+                // Safety net: in an iframe, focus/visibility/scroll interruptions can eat a touchend,
+                // leaving joystickId/lookId permanently occupied by a ghost touch. Clear stale state.
+                const forceReleaseTouches = () => {
+                    this.touchState.joystickId = null;
+                    this.touchState.lookId = null;
+                    this.input.moveX = 0; this.input.moveZ = 0;
+                    this.isSprinting = false;
+                    if (joyKnob) joyKnob.style.transform = `translate(0px, 0px)`;
+                };
+                window.addEventListener('blur', forceReleaseTouches);
+                document.addEventListener('visibilitychange', () => { if (document.hidden) forceReleaseTouches(); });
+                window.addEventListener('touchmove', (e) => {
+                    // Reconcile against currently active touches; drop any tracked id no longer present.
+                    if (this.touchState.joystickId === null && this.touchState.lookId === null) return;
+                    const active = new Set(); for (let t of e.touches) active.add(t.identifier);
+                    if (this.touchState.joystickId !== null && !active.has(this.touchState.joystickId)) {
+                        this.touchState.joystickId = null; this.input.moveX = 0; this.input.moveZ = 0; this.isSprinting = false;
+                        if (joyKnob) joyKnob.style.transform = `translate(0px, 0px)`;
+                    }
+                    if (this.touchState.lookId !== null && !active.has(this.touchState.lookId)) this.touchState.lookId = null;
+                }, { passive: true });
 
                 const bindBtn = (id, startFunc, endFunc) => {
                     const btn = document.getElementById(id); if(!btn) return;
