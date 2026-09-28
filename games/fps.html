@@ -149,17 +149,39 @@
         @keyframes fadeOut { 0% { opacity: 1; transform: translateY(0); } 70% { opacity: 1; } 100% { opacity: 0; transform: translateY(-10px); } }
 
         /* Touch Controls */
-        #joystick-zone { position: absolute; bottom: 40px; left: 40px; width: 130px; height: 130px; background: rgba(255, 255, 255, 0.05); border: 2px solid rgba(255, 255, 255, 0.15); border-radius: 50%; pointer-events: auto; }
-        #joystick-knob { position: absolute; top: 40px; left: 40px; width: 50px; height: 50px; background: rgba(255, 255, 255, 0.4); border-radius: 50%; pointer-events: none; }
-        .touch-btn { position: absolute; width: 60px; height: 60px; border-radius: 50%; background: rgba(30, 35, 40, 0.85); border: 2px solid rgba(255, 255, 255, 0.3); color: white; font-size: 11px; font-weight: bold; display: flex; align-items: center; justify-content: center; pointer-events: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.5); text-transform: uppercase; }
+        /* Pixel Ops uses dedicated touch surfaces instead of relying on global window touch
+           listeners. That keeps iPad/Safari gesture ownership inside the iframe. */
+        #look-zone { position: absolute; inset: 0; z-index: 1; pointer-events: none; touch-action: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+        #joystick-zone { position: absolute; bottom: calc(32px + env(safe-area-inset-bottom)); left: calc(32px + env(safe-area-inset-left)); width: 150px; height: 150px; background: rgba(255, 255, 255, 0.05); border: 2px solid rgba(255, 255, 255, 0.15); border-radius: 50%; pointer-events: auto; z-index: 20; touch-action: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+        #joystick-knob { position: absolute; top: 47px; left: 47px; width: 52px; height: 52px; background: rgba(255, 255, 255, 0.4); border-radius: 50%; pointer-events: none; will-change: transform; }
+        .touch-btn { position: absolute; width: 64px; height: 64px; border-radius: 50%; background: rgba(30, 35, 40, 0.85); border: 2px solid rgba(255, 255, 255, 0.3); color: white; font-size: 11px; font-weight: bold; display: flex; align-items: center; justify-content: center; pointer-events: auto; z-index: 30; box-shadow: 0 4px 10px rgba(0,0,0,0.5); text-transform: uppercase; touch-action: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
         .touch-btn:active { background: rgba(60, 70, 80, 0.9); transform: translateY(2px) scale(0.95); }
-        #btn-jump { bottom: 220px; right: 40px; border-color: #fff; }
-        #btn-aim { bottom: 140px; right: 40px; border-color: #0ff; width: 70px; height: 70px; }
-        #btn-shoot { bottom: 40px; right: 130px; width: 90px; height: 90px; border-color: #f33; background: radial-gradient(circle, #c00 0%, #600 100%); box-shadow: 0 0 20px rgba(255,50,50,0.4); }
+        #btn-jump { bottom: calc(214px + env(safe-area-inset-bottom)); right: calc(32px + env(safe-area-inset-right)); border-color: #fff; }
+        #btn-aim { bottom: calc(132px + env(safe-area-inset-bottom)); right: calc(32px + env(safe-area-inset-right)); border-color: #0ff; width: 74px; height: 74px; }
+        #btn-shoot { bottom: calc(32px + env(safe-area-inset-bottom)); right: calc(118px + env(safe-area-inset-right)); width: 98px; height: 98px; border-color: #f33; background: radial-gradient(circle, #c00 0%, #600 100%); box-shadow: 0 0 20px rgba(255,50,50,0.4); }
         #btn-shoot:active { background: radial-gradient(circle, #f33 0%, #800 100%); }
-        #btn-reload { bottom: 40px; right: 240px; border-color: #0fa; }
-        #btn-swap { bottom: 110px; right: 240px; border-color: #fa0; }
-        #btn-settings-hud { top: 20px; right: 20px; width: 44px; height: 44px; border-radius: 8px; font-size: 16px; }
+        #btn-reload { bottom: calc(32px + env(safe-area-inset-bottom)); right: calc(232px + env(safe-area-inset-right)); }
+        #btn-swap { bottom: calc(104px + env(safe-area-inset-bottom)); right: calc(232px + env(safe-area-inset-right)); }
+        #btn-settings-hud { top: calc(20px + env(safe-area-inset-top)); right: calc(20px + env(safe-area-inset-right)); width: 44px; height: 44px; border-radius: 8px; font-size: 16px; z-index: 35; }
+
+        /* Additive combat feedback: visual-only systems and small touch-friendly rewards. */
+        #hit-marker { position: absolute; top: 50%; left: 50%; width: 32px; height: 32px; transform: translate(-50%,-50%) scale(.7); opacity: 0; pointer-events: none; z-index: 28; transition: opacity .08s, transform .08s; }
+        #hit-marker.active { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+        #hit-marker::before, #hit-marker::after { content: ""; position: absolute; left: 14px; top: 2px; width: 4px; height: 28px; border-radius: 2px; background: #fff; transform: rotate(45deg); }
+        #hit-marker::after { transform: rotate(-45deg); }
+        #streak-display { position: absolute; top: 72px; left: 50%; transform: translateX(-50%) translateY(-8px); min-width: 160px; text-align: center; padding: 6px 14px; border-radius: 999px; background: rgba(0,0,0,.62); border: 1px solid rgba(0,255,170,.35); color: #fff; font-size: 12px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; opacity: 0; transition: opacity .18s, transform .18s; pointer-events: none; z-index: 28; }
+        #streak-display.active { opacity: 1; transform: translateX(-50%) translateY(0); }
+        #streak-display span { color: #0fa; }
+        #regen-pulse { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(circle at center, rgba(0,255,170,.12), transparent 58%); z-index: 13; transition: opacity .2s; }
+        #regen-pulse.active { opacity: 1; }
+        #damage-vignette { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(circle, transparent 45%, rgba(255,0,0,.46) 100%); z-index: 12; transition: opacity .12s; }
+
+        @media (max-width: 700px) {
+            #joystick-zone { width: 140px; height: 140px; }
+            #joystick-knob { top: 43px; left: 43px; }
+            #btn-shoot { right: calc(108px + env(safe-area-inset-right)); }
+            #btn-reload, #btn-swap { right: calc(214px + env(safe-area-inset-right)); }
+        }
 
         /* Nametags Overlay */
         #nametags-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; z-index: 5; }
@@ -218,6 +240,10 @@
             <div class="crosshair-line ch-left"></div>
             <div class="crosshair-line ch-right"></div>
         </div>
+        <div id="damage-vignette"></div>
+        <div id="regen-pulse"></div>
+        <div id="hit-marker"></div>
+        <div id="streak-display"><span id="streak-count">0</span> KILL STREAK</div>
         
         <div id="reloading-text">RELOADING...</div>
 
@@ -239,6 +265,7 @@
 
         <div id="kill-feed"></div>
 
+        <div id="look-zone" aria-hidden="true"></div>
         <div id="joystick-zone"><div id="joystick-knob"></div></div>
         <div id="btn-jump" class="touch-btn">JUMP</div>
         <div id="btn-aim" class="touch-btn">AIM</div>
@@ -345,68 +372,143 @@
            ========================================================================== */
         class NetworkManager {
             constructor() {
-                this.peer = null; this.mqttClient = null; this.roomTopic = null;
-                this.connections = {}; this.lastSeen = {};
+                this.peer = null; this.mqttClient = null; this.roomTopic = null; this.directTopic = null;
+                this.connections = Object.create(null); this.lastSeen = Object.create(null);
+                this.lastTransformSeq = Object.create(null);
                 this.isHost = false; this.myId = null; this.roomCode = null;
                 this.username = "Player"; this.lobbyPlayers = [];
+                this._hasConnected = false; this._ready = false; this._leaving = false;
+                this._sequence = 0; this._pendingTransform = null;
+                this._presenceInterval = null; this._timeoutInterval = null; this._transformFlushInterval = null;
             }
 
             _makeId() { return Math.random().toString(36).substring(2, 10) + Date.now().toString(36); }
 
+            _publish(topic, data) {
+                if (!this.mqttClient || !this.mqttClient.connected || !topic || this._leaving) return false;
+                try {
+                    this.mqttClient.publish(topic, JSON.stringify({ __senderId: this.myId, payload: data }), { qos: 0, retain: false });
+                    return true;
+                } catch (e) { return false; }
+            }
+
+            _flushPendingTransform() {
+                if (!this._pendingTransform) return;
+                const data = this._pendingTransform;
+                this._pendingTransform = null;
+                this._publish(this.roomTopic, data);
+            }
+
             _connectMqtt(onReady) {
-                this.myId = this._makeId();
-                this.mqttClient = mqtt.connect(MQTT_BROKER_URL);
+                this.myId = this.myId || this._makeId();
+                this.directTopic = `${this.roomTopic}/direct/${this.myId}`;
+
+                const will = JSON.stringify({
+                    __senderId: this.myId,
+                    payload: { type: 'leave', reason: 'connection_lost' }
+                });
+
+                this.mqttClient = mqtt.connect(MQTT_BROKER_URL, {
+                    clientId: `fps_${this.myId}`,
+                    clean: true,
+                    keepalive: 20,
+                    reconnectPeriod: 1000,
+                    connectTimeout: 10000,
+                    will: { topic: this.roomTopic, payload: will, qos: 0, retain: false }
+                });
+
                 this.mqttClient.on('connect', () => {
-                    this.mqttClient.subscribe(this.roomTopic, (err) => { if (!err) onReady(); });
+                    this.mqttClient.subscribe([this.roomTopic, this.directTopic], { qos: 0 }, (err) => {
+                        if (err || this._leaving) return;
+
+                        this.peer = { open: true };
+                        this._ready = true;
+
+                        if (!this._hasConnected) {
+                            this._hasConnected = true;
+                            onReady();
+                        } else {
+                            // Re-announce after an accidental Wi-Fi/cellular/MQTT reconnect.
+                            this.broadcast({ type: 'presence' });
+                            if (!this.isHost) this.broadcast({ type: 'join', username: this.username, reconnect: true });
+                        }
+                    });
                 });
-                this.mqttClient.on('error', (err) => { if (this._onNetError) this._onNetError(err); });
+
+                this.mqttClient.on('reconnect', () => {
+                    this.peer = { open: false };
+                });
+
+                this.mqttClient.on('offline', () => {
+                    this.peer = { open: false };
+                    this._pendingTransform = null;
+                });
+
+                this.mqttClient.on('close', () => {
+                    this.peer = { open: false };
+                });
+
+                this.mqttClient.on('error', (err) => {
+                    // Only surface a connection error while the initial join is still pending.
+                    // Transient errors during an already-running match are handled by reconnect +
+                    // presence/timeout logic rather than kicking the player back to the lobby.
+                    if (!this._hasConnected && this._onNetError) this._onNetError(err);
+                });
+
                 this.mqttClient.on('message', (topic, payloadBuf) => {
-                    if (topic !== this.roomTopic) return;
-                    let msg; try { msg = JSON.parse(payloadBuf.toString()); } catch (e) { return; }
-                    if (!msg || !msg.__senderId || msg.__senderId === this.myId) return;
-                    this.connections[msg.__senderId] = true;
-                    this.lastSeen[msg.__senderId] = Date.now();
-                    this.handleData(msg.__senderId, msg.payload);
+                    if (topic !== this.roomTopic && topic !== this.directTopic) return;
+                    let msg;
+                    try { msg = JSON.parse(payloadBuf.toString()); } catch (e) { return; }
+                    if (!msg || !msg.__senderId || msg.__senderId === this.myId || !msg.payload) return;
+
+                    const senderId = msg.__senderId;
+                    const data = msg.payload;
+                    if (!data || typeof data.type !== 'string') return;
+
+                    this.connections[senderId] = true;
+                    this.lastSeen[senderId] = Date.now();
+                    this.handleData(senderId, data);
                 });
-                
+
                 if (!this._presenceInterval) {
                     this._presenceInterval = setInterval(() => {
-                        if (this.mqttClient && this.mqttClient.connected) this.broadcast({ type: 'presence' });
+                        if (this.mqttClient && this.mqttClient.connected && !this._leaving) {
+                            this.broadcast({ type: 'presence' });
+                        }
                     }, 3000);
                 }
+
                 if (!this._timeoutInterval) {
                     this._timeoutInterval = setInterval(() => {
                         const now = Date.now();
                         Object.keys(this.lastSeen).forEach((id) => {
                             if (now - this.lastSeen[id] > 9000 && this.connections[id]) {
-                                delete this.connections[id]; delete this.lastSeen[id];
-                                game.removeRemotePlayer(id);
-                                if (this.isHost) {
-                                    this.lobbyPlayers = this.lobbyPlayers.filter(p => p.id !== id);
-                                    this.broadcast({ type: 'lobby_update', players: this.lobbyPlayers });
-                                    this.updateLobbyUI(); this.updateLeaderboardUI();
-                                }
+                                this._removeConnection(id, 'timeout');
                             }
                         });
                     }, 3000);
                 }
+
+                if (!this._transformFlushInterval) {
+                    this._transformFlushInterval = setInterval(() => this._flushPendingTransform(), 50);
+                }
             }
 
             initHost(username, onOpen) {
-                this.username = username; this.isHost = true;
+                this.username = username; this.isHost = true; this._leaving = false;
                 this.roomCode = Math.random().toString(36).substring(2, 5).toUpperCase();
                 this.roomTopic = TOPIC_PREFIX + this.roomCode;
                 this._connectMqtt(() => {
                     this.lobbyPlayers = [{ id: this.myId, username: this.username, isHost: true, kills: 0, deaths: 0 }];
                     this.updateLobbyUI();
                     game.buildProceduralWorld(this.roomCode);
-                    this.peer = { open: true }; 
+                    this.peer = { open: true };
                     onOpen(this.roomCode);
                 });
             }
 
             initClient(username, code, onConnected, onError) {
-                this.username = username; this.isHost = false;
+                this.username = username; this.isHost = false; this._leaving = false;
                 this.roomCode = code.toUpperCase();
                 this.roomTopic = TOPIC_PREFIX + this.roomCode;
                 this._onNetError = onError;
@@ -419,41 +521,97 @@
             }
 
             broadcast(data) {
-                if (!this.mqttClient) return;
-                // qos 0 on the hot path (transform/shoot) keeps the public broker from
-                // queueing/retrying stale packets under load; everything else defaults to qos 0 too
-                // since the app-level presence/timeout logic already tolerates loss.
-                this.mqttClient.publish(this.roomTopic, JSON.stringify({ __senderId: this.myId, payload: data }), { qos: 0 });
+                if (!this.mqttClient || !data) return;
+
+                // Coalesce transform packets. The game can update every render frame, but the public
+                // broker only gets the newest transform at the ~20Hz transport cadence.
+                if (data.type === 'transform') {
+                    data.seq = ++this._sequence;
+                    this._pendingTransform = data;
+                    return;
+                }
+
+                this._publish(this.roomTopic, data);
             }
 
-            send(connId, data) { this.broadcast(Object.assign({ __targetId: connId }, data)); }
+            send(connId, data) {
+                if (!connId || !data || !this.directTopic) return;
+                const directTopic = `${this.roomTopic}/direct/${connId}`;
+                this._publish(directTopic, data);
+            }
+
+            _removeConnection(id, reason = 'left') {
+                if (!id) return;
+                const wasConnected = !!this.connections[id] || !!this.lastSeen[id];
+                delete this.connections[id];
+                delete this.lastSeen[id];
+                delete this.lastTransformSeq[id];
+
+                if (game) {
+                    game.removeRemotePlayer(id);
+                    game.removeRemoteProjectiles(id);
+                }
+
+                if (this.isHost) {
+                    const oldLength = this.lobbyPlayers.length;
+                    this.lobbyPlayers = this.lobbyPlayers.filter(p => p.id !== id);
+                    if (wasConnected || this.lobbyPlayers.length !== oldLength) {
+                        this.broadcast({ type: 'lobby_update', players: this.lobbyPlayers });
+                        this.updateLobbyUI(); this.updateLeaderboardUI();
+                    }
+                } else {
+                    const oldLength = this.lobbyPlayers.length;
+                    this.lobbyPlayers = this.lobbyPlayers.filter(p => p.id !== id);
+                    if (oldLength !== this.lobbyPlayers.length) {
+                        this.updateLobbyUI(); this.updateLeaderboardUI();
+                    }
+                }
+            }
+
+            leaveMatch(reason = 'left') {
+                if (this._leaving) return;
+                // Publish first; _publish intentionally refuses new traffic once the local
+                // shutdown flag is raised. The MQTT last-will still covers abrupt exits.
+                this._flushPendingTransform();
+                this._publish(this.roomTopic, { type: 'leave', reason });
+                this._leaving = true;
+                this.peer = { open: false };
+                try { if (this.mqttClient) this.mqttClient.end(false); } catch (e) {}
+            }
 
             handleData(senderId, data) {
-                if (data.__targetId && data.__targetId !== this.myId) return;
-                // NOTE: MQTT pub/sub already fans a single publish out to every subscriber on the
-                // topic. The old code additionally had the host re-publish every transform/shoot to
-                // each connection individually, which multiplied broker traffic by the player count
-                // for no benefit (everyone already got the original message). That relay is removed
-                // below — the host no longer re-broadcasts what the broker already delivered.
+                if (data.__targetId && data.__targetId !== this.myId) return; // legacy compatibility
 
                 if (data.type === 'presence') {}
+                else if (data.type === 'leave') {
+                    this._removeConnection(senderId, data.reason || 'left');
+                }
                 else if (data.type === 'join' && this.isHost) {
-                    this.lobbyPlayers.push({ id: senderId, username: data.username, isHost: false, kills: 0, deaths: 0 });
+                    const existing = this.lobbyPlayers.find(p => p.id === senderId);
+                    if (existing) {
+                        existing.username = data.username || existing.username;
+                    } else {
+                        this.lobbyPlayers.push({ id: senderId, username: data.username || 'Player', isHost: false, kills: 0, deaths: 0 });
+                    }
                     this.broadcast({ type: 'lobby_update', players: this.lobbyPlayers });
                     this.updateLobbyUI(); this.updateLeaderboardUI();
-                    
+
                     if (GAME_STATE === 'PLAYING') {
                         this.send(senderId, { type: 'start_game' });
                     }
                 }
                 else if (data.type === 'lobby_update') {
+                    if (!Array.isArray(data.players)) return;
                     this.lobbyPlayers = data.players;
                     this.updateLobbyUI(); this.updateLeaderboardUI();
                 }
                 else if (data.type === 'start_game') { startGameLoop(); }
                 else if (data.type === 'transform' && GAME_STATE === 'PLAYING') {
+                    const seq = Number.isFinite(data.seq) ? data.seq : 0;
+                    if (seq && seq <= (this.lastTransformSeq[senderId] || 0)) return;
+                    if (seq) this.lastTransformSeq[senderId] = seq;
                     game.updateRemotePlayer(senderId, data);
-                } 
+                }
                 else if (data.type === 'shoot' && GAME_STATE === 'PLAYING') {
                     game.spawnRemoteBullet(data.origin, data.direction, senderId, data.power);
                 }
@@ -471,14 +629,16 @@
                 }
                 else if (data.type === 'player_killed' && GAME_STATE === 'PLAYING') {
                     game.triggerRagdoll(data.victimId);
+                    if (!this.isHost && data.killerId === this.myId) game.addKillStreak();
                     if (this.isHost) {
                         const killer = this.lobbyPlayers.find(p => p.id === data.killerId);
                         const victim = this.lobbyPlayers.find(p => p.id === data.victimId);
-                        if (killer && killer.id !== victim.id) killer.kills++;
+                        if (killer && victim && killer.id !== victim.id) killer.kills++;
                         if (victim) victim.deaths++;
 
                         const kName = killer ? killer.username : "Unknown";
                         const vName = victim ? victim.username : "Unknown";
+                        if (data.killerId === this.myId && game) game.addKillStreak();
 
                         this.broadcast({ type: 'lobby_update', players: this.lobbyPlayers });
                         this.broadcast({ type: 'kill_msg', msg: `${kName} eliminated ${vName}` });
@@ -545,6 +705,17 @@
                 this.bobTime = 0; this.health = 100;
 
                 this.isSprinting = false;
+
+                // Additive combat systems. Existing weapons, map, player/weapon models, animations,
+                // and core gameplay remain intact; these systems only add feedback/rewards.
+                this.killStreak = 0;
+                this.bestKillStreak = 0;
+                this.streakUntil = 0;
+                this.streakBoostUntil = 0;
+                this.lastDamageAt = performance.now();
+                this._hitMarkerTimer = null;
+                this._damageFlashTimer = null;
+                this._regenPulseTimer = null;
 
                 this.initGraphics();
                 this.initPhysics();
@@ -858,19 +1029,16 @@
             }
 
             initInput() {
-                this.keys = {}; 
+                this.keys = {};
                 this.touchState = { joystickId: null, lookId: null, lastX: 0, lastY: 0, lastJoyTap: 0, sprintReady: false };
-                
-                window.addEventListener('keydown', (e) => { 
+
+                window.addEventListener('keydown', (e) => {
                     if(GAME_STATE !== 'PLAYING') return;
                     const wasDown = this.keys[e.code];
-                    this.keys[e.code] = true; 
-                    if (e.code === 'Space') this.jump(); 
+                    this.keys[e.code] = true;
+                    if (e.code === 'Space') this.jump();
                     if (e.code === 'KeyR') this.reloadLauncher();
                     if (e.code === 'KeyF' || e.code === 'KeyQ') this.swapLauncher();
-                    // Shift is sprint-only now (held) — it used to also toggle ADS on every press,
-                    // which fought with the sprint check in updatePhysics and made holding Shift to
-                    // run randomly flip you in/out of aim-down-sights. Right-click remains the ADS toggle.
                     if ((e.code === 'ControlLeft' || e.code === 'KeyC') && !wasDown) this.toggleCrouch();
                 });
                 window.addEventListener('keyup', (e) => this.keys[e.code] = false);
@@ -898,95 +1066,135 @@
             isTouchDevice() { return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0); }
 
             setupTouchEvents() {
-                const joyZone = document.getElementById('joystick-zone'), joyKnob = document.getElementById('joystick-knob');
-                window.addEventListener('touchstart', (e) => {
-                    if(GAME_STATE !== 'PLAYING') return;
-                    const now = Date.now();
-                    for (let touch of e.changedTouches) {
-                        const target = touch.target;
-                        if (target.classList.contains('touch-btn') || target.closest('.card')) continue;
-                        const joyRect = joyZone.getBoundingClientRect();
-                        if (this.touchState.joystickId === null && touch.clientX >= joyRect.left && touch.clientX <= joyRect.right && touch.clientY >= joyRect.top && touch.clientY <= joyRect.bottom) {
-                            this.touchState.joystickId = touch.identifier; 
-                            
-                            // Virtual Joystick Sprint Double-Tap
-                            if (now - this.touchState.lastJoyTap < 300) this.touchState.sprintReady = true;
-                            else this.touchState.sprintReady = false;
-                            this.touchState.lastJoyTap = now;
-                            continue;
-                        }
-                        if (this.touchState.lookId === null) {
-                            this.touchState.lookId = touch.identifier; this.touchState.lastX = touch.clientX; this.touchState.lastY = touch.clientY;
-                        }
-                    }
-                }, { passive: false });
-                
-                window.addEventListener('touchmove', (e) => {
-                    if(GAME_STATE !== 'PLAYING') return;
-                    for (let touch of e.changedTouches) {
-                        if (touch.identifier === this.touchState.joystickId) {
-                            const joyRect = joyZone.getBoundingClientRect();
-                            const centerX = joyRect.left + joyRect.width / 2, centerY = joyRect.top + joyRect.height / 2;
-                            let dx = touch.clientX - centerX, dy = touch.clientY - centerY;
-                            const dist = Math.hypot(dx, dy), maxDist = joyRect.width / 2;
-                            
-                            if (dist > maxDist) { dx = (dx / dist) * maxDist; dy = (dy / dist) * maxDist; }
-                            joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
-                            this.input.moveX = dx / maxDist; this.input.moveZ = dy / maxDist;
-                            
-                            // Trigger Sprint if dragging > 80%
-                            const distRatio = Math.hypot(dx, dy) / maxDist;
-                            if (this.touchState.sprintReady && distRatio > 0.8) this.isSprinting = true;
-                            else if (distRatio <= 0.8) this.isSprinting = false;
-                        }
-                        if (touch.identifier === this.touchState.lookId) {
-                            const dx = touch.clientX - this.touchState.lastX, dy = touch.clientY - this.touchState.lastY;
-                            this.input.yaw -= dx * SETTINGS.sensitivity * 1.5; this.input.pitch -= dy * SETTINGS.sensitivity * 1.5; this.clampPitch();
-                            this.touchState.lastX = touch.clientX; this.touchState.lastY = touch.clientY;
-                        }
-                    }
-                }, { passive: false });
-                
-                const handleTouchEnd = (e) => {
-                    for (let touch of e.changedTouches) {
-                        if (touch.identifier === this.touchState.joystickId) {
-                            this.touchState.joystickId = null; joyKnob.style.transform = `translate(0px, 0px)`;
-                            this.input.moveX = 0; this.input.moveZ = 0;
-                            this.isSprinting = false;
-                        }
-                        if (touch.identifier === this.touchState.lookId) this.touchState.lookId = null;
-                    }
-                };
-                window.addEventListener('touchend', handleTouchEnd); window.addEventListener('touchcancel', handleTouchEnd);
+                const joyZone = document.getElementById('joystick-zone');
+                const joyKnob = document.getElementById('joystick-knob');
+                const lookZone = document.getElementById('look-zone');
+                if (!joyZone || !joyKnob || !lookZone) return;
 
-                // Safety net: in an iframe, focus/visibility/scroll interruptions can eat a touchend,
-                // leaving joystickId/lookId permanently occupied by a ghost touch. Clear stale state.
-                const forceReleaseTouches = () => {
+                // Critical iframe/iPad fix: touch ownership lives on the actual game surfaces,
+                // matching Pixel Ops, rather than relying on window-level touchmove/touchend events.
+                // The look surface is enabled only on touch-capable devices so desktop pointer-lock
+                // clicks still reach the canvas normally.
+                if (this.isTouchDevice()) lookZone.style.pointerEvents = 'auto';
+
+                const resetJoystick = () => {
                     this.touchState.joystickId = null;
-                    this.touchState.lookId = null;
+                    this.touchState.sprintReady = false;
                     this.input.moveX = 0; this.input.moveZ = 0;
                     this.isSprinting = false;
-                    if (joyKnob) joyKnob.style.transform = `translate(0px, 0px)`;
+                    joyKnob.style.transform = 'translate(0px, 0px)';
+                };
+
+                const resetLook = () => {
+                    this.touchState.lookId = null;
+                };
+
+                joyZone.addEventListener('touchstart', (e) => {
+                    if (GAME_STATE !== 'PLAYING') return;
+                    e.preventDefault();
+                    const touch = e.changedTouches[0];
+                    if (!touch || this.touchState.joystickId !== null) return;
+
+                    const now = Date.now();
+                    this.touchState.joystickId = touch.identifier;
+                    if (now - this.touchState.lastJoyTap < 300) this.touchState.sprintReady = true;
+                    else this.touchState.sprintReady = false;
+                    this.touchState.lastJoyTap = now;
+                }, { passive: false });
+
+                joyZone.addEventListener('touchmove', (e) => {
+                    if (GAME_STATE !== 'PLAYING') return;
+                    e.preventDefault();
+                    for (const touch of e.changedTouches) {
+                        if (touch.identifier !== this.touchState.joystickId) continue;
+
+                        const rect = joyZone.getBoundingClientRect();
+                        const centerX = rect.left + rect.width / 2;
+                        const centerY = rect.top + rect.height / 2;
+                        const maxDist = Math.max(1, rect.width / 2 - 3);
+                        let dx = touch.clientX - centerX;
+                        let dy = touch.clientY - centerY;
+                        const dist = Math.hypot(dx, dy);
+
+                        if (dist > maxDist) { dx = (dx / dist) * maxDist; dy = (dy / dist) * maxDist; }
+                        joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+                        this.input.moveX = THREE.MathUtils.clamp(dx / maxDist, -1, 1);
+                        this.input.moveZ = THREE.MathUtils.clamp(dy / maxDist, -1, 1);
+
+                        const distRatio = Math.hypot(dx, dy) / maxDist;
+                        this.isSprinting = this.touchState.sprintReady && distRatio > 0.8;
+                        break;
+                    }
+                }, { passive: false });
+
+                const endJoystick = (e) => {
+                    e.preventDefault();
+                    for (const touch of e.changedTouches) {
+                        if (touch.identifier === this.touchState.joystickId) {
+                            resetJoystick();
+                            break;
+                        }
+                    }
+                };
+                joyZone.addEventListener('touchend', endJoystick, { passive: false });
+                joyZone.addEventListener('touchcancel', endJoystick, { passive: false });
+
+                lookZone.addEventListener('touchstart', (e) => {
+                    if (GAME_STATE !== 'PLAYING') return;
+                    e.preventDefault();
+                    if (this.touchState.lookId !== null) return;
+                    const touch = e.changedTouches[0];
+                    if (!touch) return;
+                    this.touchState.lookId = touch.identifier;
+                    this.touchState.lastX = touch.clientX;
+                    this.touchState.lastY = touch.clientY;
+                }, { passive: false });
+
+                lookZone.addEventListener('touchmove', (e) => {
+                    if (GAME_STATE !== 'PLAYING') return;
+                    e.preventDefault();
+                    for (const touch of e.changedTouches) {
+                        if (touch.identifier !== this.touchState.lookId) continue;
+                        const dx = touch.clientX - this.touchState.lastX;
+                        const dy = touch.clientY - this.touchState.lastY;
+                        this.input.yaw -= dx * SETTINGS.sensitivity * 1.5;
+                        this.input.pitch -= dy * SETTINGS.sensitivity * 1.5;
+                        this.clampPitch();
+                        this.touchState.lastX = touch.clientX;
+                        this.touchState.lastY = touch.clientY;
+                        break;
+                    }
+                }, { passive: false });
+
+                const endLook = (e) => {
+                    e.preventDefault();
+                    for (const touch of e.changedTouches) {
+                        if (touch.identifier === this.touchState.lookId) {
+                            resetLook();
+                            break;
+                        }
+                    }
+                };
+                lookZone.addEventListener('touchend', endLook, { passive: false });
+                lookZone.addEventListener('touchcancel', endLook, { passive: false });
+
+                // Safety net for the rare case where Safari tears down a gesture because the iframe
+                // loses focus, the tab is backgrounded, or the OS interrupts the touch sequence.
+                const forceReleaseTouches = () => {
+                    resetJoystick();
+                    resetLook();
                 };
                 window.addEventListener('blur', forceReleaseTouches);
+                window.addEventListener('pagehide', forceReleaseTouches);
                 document.addEventListener('visibilitychange', () => { if (document.hidden) forceReleaseTouches(); });
-                window.addEventListener('touchmove', (e) => {
-                    // Reconcile against currently active touches; drop any tracked id no longer present.
-                    if (this.touchState.joystickId === null && this.touchState.lookId === null) return;
-                    const active = new Set(); for (let t of e.touches) active.add(t.identifier);
-                    if (this.touchState.joystickId !== null && !active.has(this.touchState.joystickId)) {
-                        this.touchState.joystickId = null; this.input.moveX = 0; this.input.moveZ = 0; this.isSprinting = false;
-                        if (joyKnob) joyKnob.style.transform = `translate(0px, 0px)`;
-                    }
-                    if (this.touchState.lookId !== null && !active.has(this.touchState.lookId)) this.touchState.lookId = null;
-                }, { passive: true });
 
                 const bindBtn = (id, startFunc, endFunc) => {
                     const btn = document.getElementById(id); if(!btn) return;
-                    btn.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); startFunc(); });
+                    btn.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); if (GAME_STATE === 'PLAYING') startFunc(); }, { passive: false });
                     if(endFunc) {
-                        btn.addEventListener('touchend', (e) => { e.preventDefault(); e.stopPropagation(); endFunc(); });
-                        btn.addEventListener('touchcancel', (e) => { e.preventDefault(); e.stopPropagation(); endFunc(); });
+                        const finish = (e) => { e.preventDefault(); e.stopPropagation(); endFunc(); };
+                        btn.addEventListener('touchend', finish, { passive: false });
+                        btn.addEventListener('touchcancel', finish, { passive: false });
                     }
                 };
                 bindBtn('btn-jump', () => this.jump());
@@ -1083,11 +1291,12 @@
                 if (this.isReloading || w.ammo === w.mag) return;
                 this.isReloading = true;
                 document.getElementById('reloading-text').style.display = 'block';
+                const reloadTime = performance.now() < this.streakBoostUntil ? Math.max(350, w.reloadTime * 0.85) : w.reloadTime;
                 setTimeout(() => {
                     w.ammo = w.mag; this.isReloading = false;
                     document.getElementById('reloading-text').style.display = 'none';
                     this.updateWeaponUI();
-                }, w.reloadTime);
+                }, reloadTime);
             }
 
             updateWeaponUI() {
@@ -1095,6 +1304,64 @@
                 document.getElementById('w-name').innerText = w.name;
                 document.getElementById('ammo-count').innerText = w.ammo;
                 document.getElementById('ammo-count').style.color = w.ammo === 0 ? '#f33' : '#fff';
+            }
+
+            showHitMarker() {
+                const marker = document.getElementById('hit-marker');
+                if (!marker) return;
+                marker.classList.add('active');
+                clearTimeout(this._hitMarkerTimer);
+                this._hitMarkerTimer = setTimeout(() => marker.classList.remove('active'), 90);
+            }
+
+            addKillStreak() {
+                this.killStreak += 1;
+                this.bestKillStreak = Math.max(this.bestKillStreak, this.killStreak);
+                const now = performance.now();
+                this.streakUntil = now + 6500;
+                if (this.killStreak >= 3) this.streakBoostUntil = now + 4000;
+                const count = document.getElementById('streak-count');
+                const display = document.getElementById('streak-display');
+                if (count) count.textContent = this.killStreak;
+                if (display) {
+                    display.classList.add('active');
+                    clearTimeout(display._hideTimer);
+                    display._hideTimer = setTimeout(() => display.classList.remove('active'), 6500);
+                }
+                showKillFeed(this.killStreak >= 6 ? 'RAMPAGE' : this.killStreak >= 4 ? 'KILL STREAK' : this.killStreak >= 2 ? 'STREAK' : 'FIRST BLOOD');
+            }
+
+            resetKillStreak() {
+                this.killStreak = 0;
+                this.streakUntil = 0;
+                this.streakBoostUntil = 0;
+                const count = document.getElementById('streak-count');
+                const display = document.getElementById('streak-display');
+                if (count) count.textContent = '0';
+                if (display) display.classList.remove('active');
+            }
+
+            showDamageFeedback() {
+                const v = document.getElementById('damage-vignette');
+                if (!v) return;
+                v.style.opacity = '1';
+                clearTimeout(this._damageFlashTimer);
+                this._damageFlashTimer = setTimeout(() => { v.style.opacity = '0'; }, 180);
+            }
+
+            updateAdditiveCombat(dt) {
+                const now = performance.now();
+                if (this.streakUntil && now > this.streakUntil) this.resetKillStreak();
+                if (GAME_STATE === 'PLAYING' && this.health > 0 && this.health < 100 && now - this.lastDamageAt > 3500) {
+                    this.health = Math.min(100, this.health + 12 * dt);
+                    this.updateHealthUI();
+                    const pulse = document.getElementById('regen-pulse');
+                    if (pulse) {
+                        pulse.classList.add('active');
+                        clearTimeout(this._regenPulseTimer);
+                        this._regenPulseTimer = setTimeout(() => pulse.classList.remove('active'), 180);
+                    }
+                }
             }
 
             shoot() {
@@ -1229,15 +1496,20 @@
             }
 
             takeDamage(damage, attackerId) {
+                this.lastDamageAt = performance.now();
                 this.health -= damage;
                 if (this.health < 0) this.health = 0;
                 this.updateHealthUI();
                 network.broadcast({ type: 'hp_update', id: network.myId, hp: this.health });
                 
+                this.showDamageFeedback();
                 document.getElementById('hud').style.backgroundColor = 'rgba(255,0,0,0.3)';
                 setTimeout(() => { document.getElementById('hud').style.backgroundColor = 'transparent'; }, 150);
 
-                if (this.health === 0) this.respawn(attackerId);
+                if (this.health === 0) {
+                    this.resetKillStreak();
+                    this.respawn(attackerId);
+                }
             }
 
             respawn(killerId) {
@@ -1338,7 +1610,7 @@
                     const t = rp.netTarget;
                     const dx = t.x - rp.position.x, dz = t.z - rp.position.z;
                     const dist = Math.hypot(dx, dz);
-                    const LERP = 1 - Math.pow(0.001, dt); // frame-rate independent smoothing
+                    const LERP = 1 - Math.pow(0.0005, dt); // responsive, frame-rate independent smoothing
                     rp.position.x += (t.x - rp.position.x) * LERP;
                     rp.position.y += (t.y - rp.position.y) * LERP;
                     rp.position.z += (t.z - rp.position.z) * LERP;
@@ -1365,6 +1637,16 @@
                     this.scene.remove(this.remotePlayers[id].mesh);
                     this.remotePlayers[id].mesh.tag.remove();
                     delete this.remotePlayers[id];
+                }
+            }
+
+            removeRemoteProjectiles(id) {
+                for (let i = this.projectiles.length - 1; i >= 0; i--) {
+                    const p = this.projectiles[i];
+                    if (p.ownerId === id) {
+                        this.scene.remove(p);
+                        this.projectiles.splice(i, 1);
+                    }
                 }
             }
 
@@ -1403,6 +1685,7 @@
                 const nowTime = performance.now();
                 const dt = Math.min((nowTime - this.lastTime) / 1000, 0.1);
                 this.lastTime = nowTime;
+                this.updateAdditiveCombat(dt);
                 this.world.step(1 / 60, dt, 3);
 
                 // Check Jump Pads
@@ -1498,6 +1781,7 @@
                         if (this.isCrouching) speedMult = 0.5;
                         else if (this.isAiming) speedMult = 0.6;
                         else if (this.isSprinting) speedMult = SETTINGS.sprintMultiplier;
+                        if (performance.now() < this.streakBoostUntil) speedMult *= 1.12;
                         
                         this.playerBody.velocity.x = moveVector.x * SETTINGS.moveSpeed * speedMult;
                         this.playerBody.velocity.z = moveVector.z * SETTINGS.moveSpeed * speedMult;
@@ -1626,6 +1910,7 @@
                         }
                         else if (hitType === 'player') {
                             this.spawnHitParticles(closestPt, 12, 0xff0000);
+                            this.showHitMarker();
                             network.send(hitId, { type: 'damage', targetId: hitId, attackerId: network.myId, damage: p.power });
                         }
                         else if (hitType === 'me') {
@@ -1741,7 +2026,10 @@
                 document.getElementById('settings-menu').classList.remove('hidden');
             });
             document.getElementById('btn-close-settings').addEventListener('click', () => document.getElementById('settings-menu').classList.add('hidden'));
-            document.getElementById('btn-leave-match').addEventListener('click', () => location.reload());
+            document.getElementById('btn-leave-match').addEventListener('click', () => { network.leaveMatch('left'); location.reload(); });
+
+            window.addEventListener('pagehide', () => network.leaveMatch('pagehide'));
+            window.addEventListener('beforeunload', () => network.leaveMatch('unload'));
             
             document.getElementById('sensitivity-slider').addEventListener('input', (e) => SETTINGS.sensitivity = e.target.value * 0.0006);
         });
