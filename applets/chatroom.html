@@ -518,6 +518,8 @@
         let pendingAction = "unban";
         let pendingName = "";
         let lastDisplayedTimestamp = 0;
+        let historyReadyForSync = true;
+        let backupRestorePromise = Promise.resolve();
         let newMessageCount = 0;
         let renderedMsgCount = 250; 
         const NEAR_BOTTOM_PX = 50;
@@ -886,11 +888,16 @@
                         const mimeType = mediaRecorder.mimeType || 'audio/webm';
                         const blob = new Blob(audioChunks, { type: mimeType });
                         audioChunks = [];
+                        if (blob.size > MAX_OTHER_UPLOAD_BYTES) {
+                            customAlert("Audio recording too large. The limit is 5MB.");
+                            msgInput.style.display = "block";
+                            timerDiv.style.display = "none";
+                            return;
+                        }
                         const reader = new FileReader();
                         reader.onloadend = () => {
                             const raw = reader.result;
                             const comp = LZString.compressToUTF16(raw);
-                            if (comp.length > 50000000) return customAlert("Audio recording too long! (<50MB limit)");
                             sendPayload(raw, { isAudio: true, preCompressed: comp });
                         };
                         reader.readAsDataURL(blob);
@@ -907,44 +914,76 @@
             }
         }
 
-        function compressImageToFit(file, maxLength = 50000000) {
+        const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+        const MAX_OTHER_UPLOAD_BYTES = 5 * 1024 * 1024;
+
+        function blobToDataURL(blob) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
-                reader.onload = function(e) {
-                    const rawUrl = e.target.result;
-                    const initialComp = LZString.compressToUTF16(rawUrl);
-                    if (initialComp.length <= maxLength) { return resolve({ raw: rawUrl, preCompressed: initialComp }); }
-
-                    const img = new Image();
-                    img.onload = function() {
-                        let canvas = document.createElement("canvas");
-                        let ctx = canvas.getContext("2d");
-                        let width = img.width;
-                        let height = img.height;
-                        let quality = 0.85;
-
-                        let currentRaw = rawUrl;
-                        let currentComp = initialComp;
-
-                        while (currentComp.length > maxLength && (width > 10 && height > 10)) {
-                            canvas.width = width;
-                            canvas.height = height;
-                            ctx.fillStyle = "#ffffff";
-                            ctx.fillRect(0, 0, width, height);
-                            ctx.drawImage(img, 0, 0, width, height);
-
-                            currentRaw = canvas.toDataURL("image/jpeg", quality);
-                            currentComp = LZString.compressToUTF16(currentRaw);
-
-                            if (quality > 0.25) { quality -= 0.15; } 
-                            else { width = Math.floor(width * 0.75); height = Math.floor(height * 0.75); quality = 0.75; }
-                        }
-                        resolve({ raw: currentRaw, preCompressed: currentComp });
-                    };
-                    img.onerror = reject; img.src = rawUrl;
-                };
-                reader.onerror = reject; reader.readAsDataURL(file);
+                reader.onloadend = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
             });
+        }
+
+        function canvasToJpegBlob(canvas, quality) {
+            return new Promise((resolve, reject) => {
+                canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("JPEG encoding failed")), "image/jpeg", quality);
+            });
+        }
+
+        async function compressImageToFit(file, maxBytes = MAX_IMAGE_BYTES) {
+            // Normal small images are kept byte-for-byte; only oversized images incur
+            // decode/encode work. This avoids making ordinary uploads feel heavier.
+            if (file.size <= maxBytes) {
+                const raw = await blobToDataURL(file);
+                return { raw, preCompressed: LZString.compressToUTF16(raw) };
+            }
+
+            const rawUrl = await blobToDataURL(file);
+            const img = await new Promise((resolve, reject) => {
+                const image = new Image();
+                image.onload = () => resolve(image);
+                image.onerror = reject;
+                image.src = rawUrl;
+            });
+
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext("2d", { alpha: false });
+            if (!ctx) throw new Error("Canvas unavailable");
+
+            let width = img.naturalWidth || img.width;
+            let height = img.naturalHeight || img.height;
+            let quality = 0.85;
+            let bestBlob = null;
+            let attempts = 0;
+
+            while (attempts++ < 24) {
+                canvas.width = Math.max(32, Math.floor(width));
+                canvas.height = Math.max(32, Math.floor(height));
+                ctx.fillStyle = "#ffffff";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                const blob = await canvasToJpegBlob(canvas, quality);
+                bestBlob = blob;
+                if (blob.size <= maxBytes) break;
+
+                if (quality > 0.22) {
+                    quality = Math.max(0.2, quality - 0.13);
+                } else {
+                    width *= 0.78;
+                    height *= 0.78;
+                    quality = 0.78;
+                }
+            }
+
+            if (!bestBlob || bestBlob.size > maxBytes) {
+                throw new Error("Image could not be compressed below the 2MB limit");
+            }
+
+            const raw = await blobToDataURL(bestBlob);
+            return { raw, preCompressed: LZString.compressToUTF16(raw) };
         }
 
         document.getElementById("universal-upload").addEventListener("change", async function(e) {
@@ -956,20 +995,30 @@
 
             if (isImage) {
                 try {
-                    const { raw, preCompressed } = await compressImageToFit(file, 50000000);
+                    const { raw, preCompressed } = await compressImageToFit(file, MAX_IMAGE_BYTES);
                     sendPayload(raw, { isImage: true, isVideo: false, isFile: false, fileName: file.name, preCompressed });
-                } catch(err) { customAlert("Failed to process image."); }
-                e.target.value = ""; return;
+                } catch(err) {
+                    customAlert("Failed to compress that image below the 2MB limit.");
+                }
+                e.target.value = "";
+                return;
+            }
+
+            if (file.size > MAX_OTHER_UPLOAD_BYTES) {
+                customAlert("File too large. Videos and other files have a 5MB limit.");
+                e.target.value = "";
+                return;
             }
 
             const reader = new FileReader();
-            reader.onload = function(event) { 
+            reader.onload = function(event) {
                 const raw = event.target.result;
                 const comp = LZString.compressToUTF16(raw);
-                if (comp.length > 50000000) { return customAlert("File too large. Compression could not fit it under 50MB limit."); }
-                sendPayload(raw, { isImage, isVideo, isFile, fileName: file.name, preCompressed: comp }); 
+                sendPayload(raw, { isImage, isVideo, isFile, fileName: file.name, preCompressed: comp });
             };
-            reader.readAsDataURL(file); e.target.value = "";
+            reader.onerror = () => customAlert("Failed to read that file.");
+            reader.readAsDataURL(file);
+            e.target.value = "";
         });
 
         // History is intentionally unbounded.  The old implementation persisted only the
@@ -1075,7 +1124,13 @@
                         let target = key.replace(`mqtt_dm_${myUsername}_`, "");
                         let hist = await loadFromStorageWithCompression(key);
                         hist = sanitizeHistoryLoaded(hist);
-                        if (hist.length > 0) { dmHistories[target] = hist; if (!closedDMs.has(target)) ensureDmTab(target); }
+                        const dmDedupe = dedupeHistoryList(hist);
+                        hist = dmDedupe.list;
+                        if (hist.length > 0) {
+                            dmHistories[target] = hist;
+                            if (dmDedupe.changed) saveDmHistory(target);
+                            if (!closedDMs.has(target)) ensureDmTab(target);
+                        }
                     }
                 }
             }
@@ -1648,7 +1703,9 @@
                 await loadTombstones();
                 messageHistory = applyTombstonesToList(messageHistory);
                 rebuildMessageHistoryIdSet();
-                await autoRestoreGitHubBackup();
+                dedupeAllHistories();
+                historyReadyForSync = false;
+                backupRestorePromise = autoRestoreGitHubBackup().catch(() => null).finally(() => { historyReadyForSync = true; if (isConnected) requestManifestBroadcast(); });
             } else {
                 let storedGhost = safeGet("mqtt_ghost_id");
                 if (!storedGhost) { storedGhost = "ghost-" + generateId(); safeSet("mqtt_ghost_id", storedGhost); }
@@ -1659,7 +1716,9 @@
                 await loadTombstones();
                 messageHistory = applyTombstonesToList(messageHistory);
                 rebuildMessageHistoryIdSet();
-                await autoRestoreGitHubBackup();
+                dedupeAllHistories();
+                historyReadyForSync = false;
+                backupRestorePromise = autoRestoreGitHubBackup().catch(() => null).finally(() => { historyReadyForSync = true; if (isConnected) requestManifestBroadcast(); });
             }
 
             activeUsers.set(myUsername, {
@@ -1676,7 +1735,9 @@
                 isConnected = true;
                 client.subscribe(ROOM_TOPIC, (err) => {
                     if (!err) {
-                        requestManifestBroadcast();
+                        backupRestorePromise.finally(() => {
+                            if (isConnected && historyReadyForSync) requestManifestBroadcast();
+                        });
                         publishPing();
                         if (!window.pingInterval) { window.pingInterval = setInterval(() => { if (isConnected) publishPing(); }, 5000); }
                     }
@@ -1686,7 +1747,7 @@
             setupMqttListeners();
             requestParentActivityState();
             setInterval(checkPresence, 5000);
-            setInterval(() => { if (isConnected && !document.hidden) publishMessage(buildManifest()); }, 60000);
+            setInterval(() => { if (isConnected && historyReadyForSync && !document.hidden) publishMessage(buildManifest()); }, 60000);
         })();
 
         async function joinChat() {
@@ -1712,6 +1773,7 @@
             await loadTombstones();
             messageHistory = applyTombstonesToList(messageHistory);
             rebuildMessageHistoryIdSet();
+            dedupeAllHistories();
 
             const now = Date.now();
             activeUsers.set(myUsername, {
@@ -2015,6 +2077,186 @@
             });
         }
 
+        function isSyntheticBackupMessage(msg) {
+            return !!msg && (String(msg.id || "").startsWith("backup-") || !!msg.restoredFromBackup);
+        }
+
+        function messageIdentityContent(msg) {
+            if (!msg) return "";
+            if (msg.isImage) return "[Image]";
+            if (msg.isVideo) return "[Video]";
+            if (msg.isAudio) return "[Voice Memo]";
+            if (msg.isFile) return `[File: ${msg.fileName || ""}]`;
+            if (msg.backupPlaceholder) return `[${msg.backupPlaceholder}]`;
+            return typeof msg.text === "string" ? msg.text : "";
+        }
+
+        function messageLooseIdentity(msg) {
+            const ts = Math.floor((msg && msg.timestamp ? msg.timestamp : 0) / 1000);
+            const author = msg && msg.author ? msg.author : "SYSTEM";
+            return `${ts}|${author}|${messageMediaKind(msg)}|${messageIdentityContent(msg)}`;
+        }
+
+        function hasRealMediaPayload(msg) {
+            if (!msg || !(msg.isImage || msg.isVideo || msg.isAudio || msg.isFile)) return false;
+            if (msg.backupPlaceholder) return false;
+            return typeof msg.text === "string" && (msg.text.startsWith("data:") || msg.text.length > 0);
+        }
+
+        function mergeMessageMetadata(primary, secondary) {
+            if (!primary || !secondary) return primary || secondary;
+            const primaryIsPlaceholder = !!primary.backupPlaceholder;
+            const secondaryIsRealMedia = hasRealMediaPayload(secondary);
+
+            const promoteToLive = isSyntheticBackupMessage(primary) && !isSyntheticBackupMessage(secondary);
+            if (promoteToLive) {
+                primary.id = secondary.id || primary.id;
+                primary.restoredFromBackup = false;
+            }
+
+            if (secondaryIsRealMedia && (!hasRealMediaPayload(primary) || primaryIsPlaceholder)) {
+                primary.text = secondary.text;
+                primary.compressed = !!secondary.compressed;
+                primary.isImage = !!secondary.isImage;
+                primary.isVideo = !!secondary.isVideo;
+                primary.isAudio = !!secondary.isAudio;
+                primary.isFile = !!secondary.isFile;
+                if (secondary.fileName) primary.fileName = secondary.fileName;
+                delete primary.backupPlaceholder;
+                primary.restoredFromBackup = false;
+            }
+            if (!primary.replyTo && secondary.replyTo) primary.replyTo = secondary.replyTo;
+            if (secondary.edited) { primary.edited = true; primary.text = secondary.text; }
+            if (!primary.reactions) primary.reactions = {};
+            if (secondary.reactions) {
+                Object.entries(secondary.reactions).forEach(([emoji, users]) => {
+                    if (!Array.isArray(users) || !users.length) return;
+                    if (!Array.isArray(primary.reactions[emoji])) primary.reactions[emoji] = [];
+                    users.forEach(u => { if (!primary.reactions[emoji].includes(u)) primary.reactions[emoji].push(u); });
+                });
+            }
+            if (!primary.fileName && secondary.fileName) primary.fileName = secondary.fileName;
+            if (!primary.backupKey && secondary.backupKey) primary.backupKey = secondary.backupKey;
+            return primary;
+        }
+
+        function choosePreferredMessage(a, b) {
+            if (!a) return b;
+            if (!b) return a;
+            // Prefer the real MQTT record over a synthetic backup copy, and prefer
+            // a real attachment over an export placeholder. Metadata is then merged.
+            const aSynthetic = isSyntheticBackupMessage(a);
+            const bSynthetic = isSyntheticBackupMessage(b);
+            if (aSynthetic !== bSynthetic) return aSynthetic ? b : a;
+            const aReal = hasRealMediaPayload(a);
+            const bReal = hasRealMediaPayload(b);
+            if (aReal !== bReal) return aReal ? a : b;
+            return a;
+        }
+
+        function dedupeHistoryList(list) {
+            if (!Array.isArray(list) || list.length < 2) return { list: list || [], changed: false, removed: 0 };
+
+            const byBackupKey = new Map();
+            const kept = [];
+            let changed = false, removed = 0;
+
+            // First collapse exact backup-key duplicates.
+            for (const msg of list) {
+                const key = msg && msg.backupKey ? msg.backupKey : "";
+                if (key && byBackupKey.has(key)) {
+                    const idx = byBackupKey.get(key);
+                    const preferred = choosePreferredMessage(kept[idx], msg);
+                    kept[idx] = mergeMessageMetadata(preferred, preferred === msg ? list[idx] : msg);
+                    changed = true; removed++;
+                } else {
+                    if (key) byBackupKey.set(key, kept.length);
+                    kept.push(msg);
+                }
+            }
+
+            // Then remove synthetic restore copies when a genuine stored/live record
+            // represents the same message within the export's one-second timestamp
+            // precision. This does NOT collapse two ordinary live messages.
+            const liveByIdentity = new Map();
+            kept.forEach((msg, idx) => {
+                if (!isSyntheticBackupMessage(msg)) {
+                    const key = messageLooseIdentity(msg);
+                    if (!liveByIdentity.has(key)) liveByIdentity.set(key, []);
+                    liveByIdentity.get(key).push(idx);
+                }
+            });
+
+            const remove = new Set();
+            kept.forEach((msg, idx) => {
+                if (!isSyntheticBackupMessage(msg)) return;
+                const candidates = liveByIdentity.get(messageLooseIdentity(msg)) || [];
+                let bestIdx = -1, bestDelta = Infinity;
+                for (const candidateIdx of candidates) {
+                    if (remove.has(candidateIdx)) continue;
+                    const delta = Math.abs((kept[candidateIdx].timestamp || 0) - (msg.timestamp || 0));
+                    if (delta <= 1500 && delta < bestDelta) { bestDelta = delta; bestIdx = candidateIdx; }
+                }
+                if (bestIdx !== -1) {
+                    mergeMessageMetadata(kept[bestIdx], msg);
+                    remove.add(idx);
+                    changed = true; removed++;
+                }
+            });
+
+            const finalList = kept.filter((_, idx) => !remove.has(idx));
+            finalList.sort((a,b) => (a.timestamp || 0) - (b.timestamp || 0));
+            return { list: finalList, changed, removed };
+        }
+
+        function dedupeAllHistories() {
+            let changed = false, removed = 0;
+            const globalResult = dedupeHistoryList(messageHistory);
+            messageHistory = globalResult.list;
+            changed ||= globalResult.changed; removed += globalResult.removed;
+            Object.keys(dmHistories).forEach(user => {
+                const result = dedupeHistoryList(dmHistories[user]);
+                dmHistories[user] = result.list;
+                changed ||= result.changed; removed += result.removed;
+            });
+            if (changed) {
+                rebuildMessageHistoryIdSet();
+                saveLocalHistory();
+                Object.keys(dmHistories).forEach(user => saveDmHistory(user));
+            }
+            return { changed, removed };
+        }
+
+        function buildRestoreIdentityIndex(localList) {
+            const index = new Map();
+            if (!Array.isArray(localList)) return index;
+            localList.forEach(candidate => {
+                if (!candidate) return;
+                const key = messageLooseIdentity(candidate);
+                if (!index.has(key)) index.set(key, []);
+                index.get(key).push(candidate);
+            });
+            return index;
+        }
+
+        function findRestoreEquivalent(localList, incoming, identityIndex = null) {
+            if (!Array.isArray(localList) || !incoming) return null;
+            const incomingKey = messageLooseIdentity(incoming);
+            const candidates = identityIndex ? (identityIndex.get(incomingKey) || []) : localList;
+            let best = null, bestDelta = Infinity;
+            for (const candidate of candidates) {
+                if (!candidate || candidate === incoming) continue;
+                if (!identityIndex && messageLooseIdentity(candidate) !== incomingKey) continue;
+                // A real live record can replace a synthetic export copy. For a
+                // normal-to-normal comparison, do not collapse legitimate repeats.
+                const related = isSyntheticBackupMessage(incoming) || isSyntheticBackupMessage(candidate) || !!candidate.backupPlaceholder || !!incoming.backupPlaceholder;
+                if (!related) continue;
+                const delta = Math.abs((candidate.timestamp || 0) - (incoming.timestamp || 0));
+                if (delta <= 1500 && delta < bestDelta) { best = candidate; bestDelta = delta; }
+            }
+            return best;
+        }
+
         function mergeHistory(localHistory, remoteHistory, isRealtimeLive = false) {
             if (!remoteHistory || !remoteHistory.length) return localHistory;
 
@@ -2022,6 +2264,18 @@
                 const msg = remoteHistory[0];
                 const key = msg.id;
                 if (key && !messageHistoryIdSet.has(key)) {
+                    // A live attachment arriving after a GitHub-export placeholder has a
+                    // different ID. Match it before applying tombstone rejection so the
+                    // real record can take over the placeholder identity.
+                    const equivalent = findRestoreEquivalent(localHistory, msg);
+                    if (equivalent) {
+                        const oldId = equivalent.id;
+                        mergeMessageMetadata(equivalent, msg);
+                        if (oldId && oldId !== equivalent.id) messageHistoryIdSet.delete(oldId);
+                        if (equivalent.id) messageHistoryIdSet.add(equivalent.id);
+                        return localHistory;
+                    }
+
                     const isTombstoned = msgTombstones.has(key) ||
                         (msg.timestamp && msg.timestamp <= nukeMarker) ||
                         rangeTombstones.some(r => msg.timestamp >= r.from && msg.timestamp <= r.to && (r.scope === "all" || (r.scope === "system") === !!msg.isSystem));
@@ -2053,6 +2307,7 @@
 
             const uniqueMessages = new Map();
             const localIds = new Set();
+            const restoreIdentityIndex = buildRestoreIdentityIndex(localHistory);
             
             localHistory.forEach(m => {
                 const key = m.id || `${m.timestamp}-${m.author}-${m.text || m.fileName || 'sys'}`;
@@ -2063,6 +2318,14 @@
             remoteHistory.forEach(msg => {
                 const key = msg.id || `${msg.timestamp}-${msg.author}-${msg.text || msg.fileName || 'sys'}`;
                 if (!uniqueMessages.has(key)) {
+                    const equivalent = findRestoreEquivalent(localHistory, msg, restoreIdentityIndex);
+                    if (equivalent) {
+                        const oldEquivalentId = equivalent.id;
+                        mergeMessageMetadata(equivalent, msg);
+                        if (oldEquivalentId && oldEquivalentId !== equivalent.id) uniqueMessages.delete(oldEquivalentId);
+                        uniqueMessages.set(equivalent.id || key, equivalent);
+                        return;
+                    }
                     uniqueMessages.set(key, msg);
                     
                     if (!localIds.has(msg.id) && msg.author !== myUsername && !blockedUsers.has(msg.author)) {
@@ -2492,27 +2755,41 @@
                     return;
                 }
 
-                const userMatch = line.match(/^\[([^\]]+)\]\s+([\s\S]+?):\s+"([\s\S]*)"(?:\s+.*)?$/);
-                if (!userMatch) return;
+                // Parse the timestamp first. A reply line contains additional colons
+                // and quotes inside the optional [replying to: ...] wrapper, so trying
+                // to identify the sender with one regex over the entire line is ambiguous.
+                const lineMatch = line.match(/^\[([^\]]+)\]\s+([\s\S]*)$/);
+                if (!lineMatch) return;
 
-                const timestamp = parseExportTimestamp(userMatch[1]);
-                let authorAndReply = userMatch[2];
-                let content = userMatch[3];
+                const timestamp = parseExportTimestamp(lineMatch[1]);
+                let authorAndReply = lineMatch[2];
+                let content = "";
                 let replyTo = null;
 
-                const replyPrefix = authorAndReply.match(/^\[replying to:\s+"([\s\S]*)"\]\s+(.+)$/);
+                const replyPrefix = authorAndReply.match(/^\[replying to:\s+"([\s\S]*)"\]\s+([\s\S]*)$/);
                 if (replyPrefix) {
                     const replyRaw = replyPrefix[1];
                     authorAndReply = replyPrefix[2];
-                    const replyMatch = replyRaw.match(/^\[([^\]]+)\]\s+(.+?):\s+"([\s\S]*)"$/) || replyRaw.match(/^(.+?):\s+"([\s\S]*)"$/);
-                    if (replyMatch) {
-                        replyTo = {
-                            author: replyMatch[2],
-                            text: replyMatch[3],
-                            timestamp: replyMatch.length === 4 ? parseExportTimestamp(replyMatch[1]) : 0
-                        };
+
+                    // Export format is either:
+                    //   [replying to: "Author: \"text\""] User: "reply"
+                    // or, for older exports with timestamps:
+                    //   [replying to: "[date/time] Author: \"text\""] User: "reply"
+                    // Parse the reply sender from capture 2/1 respectively; never use
+                    // the reply text as the author.
+                    const timedReply = replyRaw.match(/^\[([^\]]+)\]\s+(.+?):\s+"([\s\S]*)"$/);
+                    const plainReply = replyRaw.match(/^(.+?):\s+"([\s\S]*)"$/);
+                    if (timedReply) {
+                        replyTo = { author: timedReply[2], text: timedReply[3], timestamp: parseExportTimestamp(timedReply[1]) };
+                    } else if (plainReply) {
+                        replyTo = { author: plainReply[1], text: plainReply[2], timestamp: 0 };
                     }
                 }
+
+                const messageMatch = authorAndReply.match(/^(.+?):\s+"([\s\S]*)"(?:\s+.*)?$/);
+                if (!messageMatch) return;
+                authorAndReply = messageMatch[1];
+                content = messageMatch[2];
 
                 let edited = false;
                 if (/\s\[edited\]$/.test(content)) {
@@ -2562,7 +2839,8 @@
         function backupMetaSignature(response) {
             const etag = response.headers.get("etag") || "";
             const len = response.headers.get("content-length") || "";
-            return etag || (len ? `len:${len}` : "");
+            const modified = response.headers.get("last-modified") || "";
+            return etag || (len ? `len:${len}` : "") || (modified ? `modified:${modified}` : "");
         }
 
         async function headBackup(url) {
@@ -2595,7 +2873,7 @@
                             const num = n => { const m = String(n || "").match(/ (\d+)\.txt$/i); return m ? parseInt(m[1],10) : 0; };
                             return num(b.name) - num(a.name);
                         });
-                    if (matches.length) return new URL(matches[0].name, document.baseURI).href;
+                    if (matches.length) return matches[0].download_url || new URL(matches[0].name, document.baseURI).href;
                 } catch (e) {}
             }
             return null;
@@ -2647,43 +2925,76 @@
         }
 
         function mergeParsedBackupIntoHistory(parsed, forceRestore = false) {
-            if (!parsed.length) return { added: 0, matched: 0, entries: [] };
+            if (!parsed.length) return { added: 0, matched: 0, deduped: 0, entries: [] };
+
+            // Clean up duplicates from earlier broken restores before attempting another merge.
+            const beforeDedupe = dedupeAllHistories();
 
             const localByBackupKey = new Map();
-            const occurrenceMap = new Map();
+            const byLooseIdentity = new Map();
             messageHistory.forEach(m => {
-                const fp = m.backupKey || buildBackupFingerprint(m, occurrenceMap.get(buildBackupFingerprint(m)) || 0);
-                if (!m.backupKey) m.backupKey = fp;
-                occurrenceMap.set(fp, (occurrenceMap.get(fp) || 0) + 1);
-                if (!localByBackupKey.has(fp)) localByBackupKey.set(fp, m);
+                if (m.backupKey && !localByBackupKey.has(m.backupKey)) localByBackupKey.set(m.backupKey, m);
+                const key = messageLooseIdentity(m);
+                if (!byLooseIdentity.has(key)) byLooseIdentity.set(key, []);
+                byLooseIdentity.get(key).push(m);
             });
 
             const additions = [];
             const entries = [];
             let matched = 0;
+
             parsed.forEach(m => {
-                const existing = localByBackupKey.get(m.backupKey);
+                let existing = m.backupKey ? localByBackupKey.get(m.backupKey) : null;
+
+                // This is the critical cross-format matcher: exported timestamps only
+                // have one-second precision, while live records normally have milliseconds.
+                // Match within 1.5s on author + displayed content/media type.
+                if (!existing) {
+                    const candidates = byLooseIdentity.get(messageLooseIdentity(m)) || [];
+                    let best = null, bestDelta = Infinity;
+                    candidates.forEach(candidate => {
+                        const delta = Math.abs((candidate.timestamp || 0) - (m.timestamp || 0));
+                        if (delta <= 1500 && delta < bestDelta) {
+                            best = candidate;
+                            bestDelta = delta;
+                        }
+                    });
+                    existing = best;
+                }
+
                 if (existing) {
                     existing.backupKey = m.backupKey;
-                    if (forceRestore) existing.restoredFromBackup = true;
+                    mergeMessageMetadata(existing, m);
                     entries.push([m.backupKey, existing.id, m.timestamp || 0, m.isSystem ? 1 : 0]);
                     matched++;
                     return;
                 }
+
                 if (!forceRestore && isMessageTombstoned(m)) {
                     entries.push([m.backupKey, m.id, m.timestamp || 0, m.isSystem ? 1 : 0]);
                     return;
                 }
+
                 if (forceRestore) m.restoredFromBackup = true;
                 additions.push(m);
                 entries.push([m.backupKey, m.id, m.timestamp || 0, m.isSystem ? 1 : 0]);
+                localByBackupKey.set(m.backupKey, m);
+                const identity = messageLooseIdentity(m);
+                if (!byLooseIdentity.has(identity)) byLooseIdentity.set(identity, []);
+                byLooseIdentity.get(identity).push(m);
             });
 
             if (additions.length) {
                 messageHistory = mergeHistory(messageHistory, additions, false);
                 rebuildMessageHistoryIdSet();
             }
-            return { added: additions.length, matched, entries };
+
+            // Also clean any duplicate backup copies created by the previous version.
+            const afterDedupe = dedupeHistoryList(messageHistory);
+            messageHistory = afterDedupe.list;
+            rebuildMessageHistoryIdSet();
+
+            return { added: additions.length, matched, deduped: beforeDedupe.removed + afterDedupe.removed, entries };
         }
 
         async function restoreBackupText(rawText, sourceName = "Chat Export", forceRestore = false) {
@@ -2740,7 +3051,7 @@
             try {
                 const raw = await file.text();
                 const result = await restoreBackupText(raw, file.name, true);
-                customAlert(`Restored ${result.added} message${result.added === 1 ? "" : "s"} from ${file.name}.`);
+                customAlert(`Restored ${result.added} new message${result.added === 1 ? "" : "s"} and merged ${result.matched} existing message${result.matched === 1 ? "" : "s"}.${result.deduped ? ` Removed ${result.deduped} duplicate${result.deduped === 1 ? "" : "s"}.` : ""}`);
             } catch (e) {
                 customAlert("Could not restore that chat export.");
             }
