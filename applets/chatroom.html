@@ -859,6 +859,27 @@
             return false;
         }
 
+        const MAX_IMAGE_UPLOAD_BYTES = 2 * 1024 * 1024;
+        const MAX_OTHER_UPLOAD_BYTES = 5 * 1024 * 1024;
+
+        function bytesForText(value) {
+            try { return new Blob([String(value || "")]).size; } catch (e) { return String(value || "").length * 2; }
+        }
+
+        async function blobToDataURL(blob) {
+            return await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        async function dataURLToBlob(dataURL) {
+            const response = await fetch(dataURL);
+            return await response.blob();
+        }
+
         async function toggleRecording() {
             const timerDiv = document.getElementById("audio-timer");
             const msgInput = document.getElementById("msg-input");
@@ -867,34 +888,41 @@
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                     mediaRecorder = new MediaRecorder(stream);
-                    
+
                     msgInput.style.display = "none";
                     timerDiv.style.display = "block";
                     timerDiv.innerText = "00:00";
-                    
+
                     let recordStartTime = Date.now();
                     let recordTimerId = setInterval(() => {
                         let seconds = Math.floor((Date.now() - recordStartTime) / 1000);
                         let m = String(Math.floor(seconds / 60)).padStart(2, '0');
-                        let s = String(seconds % 60).padStart(2, '0');
-                        timerDiv.innerText = `${m}:${s}`;
+                        let sec = String(seconds % 60).padStart(2, '0');
+                        timerDiv.innerText = `${m}:${sec}`;
                     }, 1000);
 
                     mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-                    mediaRecorder.onstop = () => {
+                    mediaRecorder.onstop = async () => {
                         clearInterval(recordTimerId);
                         const mimeType = mediaRecorder.mimeType || 'audio/webm';
                         const blob = new Blob(audioChunks, { type: mimeType });
                         audioChunks = [];
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                            const raw = reader.result;
+
+                        if (blob.size > MAX_OTHER_UPLOAD_BYTES) {
+                            customAlert("Voice memo is too large. The limit is 5MB.");
+                            msgInput.style.display = "block";
+                            timerDiv.style.display = "none";
+                            return;
+                        }
+
+                        try {
+                            const raw = await blobToDataURL(blob);
                             const comp = LZString.compressToUTF16(raw);
-                            if (comp.length > 50000000) return customAlert("Audio recording too long! (<50MB limit)");
-                            sendPayload(raw, { isAudio: true, preCompressed: comp });
-                        };
-                        reader.readAsDataURL(blob);
-                        
+                            sendPayload(raw, { isAudio: true, preCompressed: comp, sourceBytes: blob.size });
+                        } catch (e) {
+                            customAlert("Failed to process voice memo.");
+                        }
+
                         msgInput.style.display = "block";
                         timerDiv.style.display = "none";
                     };
@@ -907,44 +935,61 @@
             }
         }
 
-        function compressImageToFit(file, maxLength = 50000000) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    const rawUrl = e.target.result;
-                    const initialComp = LZString.compressToUTF16(rawUrl);
-                    if (initialComp.length <= maxLength) { return resolve({ raw: rawUrl, preCompressed: initialComp }); }
+        async function compressImageToFit(file, maxBytes = MAX_IMAGE_UPLOAD_BYTES) {
+            if (file.size <= maxBytes) {
+                const raw = await blobToDataURL(file);
+                return { raw, preCompressed: LZString.compressToUTF16(raw), sourceBytes: file.size };
+            }
 
-                    const img = new Image();
-                    img.onload = function() {
-                        let canvas = document.createElement("canvas");
-                        let ctx = canvas.getContext("2d");
-                        let width = img.width;
-                        let height = img.height;
-                        let quality = 0.85;
+            const objectUrl = URL.createObjectURL(file);
+            try {
+                const img = await new Promise((resolve, reject) => {
+                    const image = new Image();
+                    image.onload = () => resolve(image);
+                    image.onerror = reject;
+                    image.src = objectUrl;
+                });
 
-                        let currentRaw = rawUrl;
-                        let currentComp = initialComp;
+                let width = img.naturalWidth || img.width;
+                let height = img.naturalHeight || img.height;
+                let quality = 0.86;
+                let bestBlob = null;
 
-                        while (currentComp.length > maxLength && (width > 10 && height > 10)) {
-                            canvas.width = width;
-                            canvas.height = height;
-                            ctx.fillStyle = "#ffffff";
-                            ctx.fillRect(0, 0, width, height);
-                            ctx.drawImage(img, 0, 0, width, height);
+                // Work in Blob space instead of repeatedly constructing multi-megabyte
+                // base64 strings. This is substantially lighter for large images.
+                for (let attempt = 0; attempt < 24; attempt++) {
+                    const canvas = document.createElement("canvas");
+                    canvas.width = Math.max(1, Math.round(width));
+                    canvas.height = Math.max(1, Math.round(height));
+                    const ctx = canvas.getContext("2d", { alpha: false });
+                    if (!ctx) throw new Error("Canvas unavailable");
+                    ctx.fillStyle = "#ffffff";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-                            currentRaw = canvas.toDataURL("image/jpeg", quality);
-                            currentComp = LZString.compressToUTF16(currentRaw);
+                    const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", quality));
+                    if (!blob) throw new Error("Image encoding failed");
+                    bestBlob = blob;
+                    if (blob.size <= maxBytes) break;
 
-                            if (quality > 0.25) { quality -= 0.15; } 
-                            else { width = Math.floor(width * 0.75); height = Math.floor(height * 0.75); quality = 0.75; }
-                        }
-                        resolve({ raw: currentRaw, preCompressed: currentComp });
-                    };
-                    img.onerror = reject; img.src = rawUrl;
-                };
-                reader.onerror = reject; reader.readAsDataURL(file);
-            });
+                    if (quality > 0.30) {
+                        quality = Math.max(0.30, quality - 0.10);
+                    } else {
+                        width *= 0.82;
+                        height *= 0.82;
+                        quality = 0.78;
+                    }
+                }
+
+                if (!bestBlob || bestBlob.size > maxBytes) {
+                    throw new Error("Image could not be compressed under 2MB");
+                }
+
+                const raw = await blobToDataURL(bestBlob);
+                return { raw, preCompressed: LZString.compressToUTF16(raw), sourceBytes: bestBlob.size };
+            } finally {
+                URL.revokeObjectURL(objectUrl);
+            }
         }
 
         document.getElementById("universal-upload").addEventListener("change", async function(e) {
@@ -954,22 +999,26 @@
             const isImage = file.type.startsWith("image/");
             const isFile = !isImage && !isVideo;
 
-            if (isImage) {
-                try {
-                    const { raw, preCompressed } = await compressImageToFit(file, 50000000);
-                    sendPayload(raw, { isImage: true, isVideo: false, isFile: false, fileName: file.name, preCompressed });
-                } catch(err) { customAlert("Failed to process image."); }
-                e.target.value = ""; return;
-            }
+            try {
+                if (isImage) {
+                    const { raw, preCompressed, sourceBytes } = await compressImageToFit(file, MAX_IMAGE_UPLOAD_BYTES);
+                    sendPayload(raw, { isImage: true, isVideo: false, isFile: false, fileName: file.name, preCompressed, sourceBytes });
+                    return;
+                }
 
-            const reader = new FileReader();
-            reader.onload = function(event) { 
-                const raw = event.target.result;
+                if (file.size > MAX_OTHER_UPLOAD_BYTES) {
+                    customAlert("Videos and other files are limited to 5MB.");
+                    return;
+                }
+
+                const raw = await blobToDataURL(file);
                 const comp = LZString.compressToUTF16(raw);
-                if (comp.length > 50000000) { return customAlert("File too large. Compression could not fit it under 50MB limit."); }
-                sendPayload(raw, { isImage, isVideo, isFile, fileName: file.name, preCompressed: comp }); 
-            };
-            reader.readAsDataURL(file); e.target.value = "";
+                sendPayload(raw, { isImage: false, isVideo, isFile, fileName: file.name, preCompressed: comp, sourceBytes: file.size });
+            } catch(err) {
+                customAlert(isImage ? "Failed to process image." : "Failed to process file.");
+            } finally {
+                e.target.value = "";
+            }
         });
 
         // History is intentionally unbounded.  The old implementation persisted only the
@@ -978,6 +1027,7 @@
         // instead of repeatedly LZ-compressing the entire history array.  This is dramatically
         // cheaper during sync while retaining backwards compatibility with old compressed data.
         const STORAGE_WRITE_DEBOUNCE_MS = 1200;
+        const HISTORY_CLEANUP_VERSION_KEY = "mqtt_history_cleanup_version_v2";
 
         async function saveToStorageWithCompression(key, historyValue) {
             try {
@@ -1040,11 +1090,16 @@
             return historyArray;
         }
 
-        async function loadLocalHistory() { 
+        async function loadLocalHistory(renderAfter = true) {
             let loaded = await loadFromStorageWithCompression(STORAGE_KEY);
             messageHistory = sanitizeHistoryLoaded(loaded);
+            const cleaned = cleanupDuplicateHistory(messageHistory);
+            const changed = cleaned.length !== messageHistory.length;
+            messageHistory = cleaned;
             rebuildMessageHistoryIdSet();
-            if(currentTab === "global") renderActiveTabMessages(); 
+            if (changed) saveLocalHistory();
+            try { localStorage.setItem(HISTORY_CLEANUP_VERSION_KEY, "2"); } catch (e) {}
+            if(renderAfter && currentTab === "global") renderActiveTabMessages();
         }
         function saveLocalHistory() { saveToStorageDebounced(STORAGE_KEY, () => messageHistory); }
         async function loadDmHistory(otherUser) { return await loadFromStorageWithCompression(`mqtt_dm_${myUsername}_${otherUser}`); }
@@ -1070,14 +1125,17 @@
                 const lfKeys = await localforage.keys();
                 lfKeys.forEach(k => keys.add(k));
 
-                for (let key of keys) {
-                    if (key.startsWith(`mqtt_dm_${myUsername}_`)) {
-                        let target = key.replace(`mqtt_dm_${myUsername}_`, "");
-                        let hist = await loadFromStorageWithCompression(key);
-                        hist = sanitizeHistoryLoaded(hist);
-                        if (hist.length > 0) { dmHistories[target] = hist; if (!closedDMs.has(target)) ensureDmTab(target); }
-                    }
-                }
+                const dmKeys = Array.from(keys).filter(key => key.startsWith(`mqtt_dm_${myUsername}_`));
+                const dmLoaded = await Promise.all(dmKeys.map(async key => {
+                    try {
+                        const target = key.replace(`mqtt_dm_${myUsername}_`, "");
+                        let hist = sanitizeHistoryLoaded(await loadFromStorageWithCompression(key));
+                        return hist.length > 0 ? { target, hist: cleanupDuplicateHistory(hist) } : null;
+                    } catch (e) { return null; }
+                }));
+                dmLoaded.forEach(item => {
+                    if (item) { dmHistories[item.target] = item.hist; if (!closedDMs.has(item.target)) ensureDmTab(item.target); }
+                });
             }
         }
         function saveBlockedUsers() { try { localStorage.setItem(BLOCKED_KEY, JSON.stringify(Array.from(blockedUsers))); } catch (e) {} renderBlockedUI(); }
@@ -1644,22 +1702,30 @@
                 ui.userScreen.style.display = "none";
                 ui.chatScreen.style.display = "flex";
                 await loadSettingsAndDMs(); 
-                await loadLocalHistory();
+                await loadLocalHistory(false);
                 await loadTombstones();
                 messageHistory = applyTombstonesToList(messageHistory);
+                messageHistory = cleanupDuplicateHistory(messageHistory);
                 rebuildMessageHistoryIdSet();
                 await autoRestoreGitHubBackup();
+                messageHistory = cleanupDuplicateHistory(messageHistory);
+                rebuildMessageHistoryIdSet();
+                if (currentTab === "global") renderActiveTabMessages();
             } else {
                 let storedGhost = safeGet("mqtt_ghost_id");
                 if (!storedGhost) { storedGhost = "ghost-" + generateId(); safeSet("mqtt_ghost_id", storedGhost); }
                 ghostId = storedGhost; myUsername = ghostId; isGhost = true;
                 ui.userScreen.style.display = "block"; ui.chatScreen.style.display = "none";
                 await loadSettingsAndDMs(); 
-                await loadLocalHistory();
+                await loadLocalHistory(false);
                 await loadTombstones();
                 messageHistory = applyTombstonesToList(messageHistory);
+                messageHistory = cleanupDuplicateHistory(messageHistory);
                 rebuildMessageHistoryIdSet();
                 await autoRestoreGitHubBackup();
+                messageHistory = cleanupDuplicateHistory(messageHistory);
+                rebuildMessageHistoryIdSet();
+                if (currentTab === "global") renderActiveTabMessages();
             }
 
             activeUsers.set(myUsername, {
@@ -2016,16 +2082,40 @@
         }
 
         function mergeHistory(localHistory, remoteHistory, isRealtimeLive = false) {
-            if (!remoteHistory || !remoteHistory.length) return localHistory;
+            if (!Array.isArray(localHistory)) localHistory = [];
+            if (!Array.isArray(remoteHistory) || !remoteHistory.length) return cleanupDuplicateHistory(localHistory);
 
-            if (localHistory === messageHistory && remoteHistory.length === 1) {
+            // Hot path: keep a single incoming message cheap while also allowing real
+            // media to replace a backup placeholder recovered from an export.
+            if (remoteHistory.length === 1) {
                 const msg = remoteHistory[0];
-                const key = msg.id;
-                if (key && !messageHistoryIdSet.has(key)) {
-                    const isTombstoned = msgTombstones.has(key) ||
-                        (msg.timestamp && msg.timestamp <= nukeMarker) ||
-                        rangeTombstones.some(r => msg.timestamp >= r.from && msg.timestamp <= r.to && (r.scope === "all" || (r.scope === "system") === !!msg.isSystem));
-                    if (!isTombstoned) {
+                if (!msg) return localHistory;
+
+                if (!isMessageTombstoned(msg)) {
+                    const placeholder = findPlaceholderForRealMessage(localHistory, msg);
+                    if (placeholder) {
+                        mergeMediaIntoPlaceholder(placeholder, msg);
+                        if (localHistory === messageHistory) {
+                            rebuildMessageHistoryIdSet();
+                        }
+                        return localHistory;
+                    }
+                }
+
+                if (msg.id) {
+                    const existingById = localHistory.find(m => m && m.id === msg.id);
+                    if (existingById) {
+                        if (msg.edited) { existingById.text = msg.text; existingById.edited = true; }
+                        if (msg.reactions && Object.keys(msg.reactions).length) existingById.reactions = msg.reactions;
+                        if (msg.isImage || msg.isVideo || msg.isAudio || msg.isFile) {
+                            if (existingById.backupPlaceholder) mergeMediaIntoPlaceholder(existingById, msg);
+                        }
+                        return localHistory;
+                    }
+                }
+
+                if (msg.id && !isMessageTombstoned(msg)) {
+                    if (localHistory === messageHistory && !messageHistoryIdSet.has(msg.id)) {
                         if (msg.author !== myUsername && !blockedUsers.has(msg.author)) {
                             const isSpecificMention = msg.text && (!isGhost && msg.text.includes(`@${myUsername}`));
                             if (isSpecificMention && !isRealtimeLive) {
@@ -2041,60 +2131,68 @@
                                 }
                             }
                         }
-                        messageHistoryIdSet.add(key);
+                        messageHistoryIdSet.add(msg.id);
                         let i = localHistory.length - 1;
                         while (i >= 0 && (localHistory[i].timestamp || 0) > (msg.timestamp || 0)) i--;
                         localHistory.splice(i + 1, 0, msg);
-                        return localHistory;
                     }
                     return localHistory;
                 }
             }
 
-            const uniqueMessages = new Map();
-            const localIds = new Set();
-            
-            localHistory.forEach(m => {
-                const key = m.id || `${m.timestamp}-${m.author}-${m.text || m.fileName || 'sys'}`;
-                uniqueMessages.set(key, m);
-                if (m.id) localIds.add(m.id);
-            });
+            const uniqueById = new Map();
+            const uniqueBySemantic = new Map();
+            const merged = [];
 
-            remoteHistory.forEach(msg => {
-                const key = msg.id || `${msg.timestamp}-${msg.author}-${msg.text || msg.fileName || 'sys'}`;
-                if (!uniqueMessages.has(key)) {
-                    uniqueMessages.set(key, msg);
-                    
-                    if (!localIds.has(msg.id) && msg.author !== myUsername && !blockedUsers.has(msg.author)) {
-                        const isSpecificMention = msg.text && (!isGhost && msg.text.includes(`@${myUsername}`));
-                        if (isSpecificMention && !isRealtimeLive) {
-                            let storedPings = JSON.parse(localStorage.getItem('mqtt_pings') || '{}');
-                            if (!storedPings[msg.id]) {
-                                storedPings[msg.id] = true; localStorage.setItem('mqtt_pings', JSON.stringify(storedPings));
-                                let muteSounds = localStorage.getItem('mqtt_mute_sounds') === 'true';
-                                if (!muteSounds && currentStatus !== 'DND') {
-                                    let notifText = buildPingNotificationText(msg.author, msg.text, false, true);
-                                    window.parent.postMessage({ source: 'universal-chat', kind: 'ping', user: msg.author, text: notifText }, '*');
-                                }
-                                pendingMentionAuthor = { author: msg.author, isEveryone: false };
-                            }
-                        }
-                    }
-                } else {
-                    let existing = uniqueMessages.get(key);
-                    if (msg.edited) {
-                        existing.text = msg.text; existing.edited = true;
-                    }
-                    if (msg.reactions && Object.keys(msg.reactions).length > 0) {
-                        existing.reactions = msg.reactions;
-                    }
-                    uniqueMessages.set(key, existing);
+            const addOrMerge = (msg, isRemote) => {
+                if (!msg) return;
+                if (isRemote && msg.id && msgTombstones.has(msg.id) && !msg.restoredFromBackup) return;
+                if (isRemote) {
+                    const placeholder = findPlaceholderForRealMessage(merged, msg);
+                    if (placeholder) { mergeMediaIntoPlaceholder(placeholder, msg); return; }
                 }
-            });
 
-            let mergedArray = Array.from(uniqueMessages.values());
-            mergedArray = applyTombstonesToList(mergedArray);
-            mergedArray.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                if (msg.id && uniqueById.has(msg.id)) {
+                    const idx = uniqueById.get(msg.id);
+                    const existing = merged[idx];
+                    if (msg.edited) { existing.text = msg.text; existing.edited = true; }
+                    if (msg.reactions && Object.keys(msg.reactions).length) existing.reactions = msg.reactions;
+                    if ((msg.isImage || msg.isVideo || msg.isAudio || msg.isFile) && existing.backupPlaceholder) mergeMediaIntoPlaceholder(existing, msg);
+                    return;
+                }
+
+                const semanticKey = historyContentKey(msg);
+                if (isBackupDerivedMessage(msg) && uniqueBySemantic.has(semanticKey)) {
+                    const idx = uniqueBySemantic.get(semanticKey);
+                    merged[idx] = preferHistoryMessage(merged[idx], msg);
+                    return;
+                }
+                if (!isBackupDerivedMessage(msg) && uniqueBySemantic.has(semanticKey)) {
+                    // A real/live message wins over a previously recovered placeholder.
+                    const idx = uniqueBySemantic.get(semanticKey);
+                    if (isBackupDerivedMessage(merged[idx])) {
+                        merged[idx] = msg;
+                        if (msg.id) uniqueById.set(msg.id, idx);
+                    } else {
+                        // Keep two genuine messages even if their content is identical.
+                        const idx2 = merged.length;
+                        merged.push(msg);
+                        if (msg.id) uniqueById.set(msg.id, idx2);
+                        return;
+                    }
+                    return;
+                }
+
+                const idx = merged.length;
+                merged.push(msg);
+                if (msg.id) uniqueById.set(msg.id, idx);
+                uniqueBySemantic.set(semanticKey, idx);
+            };
+
+            localHistory.forEach(m => addOrMerge(m, false));
+            remoteHistory.forEach(m => addOrMerge(m, true));
+
+            const mergedArray = cleanupDuplicateHistory(merged);
             if (localHistory === messageHistory) {
                 messageHistoryIdSet = new Set(mergedArray.map(m => m.id).filter(Boolean));
             }
@@ -2123,11 +2221,10 @@
         }
 
         function messageMediaKind(msg) {
-            if (msg && msg.isImage) return "image";
-            if (msg && msg.isVideo) return "video";
-            if (msg && msg.isAudio) return "audio";
-            if (msg && msg.isFile) return `file:${msg.fileName || ""}`;
-            if (msg && msg.backupPlaceholder) return `placeholder:${msg.backupPlaceholder}`;
+            if (msg && (msg.isImage || msg.backupPlaceholder === "Image")) return "image";
+            if (msg && (msg.isVideo || msg.backupPlaceholder === "Video")) return "video";
+            if (msg && (msg.isAudio || msg.backupPlaceholder === "Voice Memo")) return "audio";
+            if (msg && (msg.isFile || (msg.backupPlaceholder || "").startsWith("File:"))) return `file:${msg.fileName || ""}`;
             return "text";
         }
 
@@ -2136,18 +2233,174 @@
             const ts = Math.floor((msg && msg.timestamp ? msg.timestamp : 0) / 1000);
             const author = msg && msg.author ? msg.author : "SYSTEM";
             let content = msg && msg.text || "";
-            if (msg && msg.isImage) content = "[Image]";
-            else if (msg && msg.isVideo) content = "[Video]";
-            else if (msg && msg.isAudio) content = "[Voice Memo]";
-            else if (msg && msg.isFile) content = `[File: ${msg.fileName || ""}]`;
-            else if (msg && msg.backupPlaceholder) content = `[${msg.backupPlaceholder}]`;
+            if (msg && (msg.isImage || msg.backupPlaceholder === "Image")) content = "[Image]";
+            else if (msg && (msg.isVideo || msg.backupPlaceholder === "Video")) content = "[Video]";
+            else if (msg && (msg.isAudio || msg.backupPlaceholder === "Voice Memo")) content = "[Voice Memo]";
+            else if (msg && (msg.isFile || (msg.backupPlaceholder || "").startsWith("File:"))) content = `[File: ${msg.fileName || ""}]`;
             return hashStringStable(`${ts}|${author}|${messageMediaKind(msg)}|${content}|${occurrence}`);
+        }
+
+        function isBackupDerivedMessage(msg) {
+            return !!(msg && (msg.backupPlaceholder || msg.restoredFromBackup || (typeof msg.id === "string" && msg.id.startsWith("backup-"))));
+        }
+
+        function historyContentKey(msg) {
+            if (!msg) return "";
+            const ts = Math.floor((msg.timestamp || 0) / 1000);
+            const author = String(msg.author || "SYSTEM");
+            const kind = messageMediaKind(msg);
+            let content = String(msg.text || "");
+            if (kind === "image") content = "[Image]";
+            else if (kind === "video") content = "[Video]";
+            else if (kind === "audio") content = "[Voice Memo]";
+            else if (kind.startsWith("file:")) content = `[File: ${msg.fileName || ""}]`;
+            const reply = msg.replyTo
+                ? `|reply:${String(msg.replyTo.author || "")}|${String(msg.replyTo.text || "")}|${messageMediaKind(msg.replyTo)}`
+                : "|reply:";
+            return `${ts}|${author}|${kind}|${content}${reply}`;
+        }
+
+        function preferHistoryMessage(a, b) {
+            if (!a) return b;
+            if (!b) return a;
+            const aBackup = isBackupDerivedMessage(a);
+            const bBackup = isBackupDerivedMessage(b);
+            if (aBackup !== bBackup) return aBackup ? b : a;
+            const aPlaceholder = !!a.backupPlaceholder;
+            const bPlaceholder = !!b.backupPlaceholder;
+            if (aPlaceholder !== bPlaceholder) return aPlaceholder ? b : a;
+            const aRealMedia = !!(a.isImage || a.isVideo || a.isAudio || a.isFile) && !aPlaceholder;
+            const bRealMedia = !!(b.isImage || b.isVideo || b.isAudio || b.isFile) && !bPlaceholder;
+            if (aRealMedia !== bRealMedia) return aRealMedia ? a : b;
+            if (a.edited !== b.edited) return a.edited ? a : b;
+            return a;
+        }
+
+        function cleanupDuplicateHistory(list) {
+            if (!Array.isArray(list) || list.length < 2) return Array.isArray(list) ? list : [];
+
+            const kept = [];
+            const byId = new Map();
+            const semanticLive = new Map();
+            const semanticBackup = new Map();
+
+            for (const msg of list) {
+                if (!msg) continue;
+                // Discard malformed backup records produced by the pre-v2 reply parser.
+                // They can never represent a valid username and would otherwise survive
+                // cleanup because their fingerprint contains the parser error itself.
+                if (isBackupDerivedMessage(msg) && /^\[replying to:/i.test(String(msg.author || ""))) continue;
+                const id = msg.id ? String(msg.id) : "";
+                if (id && byId.has(id)) {
+                    const idx = byId.get(id);
+                    kept[idx] = preferHistoryMessage(kept[idx], msg);
+                    continue;
+                }
+
+                const backup = isBackupDerivedMessage(msg);
+                const key = historyContentKey(msg);
+                if (!backup) {
+                    const idx = kept.length;
+                    kept.push(msg);
+                    if (id) byId.set(id, idx);
+                    if (!semanticLive.has(key)) semanticLive.set(key, idx);
+                    continue;
+                }
+
+                if (semanticLive.has(key)) {
+                    const idx = semanticLive.get(key);
+                    const winner = preferHistoryMessage(kept[idx], msg);
+                    kept[idx] = winner;
+                    if (winner !== msg && msg.backupKey && !winner.backupKey) winner.backupKey = msg.backupKey;
+                    continue;
+                }
+
+                if (semanticBackup.has(key)) {
+                    const idx = semanticBackup.get(key);
+                    const winner = preferHistoryMessage(kept[idx], msg);
+                    kept[idx] = winner;
+                    if (winner !== msg && msg.backupKey && !winner.backupKey) winner.backupKey = msg.backupKey;
+                    continue;
+                }
+
+                const idx = kept.length;
+                kept.push(msg);
+                if (id) byId.set(id, idx);
+                semanticBackup.set(key, idx);
+            }
+
+            return kept.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        }
+
+        function mergeMediaIntoPlaceholder(placeholder, realMessage) {
+            if (!placeholder || !realMessage) return false;
+            const preservedBackupKey = placeholder.backupKey || "";
+            const preservedRestored = placeholder.restoredFromBackup;
+            Object.keys(placeholder).forEach(k => {
+                if (k !== "backupKey" && k !== "restoredFromBackup") delete placeholder[k];
+            });
+            Object.assign(placeholder, realMessage);
+            if (preservedBackupKey) placeholder.backupKey = preservedBackupKey;
+            if (preservedRestored) placeholder.restoredFromBackup = true;
+            delete placeholder.backupPlaceholder;
+            placeholder.compressed = false;
+            return true;
+        }
+
+        function findPlaceholderForRealMessage(list, realMessage) {
+            if (!realMessage || !(realMessage.isImage || realMessage.isVideo || realMessage.isAudio || realMessage.isFile)) return null;
+            const kind = messageMediaKind(realMessage);
+            const ts = realMessage.timestamp || 0;
+            let best = null;
+            let bestDelta = Infinity;
+            for (const candidate of (Array.isArray(list) ? list : [])) {
+                if (!candidate || !candidate.backupPlaceholder) continue;
+                if (candidate.author !== realMessage.author) continue;
+                if (messageMediaKind(candidate) !== kind) continue;
+                if (realMessage.isFile && candidate.fileName && realMessage.fileName && candidate.fileName !== realMessage.fileName) continue;
+                const delta = Math.abs((candidate.timestamp || 0) - ts);
+                if (delta > 1500) continue;
+                if (delta < bestDelta) { best = candidate; bestDelta = delta; }
+            }
+            return best;
+        }
+
+        function findEquivalentBackupMessage(list, backupMessage) {
+            if (!backupMessage) return null;
+            const key = backupMessage.backupKey;
+            if (key) {
+                const exactBackup = (Array.isArray(list) ? list : []).find(m => m && m.backupKey === key);
+                if (exactBackup) return exactBackup;
+            }
+
+            const kind = messageMediaKind(backupMessage);
+            const ts = backupMessage.timestamp || 0;
+            let best = null;
+            let bestDelta = Infinity;
+            for (const candidate of (Array.isArray(list) ? list : [])) {
+                if (!candidate) continue;
+                if (candidate.author !== backupMessage.author) continue;
+                if (messageMediaKind(candidate) !== kind) continue;
+                const delta = Math.abs((candidate.timestamp || 0) - ts);
+                if (delta > 1500) continue;
+
+                if (kind === "text") {
+                    if (String(candidate.text || "") !== String(backupMessage.text || "")) continue;
+                    const a = candidate.replyTo || null;
+                    const b = backupMessage.replyTo || null;
+                    if (!!a !== !!b) continue;
+                    if (a && (a.author !== b.author || String(a.text || "") !== String(b.text || ""))) continue;
+                } else if (kind.startsWith("file:") && candidate.fileName && backupMessage.fileName && candidate.fileName !== backupMessage.fileName) {
+                    continue;
+                }
+
+                if (delta < bestDelta) { best = candidate; bestDelta = delta; }
+            }
+            return best;
         }
 
         function isMessageTombstoned(msg) {
             if (!msg) return false;
-            // Explicit admin restores are intentionally allowed to override older
-            // tombstones for the restored message only.
             if (msg.restoredFromBackup) return false;
             const ts = msg.timestamp || 0;
             if (ts <= nukeMarker) return true;
@@ -2473,59 +2726,81 @@
             return Number.isFinite(ts) ? ts : 0;
         }
 
+        function parseExportUserBody(body) {
+            const text = String(body || "");
+            let replyTo = null;
+            let author = "";
+            let content = "";
+            let suffix = "";
+
+            // Reply prefixes are emitted before the actual author. Parse that prefix
+            // separately; the old single regex stopped at the colon in "replying to:"
+            // and consequently treated the prefix itself as the username.
+            const replyMatch = text.match(/^\[replying to:\s+"([\s\S]*)"\]\s+([^:\r\n]+):\s+"([\s\S]*)"([\s\S]*)$/);
+            if (replyMatch) {
+                const replyRaw = replyMatch[1];
+                author = replyMatch[2].trim();
+                content = replyMatch[3];
+                suffix = replyMatch[4] || "";
+
+                const timedReply = replyRaw.match(/^\[([^\]]+)\]\s+([^:]+):\s+"([\s\S]*)"$/);
+                if (timedReply) {
+                    replyTo = {
+                        timestamp: parseExportTimestamp(timedReply[1]),
+                        author: timedReply[2].trim(),
+                        text: timedReply[3]
+                    };
+                } else {
+                    const plainReply = replyRaw.match(/^([^:]+):\s+"([\s\S]*)"$/);
+                    if (plainReply) {
+                        replyTo = { timestamp: 0, author: plainReply[1].trim(), text: plainReply[2] };
+                    }
+                }
+                return { author, content, suffix, replyTo };
+            }
+
+            const normalMatch = text.match(/^([^:\r\n]+):\s+"([\s\S]*)"([\s\S]*)$/);
+            if (!normalMatch) return null;
+            return { author: normalMatch[1].trim(), content: normalMatch[2], suffix: normalMatch[3] || "", replyTo: null };
+        }
+
         function parseChatExportText(rawText) {
             const parsed = [];
             const occurrenceMap = new Map();
             const lines = String(rawText || "").split(/\r?\n/);
-            lines.forEach(line => {
-                if (!line || line.startsWith("Chat Export")) return;
 
-                let systemMatch = line.match(/^\[([^\]]+)\]\s+SYSTEM:\s+([\s\S]*)$/);
+            for (const line of lines) {
+                if (!line || /^Chat Export/.test(line)) continue;
+
+                const lineMatch = line.match(/^\[([^\]]+)\]\s+([\s\S]*)$/);
+                if (!lineMatch) continue;
+                const timestamp = parseExportTimestamp(lineMatch[1]);
+                const body = lineMatch[2];
+
+                const systemMatch = body.match(/^SYSTEM:\s+([\s\S]*)$/);
                 if (systemMatch) {
-                    const timestamp = parseExportTimestamp(systemMatch[1]);
-                    const text = systemMatch[2];
+                    const text = systemMatch[1];
                     const baseKey = `${Math.floor(timestamp / 1000)}|SYSTEM|text|${text}`;
                     const occurrence = occurrenceMap.get(baseKey) || 0;
                     occurrenceMap.set(baseKey, occurrence + 1);
                     const backupKey = hashStringStable(`${baseKey}|${occurrence}`);
                     parsed.push({ id: `backup-${backupKey}`, backupKey, author: "SYSTEM", text, timestamp, isSystem: true, isGhost: false });
-                    return;
+                    continue;
                 }
 
-                const userMatch = line.match(/^\[([^\]]+)\]\s+([\s\S]+?):\s+"([\s\S]*)"(?:\s+.*)?$/);
-                if (!userMatch) return;
-
-                const timestamp = parseExportTimestamp(userMatch[1]);
-                let authorAndReply = userMatch[2];
-                let content = userMatch[3];
-                let replyTo = null;
-
-                const replyPrefix = authorAndReply.match(/^\[replying to:\s+"([\s\S]*)"\]\s+(.+)$/);
-                if (replyPrefix) {
-                    const replyRaw = replyPrefix[1];
-                    authorAndReply = replyPrefix[2];
-                    const replyMatch = replyRaw.match(/^\[([^\]]+)\]\s+(.+?):\s+"([\s\S]*)"$/) || replyRaw.match(/^(.+?):\s+"([\s\S]*)"$/);
-                    if (replyMatch) {
-                        replyTo = {
-                            author: replyMatch[2],
-                            text: replyMatch[3],
-                            timestamp: replyMatch.length === 4 ? parseExportTimestamp(replyMatch[1]) : 0
-                        };
-                    }
-                }
+                const user = parseExportUserBody(body);
+                if (!user) continue;
+                let { author, content, suffix, replyTo } = user;
 
                 let edited = false;
-                if (/\s\[edited\]$/.test(content)) {
+                if (/\s\[edited\]\s*$/.test(suffix)) {
                     edited = true;
-                    content = content.replace(/\s\[edited\]$/, "");
+                    suffix = suffix.replace(/\s\[edited\]\s*$/, "");
                 }
 
                 let reactionSummary = "";
-                const reactionMatch = content.match(/\s\[reactions:\s*([^\]]*)\]$/);
-                if (reactionMatch) {
-                    reactionSummary = reactionMatch[1];
-                    content = content.slice(0, reactionMatch.index);
-                }
+                const reactionMatch = suffix.match(/\s\[reactions:\s*([^\]]*)\]\s*$/);
+                if (reactionMatch) reactionSummary = reactionMatch[1];
 
                 let isImage = false, isVideo = false, isAudio = false, isFile = false, fileName = "", backupPlaceholder = "";
                 if (content === "[Image]") { isImage = true; backupPlaceholder = "Image"; }
@@ -2537,14 +2812,14 @@
                 }
 
                 const displayContent = backupPlaceholder ? `[${backupPlaceholder}]` : content;
-                const baseKey = `${Math.floor(timestamp / 1000)}|${authorAndReply}|${messageMediaKind({ isImage, isVideo, isAudio, isFile, fileName, backupPlaceholder })}|${displayContent}`;
+                const baseKey = `${Math.floor(timestamp / 1000)}|${author}|${messageMediaKind({ isImage, isVideo, isAudio, isFile, fileName, backupPlaceholder })}|${displayContent}`;
                 const occurrence = occurrenceMap.get(baseKey) || 0;
                 occurrenceMap.set(baseKey, occurrence + 1);
                 const backupKey = hashStringStable(`${baseKey}|${occurrence}`);
-                parsed.push({
+                const msg = {
                     id: `backup-${backupKey}`,
                     backupKey,
-                    author: authorAndReply,
+                    author,
                     text: backupPlaceholder ? displayContent : content,
                     timestamp,
                     isSystem: false,
@@ -2554,8 +2829,9 @@
                     edited,
                     reactions: {},
                     backupReactionSummary: reactionSummary
-                });
-            });
+                };
+                parsed.push(msg);
+            }
             return parsed.filter(m => m.timestamp > 0 || m.isSystem);
         }
 
@@ -2625,17 +2901,20 @@
             return null;
         }
 
+        const BACKUP_PARSER_VERSION = 2;
+
         function backupStateNeedsRepair(state) {
-            if (!state || !Array.isArray(state.entries) || !state.entries.length) return true;
+            if (!state || state.version !== BACKUP_PARSER_VERSION || !Array.isArray(state.entries) || !state.entries.length) return true;
             const localIds = new Set(messageHistory.map(m => m.id).filter(Boolean));
             const localBackupKeys = new Set(messageHistory.map(m => m.backupKey).filter(Boolean));
-            return state.entries.some(entry => {
+            for (const entry of state.entries) {
                 const id = entry[1];
                 const fp = entry[0];
-                if (localIds.has(id) || localBackupKeys.has(fp)) return false;
+                if (localIds.has(id) || localBackupKeys.has(fp)) continue;
                 const ghost = { id, timestamp: entry[2] || 0, isSystem: entry[3] === 1 };
-                return !isMessageTombstoned(ghost);
-            });
+                if (!isMessageTombstoned(ghost)) return true;
+            }
+            return false;
         }
 
         async function fetchBackupText(url) {
@@ -2649,40 +2928,41 @@
         function mergeParsedBackupIntoHistory(parsed, forceRestore = false) {
             if (!parsed.length) return { added: 0, matched: 0, entries: [] };
 
-            const localByBackupKey = new Map();
-            const occurrenceMap = new Map();
-            messageHistory.forEach(m => {
-                const fp = m.backupKey || buildBackupFingerprint(m, occurrenceMap.get(buildBackupFingerprint(m)) || 0);
-                if (!m.backupKey) m.backupKey = fp;
-                occurrenceMap.set(fp, (occurrenceMap.get(fp) || 0) + 1);
-                if (!localByBackupKey.has(fp)) localByBackupKey.set(fp, m);
-            });
-
+            messageHistory = cleanupDuplicateHistory(messageHistory);
             const additions = [];
             const entries = [];
             let matched = 0;
-            parsed.forEach(m => {
-                const existing = localByBackupKey.get(m.backupKey);
+
+            for (const m of parsed) {
+                // First match the export's stable backup key, then a semantic match
+                // against an existing live message. This makes restoration idempotent.
+                let existing = findEquivalentBackupMessage(messageHistory, m);
+
                 if (existing) {
-                    existing.backupKey = m.backupKey;
+                    existing.backupKey = m.backupKey || existing.backupKey;
                     if (forceRestore) existing.restoredFromBackup = true;
+                    // Do not replace real media/text with placeholders. Real media is
+                    // intentionally left intact so a later live peer can remain authoritative.
+                    if (existing.backupPlaceholder && !m.backupPlaceholder) Object.assign(existing, m);
                     entries.push([m.backupKey, existing.id, m.timestamp || 0, m.isSystem ? 1 : 0]);
                     matched++;
-                    return;
+                    continue;
                 }
+
                 if (!forceRestore && isMessageTombstoned(m)) {
                     entries.push([m.backupKey, m.id, m.timestamp || 0, m.isSystem ? 1 : 0]);
-                    return;
+                    continue;
                 }
-                if (forceRestore) m.restoredFromBackup = true;
-                additions.push(m);
-                entries.push([m.backupKey, m.id, m.timestamp || 0, m.isSystem ? 1 : 0]);
-            });
 
-            if (additions.length) {
-                messageHistory = mergeHistory(messageHistory, additions, false);
-                rebuildMessageHistoryIdSet();
+                const restored = { ...m };
+                if (forceRestore) restored.restoredFromBackup = true;
+                additions.push(restored);
+                entries.push([restored.backupKey, restored.id, restored.timestamp || 0, restored.isSystem ? 1 : 0]);
             }
+
+            if (additions.length) messageHistory = mergeHistory(messageHistory, additions, false);
+            messageHistory = cleanupDuplicateHistory(messageHistory);
+            rebuildMessageHistoryIdSet();
             return { added: additions.length, matched, entries };
         }
 
@@ -2700,33 +2980,38 @@
             try { rawState = JSON.parse(localStorage.getItem(BACKUP_STATE_KEY) || "null"); } catch(e) {}
             const needsRepair = backupStateNeedsRepair(rawState);
 
-            let discovered = null;
-            if (rawState && rawState.url) discovered = await headBackup(rawState.url);
-            if (!discovered) discovered = await discoverBackupUrl();
-            const candidate = discovered || (rawState && rawState.url ? { url: rawState.url, signature: rawState.signature || "" } : null);
-            if (!candidate) return;
+            // Once this exact backup has been reconciled and no recorded backup entry is
+            // missing locally, do not touch the network during normal startup. This avoids
+            // the extra HEAD/GET/API work that caused the remaining startup hitch.
+            if (rawState && rawState.version === BACKUP_PARSER_VERSION && !needsRepair) return rawState;
 
-            let currentSignature = candidate.signature || "";
-            if (rawState && rawState.url === candidate.url && !needsRepair && rawState.signature && currentSignature === rawState.signature) return;
-            if (rawState && rawState.url === candidate.url && !needsRepair && !currentSignature) return;
+            // Try the previously reconciled URL first. Only perform repository discovery
+            // if that known file is gone, which keeps repair startups much lighter.
+            let candidates = [];
+            if (rawState && rawState.url) candidates.push({ url: rawState.url, signature: rawState.signature || "" });
 
-            if (ui.activityStatus) ui.activityStatus.innerText = "Restoring chat backup...";
-            const fetched = await fetchBackupText(candidate.url);
-            if (!fetched) return;
+            let candidate = null, fetched = null;
+            if (candidates.length) {
+                fetched = await fetchBackupText(candidates[0].url);
+                if (fetched) candidate = candidates[0];
+            }
+            if (!candidate) {
+                const discovered = await discoverBackupUrl();
+                if (discovered) {
+                    fetched = await fetchBackupText(discovered.url);
+                    if (fetched) candidate = discovered;
+                }
+            }
+            if (!candidate || !fetched) return null;
+
             const result = await restoreBackupText(fetched.text, candidate.url, false);
-
-            const parsedAgain = parseChatExportText(fetched.text);
-            const entries = parsedAgain.map(m => {
-                const existing = messageHistory.find(x => x.backupKey === m.backupKey);
-                return [m.backupKey, existing ? existing.id : m.id, m.timestamp || 0, m.isSystem ? 1 : 0];
-            });
             safeSet(BACKUP_STATE_KEY, JSON.stringify({
-                version: 1,
+                version: BACKUP_PARSER_VERSION,
                 url: candidate.url,
                 name: candidate.url.split('/').pop() || candidate.url,
-                signature: fetched.signature || currentSignature || "",
+                signature: fetched.signature || candidate.signature || "",
                 comparedAt: Date.now(),
-                entries
+                entries: result.entries
             }));
             if (ui.activityStatus) ui.activityStatus.innerText = "History backup checked";
             return result;
@@ -2739,8 +3024,14 @@
             if (!file) return;
             try {
                 const raw = await file.text();
+                const before = messageHistory.length;
                 const result = await restoreBackupText(raw, file.name, true);
-                customAlert(`Restored ${result.added} message${result.added === 1 ? "" : "s"} from ${file.name}.`);
+                messageHistory = cleanupDuplicateHistory(messageHistory);
+                rebuildMessageHistoryIdSet();
+                saveLocalHistory();
+                scheduleRenderActiveTabMessages();
+                const duplicateNote = Math.max(0, before + result.added - messageHistory.length);
+                customAlert(`Restored ${result.added} new message${result.added === 1 ? "" : "s"}${duplicateNote > 0 ? ` and removed ${duplicateNote} duplicate${duplicateNote === 1 ? "" : "s"}` : ""} from ${file.name}.`);
             } catch (e) {
                 customAlert("Could not restore that chat export.");
             }
@@ -2845,6 +3136,9 @@
 
         function sendPayload(content, opts = {}) {
             if (isGhost) return;
+            const mediaBytes = Number(opts.sourceBytes || 0);
+            if (opts.isImage && mediaBytes > MAX_IMAGE_UPLOAD_BYTES) { customAlert("Images are limited to 2MB."); return; }
+            if ((opts.isVideo || opts.isAudio || opts.isFile) && mediaBytes > MAX_OTHER_UPLOAD_BYTES) { customAlert("Videos and other files are limited to 5MB."); return; }
             if (isMuted) {
                 mutedAttemptCount++;
                 appendSystemDOM("You cannot send messages while muted.");
