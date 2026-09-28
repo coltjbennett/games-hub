@@ -485,6 +485,10 @@
         let messageHistory = [];
         let dmHistories = {};
         let activeUsers = new Map();
+        // Monotonic room-presence epoch. Any non-self JOIN advances it, so a
+        // message sent while alone can only be physically erased when nobody
+        // else joined (including ghosts) between send and delete.
+        let roomPresenceEpoch = 0;
         let messageHistoryIdSet = new Set();
         const usernameColorCache = new Map();
         function rebuildMessageHistoryIdSet() {
@@ -1703,6 +1707,7 @@
                 await loadTombstones();
                 messageHistory = applyTombstonesToList(messageHistory);
                 rebuildMessageHistoryIdSet();
+                repairMalformedSavedReplies();
                 dedupeAllHistories();
                 historyReadyForSync = false;
                 backupRestorePromise = autoRestoreGitHubBackup().catch(() => null).finally(() => { historyReadyForSync = true; if (isConnected) requestManifestBroadcast(); });
@@ -1716,6 +1721,7 @@
                 await loadTombstones();
                 messageHistory = applyTombstonesToList(messageHistory);
                 rebuildMessageHistoryIdSet();
+                repairMalformedSavedReplies();
                 dedupeAllHistories();
                 historyReadyForSync = false;
                 backupRestorePromise = autoRestoreGitHubBackup().catch(() => null).finally(() => { historyReadyForSync = true; if (isConnected) requestManifestBroadcast(); });
@@ -1773,6 +1779,7 @@
             await loadTombstones();
             messageHistory = applyTombstonesToList(messageHistory);
             rebuildMessageHistoryIdSet();
+            repairMalformedSavedReplies();
             dedupeAllHistories();
 
             const now = Date.now();
@@ -1897,6 +1904,7 @@
                     }
                     else if (data.type === "JOIN") {
                         if (blockedUsers.has(data.author)) return;
+                        if (data.author !== myUsername) roomPresenceEpoch++;
                         if (!isGhost) processPendingOutbox(data.author);
                         const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} joined the room.`, timestamp: data.timestamp || Date.now() };
                         messageHistory = mergeHistory(messageHistory, [sysObj], true); saveLocalHistory(); if (currentTab === "global") appendSystemDOM(sysObj);
@@ -2006,19 +2014,37 @@
                     }
                     else if (data.type === "MUTE_ATTEMPT" && isAdmin) { appendSystemDOM({ id: data.id || generateId(), isSystem: true, text: `${data.author} tried to send a message while muted (Attempt #${data.count})`, timestamp: data.timestamp || Date.now() }); }
                     else if (data.type === "DELETE_MSG") {
+                        const ephemeralDelete = data.ephemeral === true;
+                        const removeFromList = (list, allowAdmin = true) => {
+                            if (!Array.isArray(list)) return false;
+                            const idx = list.findIndex(m => m.id === data.id);
+                            if (idx === -1) return false;
+                            const msg = list[idx];
+                            if (!(msg.author === data.deleter || (allowAdmin && ADMINS.includes(data.deleter)))) return false;
+                            list.splice(idx, 1);
+                            return true;
+                        };
+
+                        let removedGlobal = false;
                         const idxG = messageHistory.findIndex(m => m.id === data.id);
-                        if (idxG !== -1 && (messageHistory[idxG].author === data.deleter || ADMINS.includes(data.deleter))) {
-                            addMsgTombstone(data.id);
-                            messageHistory.splice(idxG, 1); messageHistoryIdSet.delete(data.id); saveLocalHistory();
+                        if (idxG !== -1) {
+                            const msg = messageHistory[idxG];
+                            if (msg.author === data.deleter || ADMINS.includes(data.deleter)) {
+                                if (!ephemeralDelete) addMsgTombstone(data.id);
+                                messageHistory.splice(idxG, 1); messageHistoryIdSet.delete(data.id); saveLocalHistory();
+                                removedGlobal = true;
+                            }
                         }
                         Object.keys(dmHistories).forEach(user => {
                             const idxD = dmHistories[user].findIndex(m => m.id === data.id);
                             if (idxD !== -1 && (dmHistories[user][idxD].author === data.deleter || ADMINS.includes(data.deleter))) {
+                                // Ephemeral deletion is a global-room optimization only.
                                 addMsgTombstone(data.id);
                                 dmHistories[user].splice(idxD, 1); saveDmHistory(user);
                             }
                         });
-                        const el = document.getElementById(`msg-${data.id}`); if (el) el.remove(); scheduleRenderActiveTabMessages();
+                        const el = document.getElementById(`msg-${data.id}`); if (el) el.remove();
+                        if (removedGlobal || ephemeralDelete) scheduleRenderActiveTabMessages();
                     }
                     else if (data.type === "CLEAR_RECENT") {
                         const anchor = data.timestamp || Date.now();
@@ -2152,6 +2178,150 @@
             const bReal = hasRealMediaPayload(b);
             if (aReal !== bReal) return aReal ? a : b;
             return a;
+        }
+
+        function messageReplyIdentity(msg) {
+            if (!msg) return "";
+            const r = msg.replyTo;
+            if (!r) return "";
+            return `${r.author || ""}|${r.text || ""}|${r.timestamp || 0}`;
+        }
+
+        function messageRestoreIdentity(msg) {
+            if (!msg) return "";
+            return `${messageLooseIdentity(msg)}|reply:${messageReplyIdentity(msg)}`;
+        }
+
+        function classifyRestoredContent(msg, content) {
+            let text = typeof content === "string" ? content : "";
+            let edited = !!msg.edited;
+            let reactionSummary = msg.backupReactionSummary || "";
+            if (/\s\[edited\]$/.test(text)) {
+                edited = true;
+                text = text.replace(/\s\[edited\]$/, "");
+            }
+            const reactionMatch = text.match(/\s\[reactions:\s*([^\]]*)\]$/);
+            if (reactionMatch) {
+                reactionSummary = reactionMatch[1];
+                text = text.slice(0, reactionMatch.index);
+            }
+
+            let isImage = false, isVideo = false, isAudio = false, isFile = false;
+            let fileName = "", backupPlaceholder = "";
+            if (text === "[Image]") { isImage = true; backupPlaceholder = "Image"; }
+            else if (text === "[Video]") { isVideo = true; backupPlaceholder = "Video"; }
+            else if (text === "[Voice Memo]") { isAudio = true; backupPlaceholder = "Voice Memo"; }
+            else {
+                const fileMatch = text.match(/^\[File:\s*(.*?)\]$/);
+                if (fileMatch) { isFile = true; fileName = fileMatch[1]; backupPlaceholder = `File: ${fileName}`; }
+            }
+            msg.text = backupPlaceholder ? `[${backupPlaceholder}]` : text;
+            msg.isImage = isImage; msg.isVideo = isVideo; msg.isAudio = isAudio; msg.isFile = isFile;
+            msg.fileName = fileName;
+            msg.backupPlaceholder = backupPlaceholder;
+            msg.edited = edited;
+            msg.backupReactionSummary = reactionSummary;
+        }
+
+        function repairMalformedSavedReplyMessage(msg) {
+            if (!msg || typeof msg.author !== "string" || !/^\[replying to$/i.test(msg.author.trim())) return false;
+            const malformed = `${msg.author}: "${typeof msg.text === "string" ? msg.text : ""}"`;
+            // This is the exact shape produced by the old export parser when it
+            // encountered a reply: [replying to: "...reply..."] User: "message".
+            // The first capture is intentionally greedy so nested quotes inside
+            // the quoted reply don't terminate it early.
+            const match = malformed.match(/^\[replying to:\s+"([\s\S]*)"\]\s+(.+?):\s+"([\s\S]*)"\s*$/);
+            if (!match) return false;
+
+            const replyRaw = match[1];
+            const actualAuthor = match[2];
+            const actualContent = match[3];
+            let replyTo = null;
+
+            const timedReply = replyRaw.match(/^\[([^\]]+)\]\s+(.+?):\s+"([\s\S]*)"$/);
+            const plainReply = replyRaw.match(/^(.+?):\s+"([\s\S]*)"$/);
+            if (timedReply) {
+                replyTo = { author: timedReply[2], text: timedReply[3], timestamp: parseExportTimestamp(timedReply[1]) };
+            } else if (plainReply) {
+                replyTo = { author: plainReply[1], text: plainReply[2], timestamp: 0 };
+            }
+            if (!replyTo) return false;
+
+            msg.author = actualAuthor;
+            msg.replyTo = replyTo;
+            classifyRestoredContent(msg, actualContent);
+            msg._malformedReplyRepaired = true;
+            msg.restoredFromBackup = true;
+            return true;
+        }
+
+        function repairMalformedSavedRepliesInList(list) {
+            if (!Array.isArray(list)) return { changed: false, repaired: 0, removed: 0 };
+            let changed = false, repaired = 0, removed = 0;
+            list.forEach(msg => {
+                if (repairMalformedSavedReplyMessage(msg)) { changed = true; repaired++; }
+            });
+
+            // The previous restore code already created correct-looking duplicates
+            // beside these malformed records. Collapse only the malformed-repair
+            // family, using reply metadata too so legitimate repeated messages with
+            // identical visible text are not broadly deduplicated.
+            const repairedMsgs = list.filter(m => m && m._malformedReplyRepaired);
+            if (repairedMsgs.length) {
+                const remove = new Set();
+                repairedMsgs.forEach(repairedMsg => {
+                    const identity = messageRestoreIdentity(repairedMsg);
+                    let bestIdx = -1, bestScore = -1;
+                    list.forEach((candidate, idx) => {
+                        if (!candidate || candidate === repairedMsg || remove.has(idx)) return;
+                        if (messageRestoreIdentity(candidate) !== identity) return;
+                        const delta = Math.abs((candidate.timestamp || 0) - (repairedMsg.timestamp || 0));
+                        if (delta > 1500) return;
+                        const synthetic = isSyntheticBackupMessage(candidate) || !!candidate.backupPlaceholder;
+                        const repairedSynthetic = isSyntheticBackupMessage(repairedMsg) || !!repairedMsg.backupPlaceholder;
+                        if (!(synthetic && repairedSynthetic)) return;
+                        let score = 0;
+                        if (candidate.backupKey && repairedMsg.backupKey && candidate.backupKey !== repairedMsg.backupKey) score += 2;
+                        if (!candidate._malformedReplyRepaired) score += 1;
+                        if (hasRealMediaPayload(candidate)) score += 3;
+                        if (score > bestScore) { bestScore = score; bestIdx = idx; }
+                    });
+                    if (bestIdx !== -1) {
+                        const candidate = list[bestIdx];
+                        const preferred = choosePreferredMessage(repairedMsg, candidate);
+                        const secondary = preferred === repairedMsg ? candidate : repairedMsg;
+                        mergeMessageMetadata(preferred, secondary);
+                        if (candidate.backupKey) preferred.backupKey = candidate.backupKey;
+                        // Keep the preferred record in-place and remove only the other
+                        // copy; this is important when the proper copy has a real file.
+                        const repairedIdx = list.indexOf(repairedMsg);
+                        const removeIdx = preferred === repairedMsg ? bestIdx : repairedIdx;
+                        if (removeIdx !== -1) remove.add(removeIdx);
+                        changed = true; removed++;
+                    }
+                });
+                if (remove.size) {
+                    const result = list.filter((_, idx) => !remove.has(idx));
+                    list.length = 0; result.forEach(x => list.push(x));
+                }
+            }
+            return { changed, repaired, removed };
+        }
+
+        function repairMalformedSavedReplies() {
+            let changed = false, repaired = 0, removed = 0;
+            const global = repairMalformedSavedRepliesInList(messageHistory);
+            changed ||= global.changed; repaired += global.repaired; removed += global.removed;
+            Object.keys(dmHistories).forEach(user => {
+                const result = repairMalformedSavedRepliesInList(dmHistories[user]);
+                changed ||= result.changed; repaired += result.repaired; removed += result.removed;
+            });
+            if (changed) {
+                rebuildMessageHistoryIdSet();
+                saveLocalHistory();
+                Object.keys(dmHistories).forEach(user => saveDmHistory(user));
+            }
+            return { changed, repaired, removed };
         }
 
         function dedupeHistoryList(list) {
@@ -2927,7 +3097,9 @@
         function mergeParsedBackupIntoHistory(parsed, forceRestore = false) {
             if (!parsed.length) return { added: 0, matched: 0, deduped: 0, entries: [] };
 
-            // Clean up duplicates from earlier broken restores before attempting another merge.
+            // Repair old reply-parser corruption before another merge, then remove
+            // duplicates left by previous restores.
+            const replyRepair = repairMalformedSavedReplies();
             const beforeDedupe = dedupeAllHistories();
 
             const localByBackupKey = new Map();
@@ -3060,7 +3232,23 @@
         function openAdminTools() { document.getElementById('sys-hr-count').innerText = sysClearHours; document.getElementById('all-hr-count').innerText = allClearHours; openModal('admin-tools-modal'); }
         function doClearSystem() { if (!isAdmin) return; publishMessage({ type: "CLEAR_RECENT", targetType: "system", hours: sysClearHours, author: myUsername, id: generateId(), timestamp: Date.now() }); sysClearHours++; document.getElementById('sys-hr-count').innerText = sysClearHours; }
         function doClearAllRecent() { if (!isAdmin) return; if (confirm(`Are you sure you want to delete ALL messages (system and user) from the last ${allClearHours} hour(s)?`)) { publishMessage({ type: "CLEAR_RECENT", targetType: "all", hours: allClearHours, author: myUsername, id: generateId(), timestamp: Date.now() }); allClearHours++; document.getElementById('all-hr-count').innerText = allClearHours; } }
-        function deleteAnyMessage(id) { publishMessage({ type: "DELETE_MSG", id: id, deleter: myUsername }); }
+        function deleteAnyMessage(id) {
+            const msg = messageHistory.find(m => m.id === id) || Object.values(dmHistories).flat().find(m => m.id === id);
+            const canEphemerallyDelete = !!msg && currentTab === "global" && msg.author === myUsername &&
+                activeUsers.size === 1 && msg.soloPresenceEpoch !== null && msg.soloPresenceEpoch !== undefined &&
+                msg.soloPresenceEpoch === roomPresenceEpoch;
+
+            if (canEphemerallyDelete) {
+                const idx = messageHistory.findIndex(m => m.id === id);
+                if (idx !== -1) {
+                    messageHistory.splice(idx, 1);
+                    messageHistoryIdSet.delete(id);
+                    saveLocalHistory();
+                    scheduleRenderActiveTabMessages();
+                }
+            }
+            publishMessage({ type: "DELETE_MSG", id: id, deleter: myUsername, ephemeral: canEphemerallyDelete });
+        }
         function confirmClearAll() { if (isAdmin && confirm("Are you sure you want to completely NUKE all messages forever?")) publishMessage({ type: "CLEAR_ALL", author: myUsername, id: generateId(), timestamp: Date.now() }); }
         function evaluateAdminRole() { const wasAdmin = isAdmin; isAdmin = ADMINS.includes(myUsername); updateStatusText(); if (wasAdmin !== isAdmin) scheduleRenderActiveTabMessages(); }
         function updateStatusText() { ui.status.innerText = `${isAdmin ? "[ADMIN]" : "[USER]"} Connected as "${myUsername}"`; ui.adminClearBtn.style.display = isAdmin ? "block" : "none"; }
@@ -3171,7 +3359,8 @@
             }
             
             // localPayload gets UNCOMPRESSED content so it renders correctly locally
-            const localPayload = { type: currentTab === "global" ? "MSG" : "DM", id: msgId, author: myUsername, text: content, compressed: false, isImage: opts.isImage, isVideo: opts.isVideo, isAudio: opts.isAudio, isFile: opts.isFile, fileName: opts.fileName, timestamp: Date.now(), replyTo: cleanReply, edited: false, reactions: {} };
+            const sentAloneEpoch = currentTab === "global" && activeUsers.size === 1 ? roomPresenceEpoch : null;
+            const localPayload = { type: currentTab === "global" ? "MSG" : "DM", id: msgId, author: myUsername, text: content, compressed: false, isImage: opts.isImage, isVideo: opts.isVideo, isAudio: opts.isAudio, isFile: opts.isFile, fileName: opts.fileName, timestamp: Date.now(), replyTo: cleanReply, edited: false, reactions: {}, soloPresenceEpoch: sentAloneEpoch };
             
             // publishPayload gets the COMPRESSED content to send over MQTT
             const publishPayload = { ...localPayload, text: finalText, compressed: compressedFlag };
