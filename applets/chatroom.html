@@ -492,8 +492,12 @@
             if (comma <= 5) return false;
             const semi = value.indexOf(';');
             const mime = value.slice(5, (semi > 0 && semi < comma) ? semi : comma).toLowerCase();
-            if (kind === 'file') {
-                return mime.length > 0 && !/(text\/html|application\/(xhtml\+xml|javascript|ecmascript)|image\/svg\+xml)$/i.test(mime);
+            if (kind === 'file' || kind === '') {
+                // Generic attachments may be any MIME type.  They are presented as
+                // downloads rather than inline media, so don't reject PDFs, ZIPs,
+                // text files, Office files, etc. just because their MIME type is
+                // not one of the preview formats.
+                return mime.length > 0;
             }
             const allowed = kind === 'image' ? /^image\/(png|jpe?g|gif|webp|bmp|avif)$/i
                 : kind === 'video' ? /^video\/(mp4|webm|ogg)$/i
@@ -1045,6 +1049,8 @@
             const isVideo = file.type.startsWith("video/");
             const isImage = file.type.startsWith("image/");
             const isFile = !isImage && !isVideo;
+            // Non-image/video attachments are intentionally treated as generic files;
+            // their MIME type is preserved and they are offered as downloads.
 
             if (isImage) {
                 try {
@@ -1276,7 +1282,7 @@
                 return `<br><audio controls src="${escapeHTML(rawText)}"></audio>`;
             }
             if (msg.isFile) {
-                if (!isSafeMediaDataUrl(rawText)) return '<span>[Blocked file]</span>';
+                if (!isSafeMediaDataUrl(rawText, 'file')) return '<span>[Blocked file]</span>';
                 const fileName = escapeHTML(msg.fileName || 'download.bin');
                 return `<br><a href="${escapeHTML(rawText)}" download="${fileName}" class="btn-w95" style="text-decoration:none; margin-top:4px; padding:4px;">Download ${fileName}</a>`;
             }
@@ -3470,7 +3476,7 @@
             if (data.isImage && !isSafeMediaDataUrl(data.text, 'image')) return false;
             if (data.isVideo && !isSafeMediaDataUrl(data.text, 'video')) return false;
             if (data.isAudio && !isSafeMediaDataUrl(data.text, 'audio')) return false;
-            if (data.isFile && !isSafeMediaDataUrl(data.text)) return false;
+            if (data.isFile && !isSafeMediaDataUrl(data.text, 'file')) return false;
             return true;
         }
 
