@@ -20,7 +20,7 @@ const REDUCED_MOTION_KEY = 'project-launcher-reduced-motion-v1';
 const COMPACT_MODE_KEY = 'project-launcher-compact-v1';
 const HIGH_CONTRAST_KEY = 'project-launcher-high-contrast-v1';
 const LOW_POWER_KEY = 'project-launcher-low-power-v1';
-const DESKTOP_LAYOUT_KEY = 'project-launcher-layout-v2';
+const DESKTOP_LAYOUT_KEY = 'project-launcher-window-session-v1';
 const CHAT_USERNAME_KEY = 'mqtt_chat_username_v1';
 const TRUSTED_ORIGIN = window.location.origin;
 
@@ -237,6 +237,30 @@ function safeJsonSet(key, value) {
   safeSet(key, JSON.stringify(value));
 }
 
+function safeSessionJsonGet(key, fallback) {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return parsed ?? fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function safeSessionJsonSet(key, value) {
+  try {
+    sessionStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {}
+}
+
+function clearLegacyPermanentWindowLayout() {
+  try {
+    localStorage.removeItem('project-launcher-layout-v2');
+    localStorage.removeItem(DESKTOP_LAYOUT_KEY);
+  } catch (e) {}
+}
+
 function devicePrefersLowPower() {
   return !!(navigator.connection?.saveData ||
     (Number.isFinite(navigator.deviceMemory) && navigator.deviceMemory <= 2) ||
@@ -255,37 +279,62 @@ function applyPerformanceMode() {
 function saveDesktopLayout() {
   const windows = {};
   document.querySelectorAll('.floating-window').forEach(win => {
-    windows[win.id] = { hidden: !!win.hidden, minimized: win.classList.contains('minimized'), top: win.style.top || '', left: win.style.left || '', width: win.style.width || '', height: win.style.height || '', right: win.style.right || '', bottom: win.style.bottom || '', transform: win.style.transform || '', zIndex: win.style.zIndex || '' };
+    windows[win.id] = {
+      hidden: !!win.hidden,
+      minimized: win.classList.contains('minimized'),
+      maximized: win.classList.contains('maximized'),
+      top: win.style.top || '',
+      left: win.style.left || '',
+      width: win.style.width || '',
+      height: win.style.height || '',
+      right: win.style.right || '',
+      bottom: win.style.bottom || '',
+      transform: win.style.transform || '',
+      zIndex: win.style.zIndex || ''
+    };
   });
-  safeJsonSet(DESKTOP_LAYOUT_KEY, { version: 2, timestamp: Date.now(), windows });
+  safeSessionJsonSet(DESKTOP_LAYOUT_KEY, { version: 3, timestamp: Date.now(), windows });
 }
 
 function restoreDesktopLayout() {
-  const state = safeJsonGet(DESKTOP_LAYOUT_KEY, null);
+  const state = safeSessionJsonGet(DESKTOP_LAYOUT_KEY, null);
   if (!state || !state.windows) return;
   Object.entries(state.windows).forEach(([id, saved]) => {
     const win = document.getElementById(id);
     if (!win || !saved) return;
+    if (win.__applyStoredWindowState) {
+      win.__applyStoredWindowState(saved);
+      return;
+    }
     ['top','left','width','height','right','bottom','transform'].forEach(prop => { if (saved[prop] !== undefined) win.style[prop] = saved[prop]; });
     if (saved.zIndex) win.style.zIndex = saved.zIndex;
-    if (saved.hidden === false) { win.hidden = false; win.classList.toggle('minimized', !!saved.minimized); }
+    win.hidden = saved.hidden !== false;
+    win.classList.toggle('minimized', !!saved.minimized);
   });
 }
 
-function normalizeThemeId(theme) {
-  const legacy = { 'win95-blue': 'win98-blue', 'win98-teal': 'win95-teal', classic: 'win98-blue', gray: 'windows-gray', midnight: 'midnight-dos' };
-  return legacy[theme] || theme;
+function resetAllWindowSizesAndPositions() {
+  try { sessionStorage.removeItem(DESKTOP_LAYOUT_KEY); } catch (e) {}
+  let didReset = false;
+  document.querySelectorAll('.floating-window').forEach(win => {
+    if (win.__resetWindowGeometry) {
+      win.__resetWindowGeometry();
+      didReset = true;
+    }
+  });
+  saveDesktopLayout();
+  return didReset;
 }
 
 function exportThemePack() {
-  return { format:'games-hub-theme-pack', version:1, theme:normalizeThemeId(safeGet(THEME_KEY) || 'win98-blue'), reducedMotion:safeGet(REDUCED_MOTION_KEY)==='true', compactMode:safeGet(COMPACT_MODE_KEY)==='true', highContrast:safeGet(HIGH_CONTRAST_KEY)==='true', lowPower:safeGet(LOW_POWER_KEY)==='true', crt:safeGet('project-launcher-no-crt') !== 'true' };
+  return { format:'games-hub-theme-pack', version:1, theme:safeGet(THEME_KEY) || 'win95-blue', reducedMotion:safeGet(REDUCED_MOTION_KEY)==='true', compactMode:safeGet(COMPACT_MODE_KEY)==='true', highContrast:safeGet(HIGH_CONTRAST_KEY)==='true', lowPower:safeGet(LOW_POWER_KEY)==='true', crt:safeGet('project-launcher-no-crt') !== 'true' };
 }
 
 function importThemePack(pack) {
   if (!pack || pack.format !== 'games-hub-theme-pack') return false;
-  const themes = new Set(['win98-blue','win95-teal','windows-gray','olive','plum','dos-amber','blue-gray-nt','midnight-dos','win95-blue','win98-teal','classic','gray','midnight']);
+  const themes = new Set(['win95-blue','windows-gray','win98-teal','olive','plum','dos-amber','blue-gray-nt','midnight-dos','classic','gray','midnight']);
   if (!themes.has(pack.theme)) return false;
-  const theme = normalizeThemeId(pack.theme);
+  const theme = pack.theme === 'classic' ? 'win95-blue' : pack.theme === 'gray' ? 'windows-gray' : pack.theme === 'midnight' ? 'midnight-dos' : pack.theme;
   safeSet(THEME_KEY, theme); safeSet(REDUCED_MOTION_KEY, String(!!pack.reducedMotion)); safeSet(COMPACT_MODE_KEY, String(!!pack.compactMode)); safeSet(HIGH_CONTRAST_KEY, String(!!pack.highContrast)); safeSet(LOW_POWER_KEY, String(!!pack.lowPower)); safeSet('project-launcher-no-crt', pack.crt === false ? 'true' : 'false');
   applySavedAppearance(); return true;
 }
@@ -646,6 +695,7 @@ function makeWindowDraggableAndResizable(win) {
       document.removeEventListener('mouseup', stopResize);
       document.removeEventListener('touchmove', onResize);
       document.removeEventListener('touchend', stopResize);
+      saveDesktopLayout();
     };
 
     handle.addEventListener('mousedown', startResize);
@@ -708,6 +758,7 @@ function makeWindowDraggableAndResizable(win) {
       document.removeEventListener('mouseup', stopDrag);
       document.removeEventListener('touchmove', onDrag);
       document.removeEventListener('touchend', stopDrag);
+      saveDesktopLayout();
     };
 
     titleBar.addEventListener('mousedown', startDrag);
@@ -798,6 +849,17 @@ function createAppletWindow(appletPath, options = {}) {
   win.append(titleBar, body);
   document.body.appendChild(win);
 
+  const defaultWindowStyle = {
+    top: win.style.top || '',
+    left: win.style.left || '',
+    right: win.style.right || '',
+    bottom: win.style.bottom || '',
+    width: win.style.width || '',
+    height: win.style.height || '',
+    transform: win.style.transform || ''
+  };
+  let hasSessionOpening = false;
+
   window.addEventListener('blur', () => {
     setTimeout(() => {
       if (document.activeElement === iframe) {
@@ -860,6 +922,68 @@ function createAppletWindow(appletPath, options = {}) {
   let isMaximized = false;
   let savedStyle = { top: '', left: '', width: '', height: '', right: '', bottom: '', transform: '' };
 
+  function applyStoredWindowState(saved = {}) {
+    ['top','left','width','height','right','bottom','transform'].forEach(prop => {
+      if (saved[prop] !== undefined) win.style[prop] = saved[prop];
+    });
+    if (saved.zIndex) {
+      win.style.zIndex = saved.zIndex;
+      const restoredZ = parseInt(saved.zIndex, 10);
+      if (Number.isFinite(restoredZ)) highestZIndex = Math.max(highestZIndex, restoredZ);
+    }
+
+    savedStyle = {
+      top: saved.top || '',
+      left: saved.left || '',
+      width: saved.width || '',
+      height: saved.height || '',
+      right: saved.right || '',
+      bottom: saved.bottom || '',
+      transform: saved.transform || ''
+    };
+
+    isMaximized = !!saved.maximized;
+    win.classList.toggle('maximized', isMaximized);
+    maxBtn.setAttribute('aria-label', isMaximized ? 'Restore' : 'Maximize');
+    win.hidden = saved.hidden !== false;
+    win.classList.toggle('minimized', !!saved.minimized);
+  }
+
+  function resetWindowGeometry() {
+    win.classList.remove('maximized', 'minimized');
+    isMaximized = false;
+    ['top','left','right','bottom','width','height','transform'].forEach(prop => {
+      win.style[prop] = defaultWindowStyle[prop] || '';
+    });
+    maxBtn.setAttribute('aria-label', 'Maximize');
+    win.__cascadeApplied = false;
+  }
+
+  win.__applyStoredWindowState = applyStoredWindowState;
+  win.__resetWindowGeometry = resetWindowGeometry;
+
+  function shouldCascadeFirstOpen() {
+    if (hasSessionOpening) return false;
+    let sessionState = safeSessionJsonGet(DESKTOP_LAYOUT_KEY, null);
+    return !(sessionState && sessionState.windows && Object.prototype.hasOwnProperty.call(sessionState.windows, win.id));
+  }
+
+  function applyCascadePlacement() {
+    if (!shouldCascadeFirstOpen() || win.__cascadeApplied) return;
+
+    const titleBarHeight = Math.max(1, titleBar.getBoundingClientRect().height || titleBar.offsetHeight || 28);
+    const openCount = Array.from(document.querySelectorAll('.floating-window')).filter(other => other !== win && !other.hidden && !other.classList.contains('minimized')).length;
+    const offset = titleBarHeight * openCount;
+    const rect = win.getBoundingClientRect();
+    const left = Math.max(6, Math.min(window.innerWidth - Math.min(160, Math.max(80, rect.width * 0.35)), rect.left + offset));
+    const top = Math.max(6, Math.min(window.innerHeight - Math.min(70, Math.max(36, rect.height * 0.2)), rect.top + offset));
+    win.style.left = `${Math.round(left)}px`;
+    win.style.top = `${Math.round(top)}px`;
+    win.style.right = 'auto';
+    win.style.bottom = 'auto';
+    win.__cascadeApplied = true;
+  }
+
   function toggleMaximize() {
     if (!isMaximized) {
       savedStyle.top = win.style.top;
@@ -887,6 +1011,7 @@ function createAppletWindow(appletPath, options = {}) {
       if (maxBtn) maxBtn.setAttribute('aria-label', 'Maximize');
     }
     updateCRTState();
+    saveDesktopLayout();
   }
 
   // --- TERMINATION AND RELOAD LOGIC ---
@@ -934,11 +1059,16 @@ function createAppletWindow(appletPath, options = {}) {
     restoreIframe(); // Boots the app if it was closed previously
     win.hidden = false;
     win.classList.remove('minimized');
+    if (!hasSessionOpening) {
+      applyCascadePlacement();
+      hasSessionOpening = true;
+    }
     highestZIndex++;
     win.style.zIndex = highestZIndex;
     setActiveFloatingWindow(win, getFloatingWindowActivityName(win));
     updateBtnState();
     updateCRTState();
+    saveDesktopLayout();
   }
 
   function closeWin() {
@@ -954,6 +1084,7 @@ function createAppletWindow(appletPath, options = {}) {
 
     updateBtnState();
     updateCRTState();
+    saveDesktopLayout();
   }
 
   function minimizeWin() {
@@ -970,6 +1101,7 @@ function createAppletWindow(appletPath, options = {}) {
 
     updateBtnState();
     updateCRTState();
+    saveDesktopLayout();
   }
 
   function toggleWin() {
@@ -986,6 +1118,7 @@ function createAppletWindow(appletPath, options = {}) {
         minimizeWin();
       }
     }
+    saveDesktopLayout();
   }
 
   closeBtn.addEventListener('click', (e) => {
@@ -1375,7 +1508,7 @@ function setupToSModal() {
 // ===== V4 UX / CONVENIENCE LAYER =====
 function applySavedAppearance() {
   const html = document.documentElement;
-  const theme = normalizeThemeId(safeGet(THEME_KEY) || 'win98-blue');
+  const theme = safeGet(THEME_KEY) || 'win95-blue';
   html.dataset.theme = theme;
   html.classList.toggle('reduced-motion', safeGet(REDUCED_MOTION_KEY) === 'true');
   html.classList.toggle('compact-mode', safeGet(COMPACT_MODE_KEY) === 'true');
@@ -1627,12 +1760,12 @@ function setupFrameCommands() {
     const data = event.data || {};
     if (!isTrustedSameOriginMessage(event)) return;
     if (data.source === 'control-panel') {
-      if (data.action === 'setTheme') {
+      if (data.action === 'setTheme' && ['classic','gray','midnight'].includes(data.value)) {
         persistAppearanceSetting(THEME_KEY, data.value);
       } else if (data.action === 'setToggle' && [REDUCED_MOTION_KEY, COMPACT_MODE_KEY, HIGH_CONTRAST_KEY].includes(data.key)) {
         persistAppearanceSetting(data.key, Boolean(data.value));
       } else if (data.action === 'resetUi') {
-        [THEME_KEY, REDUCED_MOTION_KEY, COMPACT_MODE_KEY, HIGH_CONTRAST_KEY, LOW_POWER_KEY].forEach(key => safeSet(key, key === THEME_KEY ? 'win98-blue' : 'false'));
+        [THEME_KEY, REDUCED_MOTION_KEY, COMPACT_MODE_KEY, HIGH_CONTRAST_KEY, LOW_POWER_KEY].forEach(key => safeSet(key, key === THEME_KEY ? 'win95-blue' : 'false'));
         applySavedAppearance();
         showGlobalToast('Interface preferences reset.');
       } else if (data.action === 'clearRecents') {
@@ -1653,9 +1786,12 @@ function setupFrameCommands() {
       } else if (data.action === 'importTheme') {
         showGlobalToast(importThemePack(data.value) ? 'Theme pack imported.' : 'Theme pack rejected.');
       } else if (data.action === 'saveLayout') {
-        saveDesktopLayout(); showGlobalToast('Desktop layout saved.');
+        saveDesktopLayout(); showGlobalToast('Session window layout saved.');
       } else if (data.action === 'restoreLayout') {
-        restoreDesktopLayout(); showGlobalToast('Desktop layout restored.');
+        restoreDesktopLayout(); showGlobalToast('Session window layout restored.');
+      } else if (data.action === 'resetWindowLayout') {
+        resetAllWindowSizesAndPositions();
+        showGlobalToast('All window sizes and positions reset for this session.');
       } else if (data.action === 'install') {
         window.__gamesHubInstall?.();
       } else if (data.action === 'quickLaunch') {
@@ -1684,6 +1820,7 @@ function setupLandingPerformance() {
 
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded', () => {
+  clearLegacyPermanentWindowLayout();
   renderSiteData();
   renderAnnouncements();
   renderClassics();
