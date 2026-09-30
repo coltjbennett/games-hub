@@ -399,15 +399,6 @@
             <div style="font-size: 12px; margin-bottom: 8px;">
                 <label style="cursor: pointer;"><input type="checkbox" id="mute-sounds-chk" onchange="toggleMuteSounds()"> Mute Mentions & DM Sounds</label>
             </div>
-            <div style="font-size: 12px; margin-bottom: 8px; display:grid; gap:5px;">
-                <label>Chat history retention <select id="chat-retention" onchange="updateChatStorageSettings()">
-                    <option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="0">Forever</option>
-                </select></label>
-                <label>History mode <select id="chat-history-mode" onchange="updateChatStorageSettings()">
-                    <option value="text-only">Text only</option><option value="attachments">Attachments</option><option value="full-media">Full media</option>
-                </select></label>
-            </div>
-            <div class="small" style="font-size:11px; margin-bottom:8px;">Automatic compaction removes expired messages and strips media according to the selected mode. Images are kept under 1 MB when recompression is required.</div>
 
             <button onclick="exportChat()" style="width: 100%; margin-bottom: 8px;">Export Chat History (Current Tab)</button>
 
@@ -482,11 +473,7 @@
         const CHAT_ORIGIN = window.location.origin;
         const MAX_USERNAME_LENGTH = 32;
         const MAX_TEXT_LENGTH = 4000;
-        const MAX_MEDIA_DATA_LENGTH = 4 * 1024 * 1024;
-        const CHAT_RETENTION_KEY = "mqtt_chat_retention_days_v1";
-        const CHAT_HISTORY_MODE_KEY = "mqtt_chat_history_mode_v1";
-        const DEFAULT_CHAT_RETENTION_DAYS = 30;
-        const MAX_PERSISTED_HISTORY_JSON_BYTES = 16 * 1024 * 1024;
+        const MAX_MEDIA_DATA_LENGTH = 8 * 1024 * 1024;
         const ALLOWED_INCOMING_TYPES = new Set([
             'MSG', 'DM', 'EDIT_MSG', 'DELETE_MSG', 'REACT_MSG', 'CLEAR_ALL', 'CLEAR_RECENT',
             'CMD', 'PRESENCE', 'PING', 'RENAME', 'TYPING', 'MUTE_ATTEMPT', 'DM_READ',
@@ -949,8 +936,7 @@
             if (!mediaRecorder || mediaRecorder.state === "inactive") {
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    const audioMime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : undefined;
-                        mediaRecorder = new MediaRecorder(stream, audioMime ? { mimeType: audioMime, audioBitsPerSecond: 24000 } : { audioBitsPerSecond: 24000 });
+                    mediaRecorder = new MediaRecorder(stream);
                     
                     msgInput.style.display = "none";
                     timerDiv.style.display = "block";
@@ -970,8 +956,8 @@
                         const mimeType = mediaRecorder.mimeType || 'audio/webm';
                         const blob = new Blob(audioChunks, { type: mimeType });
                         audioChunks = [];
-                        if (blob.size > MAX_AUDIO_BYTES) {
-                            customAlert("Audio recording too large. The limit is 1MB.");
+                        if (blob.size > MAX_OTHER_UPLOAD_BYTES) {
+                            customAlert("Audio recording too large. The limit is 5MB.");
                             msgInput.style.display = "block";
                             timerDiv.style.display = "none";
                             return;
@@ -996,10 +982,8 @@
             }
         }
 
-        const MAX_IMAGE_BYTES = 1 * 1024 * 1024;
-        const MAX_VIDEO_BYTES = 2 * 1024 * 1024;
-        const MAX_AUDIO_BYTES = 1 * 1024 * 1024;
-        const MAX_OTHER_UPLOAD_BYTES = 2 * 1024 * 1024;
+        const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+        const MAX_OTHER_UPLOAD_BYTES = 5 * 1024 * 1024;
 
         function blobToDataURL(blob) {
             return new Promise((resolve, reject) => {
@@ -1063,37 +1047,11 @@
             }
 
             if (!bestBlob || bestBlob.size > maxBytes) {
-                throw new Error("Image could not be compressed below the 1MB limit");
+                throw new Error("Image could not be compressed below the 2MB limit");
             }
 
             const raw = await blobToDataURL(bestBlob);
             return { raw, preCompressed: LZString.compressToUTF16(raw) };
-        }
-
-
-        async function compressVideoToFit(file, maxBytes = MAX_VIDEO_BYTES) {
-            if (file.size <= maxBytes) { const raw=await blobToDataURL(file); return { raw, preCompressed:LZString.compressToUTF16(raw) }; }
-            if (!HTMLVideoElement.prototype.captureStream && !HTMLVideoElement.prototype.mozCaptureStream) throw new Error('Video compression is unavailable in this browser.');
-            const url = URL.createObjectURL(file);
-            const video = document.createElement('video'); video.muted = true; video.playsInline = true; video.src = url;
-            await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=reject});
-            const duration = Math.max(0.5, video.duration || 1);
-            const maxDim = 960; const scale = Math.min(1, maxDim / Math.max(video.videoWidth || maxDim, video.videoHeight || maxDim));
-            const canvas = document.createElement('canvas'); canvas.width=Math.max(2,Math.floor((video.videoWidth||640)*scale)); canvas.height=Math.max(2,Math.floor((video.videoHeight||360)*scale));
-            const ctx=canvas.getContext('2d',{alpha:false}); if(!ctx) throw new Error('Canvas unavailable');
-            const source = video.captureStream ? video.captureStream() : video.mozCaptureStream();
-            const canvasStream = canvas.captureStream(24);
-            const combined = new MediaStream([...canvasStream.getVideoTracks(), ...source.getAudioTracks()]);
-            const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') ? 'video/webm;codecs=vp9,opus' : (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/webm');
-            const videoBits = Math.max(220000, Math.min(650000, Math.floor((maxBytes * 8 * 0.82 / duration) - 32000)));
-            const recorder = new MediaRecorder(combined,{mimeType:mime,videoBitsPerSecond:videoBits,audioBitsPerSecond:32000});
-            const chunks=[];
-            const done=new Promise((resolve,reject)=>{recorder.ondataavailable=e=>e.data?.size&&chunks.push(e.data);recorder.onerror=e=>reject(e.error||e);recorder.onstop=()=>resolve(new Blob(chunks,{type:mime}))});
-            const draw=()=>{if(video.paused||video.ended)return;ctx.drawImage(video,0,0,canvas.width,canvas.height);requestAnimationFrame(draw)};
-            recorder.start(1000); await video.play(); draw(); await new Promise(resolve=>video.onended=resolve); recorder.stop();
-            const blob=await done; source.getTracks().forEach(t=>t.stop());canvasStream.getTracks().forEach(t=>t.stop());URL.revokeObjectURL(url);
-            if(blob.size>maxBytes) throw new Error('Video could not be compressed below the 2MB limit.');
-            const raw=await blobToDataURL(blob); return {raw,preCompressed:LZString.compressToUTF16(raw)};
         }
 
         document.getElementById("universal-upload").addEventListener("change", async function(e) {
@@ -1109,19 +1067,18 @@
                 try {
                     const { raw, preCompressed } = await compressImageToFit(file, MAX_IMAGE_BYTES);
                     sendPayload(raw, { isImage: true, isVideo: false, isFile: false, fileName: file.name, preCompressed });
-                } catch(err) { customAlert(err?.message || "Failed to compress that image below the 1MB limit."); }
-                e.target.value = ""; return;
+                } catch(err) {
+                    customAlert("Failed to compress that image below the 2MB limit.");
+                }
+                e.target.value = "";
+                return;
             }
 
-            if (isVideo) {
-                try {
-                    const { raw, preCompressed } = await compressVideoToFit(file, MAX_VIDEO_BYTES);
-                    sendPayload(raw, { isImage:false, isVideo:true, isFile:false, fileName:file.name, preCompressed });
-                } catch(err) { customAlert(err?.message || "Failed to compress that video below the 2MB limit."); }
-                e.target.value = ""; return;
+            if (file.size > MAX_OTHER_UPLOAD_BYTES) {
+                customAlert("File too large. Videos and other files have a 5MB limit.");
+                e.target.value = "";
+                return;
             }
-
-            if (file.size > MAX_OTHER_UPLOAD_BYTES) { customAlert("File too large. Videos and attachments have a 2MB limit."); e.target.value = ""; return; }
 
             const reader = new FileReader();
             reader.onload = function(event) {
@@ -1134,69 +1091,24 @@
             e.target.value = "";
         });
 
-        // Durable history is gzip-compressed (with LZString fallback), compacted on load/save,
-        // and capped so browser storage does not grow without bound.
+        // History is intentionally unbounded.  The old implementation persisted only the
+        // latest 1,000 messages, which silently destroyed older chat history on the next save.
+        // Keep IndexedDB/localforage as the durable store, but store native structured data
+        // instead of repeatedly LZ-compressing the entire history array.  This is dramatically
+        // cheaper during sync while retaining backwards compatibility with old compressed data.
         const STORAGE_WRITE_DEBOUNCE_MS = 1200;
-        const pendingStorageWrites = new Map();
-        const lastStorageSignatures = new Map();
 
-        function getChatRetentionDays() {
-            const n = Number.parseInt(safeGet(CHAT_RETENTION_KEY) || String(DEFAULT_CHAT_RETENTION_DAYS), 10);
-            return Number.isFinite(n) && [0,7,30,90].includes(n) ? n : DEFAULT_CHAT_RETENTION_DAYS;
-        }
-        function getChatHistoryMode() { const mode=safeGet(CHAT_HISTORY_MODE_KEY)||'full-media'; return ['text-only','attachments','full-media'].includes(mode)?mode:'full-media'; }
-        function isLowPowerMode() { try { return window.parent?.document?.documentElement?.classList.contains('low-power'); } catch(_) { return !!navigator.connection?.saveData; } }
-        function updateChatStorageSettings() {
-            safeSet(CHAT_RETENTION_KEY, document.getElementById('chat-retention').value);
-            safeSet(CHAT_HISTORY_MODE_KEY, document.getElementById('chat-history-mode').value);
-            compactAllHistories(true);
-            renderActiveTabMessages();
-        }
-        function storedMessageForMode(m) {
-            const mode=getChatHistoryMode(); if(mode==='full-media') return m;
-            const copy={...m};
-            const hasMedia=copy.isImage||copy.isVideo||copy.isAudio;
-            if(mode==='text-only' && hasMedia) { copy.text=''; copy.storageMediaOmitted=true; }
-            if(mode==='attachments' && hasMedia) { copy.text=''; copy.storageMediaOmitted=true; copy.isImage=false;copy.isVideo=false;copy.isAudio=false; }
-            return copy;
-        }
-        function compactHistoryList(list, persistLimit=MAX_PERSISTED_HISTORY_JSON_BYTES, forStorage=false) {
-            if(!Array.isArray(list)) return {list:[],changed:false};
-            const retention=getChatRetentionDays(); const cutoff=retention?Date.now()-retention*86400000:0; const mode=getChatHistoryMode();
-            let changed=false;
-            let out=list.filter(m=>{ if(cutoff && Number.isFinite(m?.timestamp) && m.timestamp<cutoff){changed=true;return false;} return true; });
-            if(forStorage) out=out.map(m=>storedMessageForMode(m));
-            let bytes=0; try{bytes=new TextEncoder().encode(JSON.stringify(out)).byteLength}catch(_){bytes=0}
-            while(bytes>persistLimit && out.length>1){out.shift();changed=true;try{bytes=new TextEncoder().encode(JSON.stringify(out)).byteLength}catch(_){break}}
-            return {list:out,changed};
-        }
-        function compactAllHistories(saveNow=false) {
-            let changed=false;
-            const global=compactHistoryList(messageHistory); if(global.changed){messageHistory=global.list;changed=true;}
-            Object.keys(dmHistories).forEach(user=>{const r=compactHistoryList(dmHistories[user]);if(r.changed){dmHistories[user]=r.list;changed=true;}});
-            rebuildMessageHistoryIdSet();
-            if(saveNow && changed){saveLocalHistory();Object.keys(dmHistories).forEach(u=>saveDmHistory(u));}
-            return changed;
-        }
-        async function gzipJson(value) {
-            const json=JSON.stringify(value);
-            if('CompressionStream' in window){const cs=new CompressionStream('gzip');const ab=await new Response(new Blob([json]).stream().pipeThrough(cs)).arrayBuffer();return {v:2,codec:'gzip',data:ab};}
-            return {v:2,codec:'lz',data:LZString.compressToUTF16(json)};
-        }
-        async function gunzipStored(stored) {
-            if(stored?.codec==='gzip' && stored.data){const ds=new DecompressionStream('gzip');const text=await new Response(new Blob([stored.data]).stream().pipeThrough(ds)).text();return JSON.parse(text);}
-            if(stored?.codec==='lz' && typeof stored.data==='string') return JSON.parse(LZString.decompressFromUTF16(stored.data)||'[]');
-            return null;
-        }
         async function saveToStorageWithCompression(key, historyValue) {
             try {
-                const compacted=compactHistoryList(historyValue, MAX_PERSISTED_HISTORY_JSON_BYTES, true).list;
-                const signature=(()=>{const str=JSON.stringify(compacted);let h=2166136261;for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619)}return str.length+':'+(h>>>0)})();
-                if(lastStorageSignatures.get(key)===signature)return;
-                lastStorageSignatures.set(key,signature);
-                await localforage.setItem(key, await gzipJson(compacted));
+                await localforage.setItem(key, historyValue);
             } catch(e) {
-                try { await localforage.setItem(key, LZString.compressToUTF16(JSON.stringify(compactHistoryList(historyValue, MAX_PERSISTED_HISTORY_JSON_BYTES, true).list))); } catch(e2){ console.error('Failed to save history to IndexedDB:',e2); }
+                // Only fall back to compression if structured storage fails.
+                try {
+                    const compressed = LZString.compressToUTF16(JSON.stringify(historyValue));
+                    await localforage.setItem(key, compressed);
+                } catch(e2) {
+                    console.error('Failed to save history to IndexedDB:', e2);
+                }
             }
         }
         function saveToStorageDebounced(key,getValue){const existing=pendingStorageWrites.get(key);if(existing)clearTimeout(existing);pendingStorageWrites.set(key,setTimeout(()=>{pendingStorageWrites.delete(key);saveToStorageWithCompression(key,getValue())},STORAGE_WRITE_DEBOUNCE_MS));}
@@ -1256,6 +1168,70 @@
         }
         async function loadDmHistory(otherUser){return await loadFromStorageWithCompression(`mqtt_dm_${myUsername}_${otherUser}`)}
         function saveDmHistory(otherUser){saveToStorageDebounced(`mqtt_dm_${myUsername}_${otherUser}`,()=>dmHistories[otherUser]||[])}
+      
+        const pendingStorageWrites = new Map();
+        function saveToStorageDebounced(key, getValue) {
+            const existing = pendingStorageWrites.get(key);
+            if (existing) clearTimeout(existing);
+            pendingStorageWrites.set(key, setTimeout(() => {
+                pendingStorageWrites.delete(key);
+                saveToStorageWithCompression(key, getValue());
+            }, STORAGE_WRITE_DEBOUNCE_MS));
+        }
+
+        async function loadFromStorageWithCompression(key) {
+            try {
+                let stored = await localforage.getItem(key);
+                
+                if (!stored) {
+                    stored = safeGet(key);
+                    if (stored) {
+                        await localforage.setItem(key, stored);
+                        localStorage.removeItem(key); 
+                    }
+                }
+
+                if (!stored) return [];
+
+                // New format: localforage/IndexedDB structured values.
+                if (typeof stored !== 'string') return stored;
+
+                // Legacy format: UTF-16 LZString or raw JSON text.
+                let decompressed = LZString.decompressFromUTF16(stored);
+                if (decompressed) return JSON.parse(decompressed);
+                return JSON.parse(stored);
+            } catch(e) { return []; }
+        }
+
+        function sanitizeHistoryLoaded(historyArray) {
+            if (!Array.isArray(historyArray)) return [];
+            const sanitized = [];
+            historyArray.forEach(m => {
+                if (!m || typeof m !== 'object') return;
+                if (m.compressed && typeof m.text === 'string') {
+                    try {
+                        m.text = LZString.decompressFromUTF16(m.text) || m.text;
+                        m.compressed = false;
+                    } catch(e) { return; }
+                }
+                if (m.author !== undefined && !isValidUsername(m.author)) return;
+                if (m.id !== undefined && (typeof m.id !== 'string' || m.id.length > 80)) return;
+                if (m.timestamp !== undefined && (!Number.isFinite(m.timestamp) || m.timestamp < 0)) return;
+                if (!validateMessagePayloadAfterDecompression(m)) return;
+                sanitized.push(m);
+            });
+            return sanitized;
+        }
+
+        async function loadLocalHistory() { 
+            let loaded = await loadFromStorageWithCompression(STORAGE_KEY);
+            messageHistory = sanitizeHistoryLoaded(loaded);
+            rebuildMessageHistoryIdSet();
+            if(currentTab === "global") renderActiveTabMessages(); 
+        }
+        function saveLocalHistory() { saveToStorageDebounced(STORAGE_KEY, () => messageHistory); }
+        async function loadDmHistory(otherUser) { return await loadFromStorageWithCompression(`mqtt_dm_${myUsername}_${otherUser}`); }
+        function saveDmHistory(otherUser) { saveToStorageDebounced(`mqtt_dm_${myUsername}_${otherUser}`, () => dmHistories[otherUser] || []); }
 
         async function loadSettingsAndDMs() {
             try { const s = safeGet(BLOCKED_KEY);
@@ -1266,8 +1242,6 @@
                 if (r) { const parsed = safeParseJSON(r, {}); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) dmReadWatermarks = parsed; } } catch (e) {}
             
             document.getElementById('mute-sounds-chk').checked = safeGet('mqtt_mute_sounds') === 'true';
-            document.getElementById('chat-retention').value = String(getChatRetentionDays());
-            document.getElementById('chat-history-mode').value = getChatHistoryMode();
             
             pendingDMs = await loadFromStorageWithCompression('mqtt_pending_dms') || {};
             if (Array.isArray(pendingDMs)) pendingDMs = {};
@@ -1782,7 +1756,6 @@
         }
 
         function updateAndBroadcastPresence() {
-            if (isLowPowerMode() && document.hidden) return;
             let count = activeUsers.size;
             window.parent.postMessage({ source: 'universal-chat', kind: 'presence', count: count }, CHAT_ORIGIN);
         }
@@ -1905,7 +1878,6 @@
                 ui.chatScreen.style.display = "flex";
                 await loadSettingsAndDMs(); 
                 await loadLocalHistory();
-                compactAllHistories(true);
                 await loadTombstones();
                 messageHistory = applyTombstonesToList(messageHistory);
                 rebuildMessageHistoryIdSet();
@@ -1920,7 +1892,6 @@
                 ui.userScreen.style.display = "block"; ui.chatScreen.style.display = "none";
                 await loadSettingsAndDMs(); 
                 await loadLocalHistory();
-                compactAllHistories(true);
                 await loadTombstones();
                 messageHistory = applyTombstonesToList(messageHistory);
                 rebuildMessageHistoryIdSet();
@@ -1998,6 +1969,8 @@
                         publishPing();
                         if (!window.pingInterval) { window.pingInterval = setInterval(() => { if (isConnected && !document.hidden && !isLowPowerMode()) publishPing(); }, 5000); }
                     } else updateConnectionStatus("SUBSCRIBE ERROR", "bad");
+                        if (!window.pingInterval) { window.pingInterval = setInterval(() => { if (isConnected) publishPing(); }, 5000); }
+                    }
                 });
                 client.on("reconnect", () => { isConnected = false; updateConnectionStatus("RECONNECTING", "normal"); });
                 client.on("close", () => { isConnected = false; updateConnectionStatus("DISCONNECTED", "bad"); });
@@ -2007,8 +1980,8 @@
 
             setupMqttListeners();
             requestParentActivityState();
-            setInterval(() => { if (!document.hidden && !isLowPowerMode()) checkPresence(); }, 5000);
-            setInterval(() => { if (isConnected && historyReadyForSync && !document.hidden && !isLowPowerMode()) publishMessage(buildManifest()); }, 60000);
+            setInterval(checkPresence, 5000);
+            setInterval(() => { if (isConnected && historyReadyForSync && !document.hidden) publishMessage(buildManifest()); }, 60000);
         })();
 
         async function joinChat() {
@@ -2067,7 +2040,7 @@
                 requestManifestBroadcast();
             }
 
-            if (!window.pingInterval) { window.pingInterval = setInterval(() => { if (isConnected && !document.hidden && !isLowPowerMode()) publishPing(); }, 5000); }
+            if (!window.pingInterval) { window.pingInterval = setInterval(() => { if (isConnected) publishPing(); }, 5000); }
         }
 
         function processPendingOutbox(targetUser) {
@@ -3719,7 +3692,6 @@
             cancelReply();
         }
         window.addEventListener('pageshow', requestParentActivityState);
-        document.addEventListener('visibilitychange', () => { if (!document.hidden && isConnected && !isLowPowerMode()) { publishPing(); updateAndBroadcastPresence(); } });
 
     </script>
 </body>
