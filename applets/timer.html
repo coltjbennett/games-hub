@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base href="../">
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Timer</title>
+  <style>
+    @font-face{font-family:W95FA;src:url('images/w95f.woff2') format('woff2'),url('images/w95f.woff') format('woff')}
+    *{box-sizing:border-box}body{margin:0;background:#c0c0c0;color:#000;font-family:W95FA,"MS Sans Serif",Tahoma,Arial,sans-serif;padding:10px}.panel{border:3px outset #fff;padding:10px;margin-bottom:9px}.title{background:#000080;color:#fff;padding:5px 7px;margin:-10px -10px 10px;font-weight:bold}.display{background:#000;color:#00ff00;border:3px inset #808080;text-align:center;font-family:Consolas,monospace;font-size:42px;padding:14px 4px;letter-spacing:.07em}.presets{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.btn{font:inherit;padding:7px;background:#c0c0c0;border:2px outset #fff;cursor:pointer}.btn:active{border-style:inset}.controls{display:flex;gap:6px;flex-wrap:wrap}.custom{display:flex;gap:6px}.custom input{width:90px;border:2px inset #808080;padding:6px;font:inherit}.status{text-align:center;font-size:12px;min-height:18px;color:#444}
+  </style>
+</head>
+<body>
+  <div class="panel"><div class="title">COUNTDOWN TIMER</div><div class="display" id="display">05:00</div><div class="status" id="status">Ready</div></div>
+  <div class="panel"><strong>Presets</strong><div class="presets" style="margin-top:8px"><button class="btn" data-seconds="30">30 sec</button><button class="btn" data-seconds="60">1 min</button><button class="btn" data-seconds="300">5 min</button><button class="btn" data-seconds="600">10 min</button><button class="btn" data-seconds="1800">30 min</button><button class="btn" data-seconds="3600">60 min</button></div></div>
+  <div class="panel"><strong>Custom</strong><div class="custom" style="margin-top:8px"><input id="minutes" type="number" min="0" max="999" value="5" aria-label="Minutes"><span style="padding-top:7px">:</span><input id="seconds" type="number" min="0" max="59" value="0" aria-label="Seconds"><button class="btn" id="set">Set</button></div></div>
+  <div class="panel"><div class="controls"><button class="btn" id="start">Start</button><button class="btn" id="pause">Pause</button><button class="btn" id="reset">Reset</button><button class="btn" id="sound">Sound: ON</button></div></div>
+  <script>
+    let total=300,remaining=300,running=false,startedAt=0,interval=null,soundOn=true;
+    const $=id=>document.getElementById(id); const fmt=s=>`${String(Math.floor(s/60)).padStart(2,'0')}:${String(Math.max(0,s%60)).padStart(2,'0')}`;function paint(){ $('display').textContent=fmt(remaining); document.title=running?`${fmt(remaining)} — Timer`:'Timer'; }
+    function setTime(sec){total=Math.max(0,Math.floor(sec));remaining=total;running=false;clearInterval(interval);$('status').textContent='Ready';paint();}
+    function beep(){if(!soundOn)return;try{const C=window.AudioContext||window.webkitAudioContext;if(!C)return;const c=new C();const o=c.createOscillator(),g=c.createGain();o.frequency.value=880;o.connect(g);g.connect(c.destination);g.gain.value=.04;o.start();setTimeout(()=>o.stop(),250);setTimeout(()=>c.close?.(),400)}catch(_){} }
+    function tick(){if(!running)return;const elapsed=Math.floor((performance.now()-startedAt)/1000);remaining=Math.max(0,total-elapsed);paint();if(remaining<=0){running=false;clearInterval(interval);$('status').textContent='Finished';beep();}}
+    $('start').onclick=()=>{if(remaining<=0)remaining=total;if(running)return;startedAt=performance.now()-(total-remaining)*1000;running=true;$('status').textContent='Running';clearInterval(interval);interval=setInterval(tick,250);tick()};
+    $('pause').onclick=()=>{if(!running)return;tick();running=false;clearInterval(interval);$('status').textContent='Paused'};
+    $('reset').onclick=()=>setTime(total);
+    $('set').onclick=()=>setTime((parseInt($('minutes').value)||0)*60+(parseInt($('seconds').value)||0));
+    $('sound').onclick=()=>{soundOn=!soundOn;$('sound').textContent=`Sound: ${soundOn?'ON':'OFF'}`};
+    document.querySelectorAll('[data-seconds]').forEach(b=>b.onclick=()=>{const s=Number(b.dataset.seconds);$('minutes').value=Math.floor(s/60);$('seconds').value=s%60;setTime(s)});paint();
+  </script>
+</body>
+</html>

@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#c0c0c0">
+  <title>Calculator</title>
+  <style>
+    @font-face {
+      font-family: "W95FA";
+      src: url('../images/w95f.woff2') format('woff2'),
+           url('../images/w95f.woff') format('woff');
+      font-weight: normal;
+      font-style: normal;
+    }
+
+    :root {
+      --win-bg: #c0c0c0;
+      --win-blue: #000080;
+      --win-text: #000000;
+      --win-border-light: #ffffff;
+      --win-border-dark: #808080;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body { width: 100%; height: 100%; }
+
+    body {
+      margin: 0;
+      padding: 2px;
+      overflow: hidden;
+      background: var(--win-bg);
+      color: var(--win-text);
+      font-family: "W95FA", "MS Sans Serif", Tahoma, Arial, sans-serif;
+      user-select: none;
+    }
+
+    .calculator {
+      width: 100%;
+      height: 100%;
+      min-width: 280px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .menu-bar {
+      height: 20px;
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      padding: 1px 5px;
+      border-bottom: 1px solid var(--win-border-dark);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .display-frame {
+      padding: 2px;
+      border: 2px inset var(--win-border-dark);
+      background: #dcdcdc;
+    }
+
+    #display {
+      display: block;
+      width: 100%;
+      height: 30px;
+      margin: 0;
+      padding: 1px 4px;
+      border: 1px solid #000;
+      background: #fff;
+      color: #000;
+      font-family: "Courier New", monospace;
+      font-size: 18px;
+      text-align: right;
+      outline: none;
+      user-select: text;
+    }
+
+    .mode-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      min-height: 18px;
+    }
+
+    .mode-row span { white-space: nowrap; }
+
+    .memory-row, .keypad {
+      display: grid;
+      gap: 3px;
+    }
+
+    .memory-row {
+      grid-template-columns: repeat(4, 1fr);
+      min-height: 25px;
+    }
+
+    .keypad {
+      flex: 1;
+      min-height: 0;
+      grid-template-columns: repeat(6, 1fr);
+      grid-template-rows: repeat(6, 1fr);
+    }
+
+    button {
+      min-width: 0;
+      min-height: 0;
+      padding: 1px 2px;
+      border: 2px outset var(--win-border-light);
+      background: var(--win-bg);
+      color: #000;
+      font-family: "W95FA", "MS Sans Serif", Tahoma, Arial, sans-serif;
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    button:active,
+    button.pressed {
+      border-style: inset;
+      padding-top: 2px;
+    }
+
+    .menu-bar span::first-letter { text-decoration: underline; }
+    .memory-btn { font-size: 11px; }
+    .function { color: #000080; }
+    .operator { color: #000080; font-weight: bold; }
+    .clear { color: #800000; font-weight: bold; }
+    .equals { font-weight: bold; background: #d0d0d0; }
+    .wide { grid-column: span 2; }
+  </style>
+</head>
+<body>
+  <main class="calculator" aria-label="Windows 95 style calculator">
+    <div class="menu-bar" aria-hidden="true">
+      <span>View</span>
+      <span>Edit</span>
+      <span>Help</span>
+    </div>
+
+    <div class="display-frame">
+      <input type="text" id="display" aria-label="Calculator display" readonly value="0">
+    </div>
+
+    <div class="mode-row">
+      <span id="memory-indicator">Memory: 0</span>
+      <span>Scientific / Radians</span>
+    </div>
+
+    <div class="memory-row">
+      <button class="memory-btn" type="button" onclick="memoryClear()">MC</button>
+      <button class="memory-btn" type="button" onclick="memoryRecall()">MR</button>
+      <button class="memory-btn" type="button" onclick="memoryStore()">MS</button>
+      <button class="memory-btn" type="button" onclick="memoryAdd()">M+</button>
+    </div>
+
+    <div class="keypad">
+      <button class="function" type="button" onclick="appendValue('sin(')">sin</button>
+      <button class="function" type="button" onclick="appendValue('cos(')">cos</button>
+      <button class="function" type="button" onclick="appendValue('tan(')">tan</button>
+      <button class="function" type="button" onclick="appendValue('log(')">log</button>
+      <button class="function" type="button" onclick="appendValue('ln(')">ln</button>
+      <button class="clear" type="button" onclick="clearDisplay()">C</button>
+
+      <button class="function" type="button" onclick="appendValue('sqrt(')">√</button>
+      <button class="function" type="button" onclick="appendValue('π')">π</button>
+      <button class="function" type="button" onclick="appendValue('e')">e</button>
+      <button class="function" type="button" onclick="appendValue('²')">x²</button>
+      <button class="function" type="button" onclick="appendValue('³')">x³</button>
+      <button class="clear" type="button" onclick="backspace()">Back</button>
+
+      <button type="button" onclick="appendValue('7')">7</button>
+      <button type="button" onclick="appendValue('8')">8</button>
+      <button type="button" onclick="appendValue('9')">9</button>
+      <button class="operator" type="button" onclick="appendValue('/')">÷</button>
+      <button class="function" type="button" onclick="appendValue('!')">n!</button>
+      <button class="operator" type="button" onclick="appendValue('(')">(</button>
+
+      <button type="button" onclick="appendValue('4')">4</button>
+      <button type="button" onclick="appendValue('5')">5</button>
+      <button type="button" onclick="appendValue('6')">6</button>
+      <button class="operator" type="button" onclick="appendValue('*')">×</button>
+      <button class="operator" type="button" onclick="appendValue('-')">−</button>
+      <button class="operator" type="button" onclick="appendValue(')')">)</button>
+
+      <button type="button" onclick="appendValue('1')">1</button>
+      <button type="button" onclick="appendValue('2')">2</button>
+      <button type="button" onclick="appendValue('3')">3</button>
+      <button class="operator" type="button" onclick="appendValue('+')">+</button>
+      <button class="operator" type="button" onclick="appendValue('^')">xʸ</button>
+      <button class="equals" type="button" onclick="calculate()">=</button>
+
+      <button class="wide" type="button" onclick="appendValue('0')">0</button>
+      <button type="button" onclick="appendValue('.')">.</button>
+      <button type="button" onclick="appendValue('%')">%</button>
+      <button class="clear" type="button" onclick="clearDisplay()">CE</button>
+    </div>
+  </main>
+
+  <script>
+    let resetOnNext = false;
+    let memoryValue = 0;
+    const display = document.getElementById('display');
+    const memoryIndicator = document.getElementById('memory-indicator');
+
+    function updateMemoryIndicator() {
+      memoryIndicator.textContent = `Memory: ${Number.isFinite(memoryValue) ? memoryValue : 0}`;
+    }
+
+    function appendValue(value) {
+      if (resetOnNext) {
+        display.value = '';
+        resetOnNext = false;
+      }
+      if (display.value === '0' && /[0-9πe(]/.test(value)) display.value = '';
+      display.value += value;
+    }
+
+    function clearDisplay() {
+      display.value = '0';
+      resetOnNext = false;
+    }
+
+    function backspace() {
+      if (resetOnNext) return clearDisplay();
+      display.value = display.value.length > 1 ? display.value.slice(0, -1) : '0';
+    }
+
+    function safeCurrentValue() {
+      try {
+        return evaluateExpression(display.value);
+      } catch (e) {
+        return NaN;
+      }
+    }
+
+    function memoryClear() {
+      memoryValue = 0;
+      updateMemoryIndicator();
+    }
+
+    function memoryRecall() {
+      display.value = String(memoryValue);
+      resetOnNext = false;
+    }
+
+    function memoryStore() {
+      const value = safeCurrentValue();
+      if (Number.isFinite(value)) memoryValue = value;
+      updateMemoryIndicator();
+    }
+
+    function memoryAdd() {
+      const value = safeCurrentValue();
+      if (Number.isFinite(value)) memoryValue += value;
+      updateMemoryIndicator();
+    }
+
+    function factorial(n) {
+      if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n) || n > 170) throw new Error('Invalid factorial');
+      let out = 1;
+      for (let i = 2; i <= n; i++) out *= i;
+      return out;
+    }
+
+    function tokenize(source) {
+      const tokens = [];
+      let i = 0;
+      while (i < source.length) {
+        const char = source[i];
+        if (/\s/.test(char)) { i++; continue; }
+        if (/\d|\./.test(char)) {
+          const start = i;
+          let dots = 0;
+          while (i < source.length && /[\d.]/.test(source[i])) {
+            if (source[i] === '.') dots++;
+            if (dots > 1) throw new Error('Invalid number');
+            i++;
+          }
+          const num = Number(source.slice(start, i));
+          if (!Number.isFinite(num)) throw new Error('Invalid number');
+          tokens.push({ type: 'number', value: num });
+          continue;
+        }
+        if (char === 'π') { tokens.push({ type: 'number', value: Math.PI }); i++; continue; }
+        if (char === 'e') { tokens.push({ type: 'number', value: Math.E }); i++; continue; }
+        if (/[A-Za-z]/.test(char)) {
+          const start = i;
+          while (i < source.length && /[A-Za-z]/.test(source[i])) i++;
+          tokens.push({ type: 'name', value: source.slice(start, i).toLowerCase() });
+          continue;
+        }
+        if ('+-*/^%!()²³'.includes(char)) { tokens.push({ type: char, value: char }); i++; continue; }
+        throw new Error('Invalid character');
+      }
+      return tokens;
+    }
+
+    function evaluateExpression(source) {
+      const tokens = tokenize(source.replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-'));
+      if (!tokens.length) throw new Error('Empty');
+      let pos = 0;
+
+      const peek = () => tokens[pos];
+      const take = (type) => {
+        if (peek()?.type !== type) throw new Error('Expected ' + type);
+        return tokens[pos++];
+      };
+
+      function parseExpression() {
+        let value = parseTerm();
+        while (peek()?.type === '+' || peek()?.type === '-') {
+          const op = tokens[pos++].type;
+          const rhs = parseTerm();
+          value = op === '+' ? value + rhs : value - rhs;
+        }
+        return value;
+      }
+
+      function parseTerm() {
+        let value = parsePower();
+        while (peek()?.type === '*' || peek()?.type === '/' || peek()?.type === '%') {
+          const op = tokens[pos++].type;
+          const rhs = parsePower();
+          if (op === '*') value *= rhs;
+          else if (op === '/') value /= rhs;
+          else value %= rhs;
+        }
+        return value;
+      }
+
+      function parsePower() {
+        let value = parseUnary();
+        if (peek()?.type === '^') {
+          pos++;
+          value = Math.pow(value, parsePower());
+        }
+        return value;
+      }
+
+      function parseUnary() {
+        if (peek()?.type === '+') { pos++; return parseUnary(); }
+        if (peek()?.type === '-') { pos++; return -parseUnary(); }
+        return parsePostfix();
+      }
+
+      function parsePostfix() {
+        let value = parsePrimary();
+        while (peek()?.type === '!' || peek()?.type === '²' || peek()?.type === '³') {
+          const op = tokens[pos++].type;
+          if (op === '!') value = factorial(value);
+          else value = Math.pow(value, op === '²' ? 2 : 3);
+        }
+        return value;
+      }
+
+      function parsePrimary() {
+        const token = peek();
+        if (!token) throw new Error('Unexpected end');
+        if (token.type === 'number') { pos++; return token.value; }
+        if (token.type === '(') {
+          pos++;
+          const value = parseExpression();
+          take(')');
+          return value;
+        }
+        if (token.type === 'name') {
+          const name = token.value;
+          pos++;
+          take('(');
+          const arg = parseExpression();
+          take(')');
+          const fns = {
+            sin: Math.sin,
+            cos: Math.cos,
+            tan: Math.tan,
+            log: Math.log10,
+            ln: Math.log,
+            sqrt: Math.sqrt
+          };
+          if (!fns[name]) throw new Error('Unknown function');
+          return fns[name](arg);
+        }
+        throw new Error('Unexpected token');
+      }
+
+      const result = parseExpression();
+      if (pos !== tokens.length || !Number.isFinite(result)) throw new Error('Invalid expression');
+      return result;
+    }
+
+    function calculate() {
+      try {
+        let expr = display.value;
+        const result = evaluateExpression(expr);
+        display.value = String(Math.round(result * 1e12) / 1e12);
+      } catch (e) {
+        display.value = 'Error';
+      }
+      resetOnNext = true;
+    }
+
+    window.addEventListener('keydown', (event) => {
+      if (/^[0-9.]$/.test(event.key)) { appendValue(event.key); event.preventDefault(); return; }
+      if (['+', '-', '*', '/', '^', '%', '(', ')'].includes(event.key)) { appendValue(event.key); event.preventDefault(); return; }
+      if (event.key === 'Enter' || event.key === '=') { calculate(); event.preventDefault(); return; }
+      if (event.key === 'Escape') { clearDisplay(); event.preventDefault(); return; }
+      if (event.key === 'Backspace') { backspace(); event.preventDefault(); }
+    });
+
+    updateMemoryIndicator();
+  </script>
+</body>
+</html>
