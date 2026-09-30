@@ -1,0 +1,2124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Colton’s Knockoff Clash Royale</title>
+<style>
+:root{
+  --bg:#0a0a0a;
+  --panel:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+  --muted:#9aa3ac;
+  --accent:#2f9bff;
+  --elixir:#ffd54f;
+  --glass-border: rgba(255,255,255,0.04);
+  --btn-bg: linear-gradient(180deg,#0f1114,#0b0d10);
+  --ui-glow: rgba(47,155,255,0.06);
+}
+/* base */
+html,body{height:100%;margin:0;background:var(--bg);color:#eaf0f6;font-family:Inter,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;-webkit-font-smoothing:antialiased}
+#container{position:fixed;inset:0}
+canvas{display:block;position:absolute;background:linear-gradient(180deg,#0e1012,#0b0c0d)}
+/* UI: nicer textures - subtle noise + glass */
+#topBar{position:absolute;top:8px;left:8px;right:8px;display:flex;gap:10px;align-items:center;justify-content:center;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.03));padding:10px;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,0.6);z-index:40;flex-wrap:wrap;backdrop-filter: blur(6px);border:1px solid var(--glass-border);background-image: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02)), repeating-linear-gradient(45deg, rgba(255,255,255,0.01) 0px, rgba(255,255,255,0.01) 1px, transparent 1px, transparent 6px); }
+#ui{position:absolute;bottom:8px;left:8px;right:8px;display:flex;gap:10px;align-items:center;justify-content:space-between;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.03));padding:10px;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,0.6);z-index:40;flex-wrap:nowrap;backdrop-filter: blur(6px);border:1px solid var(--glass-border);background-image: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.02)), repeating-linear-gradient(90deg, rgba(255,255,255,0.01) 0px, rgba(255,255,255,0.01) 1px, transparent 1px, transparent 6px); }
+#cardButtons{display:flex;flex-direction:row;gap:8px;align-items:center;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:4px 2px;min-height:56px;flex:1 1 auto;scrollbar-width:thin}
+#cardButtons::-webkit-scrollbar{height:8px}
+#cardButtons::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.06);border-radius:8px}
+#spellButtons{display:flex;flex-direction:column;gap:8px;align-items:center;padding:4px 2px;min-height:56px;flex:0 0 auto}
+
+/* buttons largely unchanged shape; pause/reset/delete are compact */
+.btn{background:var(--btn-bg);color:#eaf0f6;padding:10px 12px;border-radius:12px;cursor:pointer;font-size:14px;display:inline-flex;align-items:center;gap:8px;width:140px;box-sizing:border-box;justify-content:space-between;border:2px solid rgba(255,255,255,0.03);transition: transform .08s ease, opacity .12s ease, box-shadow .12s ease;box-shadow:0 6px 18px rgba(0,0,0,0.5);flex:0 0 auto;touch-action: manipulation;position:relative;overflow:visible}
+.btn:active{transform: translateY(0)}
+.btn.disabled{opacity:.45;cursor:not-allowed;transform:none;filter:grayscale(.6) brightness(.9)}
+.cardLabel{display:flex;flex-direction:column;align-items:center;gap:4px;overflow:visible;white-space:normal;text-overflow:unset;justify-content:center}
+.cardIcon{display:inline-block;width:22px;height:22px;border-radius:50%;vertical-align:middle;margin:0;flex-shrink:0;box-shadow:0 0 0 3px rgba(255,255,255,0.02) inset}
+.cardName{font-weight:600;font-size:13px;color:#eaf0f6;overflow-wrap:anywhere;word-break:break-word;white-space:normal;text-overflow:unset;text-align:center;line-height:1.05;display:block;padding:0 2px;max-height:3.0em}
+.cost{font-weight:700;color:var(--elixir);font-size:13px;margin-left:8px;white-space:nowrap}
+.selected{box-shadow:0 14px 40px rgba(47,155,255,0.14);border:2px solid rgba(47,155,255,0.28) !important}
+.status{font-size:13px;color:var(--muted);margin:0 8px}
+.elixirBar{width:160px;height:14px;background:linear-gradient(90deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:8px;overflow:hidden;border:1px solid rgba(255,255,255,0.03);box-shadow: inset 0 2px 6px rgba(0,0,0,0.6)}
+.elixirFill{height:100%;background:linear-gradient(90deg,#5346E8,#BC5EEB);width:0%}
+#topLeft{position:absolute;left:12px;top:12px;color:var(--muted);font-size:13px;pointer-events:none}
+#topRight{position:absolute;right:12px;top:12px;color:var(--muted);font-size:16px;font-weight:600;pointer-events:none}
+.small{font-size:12px;color:var(--muted)}
+footer{position:absolute;left:12px;bottom:70px;color:rgba(200,200,200,0.04);font-size:11px;pointer-events:none}
+button.btn{-webkit-tap-highlight-color: transparent}
+
+/* cooldown overlay */
+.btn .coolOverlay{position:absolute;left:0;top:0;right:0;bottom:0;border-radius:12px;pointer-events:none;display:flex;align-items:flex-end;justify-content:center;overflow:hidden;opacity:0;transition:opacity .12s ease}
+.btn .coolOverlay .coolFill{width:100%;height:0%;background:linear-gradient(180deg,rgba(0,0,0,0.45),rgba(20,20,20,0.65));mix-blend-mode:multiply;transform-origin:bottom;transition:height .08s linear}
+.btn .coolOverlay .coolText{position:absolute;left:0;right:0;bottom:6px;text-align:center;font-weight:700;font-size:12px;color:rgba(255,255,255,0.9);text-shadow:0 1px 0 rgba(0,0,0,0.6)}
+
+/* Pause/Reset/Delete stacked and smaller */
+#controlsColumn{display:flex;flex-direction:column;gap:6px;align-items:center}
+#pauseBtn, #resetBtn, #deleteBtn { width:84px !important; padding:6px 8px !important; font-size:12px !important; height:auto !important; }
+
+/* Spell buttons compact (removed icon, less vertical padding) */
+.btn.spellCompact{ padding:6px 10px; height:auto; display:flex; align-items:center; justify-content:center; width:130px; }
+.btn.spellCompact .cardLabel{flex-direction:row; gap:6px;}
+.btn.spellCompact .cardName{font-size:13px}
+
+/* delete mode highlight */
+.btn.deleteActive{ box-shadow:0 18px 60px rgba(255,80,80,0.16); border:2px solid rgba(255,100,100,0.28) !important; }
+
+/* small visual helper for deletion cursor */
+.canvas-delete-cursor { cursor:crosshair !important; }
+</style>
+</head>
+<body>
+<div id="container">
+  <div id="topBar" aria-hidden="false">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div class="elixirBar" title="Player Elixir"><div id="elixirFillP" class="elixirFill"></div></div>
+      <div class="status" id="elixirTextP">P: 0.0</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div class="elixirBar" title="Enemy Elixir"><div id="elixirFillE" class="elixirFill"></div></div>
+      <div class="status" id="elixirTextE">E: 0.0</div>
+    </div>
+    <div style="margin-left:10px;color:var(--muted);font-size:13px">Touch to deploy. Space still pauses (kept for convenience).</div>
+  </div>
+
+  <canvas id="game"></canvas>
+
+  <div id="ui" aria-hidden="false">
+    <div id="cardButtons" role="group" aria-label="Unit Buttons"></div>
+    <div id="spellButtons" role="group" aria-label="Spell Buttons"></div>
+    <div id="controlsColumn">
+      <button id="pauseBtn" class="btn">Pause</button>
+      <button id="resetBtn" class="btn">Reset</button>
+      <button id="deleteBtn" class="btn">Delete</button>
+    </div>
+  </div>
+
+  <div id="topLeft" class="small">Colton’s Knockoff Clash Royale</div>
+  <div id="topRight" class="small"></div>
+  <footer>Buildings are rectangles; units are colored circles with blue/red outlines and tiny labels.</footer>
+</div>
+
+<script>
+/* ---------- CONFIG & DATA ---------- */
+const ART_SCALE = 1.4; // your +40% art scale (applied before playfield scaling)
+const BASE_W = 1400, BASE_H = 900;
+let globalScale = 1, prevScale = 1;
+// near top where CONFIG is defined:
+const ENEMY_SPAWN_BASE = 2500; // ms
+const ENEMY_SPAWN_JITTER = 2500; // ms
+
+const canvas = document.getElementById('game'), ctx = canvas.getContext('2d',{alpha:false});
+const topBar = document.getElementById('topBar'), bottomUI = document.getElementById('ui'), cardButtons=document.getElementById('cardButtons'), spellButtons=document.getElementById('spellButtons');
+
+let W=0, H=0;
+
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)), now=()=>performance.now()/1000;
+
+const CONFIG={maxElixir:10,elixirGainPerSec:1,spawnPad:100,towerBaseHP:2750,dtCap:0.05,cardCooldown:1};
+const UNIT_HP_MULT=1.5, UNIT_SPD_MULT=0.7, TOWER_SPELL_DMG_MULT=0.01;
+
+/* ---------- ALL UNIT / CARD DEFINITIONS (single DATA object) ---------- */
+const DATA = {
+  // basic troops
+  knight:{hp:320,dmg:130,atkSpd:1.8,spd:70,range:25,cost:3,color:'#9aa3ac',size:14},
+  archer:{hp:150,dmg:60,atkSpd:1.6,spd:88,range:130,cost:5,color:'#8fe28f',size:9,projectile:true, spawnCount:2},
+  giant:{hp:2500,dmg:350,atkSpd:1,spd:39,range:40,cost:6,color:'#ff9a3c',size:20,giant:true},
+  wizard:{hp:220,dmg:120,atkSpd:1.1,spd:58,range:100,cost:6,color:'#c88aff',size:12,splash:true,projectile:true},
+  healer:{hp:300,dmg:0,atkSpd:1.2,spd:130,range:120,cost:8,color:'#ff91c8',size:13,heal:true},
+  valkyrie:{hp:480,dmg:60,atkSpd:1.1,spd:64,range:30,cost:4,color:'#f3b562',size:15,spin:true},
+  goblinHut:{hp:300,hut:true,spawnInterval:0.925,detectionRadius:170,cost:5,color:'#264a2a',size:18,pumpLike:true},
+  minipekka:{hp:360,dmg:280,atkSpd:0.6,spd:70,range:25,cost:4,color:'#2b7ce6',size:11,singleTarget:true},
+  megaknight:{hp:1600,dmg:0,mdmg:500,atkSpd:1,spd:50,range:150,cost:10,color:'#4b2fb8',size:22,mega:true,giant:true},
+  goblins:{cost:4},
+  goblin:{hp:70,dmg:80,atkSpd:0.9,spd:120,range:20,cost:0,color:'#2f8f3f',size:6.5},
+  elixirPump:{hp:250,pump:true,pumpRate:0.18,cost:8,color:'#213a66',size:16},
+
+  // turret / building-like crossbow
+  crossbow: {
+    hp: 520,
+    dmg: 170,
+    atkSpd: 1.0,
+    spd: 0,
+    range: 180,
+    cost: 6,
+    color: '#7a4f2b',
+    size: 21,
+    turret: true,
+    projectile: true,
+    knockback: 60
+  },
+
+  // spirit band card & spirits
+  spiritBand: {
+    cost: 7,
+    band: true,
+    spawnCount: 4,
+    spirits: ['spirit_fire','spirit_ice','spirit_zap','spirit_boom'],
+    size: 10,
+    color: '#f0f0f0'
+  },
+  spirit_fire: { hp: 110, dmg: 15, atkSpd: 2.4, spd: 140, range: 48, cost: 0, color: '#ff6b3a', size: 7, spirit:true, projectile:false },
+  spirit_ice:  { hp: 115, dmg: 22, atkSpd: 2.2, spd: 140, range: 70, cost: 0, color: '#9fe0ff', size: 7, spirit:true, projectile:false },
+  spirit_zap:  { hp: 105, dmg: 24, atkSpd: 4, spd: 170, range: 80, cost: 0, color: '#f6f8a5', size: 6, spirit:true, projectile:false },
+  spirit_boom: { hp: 120, dmg: 150, atkSpd: 1.0, spd: 130, range: 30, cost: 0, color: '#ffb36b', size: 8, spirit:true, projectile:false, splash:true },
+
+  // furnace: mobile troop that spawns furnace_spirit every 7s when enemies are nearby (mobile goblin-hut)
+  furnace: {
+    hp: 700,
+    dmg: 140,
+    atkSpd: 0.9,
+    spd: 56,
+    range: 90,
+    cost: 9,
+    color: '#c84a1f',
+    size: 18,
+    furnace: true,
+    spawnInterval: 3,
+    spawnDetectionRadius: 210,
+    // furnace does light melee, but primary role is spawning furnace_spirits
+  },
+  // bespoke furnace spirit (splash fire like wizard + burn logic like spirit_fire)
+  furnace_spirit: {
+    hp: 120,
+    dmg: 70,
+    atkSpd: 1.1,
+    spd: 160,
+    range: 84,
+    cost: 0,
+    color: '#ff8f4a',
+    size: 8.5,
+    spirit:true,
+    projectile:false,
+    splash:true,            // splash damage like wizard
+    burnMultiplier: 2.0     // used to compute burn DPS similarly to spirit_fire
+  },
+
+  // GOLEM & GOLEMITES
+  golem: {
+    hp: 3200,
+    dmg: 400,
+    atkSpd: 0.6,
+    spd: 30,
+    range: 98,
+    cost: 8,
+    color: '#6e6b6b',
+    size: 34,
+    golem: true
+  },
+  golemite: {
+    hp: 400,
+    dmg: 1, // explosion handles damage
+    explosionDamage: 600,
+    explosionRadius: 150,
+    atkSpd: 1,
+    spd: 70,
+    range: 1,
+    cost: 0,
+    color: '#9b6b4b',
+    size: 7,
+    golemitelike: true,
+    armDelay: 0 // seconds before "armed" state
+  },
+
+  // Replicator
+  replicator: {
+    hp: 180,
+    dmg: 0,
+    atkSpd: 1,
+    spd: 70,
+    range: 300,
+    cost: 10,
+    color: '#a8d0ff',
+    size: 18,
+    cloneInterval: 6, //seconds
+    cloneMultiplier: { hp: 0.75, dmg: 0.75, spd: 0.75, size: 0.8 },
+    replicator: true
+  }
+};
+
+/* clone multipliers default (easy to tweak globally if you want)
+   NOTE: Individual replicators in DATA can override via cloneMultiplier.
+*/
+const REPLICA_MULT = { hp: 0.75, dmg: 0.75, spd: 0.75, size: 0.75 };
+
+/* ---------- HELPER: spawn multiple units for cards (archer double, spirit band, etc.) ---------- */
+function spawnCardUnits(x, y, side, cardType) {
+  const def = DATA[cardType] || DATA['goblin'];
+  // BAND: explicit list of different unit types (spiritBand)
+  if (def.band && Array.isArray(def.spirits)) {
+    const offsets = [{x:-12,y:-8},{x:12,y:-8},{x:-12,y:8},{x:12,y:8}];
+    for (let i = 0; i < def.spirits.length; i++) {
+      const unitName = def.spirits[i];
+      const offs = offsets[i % offsets.length];
+      const gx = clamp(x + offs.x + (Math.random() - 0.5) * 6 * globalScale, 20 * globalScale, W - 20 * globalScale);
+      const gy = clamp(y + offs.y + (Math.random() - 0.5) * 6 * globalScale, 20 * globalScale, H - 20 * globalScale);
+      let pos = (typeof findSpawnPosition === 'function') ? findSpawnPosition(gx, gy, side, 8 * globalScale) : {x:gx, y:gy};
+      if (pos) units.push(new Unit(pos.x, pos.y, side, unitName));
+    }
+    return;
+  }
+
+  // DEFAULT: spawn multiple copies of the same unit (archer spawnCount:2, goblins handled elsewhere)
+  const count = def.spawnCount || 1;
+  const spread = 12 * globalScale;
+  for (let i = 0; i < count; i++) {
+    const ang = (i / Math.max(1, count)) * Math.PI * 2;
+    const gx = clamp(x + Math.cos(ang) * spread + (Math.random() - 0.5) * 6 * globalScale, 20 * globalScale, W - 20 * globalScale);
+    const gy = clamp(y + Math.sin(ang) * spread + (Math.random() - 0.5) * 6 * globalScale, 20 * globalScale, H - 20 * globalScale);
+    let pos = (typeof findSpawnPosition === 'function') ? findSpawnPosition(gx, gy, side, 8 * globalScale) : {x:gx, y:gy};
+    if (pos) {
+      let unitType = cardType;
+      if (cardType === 'goblins') unitType = 'goblin';
+      units.push(new Unit(pos.x, pos.y, side, unitType));
+    }
+  }
+}
+
+/* ---------- SPELLS ---------- */
+const SPELLS={
+  log:{cost:6,color:'#c48b3f',heightFrac:1/3,bodyWidth:25,damage:250,knockback:3000,speed:420,name:'Log'},
+  fireball:{cost:4,color:'#ff6b3a',radius:48,damage:550,duration:0.8,name:'Fireball'},
+  arrows:{cost:3,color:'#82d2ff',radius:110,damage:200,duration:0.5,name:'Arrows'}
+};
+
+/* game state */
+let units=[], towers=[], selectedCard='knight', selectedSpell=null, elixirP=5, elixirE=5, running=true, spellsActive=[];
+let particles=[]; let explosions=[]; // visual explosion rings
+let projectiles = []; // arrow projectiles
+let pulses = []; // radiating pulses (wizard/valkyrie/healer)
+let swings = []; // swing arcs for melee units
+const lastUsedCard = {}; const lastUsedSpell = {};
+let deleteMode = false;
+
+/* ---------- UTILS ---------- */
+function vecLen(x,y){return Math.hypot(x,y)}
+function normalize(x,y){const l=vecLen(x,y);return l>0?[x/l,y/l]:[0,0]}
+function limit(x,y,max){const l=vecLen(x,y);if(l>max){const f=max/l;return[x*f,y*f]}return[x,y]}
+function isRanged(def){return!!def.splash||((!!def.range)&&def.range>40)||def.heal}
+
+/* Building rect helpers */
+function rectFromBuilding(u){
+  const w = (u.size||16)*2;
+  const h = (u.size||16)*1.6;
+  return {left: u.x - w/2, right: u.x + w/2, top: u.y - h/2, bottom: u.y + h/2, w, h};
+}
+function circleIntersectsRect(cx, cy, radius, r){
+  const nearestX = clamp(cx, r.left, r.right);
+  const nearestY = clamp(cy, r.top, r.bottom);
+  const dx = cx - nearestX, dy = cy - nearestY;
+  return (dx*dx + dy*dy) <= (radius*radius);
+}
+function rectsOverlap(a,b){
+  return !(a.left > b.right || a.right < b.left || a.top > b.bottom || a.bottom < b.top);
+}
+function pointNearRect(px,py,r,margin){
+  return px >= (r.left - margin) && px <= (r.right + margin) && py >= (r.top - margin) && py <= (r.bottom + margin);
+}
+
+/* ---------- PARTICLES & EFFECTS ---------- */
+class Particle {
+  constructor(x,y,color, size=6, vx= (Math.random()-0.5)*40, vy=-40 + Math.random()*-20, life=0.9){
+    this.x=x; this.y=y; this.vx=vx; this.vy=vy; this.color=color; this.size=size; this.life=life; this.age=0; this.gravity=220*globalScale;
+  }
+  update(dt){ this.age += dt; this.vy += this.gravity*dt; this.x += this.vx*dt; this.y += this.vy*dt; }
+  draw(ctx){ const t = clamp(1 - (this.age/this.life), 0, 1); ctx.globalAlpha = t; ctx.fillStyle = this.color; const s = Math.max(1, this.size * t); ctx.fillRect(this.x - s/2, this.y - s/2, s, s); ctx.globalAlpha = 1; }
+  isDone(){ return this.age >= this.life; }
+}
+function spawnHitParticles(x,y,color,count=6){
+  for(let i=0;i<count;i++){
+    const s = 3 + Math.random()*6;
+    particles.push(new Particle(x + (Math.random()-0.5)*8, y + (Math.random()-0.5)*8, color, s, (Math.random()-0.5)*140, -60 + Math.random()*-40, 0.7 + Math.random()*0.7));
+  }
+}
+function spawnExplosion(x,y,color,power=1){
+  explosions.push({x,y,r:0,maxR:60*power*globalScale,life:0.8,age:0,color});
+  const count = 18 + Math.floor(18*power);
+  for(let i=0;i<count;i++){
+    particles.push(new Particle(x + (Math.random()-0.5)*30, y + (Math.random()-0.5)*30, color, 6 + Math.random()*10, (Math.random()-0.5)*500*power, -80 + Math.random()*-200, 0.9 + Math.random()*0.6));
+  }
+  triggerScreenShake(0.45 * power, 8*power);
+}
+
+/* ---------- PULSES & SWINGS ---------- */
+/* Pulse alpha set to ~0.20 (80% transparent) per request; pulses radiate outward */
+class Pulse {
+  constructor(x,y,r,color,duration=0.45,alpha=0.20){
+    this.x=x; this.y=y; this.r=r; this.color=color; this.duration=duration; this.alpha=alpha; this.age=0;
+  }
+  update(dt){ this.age += dt; }
+  draw(ctx){
+    const t = clamp(this.age / this.duration, 0, 1); // t goes 0 -> 1
+    const currentR = this.r * (0.4 + 1.6 * t); // grows from ~40% to 200% of r
+    const alpha = this.alpha * (1 - t);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, currentR, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+  isDone(){ return this.age >= this.duration; }
+}
+class Swing {
+  constructor(x,y,r,angle,color,duration=0.35,alpha=0.45){
+    this.x=x; this.y=y; this.r=r; this.angle=angle; this.color=color; this.duration=duration; this.age=0; this.alpha=alpha;
+  }
+  update(dt){ this.age += dt; }
+  draw(ctx){
+    const p = clamp(1 - (this.age / this.duration), 0, 1);
+    ctx.save();
+    ctx.globalAlpha = this.alpha * p;
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = Math.max(2, Math.min(12, this.r*0.06));
+    ctx.beginPath();
+    const a1 = this.angle - 0.9 * p, a2 = this.angle + 0.9 * p; // arc width reduces as it fades
+    ctx.arc(this.x, this.y, this.r, a1, a2);
+    ctx.stroke();
+    ctx.restore();
+  }
+  isDone(){ return this.age >= this.duration; }
+}
+
+function spawnPulse(x,y,r,color){
+  pulses.push(new Pulse(x,y,Math.max(6, r), color, 0.45, 0.20));
+}
+function spawnSwing(x,y,r,angle,color){
+  swings.push(new Swing(x,y,Math.max(6, r), angle, color, 0.35, 0.45));
+}
+
+/* ---------- SCREEN SHAKE ---------- */
+let shakeTime=0, shakeIntensity=0;
+function triggerScreenShake(duration, intensity){
+  shakeTime = Math.max(shakeTime, duration || 0.4);
+  shakeIntensity = Math.max(shakeIntensity, intensity || 6);
+}
+
+/* ---------- DRAW HELPERS ---------- */
+function shadeColor(col, amt){
+  try{
+    const c = col.replace('#','');
+    const num = parseInt(c,16);
+    let r = (num>>16)+amt; let g=(num>>8 & 0x00FF)+amt; let b=(num & 0x0000FF)+amt;
+    r = clamp(r,0,255); g=clamp(g,0,255); b=clamp(b,0,255);
+    return '#'+( (1<<24) + (r<<16) + (g<<8) + b ).toString(16).slice(1);
+  }catch(e){ return col; }
+}
+function drawUnitSprite(ctx,x,y,size,color,side){
+  const g = ctx.createRadialGradient(x - size*0.35, y - size*0.45, size*0.1, x, y, size*1.1);
+  g.addColorStop(0, '#ffffff'); g.addColorStop(0.05, color); g.addColorStop(1, shadeColor(color, -12));
+  ctx.beginPath(); ctx.fillStyle = g; ctx.arc(x,y,size,0,Math.PI*2); ctx.fill();
+  ctx.lineWidth = Math.max(1, size*0.08); ctx.strokeStyle = (side==='player') ? 'rgba(80,160,255,0.9)' : 'rgba(255,90,90,0.9)'; ctx.stroke();
+  ctx.beginPath(); ctx.fillStyle='rgba(255,255,255,0.08)'; ctx.ellipse(x - size*0.25, y - size*0.25, size*0.35, size*0.2, 0, 0, Math.PI*2); ctx.fill();
+}
+function drawLabel(ctx,text,x,y,size){ const label=String(text).replace(/([A-Z])/g,' $1').trim(); const fontSize=Math.max(8,Math.min(12,size)); ctx.font=`bold ${fontSize}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillText(label,x+1,y+1); ctx.fillStyle='rgba(255,255,255,0.95)'; ctx.fillText(label,x,y) }
+function drawBar(ctx,x,y,w,h,t){ ctx.fillStyle='#111'; ctx.fillRect(x,y,w,h); ctx.fillStyle='#1fbf7a'; ctx.fillRect(x,y,clamp(t,0,1)*w,h); ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.strokeRect(x,y,w,h) }
+
+/* ---------- PROJECTILE CLASS (arrows) ---------- */
+class ArrowProjectile{
+  constructor(x,y,target,damage,side,source){
+    this.x = x; this.y = y; this.target = target; this.damage = damage; this.side = side; this.source = source; // source can be Unit or Tower
+    this.speed = 700 * globalScale;
+    this.alive = true;
+    this.radius = 6 * globalScale;
+    this.color = '#d8d8d8';
+    this.created = now();
+  }
+  update(dt){
+    if(!this.alive) return;
+    let tx = this.target && (typeof this.target.x === 'number') ? this.target.x : null;
+    let ty = this.target && (typeof this.target.y === 'number') ? this.target.y : null;
+    if(tx===null || ty===null){
+      this.alive = false;
+      return;
+    }
+    const dx = tx - this.x, dy = ty - this.y;
+    const d = Math.hypot(dx,dy);
+    if(d < Math.max(6*globalScale, this.speed*dt)){
+      this.onHit(this.target);
+      this.alive = false;
+      return;
+    }
+    const nx = dx / d, ny = dy / d;
+    this.x += nx * this.speed * dt;
+    this.y += ny * this.speed * dt;
+    if(now()-this.created > 6) this.alive = false;
+  }
+  onHit(target){
+    if(!target) return;
+    if(target instanceof Tower){
+      target.hp -= this.damage;
+    } else {
+      // do not apply knockback to turret/buildings (turret flag), only to normal units
+      target.hp -= this.damage;
+      const kb = (this.source && this.source.knockback) ? this.source.knockback : 0;
+      if(kb && !target.hut && !target.pump && !target.turret && target.type!=='healer'){
+        const dirX = (target.x - this.x);
+        const dirY = (target.y - this.y);
+        const l = Math.hypot(dirX,dirY) || 1;
+        target.vx += (dirX / l) * (kb * 0.7);
+        target.vy += (dirY / l) * (kb * 0.5);
+      }
+    }
+    spawnHitParticles(target.x || this.x, target.y || this.y, target.color || '#fff', 6);
+  }
+  draw(ctx){
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    let ang = 0;
+    if(this.target && typeof this.target.x === 'number'){
+      ang = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+    }
+    ctx.rotate(ang);
+    ctx.fillStyle = this.color;
+    ctx.fillRect(-10*globalScale, -1*globalScale, 18*globalScale, 2*globalScale);
+    ctx.beginPath();
+    ctx.moveTo(8*globalScale, 0);
+    ctx.lineTo(12*globalScale, -4*globalScale);
+    ctx.lineTo(12*globalScale, 4*globalScale);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+/* ---------- CLASSES (Towers, Units, Spells) ---------- */
+class Tower{
+  constructor(x,y,side){
+    this.x=x; this.y=y; this.side=side;
+    this.hp=CONFIG.towerBaseHP*UNIT_HP_MULT; this.maxHp=this.hp;
+    this.range=130*ART_SCALE*globalScale; this.attackCooldown=1; this.attackTimer=0; this.dmg=160; this.size=30*ART_SCALE*globalScale;
+    this._destroyed=false;
+    // NOTE: towers are persistent; lifetime expiry is NOT applied to towers anymore per request.
+  }
+  draw(ctx){
+    const w=this.size,h=this.size*1.6;
+    const g = ctx.createLinearGradient(this.x-w/2, this.y-h/2, this.x+w/2, this.y+h/2);
+    g.addColorStop(0, this.side==='player' ? '#1f6fb3' : '#b33f3f'); g.addColorStop(1, this.side==='player' ? '#145a8f' : '#8a2b2b');
+    ctx.fillStyle=g; ctx.fillRect(this.x-w/2,this.y-h/2,w,h);
+    ctx.lineWidth=2;ctx.strokeStyle=(this.side==='player')?'rgba(80,160,255,0.95)':'rgba(255,90,90,0.95)';ctx.strokeRect(this.x-w/2,this.y-h/2,w,h);
+    drawLabel(ctx,'tower',this.x,this.y,Math.max(10,Math.round(this.size/2)));
+    drawBar(ctx,this.x-this.size,this.y-this.size-12,this.size*2,6,clamp(this.hp/this.maxHp,0,1));
+  }
+  update(dt,units){
+    if(this.hp<=0 && !this._destroyed){
+      this._destroyed=true;
+      spawnExplosion(this.x,this.y,'#ffb36b', 2.2);
+    }
+    if(this.hp<=0) return;
+    this.attackTimer-=dt; if(this.attackTimer>0) return;
+    const cand=units.filter(u=>u.side!==this.side&&u.alive&&Math.abs(u.y-this.y)<(120*globalScale));
+    if(!cand.length) return; cand.sort((a,b)=>Math.hypot(a.x-this.x,a.y-this.y)-Math.hypot(b.x-this.x,b.y-this.y));
+    const t=cand[0],d=Math.hypot(t.x-this.x,t.y<this.y);
+    if(d<=this.range+(t.size||0)){
+      this.attackTimer=this.attackCooldown;
+      const damage = this.dmg * this.attackCooldown;
+      const proj = new ArrowProjectile(this.x, this.y, t, damage, this.side, this);
+      projectiles.push(proj);
+      spawnHitParticles(this.x + (Math.random()-0.5)*6, this.y + (Math.random()-0.5)*6, '#d8d8d8', 2);
+    }
+  }
+}
+
+class Unit{
+  constructor(x,y,side,type){
+    this.type=type; this.side=side; const def=DATA[type]||DATA['goblin']; this.def=def;
+    this.hp=(def.hp??100)*UNIT_HP_MULT; this.maxHp=this.hp; this.dmg=def.dmg??0; this.mdmg=def.mdmg??0; this.atkSpd=def.atkSpd??1;
+    this.atkCooldown=1/(this.atkSpd||1); this.atkTimer=0; this.pump=!!def.pump; this.hut=!!def.hut;
+    this.turret = !!def.turret;
+    const baseSpd=(def.spd??40);
+    this.spd=(baseSpd*(this.pump||this.hut?1.0:UNIT_SPD_MULT))*ART_SCALE*globalScale;
+    this.range=(def.range??24)*ART_SCALE*globalScale;
+    this.size=(def.size??10)*ART_SCALE*globalScale;
+    this.color=def.color??(this.side==='player'?'#6ca0ff':'#ff6c6c');
+    this.x=x; this.y=y; this.pumpRate=def.pumpRate||0; this.splash=!!def.splash; this.heal=!!def.heal; this.spin=!!def.spin;
+    this.pumpLike=!!def.pumpLike; this.giant=!!def.giant; this.singleTarget=!!def.singleTarget; this.mega=!!def.mega;
+    this.projectile = !!def.projectile; // fires arrows
+    this.knockback = def.knockback || 0;
+    this.jitter=(Math.random()-0.5)*6*globalScale; this.vx=0; this.vy=0; this.immobile=this.pump||this.hut||this.turret; this.megaState='idle';
+    this.megaCooldown=0; this._dashOrigin={x:this.x,y:this.y}; this.hutSpawnTimer=0; this.alive=true; this.desiredVx=0; this.desiredVy=0;
+    this._dashTimer = 0; this._retreatStart = 0; this._dashTarget = null;
+    this.spawnTimer = 0.36; this._dying = false; this._dyingTimer = 0; this.deathDuration = 0.9;
+    if(this.hut) this.hutSpawnTimer=(def.spawnInterval||DATA.goblinHut.spawnInterval)*1.0;
+    this._aimAngle = 0;
+
+    // Status effects (for spirits)
+    this.slowTimer = 0;      // seconds remaining of slow
+    this.slowFactor = 1;     // multiplier to speed (1 = normal)
+    this.burnTimer = 0;      // seconds remaining of burn
+    this.burnDPS = 0;        // damage per second while burning
+
+    // Replicator-specific
+    if(def.replicator){
+      this.cloneTimer = def.cloneInterval || REPLICA_MULT.cloneInterval || 7.0;
+      this.cloneMultiplier = def.cloneMultiplier || REPLICA_MULT;
+    }
+
+    // Golemite arming
+    if(def.golemitelike){
+      this.armTimer = def.armDelay || 0.25;
+      this.armed = false;
+    }
+
+    // Furnace spawn timer
+    if(def.furnace){
+      this.furnaceSpawnTimer = def.spawnInterval || 7.0;
+      this.furnaceDetectionRadius = def.spawnDetectionRadius || 160;
+    }
+
+    // For golemites/golem flags nothing special here beyond def markers
+    this.isClone = false;
+    this.cloneOf = null;
+
+    // lifetime tracking for units/buildings & special units
+    this.created = now();
+  }
+
+  draw(ctx){
+    if(this.spawnTimer>0){
+      const t = clamp(1 - (this.spawnTimer / 0.36), 0, 1);
+      ctx.save(); ctx.globalAlpha = 0.8 + 0.2*t;
+      const scale = 0.35 + 0.65*t;
+      ctx.translate(this.x, this.y);
+      ctx.scale(scale, scale);
+      if(this.hut||this.pump||this.turret){
+        const r = rectFromBuilding(this);
+        ctx.fillStyle = this.color; ctx.fillRect(r.left, r.top, r.w, r.h);
+        ctx.lineWidth=2;ctx.strokeStyle=(this.side==='player')?'rgba(80,160,255,0.95)':'rgba(255,90,90,0.95)'; ctx.strokeRect(r.left, r.top, r.w, r.h);
+      } else {
+        drawUnitSprite(ctx, 0, 0, this.size, this.color, this.side);
+      }
+      ctx.restore();
+      if(!this.hut && !this.pump && !this.turret) drawLabel(ctx,this.type,this.x,this.y,Math.max(8,Math.round(this.size/2)));
+      drawBar(ctx,this.x-this.size,this.y-this.size-12,this.size*2,4,clamp(this.hp/this.maxHp,0,1));
+      return;
+    }
+
+    if(this._dying){
+      const t = clamp(this._dyingTimer/this.deathDuration, 0, 1);
+      ctx.save(); ctx.globalAlpha = 1 - t;
+      if(this.hut||this.pump||this.turret){
+        const r = rectFromBuilding(this);
+        ctx.fillStyle = this.color; ctx.fillRect(r.left, r.top, r.w*(1-t*0.6), r.h*(1-t*0.6));
+      } else {
+        ctx.translate(this.x, this.y);
+        ctx.scale(1 - 0.8*t, 1 - 0.8*t);
+        drawUnitSprite(ctx, 0, 0, this.size, this.color, this.side);
+      }
+      ctx.restore();
+      return;
+    }
+
+    if(this.hut||this.pump||this.turret){
+      const r = rectFromBuilding(this);
+      const g = ctx.createLinearGradient(r.left,r.top,r.right,r.bottom);
+      g.addColorStop(0, shadeColor(this.color, 6)); g.addColorStop(1, shadeColor(this.color, -8));
+      ctx.fillStyle = g; ctx.fillRect(r.left, r.top, r.w, r.h);
+      ctx.lineWidth=2;ctx.strokeStyle=(this.side==='player')?'rgba(80,160,255,0.95)':'rgba(255,90,90,0.95)'; ctx.strokeRect(r.left, r.top, r.w, r.h);
+      drawLabel(ctx,this.type,this.x,this.y,Math.max(9,Math.round(this.size/2)));
+      drawBar(ctx,this.x - r.w/2, this.y - r.h/2 - 14, r.w, 6, clamp(this.hp/this.maxHp,0,1));
+      return;
+    }
+
+    // normal unit circle
+    drawUnitSprite(ctx, this.x, this.y, this.size, this.color, this.side);
+    drawLabel(ctx,this.type,this.x,this.y,Math.max(8,Math.round(this.size/2)));
+    drawBar(ctx,this.x-this.size,this.y-this.size-10,this.size*2,4,clamp(this.hp/this.maxHp,0,1));
+    if(this.mega){ctx.fillStyle='rgba(255,255,255,0.06)';ctx.beginPath();ctx.arc(this.x,this.y+this.size+8,4,0,Math.PI*2);ctx.fill()}
+
+    // optional small burn indicator
+    if(this.burnTimer > 0){
+      ctx.save();
+      ctx.globalAlpha = clamp(this.burnTimer / 3, 0.15, 0.9);
+      ctx.beginPath();
+      ctx.arc(this.x, this.y - this.size - 6, 4, 0, Math.PI*2);
+      ctx.fillStyle = '#ff6b3a';
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+pickTarget(unitsList, towersList){
+  if (this.type === 'golem') {
+    // GOLEM: only structural enemy units (huts, pumps, turrets, pumpLike) that are alive
+    const structUnits = unitsList.filter(u => u.side !== this.side && u.alive && (u.hut || u.pump || u.turret || u.pumpLike || u.pumpLike));
+    // enemy towers/buildings (ensure they are alive if your code uses an alive flag)
+    const structTowers = towersList.filter(t => t.side !== this.side && (t.hp > 0));
+    // prefer unit-type buildings first
+    if (structUnits.length > 0) {
+      let closest = null, bestD = Infinity;
+      for (const s of structUnits) {
+        const d = Math.hypot(s.x - this.x, s.y - this.y);
+        if (d < bestD) { bestD = d; closest = s; }
+      }
+      return { target: closest, dist: bestD };
+    }
+    // if no unit-buildings, target towers
+    if (structTowers.length > 0) {
+      let closest = null, bestD = Infinity;
+      for (const t of structTowers) {
+        const d = Math.hypot(t.x - this.x, t.y - this.y);
+        if (d < bestD) { bestD = d; closest = t; bestD = d; }
+      }
+      return { target: closest, dist: bestD };
+    }
+    // nothing to smash
+    return { target: null, dist: Infinity };
+  }
+
+  if (this.type === 'giant') {
+    // only structural enemy units (huts, pumps, turrets, pumpLike) that are alive
+    const structUnits = unitsList.filter(u => u.side !== this.side && u.alive && (u.hut || u.pump || u.turret || u.pumpLike));
+    // enemy towers/buildings (ensure they are alive if your code uses an alive flag)
+    const structTowers = towersList.filter(t => t.side !== this.side && (t.alive ?? true));
+    let closest = null, bestD = Infinity;
+
+    for (const s of structUnits) {
+      const d = Math.hypot(s.x - this.x, s.y - this.y);
+      if (d < bestD) { bestD = d; closest = s; }
+    }
+
+    for (const t of structTowers) {
+      const d = Math.hypot(t.x - this.x, t.y - this.y); // FIXED: was `t.y < this.y`
+      if (d < bestD) { bestD = d; closest = t; }
+    }
+
+    return { target: closest, dist: bestD };
+  }
+
+  // non-giant behaviour (unchanged logic, but filter towers for alive)
+  const enemies = unitsList.filter(u => u.side !== this.side && u.alive);
+  const enemyTowers = towersList.filter(t => t.side !== this.side && (t.alive ?? true));
+
+  let closestUnit = null, dU = Infinity;
+  for (const e of enemies) {
+    const d = Math.hypot(e.x - this.x, e.y - this.y);
+    if (d < dU) { dU = d; closestUnit = e; }
+  }
+
+  let closestTower = null, dT = Infinity;
+  for (const t of enemyTowers) {
+    const d = Math.hypot(t.x - this.x, t.y - this.y);
+    if (d < dT) { dT = d; closestTower = t; }
+  }
+
+  if (closestUnit && closestTower) {
+    if (dU < dT * 0.9) return { target: closestUnit, dist: dU };
+    return { target: closestTower, dist: dT };
+  } else if (closestUnit) return { target: closestUnit, dist: dU };
+  else if (closestTower) return { target: closestTower, dist: dT };
+  return { target: null, dist: Infinity };
+}
+
+
+  update(dt,unitsList,towersList){
+    // if dying — increment dying timer and stop acting
+    if(this._dying){
+      this._dyingTimer += dt;
+      return;
+    }
+
+    if(this.spawnTimer>0){ this.spawnTimer = Math.max(0, this.spawnTimer - dt); return; }
+
+    // ---- status effect ticking (burn / slow) ----
+    if(this.burnTimer > 0){
+      // burnDamage applied continuously
+      const burnDamage = this.burnDPS * dt;
+      this.hp -= burnDamage;
+      this.burnTimer = Math.max(0, this.burnTimer - dt);
+      // small visual particle tick
+      if(Math.random() < 0.2) spawnHitParticles(this.x, this.y - this.size*0.6, '#ff8a3b', 1);
+    }
+    if(this.slowTimer > 0){
+      this.slowTimer = Math.max(0, this.slowTimer - dt);
+      if(this.slowTimer === 0) this.slowFactor = 1;
+    }
+
+    // BUILDING (hut) behavior
+    if(this.hut){
+      // lifetime expiry for buildings (huts) - 40s max existence if not killed by damage
+      if (now() - (this.created || 0) >= 40 && this.hp > 0 && !this._dying){
+        this.hp = 0;
+      }
+
+      if(this.hp <= 0 && !this._dying){
+        this._dying = true; this._dyingTimer = 0; this.alive = false;
+        spawnExplosion(this.x,this.y,this.color,0.9);
+        return;
+      }
+      if(!this.alive) return;
+      this.hutSpawnTimer -= dt;
+      const enemiesNearby = unitsList.some(u=>u.side!==this.side&&u.alive && ((u.hut||u.pump||u.turret||u.furnace)?false:true) && Math.hypot(u.x-this.x,u.y-this.y)<= (DATA.goblinHut.detectionRadius*ART_SCALE*globalScale));
+      if(enemiesNearby && this.hutSpawnTimer<=0){ this.hutSpawnTimer=DATA.goblinHut.spawnInterval; const offs=[{x:-12,y:-8},{x:12,y:-8},{x:-12,y:8},{x:12,y:8}][Math.floor(Math.random()*4)]; const gx=clamp(this.x+offs.x+(Math.random()-0.5)*6*globalScale,20*globalScale,W-20*globalScale), gy=clamp(this.y+offs.y+(Math.random()-0.5)*6*globalScale,20*globalScale,H-20*globalScale); const pos=findSpawnPosition?findSpawnPosition(gx,gy,this.side,8*globalScale):{x:gx,y:gy}; if(pos) unitsList.push(new Unit(pos.x,pos.y,this.side,'goblin')) }
+      return;
+    }
+
+    // PUMP behavior
+    if(this.pump){
+      // lifetime expiry for pumps - 90s
+      if (now() - (this.created || 0) >= 90 && this.hp > 0 && !this._dying){
+        this.hp = 0;
+      }
+
+      if(this.hp <= 0 && !this._dying){
+        this._dying = true; this._dyingTimer = 0; this.alive = false;
+        spawnExplosion(this.x,this.y,this.color,0.9);
+        return;
+      }
+      if(!this.alive) return;
+      if(this.side==='player') elixirP=clamp(elixirP+this.pumpRate*dt,0,CONFIG.maxElixir); else elixirE=clamp(elixirE+this.pumpRate*dt,0,CONFIG.maxElixir);
+      return;
+    }
+
+    // TURRET / CROSSBOW-like building behavior
+    if(this.turret){
+      // lifetime expiry for turrets (crossbow) - 40s
+      if (now() - (this.created || 0) >= 40 && this.hp > 0 && !this._dying){
+        this.hp = 0;
+      }
+
+      if(this.hp <= 0 && !this._dying){
+        this._dying = true; this._dyingTimer = 0; this.alive = false;
+        spawnExplosion(this.x,this.y,this.color,0.9);
+        return;
+      }
+      if(!this.alive) return;
+      this.atkTimer -= dt;
+      const pick=this.pickTarget(unitsList,towersList);
+      const target = pick.target;
+      if(target){
+        this._aimAngle = Math.atan2(target.y - this.y, target.x - this.x);
+        const d = pick.dist;
+        if(d <= this.range + (target.size||0)){
+          if(this.atkTimer <= 0){
+            this.atkTimer = this.atkCooldown || (1/(this.atkSpd||1));
+            const damage = (this.dmg || (this.def&&this.def.dmg) || 0) * (this.atkCooldown || (1/(this.atkSpd||1)));
+            const proj = new ArrowProjectile(this.x, this.y, target, damage, this.side, this);
+            projectiles.push(proj);
+          }
+        }
+      }
+      return;
+    }
+
+    // FURNACE behavior (mobile hut-like)
+    if(this.def && this.def.furnace){
+
+      if(this.hp <= 0 && !this._dying){
+        this._dying = true; this._dyingTimer = 0; this.alive = false;
+        spawnExplosion(this.x,this.y,this.color,0.9);
+        return;
+      }
+      if(!this.alive) return;
+
+      // spawn furnace_spirits when enemies are in detection radius
+      this.furnaceSpawnTimer -= dt;
+      const enemiesNearby = unitsList.some(u=>u.side!==this.side && u.alive && !(u.hut||u.pump||u.turret||u.furnace) && Math.hypot(u.x - this.x, u.y - this.y) <= (this.furnaceDetectionRadius * ART_SCALE * globalScale));
+      if(enemiesNearby && this.furnaceSpawnTimer <= 0){
+        this.furnaceSpawnTimer = this.def.spawnInterval || 7.0;
+        // spawn a furnace_spirit near the furnace (one)
+        const gx = clamp(this.x + (Math.random()-0.5)*18, 20*globalScale, W-20*globalScale);
+        const gy = clamp(this.y + (Math.random()-0.5)*18, 20*globalScale, H-20*globalScale);
+        const pos = (typeof findSpawnPosition === 'function') ? findSpawnPosition(gx, gy, 6 * globalScale) : {x:gx,y:gy};
+        if(pos) {
+          const fs = new Unit(pos.x, pos.y, this.side, 'furnace_spirit');
+          fs.spawnTimer = 0.08;
+          unitsList.push(fs);
+          spawnPulse(pos.x, pos.y, 14*globalScale, '#ff8f4a');
+        }
+      }
+
+      // optional light movement (furnace is mobile so continue below to movement logic)
+    }
+
+    /* -------------------- HEALER-SPECIFIC BEHAVIOR -------------------- */
+    if (this.heal) {
+        // lifetime expiry for healers (30s)
+        if (now() - (this.created || 0) >= 30 && this.hp > 0 && !this._dying){
+          this.hp = 0;
+        }
+
+        // Injured allied UNITS only (explicitly exclude buildings and other healers).
+        const injured = unitsList.filter(u =>
+            u.side === this.side &&
+            u.alive &&
+            u.type !== 'healer' &&
+            u.hp < u.maxHp &&
+            u !== this // IMPORTANT: do NOT make the healer pathfind to itself
+        );
+
+        // Find nearest injured allied unit (if any)
+        let targetInj = null;
+        if (injured.length > 0) {
+            injured.sort((a, b) => Math.hypot(a.x - this.x, a.y - this.y) - Math.hypot(b.x - this.x, b.y - this.y));
+            targetInj = injured[0];
+        }
+
+        // If no injured units, follow the nearest allied unit (prefer non-healers; fallback to any)
+        let followTarget = null;
+        if (!targetInj) {
+            let candidates = unitsList.filter(u => u.side === this.side && u.alive && u.type !== 'healer' && u !== this);
+            if (candidates.length === 0) candidates = unitsList.filter(u => u.side === this.side && u.alive && u !== this);
+            if (candidates.length > 0) {
+                // pick the nearest allied unit to the healer (NOT the one closest to enemy towers)
+                candidates.sort((a, b) => Math.hypot(a.x - this.x, a.y - this.y) - Math.hypot(b.x - this.x, b.y - this.y));
+                followTarget = candidates[0];
+            }
+        }
+
+        // ---------- Advanced movement/pathfinding ----------
+        // account for slow effect here
+        const maxSpeed = this.spd * (this.slowFactor || 1);
+        let desiredX = 0, desiredY = 0;
+
+        // If there's a wounded allied unit, move toward it. Otherwise followTarget if present.
+        if (targetInj) {
+            const dx = targetInj.x - this.x, dy = targetInj.y - this.y;
+            const towards = normalize(dx, dy);
+            desiredX = towards[0] * maxSpeed;
+            desiredY = towards[1] * maxSpeed;
+        } else if (followTarget) {
+            const dx = followTarget.x - this.x, dy = followTarget.y - this.y;
+            const towards = normalize(dx, dy);
+            // follow from a slight offset behind so healer doesn't overlap
+            const followDist = Math.max(24 * globalScale, maxSpeed * 0.8);
+            desiredX = towards[0] * followDist;
+            desiredY = towards[1] * followDist;
+        } else {
+            // fallback idle drift
+            desiredX = (this.side === 'player') ? 10 * globalScale : -10 * globalScale;
+            desiredY = this.jitter * 0.5;
+        }
+
+        // ---------- Advanced obstacle avoidance ----------
+        // Build obstacle list (towers and units excluding self). Consider an obstacle to have .size or default 20.
+        const obstacles = [
+            ...towers.filter(t => t !== this),
+            ...unitsList.filter(u => u !== this)
+        ];
+
+        // parameters
+        const avoidBaseRadius = 60 * globalScale;     // radius at which avoidance starts
+        const avoidFalloff = 0.9;                     // how quickly avoidance weakens with distance
+        let avoidX = 0, avoidY = 0;
+
+        for (const o of obstacles) {
+            // skip dead units/buildings where appropriate
+            if (o.alive === false) continue;
+            const ox = (o.x ?? 0), oy = (o.y ?? 0);
+            const dx = this.x - ox, dy = this.y - oy;
+            const d = Math.hypot(dx, dy);
+            const size = (o.size || 20) * (o === this ? 1 : 1); // preserve existing sizing
+            const avoidRadius = avoidBaseRadius + size;
+            if (d > 0 && d < avoidRadius) {
+                // stronger repulsion when closer; squared falloff gives sharper push
+                const push = Math.pow((avoidRadius - d) / avoidRadius, 2);
+                const n = normalize(dx, dy);
+                avoidX += n[0] * push * maxSpeed * 1.6;
+                avoidY += n[1] * push * maxSpeed * 1.6;
+            }
+        }
+
+        // subtle lookahead steering: check a projected point ahead and nudge away from obstacles there
+        const lookaheadFactor = 0.25; // fraction of desired velocity to look ahead
+        const lookX = this.x + desiredX * lookaheadFactor;
+        const lookY = this.y + desiredY * lookaheadFactor;
+        for (const o of obstacles) {
+            if (o.alive === false) continue;
+            const ox = (o.x ?? 0), oy = (o.y ?? 0);
+            const dx = lookX - ox, dy = lookY - oy;
+            const d = Math.hypot(dx, dy);
+            const size = (o.size || 20);
+            const lookAvoid = 36 * globalScale + size;
+            if (d > 0 && d < lookAvoid) {
+                const push = (lookAvoid - d) / lookAvoid;
+                const n = normalize(dx, dy);
+                // push opposite to the look vector (steer around obstacles)
+                avoidX += -n[0] * push * maxSpeed * 1.2;
+                avoidY += -n[1] * push * maxSpeed * 1.2;
+            }
+        }
+
+        // ---------- Fleeing behavior when isolated ----------
+        // If there are no allied units within allySearchRadius (excluding the healer), flee from nearest enemy
+        const allySearchRadius = 150 * globalScale;
+        const nearbyAllies = unitsList.filter(u => u !== this && u.side === this.side && u.alive && Math.hypot(u.x - this.x, u.y - this.y) <= allySearchRadius);
+        const shouldFlee = nearbyAllies.length === 0;
+
+        if (shouldFlee) {
+            // find nearest enemy unit or enemy tower
+            let nearestEnemy = null, nd = Infinity;
+            for (const e of unitsList) {
+                if (e.side !== this.side && e.alive) {
+                    const d = Math.hypot(e.x - this.x, e.y - this.y);
+                    if (d < nd) { nd = d; nearestEnemy = e; }
+                }
+            }
+            for (const t of towers) {
+                if (t.side !== this.side) {
+                    const d = Math.hypot(t.x - this.x, t.y - this.y);
+                    if (d < nd) { nd = d; nearestEnemy = t; }
+                }
+            }
+            if (nearestEnemy) {
+                // only flee if enemy is within a reasonable threat distance
+                const fleeTrigger = 250 * globalScale;
+                if (nd < fleeTrigger) {
+                    const fx = this.x - nearestEnemy.x, fy = this.y - nearestEnemy.y;
+                    const fleeDir = normalize(fx, fy);
+                    // stronger flee force scaled by closeness
+                    const fleeStrength = Math.min(1, (fleeTrigger - nd) / fleeTrigger) * 1.2;
+                    desiredX = fleeDir[0] * maxSpeed * Math.max(0.9, fleeStrength);
+                    desiredY = fleeDir[1] * maxSpeed * Math.max(0.9, fleeStrength);
+                    // also bias avoidance stronger when fleeing
+                    avoidX *= 1.33;
+                    avoidY *= 1.33;
+                }
+            }
+        }
+
+        // combine desired motion and avoidance, then clamp
+        let vx = desiredX + avoidX, vy = desiredY + avoidY;
+        [vx, vy] = limit(vx, vy, maxSpeed);
+
+        // Smooth velocity changes
+        this.vx += (vx - this.vx) * clamp(dt * 6, 0, 1);
+        this.vy += (vy - this.vy) * clamp(dt * 6, 0, 1);
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+
+        // ---------- Healer heal action ----------
+        this.atkTimer -= dt;
+
+        // Recipients:
+        // - allied non-healer units in range that are injured
+        // - allied buildings (towers) in range that are injured (they can be healed but we never path to them)
+        // - include self if injured (healer will heal itself while moving; do NOT path to self)
+        const recipients = [];
+
+        // injured allied UNITS in range (exclude healers)
+        for (const u of unitsList) {
+            if (u.side === this.side && u.alive && u.type !== 'healer') {
+                const d = Math.hypot(u.x - this.x, u.y - this.y);
+                if (d <= (this.range + 2) && u.hp < u.maxHp) recipients.push(u);
+            }
+        }
+
+        // injured allied BUILDINGS (towers) in range
+        for (const t of towers) {
+            if (t.side === this.side && (t.hp < (t.maxHp ?? Infinity))) {
+                const d = Math.hypot(t.x - this.x, t.y - this.y);
+                if (d <= (this.range + 2)) recipients.push(t);
+            }
+        }
+
+        // healer self-heal: include self as recipient if hurt (healer will heal itself while moving; do NOT path to self)
+        if (this.hp < this.maxHp) {
+            // add self as recipient (self distance is 0, so always in range)
+            recipients.push(this);
+        }
+
+        // perform heal if there are recipients and cooldown ready
+        if (recipients.length > 0 && this.atkTimer <= 0) {
+            this.atkTimer = this.atkCooldown;
+            const healAmount = 40 * this.atkCooldown;
+            let healedAny = false;
+            for (const r of recipients) {
+                if (r && (r.alive ?? true) && typeof r.hp === 'number' && r.hp < (r.maxHp ?? r.hp)) {
+                    r.hp = Math.min(r.maxHp ?? r.hp, r.hp + healAmount);
+                    healedAny = true;
+                }
+            }
+            if (healedAny) {
+                spawnPulse(this.x, this.y, this.range, '#1fbf7a');
+                spawnHitParticles(this.x, this.y, '#1fbf7a', 6);
+            }
+        }
+    
+
+
+      // done healer branch; let normal death check below handle if hp <= 0
+      if(this.hp<=0 && !this._dying){
+        this._dying = true; this._dyingTimer = 0; this.alive = false;
+        for(let i=0;i<14;i++){ particles.push(new Particle(this.x + (Math.random()-0.5)*(this.size*1.6), this.y + (Math.random()-0.5)*(this.size*1.6), this.color, 4 + Math.random()*5, (Math.random()-0.5)*220, -80 + Math.random()*-40, 0.9 + Math.random()*0.6)); }
+      }
+
+      this.x = clamp(this.x,10*globalScale,W-10*globalScale);
+      this.y = clamp(this.y,10*globalScale,H-10*globalScale);
+      return;
+    } /* ---------------- end healer ---------------- */
+
+    /* ---------- non-healer behavior ---------- */
+
+    // ---------- SPECIAL BEHAVIOR: GOLEMITE (kamikaze) ----------
+    if (this.type === 'golemite' || this.type === 'golemite') {
+      // initialize timers
+      if (this.spawnTimer == null) this.spawnTimer = 0.1;
+      if (this.armDelay == null) this.armDelay = 1; // delay before contact explosion works
+      if (this.immunityTimer == null) this.immunityTimer = 0.2; // post-spawn invulnerability
+
+      this.spawnTimer += dt;
+      if (this.armDelay > 0) this.armDelay = Math.max(0, this.armDelay - dt);
+      if (this.immunityTimer > 0) this.immunityTimer = Math.max(0, this.immunityTimer - dt);
+
+      // arming countdown (legacy behavior)
+      if (this.armTimer > 0) {
+        this.armTimer = Math.max(0, this.armTimer - dt);
+        if (this.armTimer <= 0) this.armed = true;
+      }
+
+      // target the nearest enemy unit; if none, target nearest tower
+      let nearestUnit = null, ud = Infinity;
+      for (const u of unitsList) {
+        if (u.side !== this.side && u.alive && !(u.hut || u.pump || u.turret)) {
+          const d = Math.hypot(u.x - this.x, u.y - this.y);
+          if (d < ud) { ud = d; nearestUnit = u; }
+        }
+      }
+      let target = nearestUnit;
+      if (!target) {
+        // fallback to towers
+        let td = Infinity, tt = null;
+        for (const t of towers) {
+          if (t.side !== this.side) {
+            const d = Math.hypot(t.x - this.x, t.y - this.y);
+            if (d < td) { td = d; tt = t; }
+          }
+        }
+        target = tt;
+      }
+
+      // movement: charge directly at target
+      if (target) {
+        const dx = target.x - this.x, dy = target.y - this.y;
+        const l = Math.hypot(dx, dy) || 1;
+        const chargeSpeed = Math.max(180, (this.spd || 180));
+        this.vx = (dx / l) * chargeSpeed;
+        this.vy = (dy / l) * chargeSpeed;
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+      } else {
+        this.vx += ((Math.random() - 0.5) * 40 - this.vx) * clamp(dt * 3, 0, 1);
+        this.vy += ((Math.random() - 0.5) * 40 - this.vy) * clamp(dt * 3, 0, 1);
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+      }
+
+      // explode function (reusable)
+      const explode = () => {
+        const exR = (DATA.golemite.explosionRadius || 90) * globalScale;
+        const exD = DATA.golemite.explosionDamage || 500;
+
+        for (const u of units.filter(u => u.side !== this.side && u.alive)) {
+          const d2 = Math.hypot(u.x - this.x, u.y - this.y);
+          if (d2 <= exR) u.hp -= exD * (1 - (d2 / (exR + 1)));
+        }
+        for (const t of towers.filter(t => t.side !== this.side)) {
+          const d2 = Math.hypot(t.x - this.x, t.y - this.y);
+          if (d2 <= exR) t.hp -= exD * (1 - (d2 / (exR + 1)));
+        }
+        for (const b of units.filter(u => u.side !== this.side && (u.hut || u.pump || u.turret || u.furnace))) {
+          const d2 = Math.hypot(b.x - this.x, b.y - this.y);
+          if (d2 <= exR) b.hp -= exD * (1 - (d2 / (exR + 1)));
+        }
+
+        spawnExplosion(this.x, this.y, '#ffb36b', 0.9);
+        spawnHitParticles(this.x, this.y, '#ffb36b', 12);
+        this._dying = true;
+        this._dyingTimer = 0;
+        this.alive = false;
+      };
+
+      // contact explosion (after 1s arm delay)
+      if (this.armDelay <= 0 && this.alive) {
+        for (const u of unitsList) {
+          if (u.side !== this.side && u.alive) {
+            const d = Math.hypot(u.x - this.x, u.y - this.y);
+            if (d < (this.radius || 20) + (u.radius || 20)) {
+              explode();
+              return;
+            }
+          }
+        }
+        for (const t of towers) {
+          if (t.side !== this.side) {
+            const d = Math.hypot(t.x - this.x, t.y - this.y);
+            if (d < (this.radius || 20) + (t.radius || 30)) {
+              explode();
+              return;
+            }
+          }
+        }
+      }
+
+      // death explosion (always)
+      if (this.hp <= 0 && !this._dying) {
+        if (this.immunityTimer <= 0) explode();
+        return;
+      }
+
+      // apply 0.2s spawn immunity
+      if (this.immunityTimer > 0) this.invulnerable = true;
+      else this.invulnerable = false;
+
+      this.x = clamp(this.x, 10 * globalScale, W - 10 * globalScale);
+      this.y = clamp(this.y, 10 * globalScale, H - 10 * globalScale);
+      return;
+    }
+
+    this.atkTimer -= dt; if(this.mega) { if(this.megaCooldown>0) this.megaCooldown=Math.max(0,this.megaCooldown-dt) }
+
+    // account for slow status on movement speed
+    const pick=this.pickTarget(unitsList,towersList); const target=pick.target; let maxSpeed=this.spd*(this.slowFactor||1); let desiredX=0,desiredY=0;
+
+    // ---------- SPECIAL BEHAVIOR: REPLICATOR (flee + clone mechanic) ----------
+    if (this.type === 'replicator') {
+      // lifetime expiry for replicators (30s) - if expired, die and allow proper cleanup
+      if (now() - (this.created || 0) >= 30 && this.hp > 0 && !this._dying){
+        this.hp = 0;
+      }
+
+      // if hp drained, die properly
+      if(this.hp<=0 && !this._dying){
+        this._dying = true; this._dyingTimer = 0; this.alive = false;
+        spawnPulse(this.x, this.y, 16*globalScale, '#a8d0ff');
+        for(let i=0;i<8;i++){ particles.push(new Particle(this.x + (Math.random()-0.5)*24, this.y + (Math.random()-0.5)*24, this.color, 4 + Math.random()*4, (Math.random()-0.5)*160, -40 + Math.random()*-40, 0.7 + Math.random()*0.4)); }
+        return;
+      }
+
+      // flee behavior: move away from nearest enemy (units or towers)
+      let nearestEnemy = null, nd = Infinity;
+      for (const u of unitsList) {
+        if (u.side !== this.side && u.alive) {
+          const d = Math.hypot(u.x - this.x, u.y - this.y);
+          if (d < nd) { nd = d; nearestEnemy = u; }
+        }
+      }
+      for (const t of towers) {
+        if (t.side !== this.side) {
+          const d = Math.hypot(t.x - this.x, t.y - this.y);
+          if (d < nd) { nd = d; nearestEnemy = t; }
+        }
+      }
+
+      if (nearestEnemy && nd < 150 * globalScale) {
+        const fx = this.x - nearestEnemy.x, fy = this.y - nearestEnemy.y;
+        const fleeDir = normalize(fx, fy);
+        desiredX = fleeDir[0] * maxSpeed * 1.05;
+        desiredY = fleeDir[1] * maxSpeed * 1.05;
+      } else {
+        desiredX = (this.side === 'player') ? 10 * globalScale : -10 * globalScale;
+        desiredY = this.jitter * 0.5;
+      }
+
+      // movement smoothing
+      let avoidX=0, avoidY=0;
+      for(const other of units){ if(other===this||!other.alive) continue; const dx=this.x-other.x,dy=this.y-other.y; const d=Math.hypot(dx,dy); if(d<0.0001) continue; const minDist=(this.size+other.size)+2; if(d<minDist*1.3){ const pushStrength=(minDist*1.3-d)/(minDist*1.3); avoidX+=(dx/d)*pushStrength*maxSpeed*1.1; avoidY+=(dy/d)*pushStrength*maxSpeed*1.1 } }
+      let vx = desiredX + avoidX, vy = desiredY + avoidY; [vx,vy] = limit(vx,vy,maxSpeed);
+      this.vx += (vx - this.vx) * clamp(dt*6,0,1); this.vy += (vy - this.vy) * clamp(dt*6,0,1); this.x += this.vx*dt; this.y += this.vy*dt;
+
+      // cloning timer
+      if (this.cloneTimer === undefined) this.cloneTimer = (this.def && this.def.cloneInterval) || 7.0;
+      this.cloneTimer -= dt;
+      if (this.cloneTimer <= 0) {
+        // find nearest friendly clonable unit within range (exclude replicators, golemites, golem, spirits, and buildings)
+        const clonableCandidates = unitsList.filter(u =>
+          u.side === this.side &&
+          u.alive &&
+          u !== this &&
+          !u.hut && !u.pump && !u.turret &&
+          u.type !== 'replicator' &&
+          u.type !== 'golem' &&
+          u.type !== 'golemite' &&
+          u.type !== 'furnace_spirit' &&
+          u.type !== 'megaknight'
+        );
+        if (clonableCandidates.length > 0) {
+          clonableCandidates.sort((a,b)=>Math.hypot(a.x-this.x,a.y-this.y)-Math.hypot(b.x-this.x,b.y-this.y));
+          const toClone = clonableCandidates[0];
+          const d = Math.hypot(toClone.x - this.x, toClone.y - this.y);
+          if (d <= this.range * (this.def?.range ? 1 : 1)) {
+            // create clone
+            const clonePosX = clamp(this.x + (Math.random()-0.5)*12, 20*globalScale, W-20*globalScale);
+            const clonePosY = clamp(this.y + (Math.random()-0.5)*12, 20*globalScale, H-20*globalScale);
+            const clone = new Unit(clonePosX, clonePosY, this.side, toClone.type);
+            // apply multipliers
+            const mult = this.cloneMultiplier || REPLICA_MULT;
+            clone.hp = Math.max(1, (clone.hp || (clone.def?.hp||100) * UNIT_HP_MULT) * (mult.hp || 1));
+            clone.maxHp = clone.hp;
+            clone.dmg = (clone.dmg || (clone.def?.dmg||0)) * (mult.dmg || 1);
+            // adjust speed & size value (constructor sets spd and size using def, so tweak directly)
+            clone.spd = (clone.spd || (clone.def?.spd||40) * UNIT_SPD_MULT) * (mult.spd || 1);
+            clone.size = (clone.size || (clone.def?.size||10) * ART_SCALE * globalScale) * (mult.size || 1);
+            clone.isClone = true;
+            clone.cloneOf = toClone.type;
+            clone.spawnTimer = 0.18;
+            unitsList.push(clone);
+            spawnPulse(clonePosX, clonePosY, 10*globalScale, '#a8d0ff');
+          }
+        }
+        // reset timer
+        this.cloneTimer = (this.def && this.def.cloneInterval) || 7.0;
+      }
+
+      this.x = clamp(this.x,10*globalScale,W-10*globalScale);
+      this.y = clamp(this.y,10*globalScale,H-10*globalScale);
+      return;
+    }
+
+    // ---------- non-replicator fallback: normal movement ----------
+    if(target){
+      const dx=target.x-this.x,dy=target.y-this.y; const dist=Math.hypot(dx,dy); const def=this.def; const ranged=isRanged(def);
+      if(ranged&&!this.immobile){ const targetDef=(target.def||{}); const targetRange=targetDef.range||0; const desiredDistance=this.range*0.92; if(targetRange<this.range&&dist<desiredDistance){ const away=normalize(this.x-target.x,this.y-target.y); desiredX=away[0]*maxSpeed; desiredY=away[1]*maxSpeed } else if(dist>this.range*0.98){ const towards=normalize(dx,dy); desiredX=towards[0]*maxSpeed; desiredY=towards[1]*maxSpeed } else { desiredX=(Math.random()-0.5)*6*globalScale; desiredY=(Math.random()-0.5)*6*globalScale } } else { const towards=normalize(dx,dy); desiredX=towards[0]*maxSpeed; desiredY=towards[1]*maxSpeed }
+    } else { const dir=(this.side==='player')?1:-1; desiredX=dir*10*globalScale; desiredY=this.jitter*0.5 }
+    let avoidX=0,avoidY=0;
+    for(const other of units){ if(other===this||!other.alive) continue; const dx=this.x-other.x,dy=this.y-other.y; const d=Math.hypot(dx,dy); if(d<0.0001) continue; const minDist=(this.size+other.size)+2; if(d<minDist*1.6){ const pushStrength=(minDist*1.6-d)/(minDist*1.6); avoidX+=(dx/d)*pushStrength*maxSpeed*1.2; avoidY+=(dy/d)*pushStrength*maxSpeed*1.2 } }
+    for(const t of towers){ const dx=this.x-t.x,dy=this.y-t.y; const d=Math.hypot(dx,dy),minDist=this.size+(t.size||20)+6; if(d<minDist*1.6){ const pushStrength=(minDist*1.6-d)/(minDist*1.6); avoidX+=(dx/(d||1))*pushStrength*maxSpeed*1.6; avoidY+=(dy/(d||1))*pushStrength*maxSpeed*1.6 } }
+    let vx=desiredX+avoidX,vy=desiredY+avoidY; [vx,vy]=limit(vx,vy,maxSpeed); this.desiredVx=vx; this.desiredVy=vy;
+
+    if (this.mega) {
+      const chosen = target, constDashRange = 260 * globalScale;
+      if (this.megaState === 'idle') {
+        if (chosen && this.megaCooldown <= 0 && Math.hypot(chosen.x - this.x, chosen.y - this.y) <= constDashRange) {
+          this._dashOrigin = { x: this.x, y: this.y };
+          this.megaState = 'dashing';
+          this._dashTimer = 0;
+          const ang = Math.atan2(chosen.y - this.y, chosen.x - this.x);
+          this.vx = Math.cos(ang) * (700 * UNIT_SPD_MULT * ART_SCALE * globalScale);
+          this.vy = Math.sin(ang) * (700 * UNIT_SPD_MULT * ART_SCALE * globalScale);
+          this._dashTarget = chosen;
+        } else {
+          this.vx += (this.desiredVx - this.vx) * clamp(dt * 6, 0, 1);
+          this.vy += (this.desiredVy - this.vy) * clamp(dt * 6, 0, 1);
+          this.x += this.vx * dt;
+          this.y += this.vy * dt;
+        }
+      } else if (this.megaState === 'dashing') {
+        this._dashTimer += dt;
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+
+        let impacted = null;
+        const impactRad = this.size + 36 * globalScale;
+
+        // priority: enemy units first
+        for (const u of units.filter(u => u.side !== this.side && u.alive)) {
+          if (Math.hypot(u.x - this.x, u.y - this.y) <= impactRad + (u.size || 10)) {
+            impacted = u;
+            break;
+          }
+        }
+
+        // then enemy towers/buildings
+        if (!impacted) {
+          for (const t of towers) {
+            if (t.side !== this.side && t.hp > 0) {
+              if (Math.hypot(t.x - this.x, t.y - this.y) <= impactRad + (t.size || 20)) {
+                impacted = t;
+                break;
+              }
+            }
+          }
+        }
+
+        if (impacted || this._dashTimer > 0.65 || this.x < -50 || this.x > W + 50 || this.y < -50 || this.y > H + 50) {
+          if (impacted) {
+            const splashR = 100 * globalScale;
+
+            // direct hit damage
+            impacted.hp -= this.mdmg;
+
+            // splash to nearby enemy units
+            for (const u of units.filter(u => u.side !== this.side && u.alive)) {
+              if (Math.hypot(u.x - this.x, u.y - this.y) <= splashR) {
+                u.hp -= this.mdmg * 0.8;
+              }
+            }
+
+            // splash to nearby enemy towers/buildings
+            for (const t of towers) {
+              if (t.side !== this.side && t.hp > 0) {
+                if (Math.hypot(t.x - this.x, t.y - this.y) <= splashR + (t.size || 20)) {
+                  t.hp -= this.mdmg * 0.6;
+                }
+              }
+            }
+
+            spawnExplosion(this.x, this.y, '#4b2fb8', 0.6);
+            triggerScreenShake(1, 2);
+          }
+
+          this.megaState = 'retreating';
+          const angHome = Math.atan2(this._dashOrigin.y - this.y, this._dashOrigin.x - this.x);
+          this.vx = Math.cos(angHome) * (360 * UNIT_SPD_MULT * ART_SCALE * globalScale);
+          this.vy = Math.sin(angHome) * (360 * UNIT_SPD_MULT * ART_SCALE * globalScale);
+          this.megaCooldown = 2.5;
+          this._retreatStart = now();
+        }
+      } else if (this.megaState === 'retreating') {
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        const dist = Math.hypot(this._dashOrigin.x - this.x, this._dashOrigin.y - this.y);
+        if (dist < 6 || (now() - this._retreatStart) > 1.2) {
+          this.x = this._dashOrigin.x;
+          this.y = this._dashOrigin.y;
+          this.megaState = 'cooldown';
+          this.vx = 0;
+          this.vy = 0;
+        }
+      } else if (this.megaState === 'cooldown') {
+        this.vx += (this.desiredVx - this.vx) * clamp(dt * 6, 0, 1);
+        this.vy += (this.desiredVy - this.vy) * clamp(dt * 6, 0, 1);
+        this.x += this.vx * dt;
+        this.y += this.vy * dt;
+        if (this.megaCooldown <= 0) this.megaState = 'idle';
+      }
+      this.x = clamp(this.x, 10 * globalScale, W - 10 * globalScale);
+      this.y = clamp(this.y, 10 * globalScale, H - 10 * globalScale);
+    } else {
+      this.vx += (this.desiredVx - this.vx) * clamp(dt * 8, 0, 1);
+      this.vy += (this.desiredVy - this.vy) * clamp(dt * 8, 0, 1);
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+    }
+
+
+    if(target){
+      const dx=target.x-this.x,dy=target.y-this.y; const distance=Math.hypot(dx,dy);
+      if(distance<=this.range+(target.size??0)+2){
+        if(this.spin){
+          if(this.atkTimer<=0){
+            this.atkTimer=this.atkCooldown;
+            const rad=64*globalScale;
+            for(const u of units.filter(u=>u.side!==this.side&&u.alive)) if(Math.hypot(u.x-this.x,u.y-this.y)<=rad) u.hp-=this.dmg*this.atkCooldown;
+            for(const t of towers.filter(t=>t.side!==this.side)) if(Math.hypot(t.x-this.x,t.y-this.y)<=rad) t.hp-=this.dmg*this.atkCooldown;
+            // Valkyrie pulse (color = unit color)
+            spawnPulse(this.x, this.y, rad, this.color);
+          }
+        } else if(this.splash && this.type !== 'spirit_boom'){
+          // existing generic splash behavior (wizard etc.)
+          if(this.atkTimer<=0){
+            this.atkTimer=this.atkCooldown;
+            const splashRad=Math.max(24*globalScale,this.range*0.5);
+            for(const u of units.filter(u=>u.side!==this.side&&u.alive)) if(Math.hypot(u.x-target.x,u.y-target.y)<=splashRad) u.hp-=(this.dmg*this.atkCooldown);
+            for(const t of towers.filter(t=>t.side!==this.side)) if(Math.hypot(t.x-target.x,t.y-target.y)<=splashRad) t.hp-=(this.dmg*this.atkCooldown);
+            // Wizard pulse centered on target
+            spawnPulse(target.x, target.y, splashRad, this.color);
+          }
+        } else if(this.heal){
+          // handled earlier in healer branch (shouldn't reach here)
+        } else {
+          if(this.atkTimer<=0){
+            this.atkTimer=this.atkCooldown;
+
+            // calculate base damage for this attack tick
+            const baseDamage = this.dmg * this.atkCooldown;
+
+            /* --------- SPECIAL SPIRIT BEHAVIORS --------- */
+            if(this.type === 'spirit_boom'){
+              // Big splash and double damage vs buildings/towers
+              const splashR = 96 * globalScale; // larger radius
+              // damage primary
+              if(target instanceof Tower){
+                target.hp -= baseDamage * 2;
+              } else {
+                target.hp -= baseDamage;
+              }
+              // splash to nearby units (reduced) and buildings (double)
+              for(const u of units.filter(u=>u.side!==this.side&&u.alive)){
+                const d2 = Math.hypot(u.x - target.x, u.y - target.y);
+                if(d2 <= splashR){
+                  u.hp -= baseDamage * 0.8;
+                }
+              }
+              for(const t of towers.filter(t=>t.side!==this.side)){
+                const d2 = Math.hypot(t.x - target.x, t.y - target.y);
+                if(d2 <= splashR){
+                  t.hp -= baseDamage * 2;
+                }
+              }
+              spawnExplosion(target.x || this.x, target.y || this.y, '#ffb36b', 0.3);
+              spawnHitParticles(target.x || this.x, target.y || this.y, '#ffb36b', 10);
+
+            } else if(this.type === 'spirit_zap'){
+              // Chain attack: hits initial target then chains up to N times to nearest enemies
+              let chainCount = 6;
+              let chainRadius = 125 * globalScale;
+              let chainDmg = baseDamage;
+              const hitList = [];
+              // helper to apply damage to an entity (tower or unit)
+              const applyTo = (ent, dmg) => {
+                if(!ent) return;
+                if(ent instanceof Tower) ent.hp -= dmg;
+                else ent.hp -= dmg;
+                spawnHitParticles(ent.x || this.x, ent.y || this.y, '#f6f8a5', 4);
+              };
+              // start with initial target
+              let current = target;
+              for(let i=0;i<chainCount && current;i++){
+                applyTo(current, chainDmg);
+                hitList.push(current);
+                // find next candidate among units and towers (enemy side), not already hit
+                let candidates = [];
+                for(const u of units.filter(u=>u.side!==this.side&&u.alive)) if(!hitList.includes(u)) candidates.push(u);
+                for(const t of towers.filter(t=>t.side!==this.side)) if(!hitList.includes(t)) candidates.push(t);
+                // find nearest candidate within chainRadius of current
+                let next = null, bestD = Infinity;
+                for(const c of candidates){
+                  const d2 = Math.hypot((c.x||0) - (current.x||0), (c.y||0) - (current.y||0));
+                  if(d2 < bestD && d2 <= chainRadius){
+                    bestD = d2; next = c;
+                  }
+                }
+                // small visual pulse per chain hop
+                spawnPulse(current.x || this.x, current.y || this.y, 24*globalScale, '#f6f8a5');
+                // next hop uses reduced damage
+                chainDmg *= 0.85;
+                current = next;
+              }
+
+            } else if(this.type === 'spirit_ice'){
+              // Slows by 30% and damages any enemy within 80px
+              const aoeR = 80 * globalScale;
+              const slowDuration = 1.2; // seconds
+              for(const u of units.filter(u=>u.side!==this.side&&u.alive)){
+                const d2 = Math.hypot(u.x - target.x, u.y - target.y);
+                if(d2 <= aoeR){
+                  // damage
+                  u.hp -= baseDamage;
+                  // apply slow (reduce speed to 70%)
+                  u.slowFactor = Math.min(u.slowFactor || 1, 0.1);
+                  u.slowTimer = Math.max(u.slowTimer || 0, slowDuration);
+                  spawnHitParticles(u.x, u.y, '#9fe0ff', 4);
+                }
+              }
+              for(const t of towers.filter(t=>t.side!==this.side)){
+                const d2 = Math.hypot(t.x - target.x, t.y - target.y);
+                if(d2 <= aoeR){
+                  t.hp -= baseDamage;
+                }
+              }
+              spawnPulse(target.x || this.x, target.y || this.y, aoeR, '#9fe0ff');
+
+            } else if(this.type === 'spirit_fire'){
+              // DoT: apply burn on hit (original spirit_fire behavior)
+              const burnDuration = 5.0; // seconds
+              const burnDPS = Math.max(8, baseDamage * 2); // damage per second
+              if(target instanceof Tower){
+                target.hp -= baseDamage;
+                // towers take burn as well (apply immediate small ticks)
+                target.hp -= burnDPS * 1.5;
+              } else {
+                target.hp -= baseDamage;
+                target.burnTimer = Math.max(target.burnTimer || 0, burnDuration);
+                target.burnDPS = Math.max(target.burnDPS || 0, burnDPS);
+              }
+              spawnHitParticles(target.x || this.x, target.y || this.y, '#ff6b3a', 6);
+              spawnPulse(target.x || this.x, target.y || this.y, 28*globalScale, '#ff6b3a');
+
+            } else if(this.type === 'furnace_spirit'){
+              // bespoke furnace spirit: burn like spirit_fire AND splash like wizard
+              const burnDuration = 4.0; // seconds
+              const burnDPS = Math.max(8, baseDamage * (this.def?.burnMultiplier || 2.0)); // use burnMultiplier from def
+              // primary hit
+              if(target instanceof Tower){
+                target.hp -= baseDamage;
+                target.hp -= burnDPS * 1.2; // immediate ticks for towers
+              } else {
+                target.hp -= baseDamage;
+                target.burnTimer = Math.max(target.burnTimer || 0, burnDuration);
+                target.burnDPS = Math.max(target.burnDPS || 0, burnDPS);
+              }
+              // splash around target
+              const splashR = Math.max(28*globalScale, this.range * 0.8);
+              for(const u of units.filter(u=>u.side!==this.side&&u.alive)){
+                const d2 = Math.hypot(u.x - target.x, u.y - target.y);
+                if(d2 <= splashR){
+                  if(u instanceof Tower) { u.hp -= baseDamage * 0.9; }
+                  else { u.hp -= baseDamage * 0.8; u.burnTimer = Math.max(u.burnTimer||0, burnDuration*0.6); u.burnDPS = Math.max(u.burnDPS||0, burnDPS*0.7); }
+                }
+              }
+              for(const t of towers.filter(t=>t.side!==this.side)){
+                const d2 = Math.hypot(t.x - target.x, t.y - target.y);
+                if(d2 <= splashR){
+                  t.hp -= baseDamage * 1.1;
+                }
+              }
+              
+              spawnExplosion(target.x || this.x, target.y || this.y, '#ff8f4a', 0.4);
+              spawnHitParticles(target.x || this.x, target.y || this.y, '#ff8f4a', 8);
+              this._dying = true;
+              this._dyingTimer = 0;
+              this.alive = false;
+              
+
+
+            } else {
+              // Default: normal single-target hit (non projectile)
+              if(target instanceof Tower) target.hp -= baseDamage; else target.hp -= baseDamage;
+              spawnHitParticles((target.x||this.x),(target.y||this.y), (target.color||this.color), 4);
+              // Swing effect for melee units (exclude mega and Valkyrie)
+              const isMelee = !isRanged(this.def);
+              if(isMelee && !this.mega && this.type !== 'valkyrie'){
+                const ang = Math.atan2(target.y - this.y, target.x - this.x);
+                spawnSwing(this.x, this.y, this.range, ang, this.color);
+              }
+            }
+
+            // end special behavior branch
+
+            // note: projectiles handled elsewhere (not part of spirits)
+          }
+        }
+      }
+    }
+
+    if(this.hp<=0 && !this._dying){
+      // Special: if a golem dies, spawn 3 golemites
+      if (this.type === 'golem') {
+        for (let i = 0; i < 3; i++) {
+          const offsX = (Math.random() - 0.5) * 24;
+          const offsY = (Math.random() - 0.5) * 24;
+          const gx = clamp(this.x + offsX, 20 * globalScale, W - 20 * globalScale);
+          const gy = clamp(this.y + offsY, 20 * globalScale, H - 20 * globalScale);
+          const pos = (typeof findSpawnPosition === 'function') ? findSpawnPosition(gx, gy, this.side, 6 * globalScale) : {x:gx,y:gy};
+          if (pos) {
+            const gm = new Unit(pos.x, pos.y, this.side, 'golemite');
+            gm.spawnTimer = 0.12;
+            units.push(gm);
+          }
+        }
+        spawnExplosion(this.x, this.y, '#b86f3c', 1.2);
+        spawnHitParticles(this.x, this.y, '#b86f3c', 18);
+      }
+
+      // If a golemite dies and wasn't already handled above, ensure explosion occurs (defensive)
+      if (this.type === 'golemite' || this.type === 'golemite') {
+        const exR = (DATA.golemite.explosionRadius || 84) * globalScale;
+        const exD = DATA.golemite.explosionDamage || 420;
+        for (const u of units.filter(u => u.side !== this.side && u.alive)) {
+          const d2 = Math.hypot(u.x - this.x, u.y - this.y);
+          if (d2 <= exR) {
+            u.hp -= exD * (1 - (d2 / (exR+1)));
+          }
+        }
+        for (const t of towers.filter(t => t.side !== this.side)) {
+          const d2 = Math.hypot(t.x - this.x, t.y - this.y);
+          if (d2 <= exR) {
+            t.hp -= exD * (1 - (d2 / (exR+1)));
+          }
+        }
+        for (const b of units.filter(u=>u.side!==this.side && (u.hut||u.pump||u.turret||u.furnace))) {
+          const d2 = Math.hypot(b.x - this.x, b.y - this.y);
+          if (d2 <= exR) {
+            b.hp -= exD * (1 - (d2 / (exR+1)));
+          }
+        }
+        spawnExplosion(this.x, this.y, '#ffb36b', 0.9);
+        spawnHitParticles(this.x, this.y, '#ffb36b', 12);
+      }
+
+      this._dying = true; this._dyingTimer = 0; this.alive = false;
+      for(let i=0;i<14;i++){ particles.push(new Particle(this.x + (Math.random()-0.5)*(this.size*1.6), this.y + (Math.random()-0.5)*(this.size*1.6), this.color, 4 + Math.random()*5, (Math.random()-0.5)*220, -80 + Math.random()*-40, 0.9 + Math.random()*0.6)); }
+    }
+
+    this.x=clamp(this.x,10*globalScale,W-10*globalScale); this.y=clamp(this.y,10*globalScale,H-10*globalScale);
+  }
+}
+
+class SpellEffect{
+  constructor(type,x,y,side){ this.type=type; this.x=x; this.y=y; this.side=side; this.created=now(); this.duration=SPELLS[type].duration||0.6; this.radius=(SPELLS[type].radius||48)*globalScale; this.damage=SPELLS[type].damage||0; this.applied=false; this.color=SPELLS[type].color||'#fff' }
+  applyOnce(){
+    if(this.applied) return; this.applied=true;
+    for(const u of units.filter(u=>u.alive)){
+      // treat hut / pump / turret / furnace as building rects
+      if(u.hut || u.pump || u.turret || u.furnace){
+        const rect = rectFromBuilding(u);
+        if(circleIntersectsRect(this.x, this.y, this.radius + 0.5, rect) && u.side !== this.side){
+          u.hp -= this.damage; spawnHitParticles(u.x,u.y,u.color, 8);
+        }
+      } else {
+        const d = Math.hypot(u.x - this.x, u.y - this.y);
+        if(u.side !== this.side && d <= this.radius + (u.size||10)){
+          u.hp -= this.damage; spawnHitParticles(u.x,u.y,u.color, 6);
+        }
+      }
+    }
+    for(const t of towers){
+      const rect = {left: t.x - t.size/2, right: t.x + t.size/2, top: t.y - t.size*0.8, bottom: t.y + t.size*0.8};
+      if(circleIntersectsRect(this.x, this.y, this.radius + 0.5, rect) && t.side !== this.side){
+        t.hp -= this.damage * TOWER_SPELL_DMG_MULT;
+      }
+    }
+  }
+  update(dt){ if(!this.applied) this.applyOnce(); }
+  draw(ctx){ const elapsed=now()-this.created; const p=clamp(1-(elapsed/this.duration),0,1); ctx.save(); const r=this.radius*(1+(1-p)*0.2); ctx.fillStyle=this.color; ctx.globalAlpha=0.16*p; ctx.beginPath(); ctx.arc(this.x,this.y,r,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=0.9*p; ctx.strokeStyle=this.color; ctx.lineWidth=2+(1-p)*2; ctx.beginPath(); ctx.arc(this.x,this.y,r,0,Math.PI*2); ctx.stroke(); ctx.restore() }
+  isDone(){ return (now()-this.created) >= this.duration }
+}
+
+class LogProjectile{
+  constructor(x,y,side){
+    this.side=side;
+    if(side==='player'){ this.x=clamp(x,10*globalScale,W/2-10*globalScale); this.vx=(SPELLS.log.speed||225)*globalScale; }
+    else { this.x=clamp(x, W/2+10*globalScale, W-10*globalScale); this.vx=-(SPELLS.log.speed||225)*globalScale; }
+    this.bodyWidth=(SPELLS.log.bodyWidth||28)*globalScale;
+    this.height=Math.floor(H*(SPELLS.log.heightFrac||(1/3)));
+    this.y=clamp(y,this.height/2+10*globalScale,H-this.height/2-10*globalScale);
+    this.damage=SPELLS.log.damage; this.knockback=SPELLS.log.knockback*globalScale; this.color=SPELLS.log.color; this.hitSet=new Set(); this.created=now(); this.alive=true;
+  }
+  update(dt){
+    this.x += this.vx * dt;
+    const left = this.x - this.bodyWidth/2, right = left + this.bodyWidth, top = this.y - this.height/2, bottom = top + this.height;
+    for(const u of units.filter(u=>u.alive && u.side !== this.side)){
+      if(this.hitSet.has(u)) continue;
+      // treat hut / pump / turret / furnace as rects
+      if(u.hut || u.pump || u.turret || u.furnace){
+        const rect = rectFromBuilding(u);
+        if(rectsOverlap({left,right,top,bottom}, rect)){
+          u.hp -= this.damage; this.hitSet.add(u); spawnHitParticles(u.x,u.y,u.color,5);
+        }
+      } else {
+        const closestX = clamp(u.x, left, right);
+        const closestY = clamp(u.y, top, bottom);
+        const dx = u.x - closestX, dy = u.y - closestY;
+        if((dx*dx + dy*dy) <= (u.size + 2)*(u.size + 2)){
+          u.hp -= this.damage; const dir = (u.x >= this.x) ? 1 : -1;
+          u.vx += (this.knockback*dir)*0.7; u.vy += (Math.random()-0.5)*80*globalScale;
+          this.hitSet.add(u); spawnHitParticles(u.x,u.y,u.color,5);
+        }
+      }
+    }
+    for(const t of towers.filter(t=>t.side!==this.side)){
+      const rect = {left: t.x - t.size/2, right: t.x + t.size/2, top: t.y - t.size*0.8, bottom: t.y + t.size*0.8};
+      if(!(right < rect.left || left > rect.right || bottom < rect.top || top > rect.bottom)){
+        t.hp -= this.damage * TOWER_SPELL_DMG_MULT;
+      }
+    }
+    if(this.x - this.bodyWidth/2 > W + 50 || this.x + this.bodyWidth/2 < -50) this.alive = false;
+  }
+  draw(ctx){
+    const left=this.x-this.bodyWidth/2, w=this.bodyWidth, h=this.height;
+    ctx.save(); ctx.fillStyle=this.color; ctx.globalAlpha=0.98; ctx.fillRect(left,this.y-h/2,w,h);
+    ctx.strokeStyle='rgba(0,0,0,0.25)'; ctx.lineWidth=2; ctx.strokeRect(left,this.y-h/2,w,h);
+    ctx.font='bold 14px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle='rgba(0,0,0,0.7)'; ctx.fillText('LOG',this.x,this.y); ctx.restore();
+  }
+}
+
+/* ---------- SPAWN & DEPLOY ---------- */
+function findSpawnPosition(x,y,side,size){
+  const maxRadius=80*globalScale, step=Math.max(4*globalScale,8*globalScale);
+  for(let r=0;r<=maxRadius;r+=step){
+    for(let a=0;a<360;a+=24){
+      const rad=a*Math.PI/180; const nx=x+Math.cos(rad)*r; const ny=y+Math.sin(rad)*r;
+      if(side==='player'&&nx>(W/2-6*globalScale)) continue;
+      if(side==='enemy'&&nx<(W/2+6*globalScale)) continue;
+      if(nx<20*globalScale||nx>W-20*globalScale||ny<20*globalScale||ny>H-20*globalScale) continue;
+      let ok=true;
+      for(const u of units){ 
+        if(!u.alive && !u._dying) continue;
+        // treat hut/pump/turret/furnace as blocking rectangles
+        if(u.hut || u.pump || u.turret || u.furnace){
+          const rect = rectFromBuilding(u);
+          if(pointNearRect(nx,ny,rect, size + 6)) { ok=false; break }
+        } else {
+          const d=Math.hypot(u.x-nx,u.y-ny); if(d<(u.size+size+4)){ ok=false; break }
+        }
+      }
+      if(!ok) continue;
+      for(const t of towers){ const rect = {left: t.x - t.size/2, right: t.x + t.size/2, top: t.y - t.size*0.8, bottom: t.y + t.size*0.8}; if(pointNearRect(nx,ny,rect,size+8)){ ok=false; break } }
+      if(ok) return {x:nx,y:ny};
+    }
+  }
+  return null;
+}
+function countStructures(side, type){ return units.filter(u => (u.type===type) && (u.side===side) && (u.alive || u._dying)).length; }
+
+function canUse(side,key){ const last=lastUsedCard[side+'_'+key]||0; return (now()-last)>=CONFIG.cardCooldown; }
+function useCard(side,key){ lastUsedCard[side+'_'+key]=now(); }
+function canUseSpell(side,sk){ const last=lastUsedSpell[side+'_spell_'+sk]||0; return (now()-last)>=CONFIG.cardCooldown; }
+function useSpell(side,sk){ lastUsedSpell[side+'_spell_'+sk]=now(); }
+
+function tryDeploy(x,y,side,cardKey){
+  if(x<0||x>W||y<0||y>H) return false;
+  if(side==='player'&&x>W/2) return false;
+  const def=DATA[cardKey];
+  if(cardKey==='goblins'){ if(side==='player'&&elixirP<DATA.goblins.cost) return false; if(side==='enemy'&&elixirE<DATA.goblins.cost) return false }
+  else { if(side==='player'&&def&&elixirP<(def.cost||0)) return false; if(side==='enemy'&&def&&elixirE<(def.cost||0)) return false }
+  if(!canUse(side,cardKey)) return false;
+  if(cardKey==='elixirPump'){ if(countStructures(side,'elixirPump') >= 5) return false; }
+  if(cardKey==='goblinHut'){ if(countStructures(side,'goblinHut') >= 3) return false; }
+  if(cardKey==='crossbow'){ if(countStructures(side,'crossbow') >= 5) return false; }
+  const size=(def&&def.size?def.size:10)*ART_SCALE*globalScale;
+  const pos=findSpawnPosition(x,y,side,size); if(!pos) return false;
+  if(cardKey==='goblins'){
+    if(side==='player') elixirP=clamp(elixirP-DATA.goblins.cost,0,CONFIG.maxElixir); else elixirE=clamp(elixirE-DATA.goblins.cost,0,CONFIG.maxElixir);
+    useCard(side,cardKey);
+    const offs=[[-18,-12],[18,-12],[-18,12],[18,12]];
+    for(let i=0;i<4;i++){ const ox=offs[i][0]+(Math.random()-0.5)*6; const oy=offs[i][1]+(Math.random()-0.5)*6; units.push(new Unit(clamp(pos.x+ox*globalScale,20*globalScale,W-20*globalScale),clamp(pos.y+oy*globalScale,20*globalScale,H-20*globalScale),side,'goblin')) }
+    return true;
+  } else {
+    if(side==='player') elixirP=clamp(elixirP-(def.cost||0),0,CONFIG.maxElixir); else elixirE=clamp(elixirE-(def.cost||0),0,CONFIG.maxElixir);
+    useCard(side,cardKey);
+    const px=clamp(pos.x,40*globalScale,W-40*globalScale), py=clamp(pos.y,40*globalScale,H-40*globalScale);
+    if(cardKey==='goblinHut'){ const hut=new Unit(px,py,side,'goblinHut'); hut.pumpLike=true; units.push(hut) }
+    else if(cardKey==='elixirPump'){ units.push(new Unit(px,py,side,'elixirPump')) }
+    else {
+      // Use the centralized spawn helper so cards that spawn multiple units (archer spawnCount:2) or bands (spiritBand) work.
+      // spawnCardUnits will push new Unit instances into `units`.
+      if(typeof spawnCardUnits === 'function'){
+        spawnCardUnits(px, py, side, cardKey);
+        // If this card is a mega unit (single spawn), set its megaHome like previous behavior.
+        if(def && def.mega){
+          for(let i=units.length-1;i>=0;i--){
+            const u = units[i];
+            if(u.side===side && u.type===cardKey){
+              u.megaHome = { x: px, y: py };
+              break;
+            }
+          }
+        }
+      } else {
+        // Fallback: create single unit (legacy behavior)
+        const u=new Unit(px,py,side,cardKey); if(u.mega) u.megaHome={x:px,y:py}; units.push(u);
+      }
+    }
+    return true;
+  }
+}
+function tryDeploySpell(x,y,spellKey,side){
+  const s=SPELLS[spellKey]; if(!s) return false;
+  if(side==='player' && elixirP<s.cost) return false;
+  if(side==='enemy' && elixirE<s.cost) return false;
+  if(!canUseSpell(side,spellKey)) return false;
+  if(spellKey==='log'){
+    if(side==='player' && x>W/2) return false;
+    if(side==='enemy' && x < W/2) return false;
+    const log=new LogProjectile(x,clamp(y,40*globalScale,H-40*globalScale),side); spellsActive.push(log);
+  } else {
+    const se=new SpellEffect(spellKey,x,y,side); spellsActive.push(se);
+  }
+  if(side==='player') elixirP=clamp(elixirP-s.cost,0,CONFIG.maxElixir); else elixirE=clamp(elixirE-s.cost,0,CONFIG.maxElixir);
+  useSpell(side,spellKey);
+  return true;
+}
+
+/* ---------- AI spawn (rare spells allowed) ---------- */
+function spawnEnemyAI(){
+  // include new units in AI spawn choices (furnace included if top half added it)
+  const choices=['knight','archer','giant','wizard','healer','goblins','elixirPump','valkyrie','minipekka','megaknight','goblinHut','crossbow','spiritBand','golem','replicator','furnace'];
+  const key=choices[Math.floor(Math.random()*choices.length)]; const def=DATA[key]||DATA['goblin'];
+  const spawnPadScaled=CONFIG.spawnPad*globalScale;
+  if(Math.random() < 0.06){
+    const spells = Object.keys(SPELLS).filter(sk => elixirE >= SPELLS[sk].cost && canUseSpell('enemy', sk));
+    if(spells.length){
+      const sk = spells[Math.floor(Math.random()*spells.length)];
+      const y0 = Math.random()*(H-160*globalScale)+80*globalScale;
+      const x0 = W - spawnPadScaled - 40*globalScale;
+      tryDeploySpell(x0, y0, sk, 'enemy');
+      return;
+    }
+  }
+  if(key==='goblins'){ if(elixirE>=DATA.goblins.cost && canUse('enemy','goblins')){ const y0=Math.random()*(H-160*globalScale)+80*globalScale; const x0=W-spawnPadScaled-40*globalScale; tryDeploy(x0,y0,'enemy','goblins') } }
+  else if(def&&elixirE>=def.cost && canUse('enemy',key)){
+    const y0=Math.random()*(H-160*globalScale)+80*globalScale; const x0=W-spawnPadScaled-20*globalScale; tryDeploy(x0,y0,'enemy',key)
+  }
+}
+
+
+// replace the setInterval with:
+setInterval(() => { if (running) spawnEnemyAI(); }, ENEMY_SPAWN_BASE + Math.random() * ENEMY_SPAWN_JITTER);
+
+
+/* elixir regen */
+setInterval(()=>{ if(!running) return; elixirP=clamp(elixirP+CONFIG.elixirGainPerSec*0.1,0,CONFIG.maxElixir); elixirE=clamp(elixirE+CONFIG.elixirGainPerSec*0.1,0,CONFIG.maxElixir) },100);
+
+/* ---------- COLLISIONS ---------- */
+function resolveCollisions(){
+  for(let i=0;i<units.length;i++){ const a=units[i]; if(!a.alive) continue; for(let j=i+1;j<units.length;j++){ const b=units[j]; if(!b.alive) continue; const dx=a.x-b.x,dy=a.y-b.y,d=Math.hypot(dx,dy),minDist=a.size+b.size+1; if(d>0&&d<minDist){ const overlap=minDist-d,nx=dx/d,ny=dy/d; if(b.immobile&&!a.immobile){ a.x+=nx*overlap; a.y+=ny*overlap } else if(a.immobile&&!b.immobile){ b.x-=nx*overlap; b.y-=ny*overlap } else { a.x+=nx*(overlap*0.5); a.y+=ny*(overlap*0.5); b.x-=nx*(overlap*0.5); b.y-=ny*(overlap*0.5) } const push=0.2; a.vx+=nx*push*overlap; a.vy+=ny*push*overlap; b.vx-=nx*push*overlap; b.vy-=ny*push*overlap } } }
+  for(const u of units){ if(!u.alive) continue; for(const t of towers){ const dx=u.x-t.x,dy=u.y-t.y,d=Math.hypot(dx,dy),minDist=u.size+(t.size||20)+4; if(d<minDist&&d>0){ const overlap=minDist-d,nx=dx/d,ny=dy/d; u.x+=nx*overlap; u.y+=ny*overlap; u.vx+=nx*0.2*overlap; u.vy+=ny*0.2*overlap; } } }
+}
+
+/* ---------- MAIN LOOP ---------- */
+let last = performance.now();
+function frame(nowTs){
+  requestAnimationFrame(frame);
+  let dt=(nowTs-last)/1000; last=nowTs; if(dt<=0) return; if(dt>CONFIG.dtCap) dt=CONFIG.dtCap;
+
+  if(running){
+    for(const t of towers) t.update(dt,units);
+    for(const u of units) u.update(dt,units,towers);
+    for(const s of spellsActive){ if(s instanceof LogProjectile) s.update(dt); else s.update(dt) }
+    spellsActive=spellsActive.filter(s=>(s instanceof LogProjectile)?s.alive:!s.isDone());
+    for(const p of projectiles) p.update(dt);
+    projectiles = projectiles.filter(p=>p.alive);
+
+    // update pulses and swings
+    for(const p of pulses) p.update(dt);
+    pulses = pulses.filter(p=>!p.isDone());
+    for(const s of swings) s.update(dt);
+    swings = swings.filter(s=>!s.isDone());
+
+    resolveCollisions();
+    for(const p of particles) p.update(dt);
+    particles = particles.filter(p=>!p.isDone());
+    for(const ex of explosions) ex.age = (ex.age || 0) + dt;
+    explosions = explosions.filter(ex => { ex.r = (ex.r || 0) + (ex.maxR * (dt/ex.life || 0)); return ex.age < ex.life; });
+
+    units = units.filter(u => {
+      if(u._dying){
+        if(u._dyingTimer > u.deathDuration) return false;
+        return true;
+      }
+      return u.alive;
+    });
+
+    for(let i=towers.length-1;i>=0;i--){
+      if(towers[i].hp<=0) towers.splice(i,1);
+    }
+
+    const pT=towers.filter(t=>t.side==='player'), eT=towers.filter(t=>t.side==='enemy');
+    if(pT.length===0||eT.length===0) running=false;
+  }
+
+  updateCardButtonStates(); updateSpellButtonStates();
+
+  render();
+}
+requestAnimationFrame(frame);
+
+/* ---------- RENDER (with screen shake) ---------- */
+function render(){
+  let sx = 0, sy = 0;
+  if(shakeTime > 0){
+    const t = Math.min(1, shakeTime);
+    sx = (Math.random()*2-1) * shakeIntensity;
+    sy = (Math.random()*2-1) * shakeIntensity;
+    shakeTime = Math.max(0, shakeTime - 1/60);
+    shakeIntensity = Math.max(0, shakeIntensity * 0.96);
+  }
+
+  ctx.save();
+  ctx.translate(Math.round(sx), Math.round(sy));
+
+  ctx.fillStyle='#0e0f11'; ctx.fillRect(0,0,W,H);
+
+  ctx.save(); ctx.strokeStyle='rgba(255,255,255,0.04)'; ctx.lineWidth=2; ctx.setLineDash([6,6]); ctx.beginPath(); ctx.moveTo(W/2,0); ctx.lineTo(W/2,H); ctx.stroke(); ctx.setLineDash([]); ctx.font='12px sans-serif'; ctx.fillStyle='rgba(255,255,255,0.04)'; ctx.textAlign='center'; ctx.fillText('— no-deploy zone —',W/2,18); ctx.restore();
+
+  for(let i=1;i<=3;i++){ const y=(H/4)*i; ctx.fillStyle='rgba(255,255,255,0.01)'; ctx.fillRect(0,y-1,W,1) }
+
+  // draw towers & units & spells first
+  for(const t of towers) t.draw(ctx);
+  for(const u of units) u.draw(ctx);
+  for(const s of spellsActive) s.draw(ctx);
+
+  // pulses and swings must render over unit/building sprites
+  for(const p of pulses) p.draw(ctx);
+  for(const s of swings) s.draw(ctx);
+
+  // projectiles, particles, explosions afterwards
+  for(const p of projectiles) p.draw(ctx);
+  for(const p of particles) p.draw(ctx);
+
+  for(const ex of explosions){
+    const progress = clamp(ex.age / ex.life, 0, 1);
+    ctx.save();
+    ctx.globalAlpha = (1 - progress) * 0.9;
+    ctx.strokeStyle = ex.color || '#ffd54f';
+    ctx.lineWidth = 6 * (1 - progress);
+    ctx.beginPath();
+    ctx.arc(ex.x, ex.y, ex.maxR * progress, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.restore();
+
+  document.getElementById('elixirTextP').textContent=`P: ${elixirP.toFixed(1)}`;
+  document.getElementById('elixirTextE').textContent=`E: ${elixirE.toFixed(1)}`;
+  document.getElementById('elixirFillP').style.width=clamp(elixirP/CONFIG.maxElixir*100,0,100)+'%';
+  document.getElementById('elixirFillE').style.width=clamp(elixirE/CONFIG.maxElixir*100,0,100)+'%';
+
+  const topRight=document.getElementById('topRight');
+  if(!running){ if(towers.filter(t=>t.side==='enemy').length===0) topRight.textContent='You Win!'; else if(towers.filter(t=>t.side==='player').length===0) topRight.textContent='You Lose!'; else topRight.textContent='Paused' } else topRight.textContent='';
+}
+
+/* ---------- RESET ---------- */
+function resetGame(){
+  units=[]; spellsActive=[]; particles=[]; explosions=[]; projectiles=[]; pulses=[]; swings=[];
+  towers=[
+    new Tower(80*globalScale,H*0.25||60*globalScale,'player'),
+    new Tower(80*globalScale,H*0.5||Math.max(60*globalScale,H/2),'player'),
+    new Tower(80*globalScale,H*0.75||Math.max(120*globalScale,H*0.75),'player'),
+    new Tower(W-80*globalScale,H*0.25||60*globalScale,'enemy'),
+    new Tower(W-80*globalScale,H*0.5||Math.max(60*globalScale,H/2),'enemy'),
+    new Tower(W-80*globalScale,H*0.75||Math.max(120*globalScale,H*0.75),'enemy')
+  ];
+  elixirP=5; elixirE=5; running=true; selectedCard='knight'; selectedSpell=null;
+  for(const k in lastUsedCard) delete lastUsedCard[k];
+  for(const k in lastUsedSpell) delete lastUsedSpell[k];
+}
+
+/* ---------- UI BUILDERS (card + spell buttons) ---------- */
+/* added: golem and replicator to cardOrder so they'll appear in the UI (also furnace added) */
+const cardOrder={knight:'Knight',archer:'Archer',spiritBand:'Spirit Band',giant:'Giant',wizard:'Wizard',healer:'Healer',valkyrie:'Valkyrie',goblins:'Goblins',goblinHut:'Goblin Hut',minipekka:'Mini P.E.K.K.A',megaknight:'Mega Knight',elixirPump:'Elixir Pump',crossbow:'Crossbow',furnace:'Furnace',golem:'Golem',replicator:'Replicator'};
+const cardButtonElements={}, spellButtonElements={};
+function sortedCardKeys(){return Object.keys(cardOrder).sort((a,b)=>{const ca=(DATA[a]&&DATA[a].cost)?DATA[a].cost:(a==='goblins'?DATA.goblins.cost:0);const cb=(DATA[b]&&DATA[b].cost)?DATA[b].cost:(b==='goblins'?DATA.goblins.cost:0);if(ca!==cb)return ca-cb;return cardOrder[a].localeCompare(cardOrder[b])})}
+
+function buildCardButtons(){ if(!cardButtons) return; cardButtons.innerHTML=''; for(const key of sortedCardKeys()){ const def=DATA[key]||{cost:0}; const cost=def.cost??(key==='goblins'?DATA.goblins.cost:0); const color=def.color||'#777'; const btn=document.createElement('button'); btn.className='btn'; btn.dataset.card=key; btn.dataset.color=color; const left=document.createElement('div'); left.className='cardLabel'; const icon=document.createElement('span'); icon.className='cardIcon'; icon.style.background=color; const name=document.createElement('span'); name.className='cardName'; name.textContent=`${cardOrder[key]}`; left.appendChild(icon); left.appendChild(name); const right=document.createElement('div'); right.style.display='flex'; right.style.alignItems='center'; const costSpan=document.createElement('span'); costSpan.className='cost'; costSpan.textContent=`(${cost})`; right.appendChild(costSpan); btn.appendChild(left); btn.appendChild(right); 
+    const overlay=document.createElement('div'); overlay.className='coolOverlay'; const fill=document.createElement('div'); fill.className='coolFill'; const text=document.createElement('div'); text.className='coolText'; text.textContent=''; overlay.appendChild(fill); overlay.appendChild(text); btn.appendChild(overlay);
+    btn.addEventListener('click',(e)=>{ if(btn.classList.contains('disabled')) return; selectedCard=key; selectedSpell=null; updateCardButtonStates(); updateSpellButtonStates(); }); cardButtons.appendChild(btn); cardButtonElements[key]=btn; } }
+
+function buildSpellButtons(){ if(!spellButtons) return; spellButtons.innerHTML=''; for(const sk of ['fireball','arrows','log']){ const s=SPELLS[sk]; const btn=document.createElement('button'); btn.className='btn spellCompact'; btn.dataset.spell=sk; btn.dataset.color=s.color; const left=document.createElement('div'); left.className='cardLabel'; const name=document.createElement('span'); name.className='cardName'; name.textContent=`${s.name}`; left.appendChild(name); const right=document.createElement('div'); right.style.display='flex'; right.style.alignItems='center'; const costSpan=document.createElement('span'); costSpan.className='cost'; costSpan.textContent=`(${s.cost})`; right.appendChild(costSpan); btn.appendChild(left); btn.appendChild(right);
+    const overlay=document.createElement('div'); overlay.className='coolOverlay'; const fill=document.createElement('div'); fill.className='coolFill'; const text=document.createElement('div'); text.className='coolText'; text.textContent=''; overlay.appendChild(fill); overlay.appendChild(text); btn.appendChild(overlay);
+    btn.addEventListener('click',(e)=>{ if(btn.classList.contains('disabled')) return; selectedSpell=sk; selectedCard=null; updateSpellButtonStates(); updateCardButtonStates(); }); spellButtons.appendChild(btn); spellButtonElements[sk]=btn; } }
+
+function updateCardButtonStates(){ for(const key of Object.keys(cardButtonElements)){ const btn=cardButtonElements[key]; if(!btn) continue; const def=DATA[key]||{cost:0}; const cost=def.cost??(key==='goblins'?DATA.goblins.cost:0); if(elixirP<cost) btn.classList.add('disabled'); else btn.classList.remove('disabled'); if(selectedCard===key) btn.classList.add('selected'); else btn.classList.remove('selected'); const color=btn.dataset.color||'#777'; if(btn.classList.contains('disabled')) btn.style.border=`2px solid rgba(150,150,150,0.12)`; else btn.style.border=`2px solid ${color}`; const ic=btn.querySelector('.cardIcon'); if(ic) ic.style.filter=btn.classList.contains('disabled')?'grayscale(.6) brightness(.9)':''; const costSpan=btn.querySelector('.cost'); if(costSpan){ costSpan.textContent=`(${cost})`; costSpan.style.color='var(--elixir)'; } 
+    const overlay = btn.querySelector('.coolOverlay'); const fill = overlay && overlay.querySelector('.coolFill'); const text = overlay && overlay.querySelector('.coolText'); const last = lastUsedCard['player_'+key]||0; const rem = Math.max(0, CONFIG.cardCooldown - (now()-last)); const frac = Math.min(1, rem/CONFIG.cardCooldown); if(frac>0){ overlay.style.opacity='1'; if(fill) fill.style.height=(frac*100)+'%'; if(text) text.textContent = Math.ceil(rem*10)/10 + 's'; } else { overlay.style.opacity='0'; if(fill) fill.style.height='0%'; if(text) text.textContent=''; } } }
+
+function updateSpellButtonStates(){ for(const k of Object.keys(spellButtonElements)){ const btn=spellButtonElements[k]; if(!btn) continue; const def=SPELLS[k]; const cost=def.cost; if(elixirP<cost) btn.classList.add('disabled'); else btn.classList.remove('disabled'); if(selectedSpell===k) btn.classList.add('selected'); else btn.classList.remove('selected'); const color=btn.dataset.color||'#777'; if(btn.classList.contains('disabled')) btn.style.border=`2px solid rgba(150,150,150,0.12)`; else btn.style.border=`2px solid ${color}`; const costSpan=btn.querySelector('.cost'); if(costSpan){ costSpan.textContent=`(${cost})`; costSpan.style.color='var(--elixir)'; } 
+    const overlay = btn.querySelector('.coolOverlay'); const fill = overlay && overlay.querySelector('.coolFill'); const text = overlay && overlay.querySelector('.coolText'); const last = lastUsedSpell['player_spell_'+k]||0; const rem = Math.max(0, CONFIG.cardCooldown - (now()-last)); const frac = Math.min(1, rem/CONFIG.cardCooldown); if(frac>0){ overlay.style.opacity='1'; if(fill) fill.style.height=(frac*100)+'%'; if(text) text.textContent = Math.ceil(rem*10)/10 + 's'; } else { overlay.style.opacity='0'; if(fill) fill.style.height='0%'; if(text) text.textContent=''; } } }
+
+/* ---------- INPUT HANDLING (deploy + delete) ---------- */
+canvas.addEventListener('pointerdown',(ev)=>{ if(!running) return; const rect = canvas.getBoundingClientRect(); const x = ev.clientX - rect.left; const y = ev.clientY - rect.top;
+  if(deleteMode){
+    const clicked = findPlayerEntityAt(x,y);
+    if(clicked){
+      const idx = units.indexOf(clicked);
+      if(idx!==-1){ spawnExplosion(clicked.x, clicked.y, clicked.color, 0.9); units.splice(idx,1); }
+    }
+    exitDeleteMode();
+    updateCardButtonStates(); updateSpellButtonStates();
+    return;
+  }
+
+  if(selectedSpell){
+    if(tryDeploySpell(x,y,selectedSpell,'player')){ updateSpellButtonStates(); updateCardButtonStates(); }
+    return;
+  }
+  if(x>=0&&x<=canvas.width&&y>=0&&y<=canvas.height){
+    if(x<=canvas.width/2){
+      if(tryDeploy(x,y,'player',selectedCard)) updateCardButtonStates();
+    }
+  }
+});
+
+/* Delete button handling */
+const deleteBtn = document.getElementById('deleteBtn');
+deleteBtn.addEventListener('click', ()=>{
+  deleteMode = !deleteMode;
+  if(deleteMode) enterDeleteMode(); else exitDeleteMode();
+});
+function enterDeleteMode(){
+  deleteMode = true;
+  deleteBtn.classList.add('deleteActive');
+  canvas.classList.add('canvas-delete-cursor');
+}
+function exitDeleteMode(){
+  deleteMode = false;
+  deleteBtn.classList.remove('deleteActive');
+  canvas.classList.remove('canvas-delete-cursor');
+}
+function findPlayerEntityAt(x,y){
+  for(let i=units.length-1;i>=0;i--){
+    const u = units[i];
+    if(u.side!=='player') continue;
+    if(u.hut || u.pump || u.turret || u.furnace){
+      const r = rectFromBuilding(u);
+      if(x>=r.left && x<=r.right && y>=r.top && y<=r.bottom) return u;
+    } else {
+      const d = Math.hypot(u.x - x, u.y - y);
+      if(d <= (u.size||8)) return u;
+    }
+  }
+  return null;
+}
+
+/* Pause & reset */
+document.getElementById('pauseBtn').addEventListener('click',()=>{ running = !running; updatePauseButton() });
+document.getElementById('resetBtn').addEventListener('click',()=>{ resetGame(); updatePauseButton(); updateCardButtonStates(); updateSpellButtonStates() });
+function updatePauseButton(){ const p=document.getElementById('pauseBtn'); p.textContent=running?'Pause':'Resume' }
+
+/* ---------- RESIZE ---------- */
+function rescaleAll(factor){
+  for(const u of units){
+    u.x *= factor; u.y *= factor;
+    u.vx *= factor; u.vy *= factor;
+    u.desiredVx *= factor; u.desiredVy *= factor;
+    if(u._dashOrigin){ u._dashOrigin.x *= factor; u._dashOrigin.y *= factor; }
+    if(u._dashTarget && typeof u._dashTarget.x === 'number'){ u._dashTarget.x *= factor; u._dashTarget.y *= factor; }
+    u.size *= factor;
+    u.spd *= factor;
+    u.range *= factor;
+    if(u.hut) u.hutDetectionRadius = (u.hutDetectionRadius || DATA.goblinHut.detectionRadius * prevScale) * factor;
+    // furnace detection radius (if furnace exists in DATA)
+    if(u.furnace){
+      const base = (DATA.furnace && DATA.furnace.spawnDetectionRadius) ? DATA.furnace.spawnDetectionRadius : (DATA.goblinHut && DATA.goblinHut.detectionRadius) || 160;
+      u.furnaceDetectionRadius = (u.furnaceDetectionRadius || base * prevScale) * factor;
+    }
+  }
+  for(const t of towers){
+    t.x *= factor; t.y *= factor;
+    t.size *= factor;
+    t.range *= factor;
+  }
+  for(const s of spellsActive){
+    if(s instanceof LogProjectile){
+      s.x *= factor;
+      s.vx *= factor;
+      s.bodyWidth *= factor;
+      s.height *= factor;
+    } else {
+      s.x *= factor; s.y *= factor;
+      s.radius *= factor;
+    }
+  }
+  for(const p of particles){ p.x *= factor; p.y *= factor; p.vx *= factor; p.vy *= factor; p.size *= factor; }
+  for(const ex of explosions){ ex.x *= factor; ex.y *= factor; ex.maxR *= factor; }
+  for(const pr of projectiles){ pr.x *= factor; pr.y *= factor; pr.speed *= factor; pr.radius *= factor; }
+  for(const pu of pulses){ pu.x *= factor; pu.y *= factor; pu.r *= factor; }
+  for(const sw of swings){ sw.x *= factor; sw.y *= factor; sw.r *= factor; }
+}
+
+function resize(){
+  topBar.style.left = '8px'; topBar.style.right = '8px'; topBar.style.width = 'auto';
+  bottomUI.style.left = '8px'; bottomUI.style.right = '8px'; bottomUI.style.width = 'auto';
+
+  const topRect = topBar.getBoundingClientRect(), bottomRect = bottomUI.getBoundingClientRect();
+  const topH = Math.ceil(topRect.height) + 8, bottomH = Math.ceil(bottomRect.height) + 8;
+
+  const availableWidth = Math.max(120, window.innerWidth - 16);
+  const availableHeight = Math.max(120, window.innerHeight - topH - bottomH);
+
+  let fw = Math.min(availableWidth, Math.round(availableHeight * (14/9)));
+  let fh = Math.round(fw * (9/14));
+  if(fh > availableHeight){ fh = availableHeight; fw = Math.round(fh * (14/9)); }
+
+  const left = Math.round((window.innerWidth - fw) / 2);
+  canvas.style.width = fw + 'px'; canvas.style.height = fh + 'px'; canvas.width = fw; canvas.height = fh; canvas.style.left = left + 'px'; canvas.style.top = topH + 'px';
+
+  const oldW = W, oldH = H;
+  W = canvas.width; H = canvas.height;
+
+  const newScale = W / BASE_W;
+  if(!isFinite(newScale) || newScale <= 0) return;
+  const factor = newScale / globalScale;
+  if(Math.abs(factor - 1) > 1e-6) rescaleAll(factor);
+  prevScale = globalScale; globalScale = newScale;
+}
+window.addEventListener('resize', resize);
+
+/* ---------- STARTUP ---------- */
+function buildUIAndStart(){
+  resize();
+  resetGame();
+  buildCardButtons();
+  buildSpellButtons();
+  updateCardButtonStates();
+  updateSpellButtonStates();
+  updatePauseButton();
+  setTimeout(()=>{ resize(); buildCardButtons(); buildSpellButtons(); updateCardButtonStates(); updateSpellButtonStates(); },120);
+}
+document.addEventListener('DOMContentLoaded', buildUIAndStart);
+</script>
+</body>
+</html>
