@@ -13,6 +13,12 @@ const classicList = document.getElementById('classic-list');
 const SORT_KEY = 'project-launcher-sort';
 const SEARCH_KEY = 'project-launcher-search';
 const STATUS_KEY = 'project-launcher-status';
+const FAVORITES_KEY = 'project-launcher-favorites-v1';
+const RECENTS_KEY = 'project-launcher-recents-v1';
+const THEME_KEY = 'project-launcher-theme-v1';
+const REDUCED_MOTION_KEY = 'project-launcher-reduced-motion-v1';
+const COMPACT_MODE_KEY = 'project-launcher-compact-v1';
+const HIGH_CONTRAST_KEY = 'project-launcher-high-contrast-v1';
 const CHAT_USERNAME_KEY = 'mqtt_chat_username_v1';
 const TRUSTED_ORIGIN = window.location.origin;
 
@@ -214,6 +220,40 @@ function safeSet(key, value) {
   try { localStorage.setItem(key, value); } catch (e) { console.warn("Storage restricted."); }
 }
 
+function safeJsonGet(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return parsed ?? fallback;
+  } catch (e) {
+    return fallback;
+  }
+}
+
+function safeJsonSet(key, value) {
+  safeSet(key, JSON.stringify(value));
+}
+
+function isFavorite(url) {
+  return Array.isArray(favorites) && favorites.includes(url);
+}
+
+function toggleFavorite(url) {
+  const next = isFavorite(url) ? favorites.filter(item => item !== url) : [...favorites, url];
+  favorites = next.slice(-100);
+  safeJsonSet(FAVORITES_KEY, favorites);
+  renderFeatured();
+  renderProjects();
+}
+
+function addRecentProject(url, title, type = 'Game') {
+  if (!url) return;
+  const entry = { url, title: title || 'Project', type, timestamp: Date.now() };
+  recentProjects = [entry, ...(Array.isArray(recentProjects) ? recentProjects : []).filter(item => item && item.url !== url)].slice(0, 12);
+  safeJsonSet(RECENTS_KEY, recentProjects);
+}
+
 function getStatusMeta(statusKey) {
   return STATUS_META[statusKey] || { label: statusKey, className: 'status--legacy', bucket: 'legacy' };
 }
@@ -231,6 +271,10 @@ function debounce(func, delay) {
 let sortMode = safeGet(SORT_KEY) || 'default';
 let searchTerm = safeGet(SEARCH_KEY) || '';
 let statusValue = safeGet(STATUS_KEY) || 'all';
+let projectViewMode = 'all';
+let favorites = safeJsonGet(FAVORITES_KEY, []);
+let recentProjects = safeJsonGet(RECENTS_KEY, []);
+let deferredInstallPrompt = null;
 
 if (searchInput) searchInput.value = searchTerm;
 if (statusFilter) statusFilter.value = statusValue;
@@ -306,6 +350,8 @@ function renderFeatured() {
       <p>${esc(featured.description)}</p>
       <div class="featured-meta">${featured.tags.map(tag => `<span class="tag ${tag.includes('Top Pick') ? 'tag--featured' : ''}">${esc(tag)}</span>`).join('')}</div>
       <a class="play-btn" href="${featured.url}" target="_blank" rel="noopener noreferrer" aria-label="Play ${esc(featured.title)}" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">Launch</a>
+      <button type="button" class="card-tool-btn favorite-project-btn" data-url="${esc(featured.url)}" aria-label="${isFavorite(featured.url) ? 'Remove from favorites' : 'Add to favorites'}" aria-pressed="${isFavorite(featured.url) ? 'true' : 'false'}">${isFavorite(featured.url) ? '★' : '☆'}</button>
+      <button type="button" class="card-tool-btn copy-project-btn" data-url="${esc(new URL(featured.url, window.location.href).href)}" data-title="${esc(featured.title)}" aria-label="Copy project link">Copy</button>
     </div>
   `;
 }
@@ -327,7 +373,16 @@ function projectMatches(project) {
 }
 
 function filteredProjects() {
-  return sortedProjects().filter(project => !project.featured && projectMatches(project));
+  return sortedProjects().filter(project => {
+    if (project.featured) return false;
+    if (!projectMatches(project)) return false;
+    if (projectViewMode === 'favorites' && !isFavorite(project.url)) return false;
+    if (projectViewMode === 'recent') {
+      const recentUrls = new Set((Array.isArray(recentProjects) ? recentProjects : []).map(item => item && item.url).filter(Boolean));
+      if (!recentUrls.has(project.url)) return false;
+    }
+    return true;
+  });
 }
 
 function featuredMatchesFilters() {
@@ -341,8 +396,9 @@ function updateHelperText(count) {
   const filterText = [];
   if (searchTerm.trim()) filterText.push(`Search: ${searchTerm.trim()}`);
   if (statusValue !== 'all') filterText.push(`Status: ${getStatusMeta(statusValue).label}`);
+  const viewText = projectViewMode === 'favorites' ? 'Favorites only.' : projectViewMode === 'recent' ? 'Recently launched.' : '';
   const featuredNote = featuredMatchesFilters() ? ' Featured project matches your current search and filter and is shown above.' : '';
-  projectHelper.textContent = `${modeText} ${filterText.length ? filterText.join(' · ') + ' · ' : ''}${count} of ${total} projects shown.${featuredNote}`;
+  projectHelper.textContent = `${modeText} ${viewText} ${filterText.length ? filterText.join(' · ') + ' · ' : ''}${count} of ${total} projects shown.${featuredNote}`;
 }
 
 function renderProjects() {
@@ -381,6 +437,20 @@ function renderProjects() {
       const playBtn = clone.querySelector('.play-btn');
       playBtn.href = project.url;
       playBtn.setAttribute('aria-label', `Play ${project.title}`);
+
+      const favoriteBtn = clone.querySelector('.favorite-project-btn');
+      if (favoriteBtn) {
+        favoriteBtn.dataset.url = project.url;
+        favoriteBtn.setAttribute('aria-pressed', isFavorite(project.url) ? 'true' : 'false');
+        favoriteBtn.setAttribute('aria-label', isFavorite(project.url) ? `Remove ${project.title} from favorites` : `Add ${project.title} to favorites`);
+        favoriteBtn.textContent = isFavorite(project.url) ? '★' : '☆';
+      }
+
+      const copyBtn = clone.querySelector('.copy-project-btn');
+      if (copyBtn) {
+        copyBtn.dataset.url = new URL(project.url, window.location.href).href;
+        copyBtn.dataset.title = project.title;
+      }
       
       projectGrid.appendChild(clone);
     });
@@ -879,6 +949,7 @@ function createAppletWindow(appletPath, options = {}) {
 const activeGameWindows = {};
 
 function openGameWindow(url, title) {
+  addRecentProject(url, title, 'Game');
   if (activeGameWindows[url]) {
     activeGameWindows[url].open();
   } else {
@@ -993,6 +1064,37 @@ function setupAppletsAndFloatingWindows() {
     keepAlive: false
   });
 
+  createAppletWindow('control-panel.html', {
+    id: 'control-panel-window',
+    iframeId: 'control-panel-frame',
+    triggerBtnId: 'taskbar-control-btn',
+    title: 'Control Panel',
+    width: 'min(760px, calc(100vw - 36px))',
+    height: 'min(660px, calc(100vh - 110px))',
+    icon: 'images/icon.JPG',
+    keepAlive: true
+  });
+
+  createAppletWindow('system-monitor.html', {
+    id: 'system-monitor-window',
+    iframeId: 'system-monitor-frame',
+    triggerBtnId: 'taskbar-monitor-btn',
+    title: 'System Monitor',
+    width: 'min(760px, calc(100vw - 36px))',
+    height: 'min(640px, calc(100vh - 110px))',
+    keepAlive: true
+  });
+
+  createAppletWindow('timer.html', {
+    id: 'timer-window',
+    iframeId: 'timer-frame',
+    triggerBtnId: 'taskbar-timer-btn',
+    title: 'Timer',
+    width: 'min(460px, calc(100vw - 36px))',
+    height: 'min(520px, calc(100vh - 110px))',
+    keepAlive: true
+  });
+
   createAppletWindow('changelog.txt', {
     id: 'changelog-window',
     iframeId: 'changelog-frame',
@@ -1027,6 +1129,11 @@ function setupStartMenu() {
   startMenu.querySelectorAll('.start-item').forEach(item => {
     item.addEventListener('click', () => {
       startMenu.style.display = 'none';
+      const command = item.dataset.command;
+      if (command === 'Control Panel') document.getElementById('taskbar-control-btn')?.click();
+      else if (command === 'System Monitor') document.getElementById('taskbar-monitor-btn')?.click();
+      else if (command === 'Timer') document.getElementById('taskbar-timer-btn')?.click();
+      else if (command === 'Keyboard Shortcuts') showShortcutToast();
     });
   });
 }
@@ -1208,6 +1315,297 @@ function setupToSModal() {
   });
 }
 
+
+// ===== V4 UX / CONVENIENCE LAYER =====
+function applySavedAppearance() {
+  const html = document.documentElement;
+  const theme = safeGet(THEME_KEY) || 'classic';
+  html.dataset.theme = theme;
+  html.classList.toggle('reduced-motion', safeGet(REDUCED_MOTION_KEY) === 'true');
+  html.classList.toggle('compact-mode', safeGet(COMPACT_MODE_KEY) === 'true');
+  html.classList.toggle('high-contrast', safeGet(HIGH_CONTRAST_KEY) === 'true');
+}
+
+function persistAppearanceSetting(key, value) {
+  safeSet(key, String(value));
+  applySavedAppearance();
+}
+
+function setupNetworkStatus() {
+  const el = document.getElementById('network-status');
+  if (!el) return;
+  const paint = () => {
+    const online = navigator.onLine;
+    el.textContent = online ? 'NETWORK: ONLINE' : 'NETWORK: OFFLINE';
+    el.classList.toggle('network-status--offline', !online);
+    el.classList.toggle('network-status--online', online);
+    el.title = online ? 'Browser reports an online connection.' : 'Browser reports no network connection. Local apps may still work.';
+  };
+  window.addEventListener('online', paint);
+  window.addEventListener('offline', paint);
+  paint();
+}
+
+function openCommandPalette(initialQuery = '') {
+  const overlay = document.getElementById('command-palette');
+  const input = document.getElementById('command-palette-input');
+  if (!overlay || !input) return;
+  overlay.hidden = false;
+  input.value = initialQuery;
+  input.focus();
+  renderCommandPaletteResults();
+}
+
+function closeCommandPalette() {
+  const overlay = document.getElementById('command-palette');
+  if (overlay) overlay.hidden = true;
+}
+
+function commandPaletteCommands() {
+  const commands = [
+    { name: 'Home', keywords: 'home launcher desktop', action: () => document.getElementById('hero-title-anchor')?.scrollIntoView() },
+    { name: 'Announcements', keywords: 'news updates announcements', action: () => document.getElementById('announcements-anchor')?.scrollIntoView() },
+    { name: 'Featured Game', keywords: 'featured game launch', action: () => document.getElementById('featured-anchor')?.scrollIntoView() },
+    { name: 'Project Library', keywords: 'games projects library', action: () => document.getElementById('projects-anchor')?.scrollIntoView() },
+    { name: 'Classic Games', keywords: 'classic retro games', action: () => document.getElementById('classic-anchor')?.scrollIntoView() },
+    { name: 'Control Panel', keywords: 'settings preferences theme crt appearance', action: () => document.getElementById('taskbar-control-btn')?.click() },
+    { name: 'System Monitor', keywords: 'performance fps cpu memory network storage diagnostics', action: () => document.getElementById('taskbar-monitor-btn')?.click() },
+    { name: 'Timer', keywords: 'countdown stopwatch alarm timer', action: () => document.getElementById('taskbar-timer-btn')?.click() },
+    { name: 'Chatroom', keywords: 'chat messages dm community', action: () => document.getElementById('chat-launcher-btn')?.click() },
+    { name: 'Arcade Hub', keywords: 'arcade web games repository', action: () => document.getElementById('arcade-launcher-btn')?.click() },
+    { name: 'Web Browser', keywords: 'browser web proxy internet', action: () => document.getElementById('taskbar-browser-btn')?.click() },
+    { name: 'Paint', keywords: 'paint drawing canvas', action: () => document.getElementById('taskbar-paint-btn')?.click() },
+    { name: 'Weather', keywords: 'weather forecast', action: () => document.getElementById('taskbar-weather-btn')?.click() },
+    { name: 'Notes', keywords: 'notes scratchpad writing', action: () => document.getElementById('taskbar-notes-btn')?.click() },
+    { name: 'Calculator', keywords: 'calculator math', action: () => document.getElementById('taskbar-calculator-btn')?.click() },
+    { name: 'Clock', keywords: 'clock time', action: () => document.getElementById('taskbar-clock-btn')?.click() },
+    { name: 'Toggle CRT', keywords: 'crt scanlines visual effects', action: () => document.getElementById('crt-toggle-btn')?.click() },
+    { name: 'Toggle Favorites', keywords: 'favorites starred games', action: () => setProjectViewMode(projectViewMode === 'favorites' ? 'all' : 'favorites') },
+    { name: 'Show Recent Projects', keywords: 'recent history last played', action: () => setProjectViewMode('recent') },
+    { name: 'Keyboard Shortcuts', keywords: 'shortcuts hotkeys keyboard help', action: () => showShortcutToast() }
+  ];
+
+  for (const project of projects) {
+    commands.push({
+      name: project.title,
+      keywords: `${project.title} ${project.type} ${(project.tags || []).join(' ')}`,
+      action: () => openGameWindow(project.url, project.title)
+    });
+  }
+  return commands;
+}
+
+let commandPaletteIndex = 0;
+function renderCommandPaletteResults() {
+  const input = document.getElementById('command-palette-input');
+  const results = document.getElementById('command-palette-results');
+  if (!input || !results) return;
+  const term = input.value.trim().toLowerCase();
+  const matches = commandPaletteCommands().filter(command => !term || `${command.name} ${command.keywords}`.toLowerCase().includes(term)).slice(0, 12);
+  commandPaletteIndex = Math.min(commandPaletteIndex, Math.max(0, matches.length - 1));
+  results.replaceChildren();
+  matches.forEach((command, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `command-result${index === commandPaletteIndex ? ' selected' : ''}`;
+    button.setAttribute('role', 'option');
+    button.setAttribute('aria-selected', index === commandPaletteIndex ? 'true' : 'false');
+    button.innerHTML = `<strong>${esc(command.name)}</strong><span>${esc(command.keywords)}</span>`;
+    button.addEventListener('click', () => { closeCommandPalette(); command.action(); });
+    results.appendChild(button);
+  });
+  if (!matches.length) {
+    const empty = document.createElement('div');
+    empty.className = 'command-empty';
+    empty.textContent = 'No matching commands or games.';
+    results.appendChild(empty);
+  }
+}
+
+function executeSelectedCommand() {
+  const input = document.getElementById('command-palette-input');
+  if (!input) return;
+  const term = input.value.trim().toLowerCase();
+  const matches = commandPaletteCommands().filter(command => !term || `${command.name} ${command.keywords}`.toLowerCase().includes(term)).slice(0, 12);
+  const selected = matches[commandPaletteIndex] || matches[0];
+  if (!selected) return;
+  closeCommandPalette();
+  selected.action();
+}
+
+function setupCommandPalette() {
+  const overlay = document.getElementById('command-palette');
+  const input = document.getElementById('command-palette-input');
+  const closeBtn = document.getElementById('command-palette-close');
+  const openBtn = document.getElementById('command-palette-btn');
+  if (!overlay || !input) return;
+
+  openBtn?.addEventListener('click', () => openCommandPalette());
+  closeBtn?.addEventListener('click', closeCommandPalette);
+  overlay.addEventListener('click', event => { if (event.target === overlay) closeCommandPalette(); });
+  input.addEventListener('input', () => { commandPaletteIndex = 0; renderCommandPaletteResults(); });
+  input.addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const results = document.querySelectorAll('.command-result');
+      if (!results.length) return;
+      commandPaletteIndex = event.key === 'ArrowDown'
+        ? Math.min(commandPaletteIndex + 1, results.length - 1)
+        : Math.max(commandPaletteIndex - 1, 0);
+      renderCommandPaletteResults();
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      executeSelectedCommand();
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      closeCommandPalette();
+    }
+  });
+  document.addEventListener('keydown', event => {
+    const tag = document.activeElement?.tagName;
+    const inEditable = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || document.activeElement?.isContentEditable;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      openCommandPalette();
+      return;
+    }
+    if (!inEditable && event.key === '/' && overlay.hidden) {
+      event.preventDefault();
+      openCommandPalette();
+    }
+    if (event.key === 'Escape' && !overlay.hidden) closeCommandPalette();
+  });
+}
+
+function showShortcutToast() {
+  showGlobalToast('Shortcuts: Ctrl+K = Quick Launch · / = Quick Launch · Esc = close windows/dialogs');
+}
+
+let toastTimer;
+function showGlobalToast(message) {
+  let toast = document.getElementById('global-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'global-toast';
+    toast.className = 'global-toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = message;
+  toast.classList.add('visible');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('visible'), 3600);
+}
+
+function setProjectViewMode(mode) {
+  projectViewMode = ['all','favorites','recent'].includes(mode) ? mode : 'all';
+  document.getElementById('favorites-toggle')?.setAttribute('aria-pressed', projectViewMode === 'favorites' ? 'true' : 'false');
+  document.getElementById('recent-toggle')?.setAttribute('aria-pressed', projectViewMode === 'recent' ? 'true' : 'false');
+  const fav = document.getElementById('favorites-toggle');
+  if (fav) fav.textContent = projectViewMode === 'favorites' ? '★ Favorites' : '☆ Favorites';
+  renderProjects();
+}
+
+function setupProjectTools() {
+  document.getElementById('favorites-toggle')?.addEventListener('click', () => setProjectViewMode(projectViewMode === 'favorites' ? 'all' : 'favorites'));
+  document.getElementById('recent-toggle')?.addEventListener('click', () => setProjectViewMode(projectViewMode === 'recent' ? 'all' : 'recent'));
+  document.getElementById('clear-project-filters')?.addEventListener('click', () => {
+    projectViewMode = 'all';
+    searchTerm = '';
+    statusValue = 'all';
+    safeSet(SEARCH_KEY, '');
+    safeSet(STATUS_KEY, 'all');
+    if (searchInput) searchInput.value = '';
+    if (statusFilter) statusFilter.value = 'all';
+    setProjectViewMode('all');
+  });
+  document.addEventListener('click', async event => {
+    const favorite = event.target.closest('.favorite-project-btn');
+    if (favorite) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleFavorite(favorite.dataset.url || '');
+      showGlobalToast(isFavorite(favorite.dataset.url || '') ? 'Added to favorites.' : 'Removed from favorites.');
+      return;
+    }
+    const copy = event.target.closest('.copy-project-btn');
+    if (copy) {
+      event.preventDefault();
+      event.stopPropagation();
+      const url = copy.dataset.url;
+      if (!url) return;
+      try {
+        await navigator.clipboard.writeText(url);
+        showGlobalToast(`Copied link for ${copy.dataset.title || 'project'}.`);
+      } catch (error) {
+        showGlobalToast('Copy failed. Your browser blocked clipboard access.');
+      }
+    }
+  });
+}
+
+function setupInstallPrompt() {
+  window.addEventListener('beforeinstallprompt', event => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    showGlobalToast('Install option is available in Control Panel.');
+  });
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    showGlobalToast('Games Hub was installed as an app.');
+  });
+  window.__gamesHubInstall = async () => {
+    if (!deferredInstallPrompt) {
+      showGlobalToast('Your browser is not offering app installation right now.');
+      return false;
+    }
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    return true;
+  };
+}
+
+function setupFrameCommands() {
+  window.addEventListener('message', event => {
+    const data = event.data || {};
+    if (!isTrustedSameOriginMessage(event)) return;
+    if (data.source === 'control-panel') {
+      if (data.action === 'setTheme' && ['classic','gray','midnight'].includes(data.value)) {
+        persistAppearanceSetting(THEME_KEY, data.value);
+      } else if (data.action === 'setToggle' && [REDUCED_MOTION_KEY, COMPACT_MODE_KEY, HIGH_CONTRAST_KEY].includes(data.key)) {
+        persistAppearanceSetting(data.key, Boolean(data.value));
+      } else if (data.action === 'resetUi') {
+        [THEME_KEY, REDUCED_MOTION_KEY, COMPACT_MODE_KEY, HIGH_CONTRAST_KEY].forEach(key => safeSet(key, key === THEME_KEY ? 'classic' : 'false'));
+        applySavedAppearance();
+        showGlobalToast('Interface preferences reset.');
+      } else if (data.action === 'clearRecents') {
+        recentProjects = [];
+        safeJsonSet(RECENTS_KEY, recentProjects);
+        showGlobalToast('Recent project history cleared.');
+      } else if (data.action === 'clearFavorites') {
+        favorites = [];
+        safeJsonSet(FAVORITES_KEY, favorites);
+        renderProjects();
+        showGlobalToast('Favorites cleared.');
+      } else if (data.action === 'install') {
+        window.__gamesHubInstall?.();
+      } else if (data.action === 'quickLaunch') {
+        openCommandPalette();
+      }
+    }
+  });
+}
+
+function setupLandingPerformance() {
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(() => {
+      document.querySelectorAll('img[loading="lazy"]').forEach(img => {
+        if ('decode' in img) img.decode().catch(() => {});
+      });
+    }, { timeout: 1800 });
+  }
+}
+
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded', () => {
   renderSiteData();
@@ -1227,6 +1625,13 @@ document.addEventListener('DOMContentLoaded', () => {
   setupGameLaunchers();
   setupChatWidget();
   setupPingBannerDismiss();
+  applySavedAppearance();
+  setupNetworkStatus();
+  setupCommandPalette();
+  setupProjectTools();
+  setupInstallPrompt();
+  setupFrameCommands();
+  setupLandingPerformance();
   updateTaskbarClock();
   setInterval(updateTaskbarClock, 1000);
 });

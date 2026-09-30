@@ -379,6 +379,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
             <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
                 <span id="status" style="font-size: 13px; font-weight: bold;">Connecting to chatroom...</span>
+                <span id="connection-status" style="display: inline-block; width: fit-content; font-size: 10px; padding: 1px 4px; border: 1px inset #808080; background: #ffffcc; color: #775500;">MQTT: CONNECTING</span>
                 <span id="activity-status" style="font-size: 11px; color: #555;">On homepage</span>
             </div>
             <div style="display: flex; gap: 4px; align-items: center;">
@@ -582,6 +583,7 @@
             userIp: document.getElementById("username-input"),
             status: document.getElementById("status"),
             activityStatus: document.getElementById("activity-status"),
+            connectionStatus: document.getElementById("connection-status"),
             chatBox: document.getElementById("chat-box"),
             newMsgPopup: document.getElementById("new-msg-popup"),
             msgIp: document.getElementById("msg-input"),
@@ -1843,8 +1845,10 @@
             });
 
             client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
+            updateConnectionStatus("CONNECTING", "normal");
             client.on("connect", () => {
                 isConnected = true;
+                updateConnectionStatus("CONNECTED", "good");
                 client.subscribe(ROOM_TOPIC, (err) => {
                     if (!err) {
                         backupRestorePromise.finally(() => {
@@ -1854,6 +1858,21 @@
                         if (!window.pingInterval) { window.pingInterval = setInterval(() => { if (isConnected) publishPing(); }, 5000); }
                     }
                 });
+            });
+            client.on("reconnect", () => {
+                isConnected = false;
+                updateConnectionStatus("RECONNECTING", "normal");
+            });
+            client.on("close", () => {
+                isConnected = false;
+                updateConnectionStatus("DISCONNECTED", "bad");
+            });
+            client.on("offline", () => {
+                isConnected = false;
+                updateConnectionStatus("OFFLINE", "bad");
+            });
+            client.on("error", () => {
+                updateConnectionStatus("ERROR", "bad");
             });
 
             setupMqttListeners();
@@ -3362,6 +3381,14 @@
         function confirmClearAll() { if (isAdmin && confirm("Are you sure you want to completely NUKE all messages forever?")) publishMessage({ type: "CLEAR_ALL", author: myUsername, id: generateId(), timestamp: Date.now() }); }
         function evaluateAdminRole() { const wasAdmin = isAdmin; isAdmin = ADMINS.includes(myUsername); updateStatusText(); if (wasAdmin !== isAdmin) scheduleRenderActiveTabMessages(); }
         function updateStatusText() { ui.status.innerText = `${isAdmin ? "[ADMIN]" : "[USER]"} Connected as "${myUsername}"`; ui.adminClearBtn.style.display = isAdmin ? "block" : "none"; }
+        function updateConnectionStatus(label, tone = "normal") {
+            if (!ui.connectionStatus) return;
+            ui.connectionStatus.textContent = `MQTT: ${label}`;
+            const tones = { normal: ["#ffffcc", "#775500"], good: ["#ccffcc", "#005500"], bad: ["#ffcccc", "#880000"] };
+            const colors = tones[tone] || tones.normal;
+            ui.connectionStatus.style.background = colors[0];
+            ui.connectionStatus.style.color = colors[1];
+        }
 
         function checkPresence() {
             const now = Date.now();

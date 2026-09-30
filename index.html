@@ -11,6 +11,7 @@
   <title>Colton's Project Launcher</title>
   <link rel="icon" href="images/icon.JPG">
   <link rel="stylesheet" href="styles.css" />
+  <link rel="manifest" href="manifest.webmanifest" />
   <style>
     .win95-btn-wrapper {
       display: flex;
@@ -102,8 +103,9 @@
           <p class="hero-copy" id="hero-copy"></p>
           <p class="hero-note" id="hero-note"></p>
           
-          <div style="text-align: center; font-size: 13pt; margin-top: 10px; font-weight: bold; font-family: 'W95FA', 'MS Sans Serif', sans-serif;">
-            Online now: <strong id="online-count" class="visit-highlight">...</strong>
+          <div class="desktop-status-row" aria-live="polite">
+            <div class="desktop-online">Online now: <strong id="online-count" class="visit-highlight">...</strong></div>
+            <div id="network-status" class="network-status network-status--online" title="Network status">NETWORK: ONLINE</div>
           </div>
           
           <table class="stats-table" id="stats-row" aria-label="Project statistics">
@@ -180,6 +182,9 @@
                 <option value="abandoned">Abandoned</option>
               </select>
               <button id="sort-toggle" class="sort-btn" type="button" aria-pressed="false">Sort by type</button>
+              <button id="favorites-toggle" class="sort-btn" type="button" aria-pressed="false">☆ Favorites</button>
+              <button id="recent-toggle" class="sort-btn" type="button" aria-pressed="false">Recent</button>
+              <button id="clear-project-filters" class="sort-btn" type="button">Clear</button>
             </div>
           </div>
           <div id="project-grid" class="project-grid" aria-live="polite"></div>
@@ -203,8 +208,10 @@
       <p id="footer-copyright"></p>
       <p id="footer-updated"></p>
       <div class="footer-tools" aria-label="Site information tools">
+        <button type="button" id="command-palette-btn" class="footer-tool-btn">Quick Launch</button>
         <button type="button" id="changelog-btn" class="footer-tool-btn" aria-haspopup="dialog" aria-controls="changelog-window">View Changelog</button>
       </div>
+      <p class="footer-note footer-key-hint">Tip: Press <strong>Ctrl+K</strong> anytime to open Quick Launch.</p>
       <p class="footer-note" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">Times you have visited: #<strong id="visit-count" class="visit-highlight" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">......</strong> &nbsp;|&nbsp; This page is best viewed with a monitor</p>
     </footer>
 
@@ -225,6 +232,8 @@
         <p></p>
         <div class="card-actions">
           <a class="play-btn" href="" target="_blank" rel="noopener noreferrer" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">Launch</a>
+          <button type="button" class="card-tool-btn favorite-project-btn" aria-label="Add to favorites" aria-pressed="false">☆</button>
+          <button type="button" class="card-tool-btn copy-project-btn" aria-label="Copy project link">Copy</button>
         </div>
       </div>
     </article>
@@ -254,6 +263,10 @@
       <a href="#featured-anchor" class="start-item">Featured Game</a>
       <a href="#projects-anchor" class="start-item">Project Library</a>
       <a href="#classic-anchor" class="start-item">Classic Games</a>
+      <button type="button" class="start-item start-item-button" data-command="Control Panel">Control Panel</button>
+      <button type="button" class="start-item start-item-button" data-command="System Monitor">System Monitor</button>
+      <button type="button" class="start-item start-item-button" data-command="Timer">Timer</button>
+      <button type="button" class="start-item start-item-button" data-command="Keyboard Shortcuts">Keyboard Shortcuts</button>
     </div>
   </div>
 
@@ -287,11 +300,37 @@
         <span class="taskbar-app-icon" aria-hidden="true">W</span>
         <span class="taskbar-app-label">Browser</span>
       </button>
+      <button type="button" class="taskbar-app-btn" id="taskbar-control-btn" title="Control Panel">
+        <span class="taskbar-app-icon" aria-hidden="true">C</span>
+        <span class="taskbar-app-label">Control</span>
+      </button>
+      <button type="button" class="taskbar-app-btn" id="taskbar-monitor-btn" title="System Monitor">
+        <span class="taskbar-app-icon" aria-hidden="true">M</span>
+        <span class="taskbar-app-label">Monitor</span>
+      </button>
+      <button type="button" class="taskbar-app-btn" id="taskbar-timer-btn" title="Timer">
+        <span class="taskbar-app-icon" aria-hidden="true">T</span>
+        <span class="taskbar-app-label">Timer</span>
+      </button>
     </div>
     <div class="taskbar-spacer"></div>
     <div class="taskbar-status">
       <div class="taskbar-date" id="taskbar-date"></div>
       <div class="taskbar-clock" id="taskbar-clock"></div>
+    </div>
+  </div>
+
+  <div id="command-palette" class="command-palette" hidden role="dialog" aria-modal="true" aria-labelledby="command-palette-title">
+    <div class="command-palette-box panel">
+      <div class="panel-title-bar">
+        <span id="command-palette-title">QUICK LAUNCH</span>
+        <button type="button" class="win-btn" id="command-palette-close" aria-label="Close quick launch">✕</button>
+      </div>
+      <div class="panel-body">
+        <input id="command-palette-input" class="command-palette-input" type="search" autocomplete="off" placeholder="Type an app, game, section, or command…" aria-label="Quick launch search" />
+        <div id="command-palette-results" class="command-palette-results" role="listbox"></div>
+        <p class="command-palette-help">Ctrl+K opens this launcher · ↑↓ selects · Enter runs · Esc closes</p>
+      </div>
     </div>
   </div>
 
@@ -348,6 +387,15 @@
 
   <script src="data.js"></script> 
   <script src="main.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('service-worker.js', { scope: './' }).catch(function (error) {
+          console.warn('Service worker registration failed:', error);
+        });
+      });
+    }
+  </script>
 
   <!-- Google Analytics Detailed Event Tracking -->
   <script>

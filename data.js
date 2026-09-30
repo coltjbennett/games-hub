@@ -1,7 +1,7 @@
 // data.js
 
 const siteData = {
-  version: "v3.1.4",
+  version: "v4.0.0",
   author: "COLTON BENNETT",
   location: "Waukesha, WI",
   heroTitle: "Project Launcher",
@@ -9,10 +9,14 @@ const siteData = {
   heroNote: "These are all made by me over the last year, and I do hope you enjoy!<br>Please excuse any bugs you find; I am still ironing things out.",
   marqueeText: "★★★ WELCOME TO COLTON'S PROJECT LAUNCHER ★★★ &nbsp;|&nbsp; BEST VIEWED IN 1024x768 &nbsp;|&nbsp; NETSCAPE NAVIGATOR 4.0 RECOMMENDED &nbsp;|&nbsp; ★★★ SIGN MY GUESTBOOK ★★★",
   footerCopyright: "© 2026 Colton Bennett",
-  footerLastUpdated: "September 18, 2026, 10:32:00"
+  footerLastUpdated: "September 30, 2026, 08:45:00"
 };
 
 const announcements = [
+  {
+    title: "v4.0 — Desktop upgrade",
+    content: "The launcher now has a Control Panel, System Monitor, Timer, command palette, favorites, recent-project tracking, keyboard shortcuts, offline/PWA support, a live network indicator, and a more resilient Arcade cache."
+  },
   {
     title: "New releases",
     content: " - A Universal Chatroom has been fully implemented, press the 'chat' button in the bottom right to open it! It connects all users that are currently on the site. Private messages to individual users, audio messages, file sharing, and replying to messages have all been added.<br> - New beta out for a multiplayer PvP FPS game"
