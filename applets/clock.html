@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clock</title>
+  <style>
+    @font-face {
+      font-family: "W95FA";
+      src: url('images/w95f.woff2') format('woff2'),
+           url('images/w95f.woff') format('woff');
+      font-weight: normal;
+      font-style: normal;
+    }
+
+    :root {
+      --win-bg: #c0c0c0;
+      --win-blue: #000080;
+      --win-text: #000000;
+      --win-border-light: #ffffff;
+      --win-border-dark: #808080;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: "W95FA", "MS Sans Serif", sans-serif;
+      user-select: none;
+    }
+
+    body {
+      background: var(--win-bg);
+      color: var(--win-text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 10px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 4px;
+      padding-bottom: 10px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      background: var(--win-bg);
+      border: 2px outset var(--win-border-light);
+      color: var(--win-text);
+      padding: 6px 0;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .tab-btn.active {
+      border: 2px inset var(--win-border-light);
+      background: #e0e0e0;
+      font-weight: bold;
+    }
+
+    .view {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      gap: 12px;
+      border: 2px inset var(--win-border-dark);
+      background: #ffffff;
+    }
+
+    .view.active { display: flex; }
+    
+    .digital-clock { 
+      font-size: 2.5rem; 
+      letter-spacing: 1px; 
+      font-weight: bold;
+    }
+    
+    .date-display { font-size: 13px; color: #555; }
+    
+    .controls { display: flex; gap: 8px; }
+
+    button.action {
+      background: var(--win-bg);
+      border: 2px outset var(--win-border-light);
+      color: var(--win-text);
+      padding: 4px 14px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    button.action:active {
+      border-style: inset;
+      padding: 5px 13px 3px 15px;
+    }
+
+    input[type="number"], input[type="time"] {
+      background: #ffffff;
+      border: 2px inset var(--win-border-dark);
+      color: var(--win-text);
+      padding: 4px 8px;
+      text-align: center;
+      outline: none;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="tabs">
+    <button class="tab-btn active" id="btn-clock" onclick="showTab('clock')">Clock</button>
+    <button class="tab-btn" id="btn-stopwatch" onclick="showTab('stopwatch')">Stopwatch</button>
+    <button class="tab-btn" id="btn-timer" onclick="showTab('timer')">Timer</button>
+    <button class="tab-btn" id="btn-alarm" onclick="showTab('alarm')">Alarm</button>
+  </div>
+
+  <div id="clockView" class="view active">
+    <div class="digital-clock" id="clockDisplay">00:00:00</div>
+    <div class="date-display" id="dateDisplay">---</div>
+  </div>
+
+  <div id="stopwatchView" class="view">
+    <div class="digital-clock" id="swDisplay">00:00.00</div>
+    <div class="controls">
+      <button class="action" onclick="startSW()">Start</button>
+      <button class="action" onclick="stopSW()">Stop</button>
+      <button class="action" onclick="resetSW()">Reset</button>
+    </div>
+  </div>
+
+  <div id="timerView" class="view">
+    <div>
+      <input type="number" id="timerSec" min="1" max="3600" value="60" style="width: 70px;"> sec
+    </div>
+    <div class="digital-clock" id="timerDisplay">01:00</div>
+    <div class="controls">
+      <button class="action" onclick="startTimer()">Start</button>
+      <button class="action" onclick="resetTimer()">Reset</button>
+    </div>
+  </div>
+
+  <div id="alarmView" class="view">
+    <input type="time" id="alarmTime">
+    <button class="action" onclick="setAlarm()">Set Alarm</button>
+    <div id="alarmMsg" class="date-display" style="margin-top: 8px;">No alarm set</div>
+  </div>
+
+  <script>
+    // Tab switching Logic
+    function showTab(name) {
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById(name + 'View').classList.add('active');
+      document.getElementById('btn-' + name).classList.add('active');
+    }
+
+    // --- Clock Logic ---
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('clockDisplay').innerText = now.toLocaleTimeString();
+      document.getElementById('dateDisplay').innerText = now.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+      checkAlarm(now);
+    }
+    setInterval(updateClock, 1000);
+    updateClock(); // Initial paint
+
+    // --- Stopwatch Logic ---
+    let swInterval = null;
+    let swStartTime = 0;
+    let swElapsedTime = 0;
+
+    function startSW() {
+      if (swInterval) return;
+      swStartTime = Date.now() - swElapsedTime;
+      swInterval = setInterval(() => {
+        swElapsedTime = Date.now() - swStartTime;
+        let totalSec = Math.floor(swElapsedTime / 1000);
+        let ms = Math.floor((swElapsedTime % 1000) / 10).toString().padStart(2, '0');
+        let s = (totalSec % 60).toString().padStart(2, '0');
+        let m = Math.floor(totalSec / 60).toString().padStart(2, '0');
+        document.getElementById('swDisplay').innerText = `${m}:${s}.${ms}`;
+      }, 10);
+    }
+    
+    function stopSW() { 
+      clearInterval(swInterval); 
+      swInterval = null; 
+    }
+    
+    function resetSW() { 
+      stopSW(); 
+      swElapsedTime = 0; 
+      document.getElementById('swDisplay').innerText = '00:00.00'; 
+    }
+
+    // --- Timer Logic ---
+    let timerInterval = null;
+    let timerEndTime = 0;
+    
+    function startTimer() {
+      resetTimer();
+      let secondsInput = parseInt(document.getElementById('timerSec').value) || 0;
+      if (secondsInput <= 0) return;
+      
+      timerEndTime = Date.now() + (secondsInput * 1000);
+      updateTimerDisplay(secondsInput);
+      
+      timerInterval = setInterval(() => {
+        let remaining = Math.max(0, Math.ceil((timerEndTime - Date.now()) / 1000));
+        updateTimerDisplay(remaining);
+        
+        if (remaining <= 0) {
+          clearInterval(timerInterval);
+          timerInterval = null;
+          setTimeout(() => alert('Timer Finished!'), 10);
+        }
+      }, 100);
+    }
+    
+    function resetTimer() { 
+      if(timerInterval) clearInterval(timerInterval);
+      timerInterval = null;
+      let initSec = parseInt(document.getElementById('timerSec').value) || 0;
+      updateTimerDisplay(initSec);
+    }
+    
+    function updateTimerDisplay(totalSeconds) {
+      let m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+      let s = (totalSeconds % 60).toString().padStart(2, '0');
+      document.getElementById('timerDisplay').innerText = `${m}:${s}`;
+    }
+
+    // --- Alarm Logic ---
+    let alarmTarget = null;
+    let alarmTriggered = false;
+
+    function setAlarm() {
+      const val = document.getElementById('alarmTime').value;
+      if (!val) return;
+      alarmTarget = val;
+      alarmTriggered = false;
+      document.getElementById('alarmMsg').innerText = `Alarm set for ${val}`;
+    }
+    
+    function checkAlarm(now) {
+      if (!alarmTarget || alarmTriggered) return;
+      
+      const currentHM = now.toTimeString().slice(0, 5); // Grabs HH:MM in 24hr format
+      if (currentHM === alarmTarget && now.getSeconds() === 0) {
+        alarmTriggered = true; // Prevent multiple alerts within the same minute
+        setTimeout(() => alert('Your alarm is finished.'), 10);
+        document.getElementById('alarmMsg').innerText = 'Alarm passed.';
+      }
+    }
+  </script>
+</body>
+</html>

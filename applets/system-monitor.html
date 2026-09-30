@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>System Monitor</title>
+  <style>
+    @font-face{font-family:W95FA;src:url('../images/w95f.woff2') format('woff2'),url('../images/w95f.woff') format('woff')}
+    *{box-sizing:border-box}body{margin:0;background:#c0c0c0;color:#000;font-family:W95FA,"MS Sans Serif",Tahoma,Arial,sans-serif;padding:8px;font-size:12px}.bar{background:#000080;color:#fff;padding:5px 8px;font-weight:bold}.panel{border:2px outset #fff;padding:8px;margin-bottom:9px;background:#c0c0c0}.meter{height:18px;background:#fff;border:2px inset #808080;overflow:hidden}.meter>span{display:block;height:100%;width:0;background:#000080}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:7px}.stat{background:#fff;border:2px inset #808080;padding:7px;min-width:0}.label{display:block;color:#555;font:10px Arial,sans-serif;text-transform:uppercase}.value{font-size:15px;font-weight:bold;word-break:break-word}.tiny{font:11px Arial,sans-serif;color:#444;line-height:1.4}.good{color:#006600}.warn{color:#8b6500}.bad{color:#990000}.storage-table{width:100%;border-collapse:collapse;background:#fff}.storage-table th,.storage-table td{border:1px solid #808080;padding:4px;text-align:left;vertical-align:top}.storage-table th{background:#d4d0c8}.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.btn{font:inherit;background:#c0c0c0;border:2px outset #fff;padding:4px 8px}.btn:active{border-style:inset}.danger{background:#ffcccc}.scroll{max-height:170px;overflow:auto;border:2px inset #808080;background:#fff}.bucket-size{font-weight:bold;white-space:nowrap}
+  </style>
+</head>
+<body>
+  <div class="panel"><div class="bar">SYSTEM MONITOR</div><div class="tiny" style="margin-top:8px">Browser-side diagnostics. Storage sizes are origin estimates; browsers do not expose an exact byte count for every IndexedDB database.</div></div>
+  <div class="panel"><div class="grid" id="stats"></div></div>
+  <div class="panel"><div class="label">Animation / render FPS</div><div class="meter"><span id="fps-bar"></span></div><div id="fps-text" class="value" style="margin-top:5px">-- FPS</div></div>
+  <div class="panel"><div class="label">Estimated total origin storage</div><div class="meter"><span id="storage-bar"></span></div><div id="storage-text" class="value" style="margin-top:5px">Calculating…</div></div>
+
+  <div class="panel">
+    <div class="bar">STORAGE MANAGER</div>
+    <div class="tiny" style="margin:7px 0">Cache Storage is measured by enumerating cached responses. localStorage/sessionStorage are counted directly. IndexedDB is shown as a browser-estimated remainder when per-database sizes are unavailable.</div>
+    <table class="storage-table"><thead><tr><th>Bucket</th><th>Estimate</th><th>Details</th></tr></thead><tbody id="storage-rows"></tbody></table>
+    <div class="actions">
+      <button class="btn" id="refresh-storage">Refresh</button>
+      <button class="btn" id="clear-caches">Clear site caches</button>
+      <button class="btn" id="clear-local">Clear launcher localStorage</button><button class="btn" id="clear-session">Clear sessionStorage</button>
+      <button class="btn danger" id="clear-idb">Delete site IndexedDB</button>
+    </div>
+    <div class="tiny" id="storage-note" style="margin-top:7px"></div>
+  </div>
+
+  <div class="panel"><div class="bar">CACHE / DATABASE DIAGNOSTICS</div><div class="scroll"><table class="storage-table"><thead><tr><th>Name</th><th>Type</th><th>Estimate</th></tr></thead><tbody id="detail-rows"></tbody></table></div></div>
+  <div class="panel"><div class="tiny" id="notes"></div></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const fmtBytes=n=>{if(!Number.isFinite(n))return 'n/a';const u=['B','KB','MB','GB'];let i=0,v=Math.max(0,n);while(v>=1024&&i<u.length-1){v/=1024;i++}return `${v.toFixed(i?1:0)} ${u[i]}`};
+const stat=(label,value,cls='')=>{const d=document.createElement('div');d.className='stat';d.innerHTML=`<span class="label">${label}</span><span class="value ${cls}">${value}</span>`;return d};
+function storageRows(){return $('storage-rows')}
+function localStorageBytes(storage){let n=0;for(let i=0;i<storage.length;i++){const k=storage.key(i)||'';const v=storage.getItem(k)||'';n+=(new TextEncoder().encode(k).byteLength)+(new TextEncoder().encode(v).byteLength)}return n}
+async function cacheDetails(){const out=[];let total=0;try{for(const name of await caches.keys()){const cache=await caches.open(name);let size=0,count=0;for(const req of await cache.keys()){try{const r=await cache.match(req);if(!r)continue;count++;const blob=await r.clone().blob();size+=blob.size}catch(_){} }out.push({name,type:'Cache Storage',size,count});total+=size}}catch(e){out.push({name:'Cache Storage unavailable',type:'Cache Storage',size:NaN,error:String(e)})}return {out,total}}
+async function idbDetails(){const out=[];try{if(indexedDB.databases){for(const db of await indexedDB.databases()){out.push({name:db.name||'(unnamed)',type:`IndexedDB${db.version?' v'+db.version:''}`,size:NaN})}}}catch(_){}return out}
+async function refreshStorage(){
+  const rows=storageRows();rows.replaceChildren();$('detail-rows').replaceChildren();$('storage-note').textContent='Scanning…';
+  let totalUsage=NaN,quota=NaN;try{const e=await navigator.storage?.estimate();totalUsage=e?.usage;quota=e?.quota}catch(_){}
+  const local=(()=>{try{return localStorageBytes(localStorage)}catch(_){return NaN}})();
+  const session=(()=>{try{return localStorageBytes(sessionStorage)}catch(_){return NaN}})();
+  const cachesInfo=await cacheDetails();
+  const idbs=await idbDetails();
+  const known=Number.isFinite(local)?local:0;
+  const known2=known+(Number.isFinite(session)?session:0)+(Number.isFinite(cachesInfo.total)?cachesInfo.total:0);
+  const idbRemainder=Number.isFinite(totalUsage)?Math.max(0,totalUsage-known2):NaN;
+  const items=[['Cache Storage',cachesInfo.total,'enumerated cached responses'],['IndexedDB / localForage',idbRemainder,idbs.length?`${idbs.length} database(s); browser does not expose per-db bytes`: 'no database list exposed'],['localStorage',local,'direct UTF-8 estimate'],['sessionStorage',session,'direct UTF-8 estimate'],['Total origin usage',totalUsage,quota?`quota ${fmtBytes(quota)}`:'browser estimate']];
+  for(const [name,size,detail] of items){const tr=document.createElement('tr');tr.innerHTML=`<td>${name}</td><td class="bucket-size">${fmtBytes(size)}</td><td>${detail}</td>`;rows.appendChild(tr)}
+  [...cachesInfo.out,...idbs].forEach(d=>{const tr=document.createElement('tr');tr.innerHTML=`<td>${d.name||'(unnamed)'}</td><td>${d.type}</td><td>${fmtBytes(d.size)}</td>`;$('detail-rows').appendChild(tr)});
+  $('storage-note').textContent='Deleting IndexedDB can remove chat history and any other site data stored there. Cache cleanup is safe; launcher localStorage may include game saves and settings.';
+}
+async function refresh(){
+  const stats=$('stats');stats.replaceChildren();
+  stats.append(stat('Browser online',navigator.onLine?'YES':'NO',navigator.onLine?'good':'bad'));
+  stats.append(stat('Viewport',`${innerWidth} × ${innerHeight}`));stats.append(stat('Device pixel ratio',window.devicePixelRatio||1));stats.append(stat('CPU threads',navigator.hardwareConcurrency||'n/a'));stats.append(stat('Device memory',navigator.deviceMemory?`${navigator.deviceMemory} GB`:'n/a'));stats.append(stat('Network',navigator.connection?.effectiveType||'n/a'));stats.append(stat('Data saver',navigator.connection?.saveData?'ON':'OFF',navigator.connection?.saveData?'warn':''));
+  if(performance.memory)stats.append(stat('JS heap',`${fmtBytes(performance.memory.usedJSHeapSize)} / ${fmtBytes(performance.memory.jsHeapSizeLimit)}`));
+  try{const e=await navigator.storage?.estimate();if(e&&e.quota){const ratio=(e.usage||0)/e.quota*100;$('storage-bar').style.width=Math.min(100,ratio)+'%';$('storage-text').textContent=`${fmtBytes(e.usage||0)} used of ${fmtBytes(e.quota)} (${ratio.toFixed(1)}%)`}}catch(_){$('storage-text').textContent='Storage estimate unavailable.'}
+  const notes=[];if(document.visibilityState==='hidden')notes.push('Monitor paused while hidden.');if(navigator.connection?.saveData)notes.push('Data Saver detected; the launcher can automatically enter Low Power Mode.');if(!navigator.onLine)notes.push('Offline mode active.');$('notes').textContent=notes.length?notes.join(' '):'No browser-side warnings detected.';
+}
+let raf=0,frames=0,last=performance.now();function frame(now){if(document.hidden)return;frames++;if(now-last>=1000){const fps=frames*1000/(now-last);const rounded=Math.round(fps);$('fps-text').textContent=`${rounded} FPS`;$('fps-bar').style.width=Math.min(100,rounded/1.2)+'%';frames=0;last=now}raf=requestAnimationFrame(frame)}
+function startFps(){if(raf)cancelAnimationFrame(raf);if(!document.hidden){last=performance.now();frames=0;raf=requestAnimationFrame(frame)}}
+document.addEventListener('visibilitychange',()=>{startFps();if(!document.hidden)refresh()});
+$('refresh-storage').onclick=refreshStorage;
+$('clear-caches').onclick=async()=>{if(confirm('Delete all site Cache Storage?')){for(const n of await caches.keys())await caches.delete(n);await refreshStorage();}};
+$('clear-session').onclick=()=>{if(confirm('Clear this tab sessionStorage?')){try{sessionStorage.clear()}catch(_){};refreshStorage()}};
+$('clear-local').onclick=()=>{if(!confirm('Clear launcher localStorage? This can remove theme settings and game saves. Chat IndexedDB is not affected.'))return;const keep=['mqtt_chat_history_cache_v2','mqtt_chat_username_v1'];for(let i=localStorage.length-1;i>=0;i--){const k=localStorage.key(i)||'';if(!keep.includes(k)&&!k.startsWith('mqtt_chat_'))localStorage.removeItem(k)}refreshStorage();};
+$('clear-idb').onclick=async()=>{if(!indexedDB.databases||!confirm('Delete all IndexedDB databases for this site? Chat history stored in localForage will be deleted.'))return;for(const db of await indexedDB.databases()){if(db.name)indexedDB.deleteDatabase(db.name)}setTimeout(refreshStorage,300)};
+refresh();refreshStorage();startFps();
+let refreshTimer=null;const startTimer=()=>{clearInterval(refreshTimer);refreshTimer=document.hidden?null:setInterval(()=>{refresh();refreshStorage()},5000)};document.addEventListener('visibilitychange',startTimer);startTimer();window.addEventListener('online',refresh);window.addEventListener('offline',refresh);window.addEventListener('resize',refresh);
+</script>
+</body>
+</html>
