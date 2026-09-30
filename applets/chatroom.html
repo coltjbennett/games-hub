@@ -399,15 +399,16 @@
             <div style="font-size: 12px; margin-bottom: 8px;">
                 <label style="cursor: pointer;"><input type="checkbox" id="mute-sounds-chk" onchange="toggleMuteSounds()"> Mute Mentions & DM Sounds</label>
             </div>
-            <div style="font-size: 12px; margin-bottom: 8px; display:grid; gap:5px;">
+
+            <div style="font-size: 12px; margin-bottom: 8px; display: grid; gap: 5px;">
                 <label>Chat history retention <select id="chat-retention" onchange="updateChatStorageSettings()">
-                    <option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="0">Forever</option>
+                    <option value="0" selected>Forever</option><option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option>
                 </select></label>
                 <label>History mode <select id="chat-history-mode" onchange="updateChatStorageSettings()">
-                    <option value="text-only">Text only</option><option value="attachments">Attachments</option><option value="full-media">Full media</option>
+                    <option value="text-only">Text only</option><option value="attachments">Attachments</option><option value="full-media" selected>Full media</option>
                 </select></label>
             </div>
-            <div class="small" style="font-size:11px; margin-bottom:8px;">Automatic compaction removes expired messages and strips media according to the selected mode. Images are kept under 1 MB when recompression is required.</div>
+            <div style="font-size: 11px; margin-bottom: 8px;">History defaults to Forever. Automatic compaction only removes expired history when a finite retention period is selected.</div>
 
             <button onclick="exportChat()" style="width: 100%; margin-bottom: 8px;">Export Chat History (Current Tab)</button>
 
@@ -469,7 +470,6 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
-    <script>window.__mqttPrimaryLoaded = typeof mqtt !== "undefined";</script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
     <script>
         const ROOM_TOPIC = "universal-public-single-massive-room-v3-xyz123/messages";
@@ -482,11 +482,11 @@
         const CHAT_ORIGIN = window.location.origin;
         const MAX_USERNAME_LENGTH = 32;
         const MAX_TEXT_LENGTH = 4000;
-        const MAX_MEDIA_DATA_LENGTH = 4 * 1024 * 1024;
+        const MAX_MEDIA_DATA_LENGTH = 8 * 1024 * 1024;
         const CHAT_RETENTION_KEY = "mqtt_chat_retention_days_v1";
         const CHAT_HISTORY_MODE_KEY = "mqtt_chat_history_mode_v1";
-        const DEFAULT_CHAT_RETENTION_DAYS = 30;
-        const MAX_PERSISTED_HISTORY_JSON_BYTES = 16 * 1024 * 1024;
+        const DEFAULT_CHAT_RETENTION_DAYS = 0;
+        const DEFAULT_CHAT_HISTORY_MODE = "full-media";
         const ALLOWED_INCOMING_TYPES = new Set([
             'MSG', 'DM', 'EDIT_MSG', 'DELETE_MSG', 'REACT_MSG', 'CLEAR_ALL', 'CLEAR_RECENT',
             'CMD', 'PRESENCE', 'PING', 'RENAME', 'TYPING', 'MUTE_ATTEMPT', 'DM_READ',
@@ -585,14 +585,6 @@
         const NEAR_BOTTOM_PX = 50;
         const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
         let ghostId = "ghost-" + generateId();
-        const MQTT_BROKERS = [
-            "wss://broker.hivemq.com:8884/mqtt",
-            "wss://broker.emqx.io:8084/mqtt",
-            "wss://test.mosquitto.org:8081/mqtt"
-        ];
-        let mqttBrokerIndex = 0;
-        let mqttReconnectTimer = null;
-
 
         const ui = {
             userScreen: document.getElementById("username-screen"),
@@ -949,8 +941,7 @@
             if (!mediaRecorder || mediaRecorder.state === "inactive") {
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    const audioMime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : undefined;
-                        mediaRecorder = new MediaRecorder(stream, audioMime ? { mimeType: audioMime, audioBitsPerSecond: 24000 } : { audioBitsPerSecond: 24000 });
+                    mediaRecorder = new MediaRecorder(stream);
                     
                     msgInput.style.display = "none";
                     timerDiv.style.display = "block";
@@ -970,8 +961,8 @@
                         const mimeType = mediaRecorder.mimeType || 'audio/webm';
                         const blob = new Blob(audioChunks, { type: mimeType });
                         audioChunks = [];
-                        if (blob.size > MAX_AUDIO_BYTES) {
-                            customAlert("Audio recording too large. The limit is 1MB.");
+                        if (blob.size > MAX_OTHER_UPLOAD_BYTES) {
+                            customAlert("Audio recording too large. The limit is 5MB.");
                             msgInput.style.display = "block";
                             timerDiv.style.display = "none";
                             return;
@@ -997,9 +988,7 @@
         }
 
         const MAX_IMAGE_BYTES = 1 * 1024 * 1024;
-        const MAX_VIDEO_BYTES = 2 * 1024 * 1024;
-        const MAX_AUDIO_BYTES = 1 * 1024 * 1024;
-        const MAX_OTHER_UPLOAD_BYTES = 2 * 1024 * 1024;
+        const MAX_OTHER_UPLOAD_BYTES = 5 * 1024 * 1024;
 
         function blobToDataURL(blob) {
             return new Promise((resolve, reject) => {
@@ -1070,30 +1059,77 @@
             return { raw, preCompressed: LZString.compressToUTF16(raw) };
         }
 
+        const MAX_VIDEO_BYTES = 2 * 1024 * 1024;
 
         async function compressVideoToFit(file, maxBytes = MAX_VIDEO_BYTES) {
-            if (file.size <= maxBytes) { const raw=await blobToDataURL(file); return { raw, preCompressed:LZString.compressToUTF16(raw) }; }
-            if (!HTMLVideoElement.prototype.captureStream && !HTMLVideoElement.prototype.mozCaptureStream) throw new Error('Video compression is unavailable in this browser.');
+            if (file.size <= maxBytes) {
+                const raw = await blobToDataURL(file);
+                return { raw, preCompressed: LZString.compressToUTF16(raw) };
+            }
+            if (!window.MediaRecorder || !HTMLVideoElement.prototype.play) {
+                throw new Error("Video compression is not supported by this browser.");
+            }
             const url = URL.createObjectURL(file);
-            const video = document.createElement('video'); video.muted = true; video.playsInline = true; video.src = url;
-            await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=reject});
+            const video = document.createElement("video");
+            video.muted = true;
+            video.playsInline = true;
+            video.preload = "metadata";
+            video.src = url;
+            await new Promise((resolve, reject) => {
+                video.onloadedmetadata = resolve;
+                video.onerror = () => reject(new Error("Could not read that video."));
+            });
+
             const duration = Math.max(0.5, video.duration || 1);
-            const maxDim = 960; const scale = Math.min(1, maxDim / Math.max(video.videoWidth || maxDim, video.videoHeight || maxDim));
-            const canvas = document.createElement('canvas'); canvas.width=Math.max(2,Math.floor((video.videoWidth||640)*scale)); canvas.height=Math.max(2,Math.floor((video.videoHeight||360)*scale));
-            const ctx=canvas.getContext('2d',{alpha:false}); if(!ctx) throw new Error('Canvas unavailable');
-            const source = video.captureStream ? video.captureStream() : video.mozCaptureStream();
+            const maxDimension = 960;
+            const scale = Math.min(1, maxDimension / Math.max(video.videoWidth || 960, video.videoHeight || 540));
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.max(2, Math.floor((video.videoWidth || 640) * scale));
+            canvas.height = Math.max(2, Math.floor((video.videoHeight || 360) * scale));
+            const ctx = canvas.getContext("2d", { alpha: false });
+            if (!ctx || !canvas.captureStream) throw new Error("Video compression is not supported by this browser.");
+
+            const sourceStream = video.captureStream ? video.captureStream() : video.mozCaptureStream?.();
+            if (!sourceStream) throw new Error("Video audio capture is not supported by this browser.");
             const canvasStream = canvas.captureStream(24);
-            const combined = new MediaStream([...canvasStream.getVideoTracks(), ...source.getAudioTracks()]);
-            const mime = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus') ? 'video/webm;codecs=vp9,opus' : (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus') ? 'video/webm;codecs=vp8,opus' : 'video/webm');
-            const videoBits = Math.max(220000, Math.min(650000, Math.floor((maxBytes * 8 * 0.82 / duration) - 32000)));
-            const recorder = new MediaRecorder(combined,{mimeType:mime,videoBitsPerSecond:videoBits,audioBitsPerSecond:32000});
-            const chunks=[];
-            const done=new Promise((resolve,reject)=>{recorder.ondataavailable=e=>e.data?.size&&chunks.push(e.data);recorder.onerror=e=>reject(e.error||e);recorder.onstop=()=>resolve(new Blob(chunks,{type:mime}))});
-            const draw=()=>{if(video.paused||video.ended)return;ctx.drawImage(video,0,0,canvas.width,canvas.height);requestAnimationFrame(draw)};
-            recorder.start(1000); await video.play(); draw(); await new Promise(resolve=>video.onended=resolve); recorder.stop();
-            const blob=await done; source.getTracks().forEach(t=>t.stop());canvasStream.getTracks().forEach(t=>t.stop());URL.revokeObjectURL(url);
-            if(blob.size>maxBytes) throw new Error('Video could not be compressed below the 2MB limit.');
-            const raw=await blobToDataURL(blob); return {raw,preCompressed:LZString.compressToUTF16(raw)};
+            const audioTracks = sourceStream.getAudioTracks ? sourceStream.getAudioTracks() : [];
+            const combined = new MediaStream([...canvasStream.getVideoTracks(), ...audioTracks]);
+            const preferredMime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+                ? "video/webm;codecs=vp9,opus"
+                : (MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus") ? "video/webm;codecs=vp8,opus" : "video/webm");
+            const targetVideoBits = Math.max(220000, Math.min(650000, Math.floor((maxBytes * 8 * 0.82 / duration) - 32000)));
+            const recorder = new MediaRecorder(combined, { mimeType: preferredMime, videoBitsPerSecond: targetVideoBits, audioBitsPerSecond: 32000 });
+            const chunks = [];
+            const done = new Promise((resolve, reject) => {
+                recorder.ondataavailable = event => { if (event.data?.size) chunks.push(event.data); };
+                recorder.onerror = event => reject(event.error || new Error("Video encoding failed."));
+                recorder.onstop = () => resolve(new Blob(chunks, { type: preferredMime }));
+            });
+
+            let drawing = true;
+            const draw = () => {
+                if (!drawing) return;
+                if (!video.paused && !video.ended) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                requestAnimationFrame(draw);
+            };
+
+            try {
+                recorder.start(1000);
+                await video.play();
+                draw();
+                await new Promise(resolve => { video.onended = resolve; });
+                drawing = false;
+                recorder.stop();
+                const blob = await done;
+                if (blob.size > maxBytes) throw new Error("Video could not be compressed below the 2MB limit.");
+                const raw = await blobToDataURL(blob);
+                return { raw, preCompressed: LZString.compressToUTF16(raw) };
+            } finally {
+                drawing = false;
+                combined.getTracks().forEach(track => track.stop());
+                canvasStream.getTracks().forEach(track => track.stop());
+                URL.revokeObjectURL(url);
+            }
         }
 
         document.getElementById("universal-upload").addEventListener("change", async function(e) {
@@ -1109,19 +1145,29 @@
                 try {
                     const { raw, preCompressed } = await compressImageToFit(file, MAX_IMAGE_BYTES);
                     sendPayload(raw, { isImage: true, isVideo: false, isFile: false, fileName: file.name, preCompressed });
-                } catch(err) { customAlert(err?.message || "Failed to compress that image below the 1MB limit."); }
-                e.target.value = ""; return;
+                } catch(err) {
+                    customAlert("Failed to compress that image below the 1MB limit.");
+                }
+                e.target.value = "";
+                return;
             }
 
             if (isVideo) {
                 try {
                     const { raw, preCompressed } = await compressVideoToFit(file, MAX_VIDEO_BYTES);
-                    sendPayload(raw, { isImage:false, isVideo:true, isFile:false, fileName:file.name, preCompressed });
-                } catch(err) { customAlert(err?.message || "Failed to compress that video below the 2MB limit."); }
-                e.target.value = ""; return;
+                    sendPayload(raw, { isImage: false, isVideo: true, isFile: false, fileName: file.name, preCompressed });
+                } catch (err) {
+                    customAlert(err?.message || "Failed to compress that video below the 2MB limit.");
+                }
+                e.target.value = "";
+                return;
             }
 
-            if (file.size > MAX_OTHER_UPLOAD_BYTES) { customAlert("File too large. Videos and attachments have a 2MB limit."); e.target.value = ""; return; }
+            if (file.size > MAX_OTHER_UPLOAD_BYTES) {
+                customAlert("File too large. Videos and other files have a 5MB limit.");
+                e.target.value = "";
+                return;
+            }
 
             const reader = new FileReader();
             reader.onload = function(event) {
@@ -1134,128 +1180,190 @@
             e.target.value = "";
         });
 
-        // Durable history is gzip-compressed (with LZString fallback), compacted on load/save,
-        // and capped so browser storage does not grow without bound.
+        // Durable history remains backward-compatible with the working version.
+        // New writes are compressed when the browser supports gzip; LZString remains the fallback.
         const STORAGE_WRITE_DEBOUNCE_MS = 1200;
         const pendingStorageWrites = new Map();
         const lastStorageSignatures = new Map();
 
         function getChatRetentionDays() {
-            const n = Number.parseInt(safeGet(CHAT_RETENTION_KEY) || String(DEFAULT_CHAT_RETENTION_DAYS), 10);
-            return Number.isFinite(n) && [0,7,30,90].includes(n) ? n : DEFAULT_CHAT_RETENTION_DAYS;
+            const raw = safeGet(CHAT_RETENTION_KEY);
+            const n = Number.parseInt(raw == null ? String(DEFAULT_CHAT_RETENTION_DAYS) : raw, 10);
+            return Number.isFinite(n) && [0, 7, 30, 90].includes(n) ? n : DEFAULT_CHAT_RETENTION_DAYS;
         }
-        function getChatHistoryMode() { const mode=safeGet(CHAT_HISTORY_MODE_KEY)||'full-media'; return ['text-only','attachments','full-media'].includes(mode)?mode:'full-media'; }
-        function isLowPowerMode() { try { return window.parent?.document?.documentElement?.classList.contains('low-power'); } catch(_) { return !!navigator.connection?.saveData; } }
+
+        function getChatHistoryMode() {
+            const mode = safeGet(CHAT_HISTORY_MODE_KEY) || DEFAULT_CHAT_HISTORY_MODE;
+            return ["text-only", "attachments", "full-media"].includes(mode) ? mode : DEFAULT_CHAT_HISTORY_MODE;
+        }
+
+        function compactHistoryForStorage(list) {
+            if (!Array.isArray(list)) return [];
+            const retention = getChatRetentionDays();
+            const cutoff = retention ? Date.now() - retention * 86400000 : 0;
+            const mode = getChatHistoryMode();
+            const out = [];
+
+            for (const original of list) {
+                if (!original || typeof original !== "object") continue;
+                if (cutoff && Number.isFinite(original.timestamp) && original.timestamp < cutoff) continue;
+
+                const m = { ...original };
+                const hasMedia = !!(m.isImage || m.isVideo || m.isAudio || m.isFile);
+                if (hasMedia && mode === "text-only") {
+                    m.text = "";
+                    m.storageMediaOmitted = true;
+                } else if (hasMedia && mode === "attachments") {
+                    // Preserve the fact that an attachment exists and its filename/type,
+                    // but don't keep the large data URL in the durable history copy.
+                    m.text = "";
+                    m.storageMediaOmitted = true;
+                }
+                out.push(m);
+            }
+            return out;
+        }
+
         function updateChatStorageSettings() {
-            safeSet(CHAT_RETENTION_KEY, document.getElementById('chat-retention').value);
-            safeSet(CHAT_HISTORY_MODE_KEY, document.getElementById('chat-history-mode').value);
-            compactAllHistories(true);
+            const retention = document.getElementById("chat-retention").value;
+            const mode = document.getElementById("chat-history-mode").value;
+            safeSet(CHAT_RETENTION_KEY, retention);
+            safeSet(CHAT_HISTORY_MODE_KEY, mode);
+            saveLocalHistory();
+            Object.keys(dmHistories).forEach(user => saveDmHistory(user));
             renderActiveTabMessages();
         }
-        function storedMessageForMode(m) {
-            const mode=getChatHistoryMode(); if(mode==='full-media') return m;
-            const copy={...m};
-            const hasMedia=copy.isImage||copy.isVideo||copy.isAudio;
-            if(mode==='text-only' && hasMedia) { copy.text=''; copy.storageMediaOmitted=true; }
-            if(mode==='attachments' && hasMedia) { copy.text=''; copy.storageMediaOmitted=true; copy.isImage=false;copy.isVideo=false;copy.isAudio=false; }
-            return copy;
+
+        function getStorageSignature(value) {
+            try {
+                const str = JSON.stringify(value);
+                let hash = 2166136261;
+                for (let i = 0; i < str.length; i++) {
+                    hash ^= str.charCodeAt(i);
+                    hash = Math.imul(hash, 16777619);
+                }
+                return `${str.length}:${hash >>> 0}`;
+            } catch (e) { return ""; }
         }
-        function compactHistoryList(list, persistLimit=MAX_PERSISTED_HISTORY_JSON_BYTES, forStorage=false) {
-            if(!Array.isArray(list)) return {list:[],changed:false};
-            const retention=getChatRetentionDays(); const cutoff=retention?Date.now()-retention*86400000:0; const mode=getChatHistoryMode();
-            let changed=false;
-            let out=list.filter(m=>{ if(cutoff && Number.isFinite(m?.timestamp) && m.timestamp<cutoff){changed=true;return false;} return true; });
-            if(forStorage) out=out.map(m=>storedMessageForMode(m));
-            let bytes=0; try{bytes=new TextEncoder().encode(JSON.stringify(out)).byteLength}catch(_){bytes=0}
-            while(bytes>persistLimit && out.length>1){out.shift();changed=true;try{bytes=new TextEncoder().encode(JSON.stringify(out)).byteLength}catch(_){break}}
-            return {list:out,changed};
-        }
-        function compactAllHistories(saveNow=false) {
-            let changed=false;
-            const global=compactHistoryList(messageHistory); if(global.changed){messageHistory=global.list;changed=true;}
-            Object.keys(dmHistories).forEach(user=>{const r=compactHistoryList(dmHistories[user]);if(r.changed){dmHistories[user]=r.list;changed=true;}});
-            rebuildMessageHistoryIdSet();
-            if(saveNow && changed){saveLocalHistory();Object.keys(dmHistories).forEach(u=>saveDmHistory(u));}
-            return changed;
-        }
+
         async function gzipJson(value) {
-            const json=JSON.stringify(value);
-            if('CompressionStream' in window){const cs=new CompressionStream('gzip');const ab=await new Response(new Blob([json]).stream().pipeThrough(cs)).arrayBuffer();return {v:2,codec:'gzip',data:ab};}
-            return {v:2,codec:'lz',data:LZString.compressToUTF16(json)};
+            const json = JSON.stringify(value);
+            if ("CompressionStream" in window) {
+                const stream = new CompressionStream("gzip");
+                const compressed = await new Response(new Blob([json]).stream().pipeThrough(stream)).arrayBuffer();
+                return { __chatCompressed: 2, codec: "gzip", data: compressed };
+            }
+            return { __chatCompressed: 2, codec: "lz", data: LZString.compressToUTF16(json) };
         }
-        async function gunzipStored(stored) {
-            if(stored?.codec==='gzip' && stored.data){const ds=new DecompressionStream('gzip');const text=await new Response(new Blob([stored.data]).stream().pipeThrough(ds)).text();return JSON.parse(text);}
-            if(stored?.codec==='lz' && typeof stored.data==='string') return JSON.parse(LZString.decompressFromUTF16(stored.data)||'[]');
+
+        async function gunzipJson(stored) {
+            if (!stored || stored.__chatCompressed !== 2) return null;
+            if (stored.codec === "gzip" && stored.data) {
+                try {
+                    const stream = new DecompressionStream("gzip");
+                    const json = await new Response(new Blob([stored.data]).stream().pipeThrough(stream)).text();
+                    return JSON.parse(json);
+                } catch (e) { return null; }
+            }
+            if (stored.codec === "lz" && typeof stored.data === "string") {
+                try { return JSON.parse(LZString.decompressFromUTF16(stored.data) || "[]"); } catch (e) { return null; }
+            }
             return null;
         }
-        async function saveToStorageWithCompression(key, historyValue) {
+
+        async function saveToStorageWithCompression(key, value) {
             try {
-                const compacted=compactHistoryList(historyValue, MAX_PERSISTED_HISTORY_JSON_BYTES, true).list;
-                const signature=(()=>{const str=JSON.stringify(compacted);let h=2166136261;for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619)}return str.length+':'+(h>>>0)})();
-                if(lastStorageSignatures.get(key)===signature)return;
-                lastStorageSignatures.set(key,signature);
+                // Only message-history arrays receive retention/media compaction.
+                // Pending DMs, tombstones, and other structured state must remain intact.
+                const compacted = Array.isArray(value) ? compactHistoryForStorage(value) : value;
+                const signature = getStorageSignature(compacted);
+                if (signature && lastStorageSignatures.get(key) === signature) return;
+                if (signature) lastStorageSignatures.set(key, signature);
                 await localforage.setItem(key, await gzipJson(compacted));
-            } catch(e) {
-                try { await localforage.setItem(key, LZString.compressToUTF16(JSON.stringify(compactHistoryList(historyValue, MAX_PERSISTED_HISTORY_JSON_BYTES, true).list))); } catch(e2){ console.error('Failed to save history to IndexedDB:',e2); }
-            }
-        }
-        function saveToStorageDebounced(key,getValue){const existing=pendingStorageWrites.get(key);if(existing)clearTimeout(existing);pendingStorageWrites.set(key,setTimeout(()=>{pendingStorageWrites.delete(key);saveToStorageWithCompression(key,getValue())},STORAGE_WRITE_DEBOUNCE_MS));}
-        async function loadFromStorageWithCompression(key){
-            let indexedValue = null;
-            try {
-                indexedValue = await localforage.getItem(key);
-                if (indexedValue) {
-                    if (indexedValue && typeof indexedValue === 'object' && indexedValue.codec) {
-                        const decoded = await gunzipStored(indexedValue);
-                        if (decoded != null) return decoded;
-                    }
-                    if (typeof indexedValue === 'string') {
-                        const d=LZString.decompressFromUTF16(indexedValue);
-                        if(d) return JSON.parse(d);
-                        return JSON.parse(indexedValue);
-                    }
-                    if (Array.isArray(indexedValue) || (indexedValue && typeof indexedValue === 'object')) return indexedValue;
-                }
-            } catch(e) { console.warn('IndexedDB chat history read failed; trying legacy storage.', e); }
-            try {
-                const legacy = safeGet(key);
-                if (legacy) {
-                    let value = legacy;
-                    const d=LZString.decompressFromUTF16(value);
-                    if(d) value=d;
-                    const parsed=JSON.parse(value);
-                    if (parsed != null) return parsed;
-                }
-            } catch(e) {}
-            return [];
-        }
-        function saveLocalHistory(){saveToStorageDebounced(STORAGE_KEY,()=>messageHistory)}
-        async function loadLocalHistory() {
-            // Never treat a storage decode failure as an empty chat. Preserve the old
-            // localStorage value so a broken IndexedDB entry cannot make the chat look wiped.
-            let history = await loadFromStorageWithCompression(STORAGE_KEY);
-            if (!Array.isArray(history) || history.length === 0) {
+            } catch (e) {
                 try {
-                    const legacy = safeGet(STORAGE_KEY);
-                    if (legacy) {
-                        let decoded = legacy;
-                        if (typeof decoded === 'string') {
-                            const lz = LZString.decompressFromUTF16(decoded);
-                            decoded = lz ? JSON.parse(lz) : JSON.parse(decoded);
-                        }
-                        if (Array.isArray(decoded) && decoded.length) history = decoded;
-                    }
-                } catch (e) {}
+                    const compacted = Array.isArray(value) ? compactHistoryForStorage(value) : value;
+                    await localforage.setItem(key, LZString.compressToUTF16(JSON.stringify(compacted)));
+                } catch (e2) {
+                    console.error("Failed to save structured chat state to IndexedDB:", e2);
+                }
             }
-            messageHistory = sanitizeHistoryLoaded(Array.isArray(history) ? history : []);
-            const dedupe = dedupeHistoryList(messageHistory);
-            messageHistory = dedupe.list;
-            rebuildMessageHistoryIdSet();
-            if (dedupe.changed) saveLocalHistory();
-            return messageHistory;
         }
-        async function loadDmHistory(otherUser){return await loadFromStorageWithCompression(`mqtt_dm_${myUsername}_${otherUser}`)}
-        function saveDmHistory(otherUser){saveToStorageDebounced(`mqtt_dm_${myUsername}_${otherUser}`,()=>dmHistories[otherUser]||[])}
+
+        function saveToStorageDebounced(key, getValue) {
+            const existing = pendingStorageWrites.get(key);
+            if (existing) clearTimeout(existing);
+            pendingStorageWrites.set(key, setTimeout(() => {
+                pendingStorageWrites.delete(key);
+                saveToStorageWithCompression(key, getValue());
+            }, STORAGE_WRITE_DEBOUNCE_MS));
+        }
+
+        async function loadFromStorageWithCompression(key) {
+            try {
+                let stored = await localforage.getItem(key);
+                if (!stored) {
+                    const legacyLocal = safeGet(key);
+                    if (legacyLocal) {
+                        stored = legacyLocal;
+                        try {
+                            await localforage.setItem(key, legacyLocal);
+                            localStorage.removeItem(key);
+                        } catch (e) {}
+                    }
+                }
+                if (!stored) return [];
+
+                const compressedObject = await gunzipJson(stored);
+                if (compressedObject !== null) return compressedObject;
+
+                if (typeof stored !== "string") return stored;
+                const decompressed = LZString.decompressFromUTF16(stored);
+                if (decompressed) return JSON.parse(decompressed);
+                return JSON.parse(stored);
+            } catch (e) {
+                // Do not turn a storage decode problem into an apparent empty chat.
+                // Preserve any valid legacy value rather than overwriting it.
+                try {
+                    const legacy = safeGet(key);
+                    if (legacy) {
+                        const decompressed = LZString.decompressFromUTF16(legacy);
+                        return JSON.parse(decompressed || legacy);
+                    }
+                } catch (e2) {}
+                return [];
+            }
+        }
+
+        function sanitizeHistoryLoaded(historyArray) {
+            if (!Array.isArray(historyArray)) return [];
+            const sanitized = [];
+            historyArray.forEach(m => {
+                if (!m || typeof m !== 'object') return;
+                if (m.compressed && typeof m.text === 'string') {
+                    try {
+                        m.text = LZString.decompressFromUTF16(m.text) || m.text;
+                        m.compressed = false;
+                    } catch(e) { return; }
+                }
+                if (m.author !== undefined && !isValidUsername(m.author)) return;
+                if (m.id !== undefined && (typeof m.id !== 'string' || m.id.length > 80)) return;
+                if (m.timestamp !== undefined && (!Number.isFinite(m.timestamp) || m.timestamp < 0)) return;
+                if (!validateMessagePayloadAfterDecompression(m)) return;
+                sanitized.push(m);
+            });
+            return sanitized;
+        }
+
+        async function loadLocalHistory() { 
+            let loaded = await loadFromStorageWithCompression(STORAGE_KEY);
+            messageHistory = sanitizeHistoryLoaded(loaded);
+            rebuildMessageHistoryIdSet();
+            if(currentTab === "global") renderActiveTabMessages(); 
+        }
+        function saveLocalHistory() { saveToStorageDebounced(STORAGE_KEY, () => messageHistory); }
+        async function loadDmHistory(otherUser) { return await loadFromStorageWithCompression(`mqtt_dm_${myUsername}_${otherUser}`); }
+        function saveDmHistory(otherUser) { saveToStorageDebounced(`mqtt_dm_${myUsername}_${otherUser}`, () => dmHistories[otherUser] || []); }
 
         async function loadSettingsAndDMs() {
             try { const s = safeGet(BLOCKED_KEY);
@@ -1266,8 +1374,10 @@
                 if (r) { const parsed = safeParseJSON(r, {}); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) dmReadWatermarks = parsed; } } catch (e) {}
             
             document.getElementById('mute-sounds-chk').checked = safeGet('mqtt_mute_sounds') === 'true';
-            document.getElementById('chat-retention').value = String(getChatRetentionDays());
-            document.getElementById('chat-history-mode').value = getChatHistoryMode();
+            const retentionEl = document.getElementById('chat-retention');
+            const modeEl = document.getElementById('chat-history-mode');
+            if (retentionEl) retentionEl.value = String(getChatRetentionDays());
+            if (modeEl) modeEl.value = getChatHistoryMode();
             
             pendingDMs = await loadFromStorageWithCompression('mqtt_pending_dms') || {};
             if (Array.isArray(pendingDMs)) pendingDMs = {};
@@ -1782,7 +1892,6 @@
         }
 
         function updateAndBroadcastPresence() {
-            if (isLowPowerMode() && document.hidden) return;
             let count = activeUsers.size;
             window.parent.postMessage({ source: 'universal-chat', kind: 'presence', count: count }, CHAT_ORIGIN);
         }
@@ -1905,7 +2014,6 @@
                 ui.chatScreen.style.display = "flex";
                 await loadSettingsAndDMs(); 
                 await loadLocalHistory();
-                compactAllHistories(true);
                 await loadTombstones();
                 messageHistory = applyTombstonesToList(messageHistory);
                 rebuildMessageHistoryIdSet();
@@ -1920,7 +2028,6 @@
                 ui.userScreen.style.display = "block"; ui.chatScreen.style.display = "none";
                 await loadSettingsAndDMs(); 
                 await loadLocalHistory();
-                compactAllHistories(true);
                 await loadTombstones();
                 messageHistory = applyTombstonesToList(messageHistory);
                 rebuildMessageHistoryIdSet();
@@ -1939,55 +2046,9 @@
                 activity: { ...currentActivity }
             });
 
+            client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
             updateConnectionStatus("CONNECTING", "normal");
-            const connectMqtt = async () => {
-                if (typeof mqtt === "undefined") {
-                    // cdnjs occasionally fails to load on restrictive networks. Load a
-                    // second copy before declaring the chat unavailable.
-                    await new Promise((resolve) => {
-                        const existing = document.querySelector('script[data-mqtt-fallback]');
-                        if (existing) { existing.addEventListener('load', resolve, {once:true}); existing.addEventListener('error', resolve, {once:true}); return; }
-                        const script = document.createElement('script');
-                        script.src = 'https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js';
-                        script.async = false; script.dataset.mqttFallback = 'true';
-                        script.onload = resolve; script.onerror = resolve; document.head.appendChild(script);
-                    });
-                }
-                if (typeof mqtt === "undefined") {
-                    updateConnectionStatus("MQTT LIBRARY UNAVAILABLE", "bad");
-                    return null;
-                }
-                for (let attempt = 0; attempt < MQTT_BROKERS.length; attempt++) {
-                    const index = (mqttBrokerIndex + attempt) % MQTT_BROKERS.length;
-                    const url = MQTT_BROKERS[index];
-                    updateConnectionStatus(`CONNECTING ${index + 1}/${MQTT_BROKERS.length}`, "normal");
-                    const candidate = mqtt.connect(url, {
-                        clientId: `gameshub_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`,
-                        clean: true,
-                        connectTimeout: 9000,
-                        reconnectPeriod: 0,
-                        keepalive: 30
-                    });
-                    const connected = await new Promise(resolve => {
-                        let settled = false;
-                        const finish = value => { if (!settled) { settled = true; resolve(value); } };
-                        const timer = setTimeout(() => finish(false), 10000);
-                        candidate.once('connect', () => { clearTimeout(timer); finish(true); });
-                        candidate.once('error', () => { clearTimeout(timer); finish(false); });
-                        candidate.once('close', () => { clearTimeout(timer); finish(false); });
-                    });
-                    if (connected) { mqttBrokerIndex = index; return candidate; }
-                    try { candidate.end(true); } catch(e) {}
-                }
-                return null;
-            };
-            client = await connectMqtt();
-            if (!client) {
-                isConnected = false;
-                updateConnectionStatus("DISCONNECTED - retrying", "bad");
-                if (mqttReconnectTimer) clearTimeout(mqttReconnectTimer);
-                mqttReconnectTimer = setTimeout(() => location.reload(), 12000);
-            } else {
+            client.on("connect", () => {
                 isConnected = true;
                 updateConnectionStatus("CONNECTED", "good");
                 client.subscribe(ROOM_TOPIC, (err) => {
@@ -1996,19 +2057,30 @@
                             if (isConnected && historyReadyForSync) requestManifestBroadcast();
                         });
                         publishPing();
-                        if (!window.pingInterval) { window.pingInterval = setInterval(() => { if (isConnected && !document.hidden && !isLowPowerMode()) publishPing(); }, 5000); }
-                    } else updateConnectionStatus("SUBSCRIBE ERROR", "bad");
+                        if (!window.pingInterval) { window.pingInterval = setInterval(() => { if (isConnected) publishPing(); }, 5000); }
+                    }
                 });
-                client.on("reconnect", () => { isConnected = false; updateConnectionStatus("RECONNECTING", "normal"); });
-                client.on("close", () => { isConnected = false; updateConnectionStatus("DISCONNECTED", "bad"); });
-                client.on("offline", () => { isConnected = false; updateConnectionStatus("OFFLINE", "bad"); });
-                client.on("error", (err) => { console.warn('MQTT error', err); updateConnectionStatus("ERROR - RETRYING", "bad"); });
-            }
+            });
+            client.on("reconnect", () => {
+                isConnected = false;
+                updateConnectionStatus("RECONNECTING", "normal");
+            });
+            client.on("close", () => {
+                isConnected = false;
+                updateConnectionStatus("DISCONNECTED", "bad");
+            });
+            client.on("offline", () => {
+                isConnected = false;
+                updateConnectionStatus("OFFLINE", "bad");
+            });
+            client.on("error", () => {
+                updateConnectionStatus("ERROR", "bad");
+            });
 
             setupMqttListeners();
             requestParentActivityState();
-            setInterval(() => { if (!document.hidden && !isLowPowerMode()) checkPresence(); }, 5000);
-            setInterval(() => { if (isConnected && historyReadyForSync && !document.hidden && !isLowPowerMode()) publishMessage(buildManifest()); }, 60000);
+            setInterval(checkPresence, 5000);
+            setInterval(() => { if (isConnected && historyReadyForSync && !document.hidden) publishMessage(buildManifest()); }, 60000);
         })();
 
         async function joinChat() {
@@ -2067,7 +2139,7 @@
                 requestManifestBroadcast();
             }
 
-            if (!window.pingInterval) { window.pingInterval = setInterval(() => { if (isConnected && !document.hidden && !isLowPowerMode()) publishPing(); }, 5000); }
+            if (!window.pingInterval) { window.pingInterval = setInterval(() => { if (isConnected) publishPing(); }, 5000); }
         }
 
         function processPendingOutbox(targetUser) {
@@ -3288,9 +3360,6 @@
             const repos = [];
             if (segments.length) repos.push(segments[0]);
             repos.push(`${owner}.github.io`);
-            // The published hub also has a known source repository. Keep this as a
-            // discovery candidate even when the current copy is served from a custom domain.
-            repos.push('games-hub');
 
             for (const repo of Array.from(new Set(repos))) {
                 try {
@@ -3454,9 +3523,8 @@
             let currentSignature = candidate.signature || "";
             const discoveredExportDate = candidate.modifiedAt || 0;
             const previousExportDate = Number(rawState?.exportModifiedAt || 0);
-            const signatureUnchanged = !!(rawState && rawState.url === candidate.url && rawState.signature && currentSignature && currentSignature === rawState.signature);
             const exportIsNewer = discoveredExportDate > previousExportDate;
-            if (rawState && rawState.url === candidate.url && !needsRepair && signatureUnchanged && !exportIsNewer) return;
+            if (rawState && rawState.url === candidate.url && !needsRepair && rawState.signature && currentSignature === rawState.signature && !exportIsNewer) return;
             if (rawState && rawState.url === candidate.url && !needsRepair && !currentSignature && !exportIsNewer) return;
 
             if (ui.activityStatus) ui.activityStatus.innerText = "Restoring chat backup...";
@@ -3719,7 +3787,6 @@
             cancelReply();
         }
         window.addEventListener('pageshow', requestParentActivityState);
-        document.addEventListener('visibilitychange', () => { if (!document.hidden && isConnected && !isLowPowerMode()) { publishPing(); updateAndBroadcastPresence(); } });
 
     </script>
 </body>
