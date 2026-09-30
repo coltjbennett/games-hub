@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#000080" />
+  <title>the Web Arcade</title>
+  <link rel="icon" href="images/icon.JPG">
+  <link rel="stylesheet" href="styles.css" />
+  
+  <!-- Preload Ruffle Globally -->
+  <script>
+    window.RufflePlayer = window.RufflePlayer || {};
+  </script>
+  <script src="https://unpkg.com/@ruffle-rs/ruffle"></script>
+
+  <style>
+    /* ===== DISABLE CRT OVERLAYS & FILTERS (PRESERVES TILED BACKGROUND) ===== */
+    html::after {
+      display: none !important;
+      content: none !important;
+      background: none !important;
+    }
+
+    html, body, .page-shell, .panel, .panel-dark, .arcade-card, #game-modal, * {
+      filter: none !important;
+      backdrop-filter: none !important;
+      text-shadow: none !important;
+      animation: none !important;
+    }
+    body {
+      background-color: var(--win-bg);
+    }
+    header {
+      background-color: var(--win-blue);
+    }
+    img {
+      filter: none !important;
+      image-rendering: auto !important;
+    }
+
+    /* ===== SUPPLEMENTARY STYLES FOR GAMES.HTML ===== */
+    .arcade-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    }
+
+    .arcade-card {
+      cursor: pointer;
+    }
+    
+    .arcade-card .card-image {
+      aspect-ratio: 1 / 1;
+      background: var(--win-bg);
+      border-bottom: 2px inset var(--win-border-dark);
+      padding: 6px; 
+    }
+
+    .arcade-card .card-image img {
+      object-fit: cover;
+      width: 100%;
+      height: 100%;
+      border: 2px inset var(--win-border-dark);
+      background: var(--win-blue);
+    }
+    
+    .arcade-card .card-body {
+      align-items: center;
+      justify-content: center;
+      padding: 8px 10px;
+    }
+
+    .arcade-card h3 {
+      text-align: center;
+      margin: 0;
+      font-size: 1rem;
+    }
+
+    .status-container {
+      grid-column: 1 / -1;
+      padding: 40px;
+      text-align: center;
+      font-weight: bold;
+      color: var(--win-text-dark);
+      font-size: 1.1rem;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="page-shell" style="padding-bottom: 20px;">
+    <!-- AN IMPORTANT NOTE; THIS IS NOT MY GAMES!!! THEY ARE 3RD PARTY GAMES LIKE COOKIE CLICKER AND BAD PIGGIES!!! NOT MY GAMES HOSTED ON THE HOMEPAGE!-->
+    <!-- Header -->
+    <header>
+      <div class="panel-dark">
+        <div class="panel-title-bar w95-text">
+          <span>ARCADE HUB</span>
+          <span class="win-btns">
+            <button type="button" class="win-btn btn-minimize" aria-label="Minimize">-</button>
+            <button type="button" class="win-btn btn-maximize" aria-label="Maximize" disabled>□</button>
+            <button type="button" class="win-btn btn-close" aria-label="Close" disabled>✕</button>
+          </span>
+        </div>
+        <div class="panel-body">
+          <div class="header-top-banner">GAME DIRECTORY</div>
+          <h1>ARCADE HUB</h1>
+          <p class="hero-copy">Browse, search, and play games directly from the repository.</p>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main>
+      <div class="panel">
+        <div class="panel-title-bar w95-text">
+          <span>GAME LIBRARY</span>
+          <span class="win-btns">
+            <button type="button" class="win-btn btn-minimize" aria-label="Minimize">-</button>
+            <button type="button" class="win-btn btn-maximize" aria-label="Maximize" disabled>□</button>
+          </span>
+        </div>
+        <div class="panel-body">
+          
+          <!-- Search Toolbar -->
+          <div class="controls-row">
+            <p class="hint">Type to filter games below.</p>
+            <div class="toolbar">
+              <input type="text" id="search" class="search-input" placeholder="Search games..." style="width: 250px;">
+              <button id="refresh-btn" class="sort-btn w95-text" type="button">Refresh API</button>
+            </div>
+          </div>
+
+          <!-- Game Grid -->
+          <div id="grid" class="arcade-grid">
+            <div class="status-container">Loading arcade library... please wait.</div>
+          </div>
+
+        </div>
+      </div>
+    </main>
+    
+    <!-- Footer -->
+    <footer>
+      <p>Powered by GitHub API & Githack CDN</p>
+      <p class="footer-note w95-text">Best viewed with a monitor</p>
+    </footer>
+
+  </div>
+
+  <!-- Full-Window Game Viewport (Replaces Modal Window) -->
+  <div id="game-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #000000; z-index: 9999; flex-direction: column;">
+    <div class="panel-title-bar w95-text" style="flex-shrink: 0; height: 28px; padding: 4px 8px; display: flex; justify-content: space-between; align-items: center; background: var(--win-blue); color: var(--win-text-light);">
+      <span id="modal-title" style="font-weight: bold; font-size: 0.9rem;">Game Player</span>
+      <span class="win-btns">
+        <button type="button" class="win-btn btn-close" id="close-game-modal-btn" aria-label="Close" style="cursor:pointer; width: 18px; height: 16px; line-height: 12px;">✕</button>
+      </span>
+    </div>
+    <div id="game-container" style="flex: 1; width: 100%; height: calc(100% - 28px); background: #000000; overflow: hidden;"></div>
+  </div>
+
+  <script>
+    const REPO_OWNER = 'coltjbennett';
+    const REPO_NAME = 'source';
+    const BRANCH = 'main'; 
+    
+    // Updated to Githack to ensure HTML and SWF files execute rather than render as text
+    const CDN_BASE = `https://raw.githack.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH}`;
+    
+    const ICON_CANDIDATES = ['icon.png', 'icon.webp', 'icon.jpg', 'icon.jpeg', 'logo.jpeg', 'logo.jpg', 'icon.svg', 'logo.png', 'app.png'];
+    const FALLBACK_ICON = 'images/missing.png';
+    const MAX_GAME_ITEMS = 500;
+    const PARENT_ORIGIN = document.referrer ? (() => { try { return new URL(document.referrer).origin; } catch (e) { return window.location.origin; } })() : window.location.origin;
+    const ALLOWED_CDN_ORIGIN = new URL(CDN_BASE).origin;
+    const ALLOWED_CDN_PREFIX = new URL(`${CDN_BASE}/`).pathname;
+
+    let games = [];
+
+    function parseCachedGames(raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed.slice(0, MAX_GAME_ITEMS) : null;
+      } catch (e) {
+        console.warn('Ignoring malformed arcade cache.');
+        return null;
+      }
+    }
+
+    function cacheGames(data, dateString) {
+      try {
+        localStorage.setItem('arcade_games_cache', JSON.stringify(data.slice(0, MAX_GAME_ITEMS)));
+        localStorage.setItem('arcade_games_cache_date', dateString);
+      } catch (e) {
+        console.warn('Arcade cache unavailable.');
+      }
+    }
+
+    async function fetchGames(forceRefresh = false) {
+      const grid = document.getElementById('grid');
+      grid.replaceChildren();
+      const loading = document.createElement('div');
+      loading.className = 'status-container';
+      loading.textContent = forceRefresh ? 'Forcing API refresh... please wait.' : 'Loading arcade library... please wait.';
+      grid.appendChild(loading);
+      
+      try {
+        let data = null;
+        let cachedData = null;
+        try { cachedData = localStorage.getItem('arcade_games_cache'); } catch (e) {}
+        const lastFetchDate = (() => { try { return localStorage.getItem('arcade_games_cache_date'); } catch (e) { return null; } })();
+        const today = new Date().toDateString();
+        const needsDailyUpdate = lastFetchDate !== today;
+
+        if (cachedData && !forceRefresh && !needsDailyUpdate) {
+          data = parseCachedGames(cachedData);
+        }
+
+        if (!data) {
+          const controller = new AbortController();
+          const requestTimeout = setTimeout(() => controller.abort(), 12000);
+          try {
+            const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/`, {
+              headers: { 'Accept': 'application/vnd.github+json' },
+              cache: 'no-store',
+              signal: controller.signal
+            });
+
+            if (response.status === 403 || response.status === 429) {
+              data = cachedData ? parseCachedGames(cachedData) : null;
+              if (!data) {
+                throw new Error('GitHub API rate limit exceeded. No valid local cache is available.');
+              }
+              console.warn('API rate limit reached. Falling back to cached data.');
+            } else if (!response.ok) {
+              throw new Error(`GitHub API request failed (${response.status}).`);
+            } else {
+              const fetched = await response.json();
+              data = Array.isArray(fetched) ? fetched : null;
+              if (!data) throw new Error('GitHub returned an invalid directory listing.');
+              cacheGames(data, today);
+            }
+          } finally {
+            clearTimeout(requestTimeout);
+          }
+        }
+
+        const validItems = data
+          .filter(item => item && typeof item.name === 'string' && !item.name.startsWith('.'))
+          .filter(item => item.type === 'dir' || (item.type === 'file' && item.name.toLowerCase().endsWith('.swf')))
+          .slice(0, MAX_GAME_ITEMS);
+
+        if (validItems.length === 0) {
+          showStatus('No games or SWF files found in repository.');
+          return;
+        }
+
+        games = validItems.map(item => {
+          const isSwf = item.type === 'file' && item.name.toLowerCase().endsWith('.swf');
+          const baseName = isSwf ? item.name.replace(/\.swf$/i, '') : item.name;
+          const encodedName = encodeURIComponent(item.name);
+          const encodedBaseName = encodeURIComponent(baseName);
+
+          return {
+            name: item.name,
+            baseName,
+            title: formatTitle(baseName),
+            path: isSwf
+              ? `${CDN_BASE}/${encodedName}`
+              : `${CDN_BASE}/${encodedName}/index.html`,
+            iconPath: `${CDN_BASE}/${encodedBaseName}/`,
+            isSwf
+          };
+        });
+
+        renderGrid(games);
+      } catch (err) {
+        const message = err && err.name === 'AbortError'
+          ? 'Arcade library request timed out. Try Refresh API or use the saved cache.'
+          : (err?.message || 'Unable to load the arcade library.');
+        showStatus(message);
+        console.error(err);
+      }
+    }
+
+    function showStatus(message) {
+      const grid = document.getElementById('grid');
+      grid.replaceChildren();
+      const status = document.createElement('div');
+      status.className = 'status-container';
+      status.textContent = String(message);
+      grid.appendChild(status);
+    }
+
+    function formatTitle(folderName) {
+      return folderName
+        .replace(/[-_]/g, ' ')
+        .replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    function renderGrid(gameList) {
+      const grid = document.getElementById('grid');
+      grid.replaceChildren();
+      if (gameList.length === 0) {
+        showStatus('No games matching your search.');
+        return;
+      }
+
+      const fragment = document.createDocumentFragment();
+      gameList.forEach((game) => {
+        const card = document.createElement('div');
+        card.className = 'project-card arcade-card';
+        card.dataset.gamePath = game.path;
+        card.dataset.gameTitle = game.title;
+        card.dataset.isSwf = game.isSwf ? '1' : '0';
+        card.setAttribute('role', 'button');
+        card.setAttribute('tabindex', '0');
+        card.setAttribute('aria-label', `Play ${game.title}`);
+
+        const imageWrap = document.createElement('div');
+        imageWrap.className = 'card-image';
+        const img = document.createElement('img');
+        img.alt = game.title;
+        img.src = `${game.iconPath}${ICON_CANDIDATES[0]}`;
+        img.addEventListener('error', () => tryNextIcon(img, game.iconPath, 1), { once: true });
+        imageWrap.appendChild(img);
+
+        const body = document.createElement('div');
+        body.className = 'card-body';
+        const heading = document.createElement('h3');
+        heading.textContent = game.title;
+        body.appendChild(heading);
+
+        card.append(imageWrap, body);
+        fragment.appendChild(card);
+      });
+      grid.appendChild(fragment);
+    }
+
+    function isAllowedGameUrl(rawUrl) {
+      try {
+        const url = new URL(rawUrl, document.baseURI);
+        return url.origin === ALLOWED_CDN_ORIGIN && url.pathname.startsWith(ALLOWED_CDN_PREFIX) && url.protocol === 'https:';
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function tryNextIcon(imgElement, iconBase, index) {
+      if (index < ICON_CANDIDATES.length) {
+        imgElement.addEventListener('error', () => tryNextIcon(imgElement, iconBase, index + 1), { once: true });
+        imgElement.src = `${iconBase}${ICON_CANDIDATES[index]}`;
+      } else {
+        imgElement.src = FALLBACK_ICON;
+      }
+    }
+
+    document.getElementById('search').addEventListener('input', (e) => {
+      const term = e.target.value.trim().toLowerCase();
+      const filtered = games.filter(g => g.title.toLowerCase().includes(term) || g.name.toLowerCase().includes(term));
+      renderGrid(filtered);
+    });
+
+    document.getElementById('refresh-btn').addEventListener('click', () => fetchGames(true));
+    document.getElementById('close-game-modal-btn').addEventListener('click', closeModal);
+
+    document.getElementById('grid').addEventListener('click', (event) => {
+      const card = event.target.closest('.arcade-card');
+      if (!card) return;
+      const url = card.dataset.gamePath;
+      if (!isAllowedGameUrl(url)) {
+        console.warn('Blocked unexpected arcade URL:', url);
+        return;
+      }
+      openGame(url, card.dataset.isSwf === '1', card.dataset.gameTitle || 'Game');
+    });
+
+    document.getElementById('grid').addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const card = event.target.closest('.arcade-card');
+      if (!card) return;
+      event.preventDefault();
+      const url = card.dataset.gamePath;
+      if (!isAllowedGameUrl(url)) return;
+      openGame(url, card.dataset.isSwf === '1', card.dataset.gameTitle || 'Game');
+    });
+
+    // ===== ACTIVE GAME SYNC =====
+    // Arcade Hub reports the game currently occupying its own viewport to the
+    // parent launcher. The parent then forwards the activity to the chatroom.
+    let activeArcadeGameTitle = "";
+    let arcadeActivityTimer = null;
+
+    function notifyParentActivity(name, active = true) {
+      if (!window.parent || window.parent === window) return;
+
+      window.parent.postMessage({
+        source: 'arcade-hub',
+        kind: 'activity',
+        active,
+        name: name || 'Arcade Hub',
+        activityKind: name && name !== 'Arcade Hub' ? 'arcade-game' : 'arcade'
+      }, PARENT_ORIGIN);
+    }
+
+    function stopArcadeActivityMonitor() {
+      if (arcadeActivityTimer) {
+        clearInterval(arcadeActivityTimer);
+        arcadeActivityTimer = null;
+      }
+    }
+
+    function startArcadeActivityMonitor(title) {
+      stopArcadeActivityMonitor();
+
+      activeArcadeGameTitle = title || "";
+      notifyParentActivity(activeArcadeGameTitle || 'Arcade Hub', true);
+
+      // Cross-origin HTML5 game iframes cannot be inspected directly. The
+      // Arcade Hub can still see which child iframe currently has focus.
+      arcadeActivityTimer = setInterval(() => {
+        if (!activeArcadeGameTitle) return;
+
+        const modal = document.getElementById('game-modal');
+        if (!modal || modal.style.display === 'none') return;
+
+        const gameFrame = document.querySelector('#game-container iframe');
+        const rufflePlayer = document.querySelector('#game-container ruffle-player, #game-container > ruffle-player');
+
+        if (gameFrame && document.activeElement === gameFrame) {
+          notifyParentActivity(activeArcadeGameTitle, true);
+        } else if (rufflePlayer && (
+          document.activeElement === rufflePlayer ||
+          rufflePlayer.matches(':focus-within')
+        )) {
+          notifyParentActivity(activeArcadeGameTitle, true);
+        }
+      }, 500);
+    }
+
+    function notifyArcadeHubActivity() {
+      stopArcadeActivityMonitor();
+      activeArcadeGameTitle = "";
+      notifyParentActivity('Arcade Hub', true);
+    }
+
+    // Opens both HTML5 and Flash/SWF games to fill the entire Arcade Hub window
+    function openGame(url, isSwf, title) {
+      if (!isAllowedGameUrl(url)) {
+        console.warn('Blocked unexpected arcade URL:', url);
+        return;
+      }
+      const modal = document.getElementById('game-modal');
+      const container = document.getElementById('game-container');
+
+      // Update Title Bar
+      document.getElementById('modal-title').innerText = title + (isSwf ? ' - Flash Arcade' : ' - HTML Arcade');
+
+      // Clear previous content
+      container.innerHTML = '';
+
+      if (isSwf) {
+        // Embed Ruffle Player for SWF files
+        const ruffle = window.RufflePlayer.newest();
+        const player = ruffle.createPlayer();
+        player.style.width = '100%';
+        player.style.height = '100%';
+
+        container.appendChild(player);
+        player.load(url);
+
+        player.addEventListener('mousedown', () => notifyParentActivity(title, true));
+        player.addEventListener('touchstart', () => notifyParentActivity(title, true), { passive: true });
+      } else {
+        // Embed iframe for HTML5 games
+        const iframe = document.createElement('iframe');
+        iframe.src = url;
+        iframe.style.width = '100%';
+        iframe.style.height = '100%';
+        iframe.style.border = 'none';
+        iframe.allow = 'autoplay; fullscreen; keyboard';
+        iframe.title = title;
+
+        iframe.addEventListener('load', () => {
+          notifyParentActivity(title, true);
+        });
+
+        container.appendChild(iframe);
+      }
+
+      // Display full game viewport
+      modal.style.display = 'flex';
+
+      // Tell the parent immediately, then keep checking child-frame focus.
+      startArcadeActivityMonitor(title);
+    }
+
+    // Close Game Viewport and return to game library
+    function closeModal() {
+      const modal = document.getElementById('game-modal');
+      const container = document.getElementById('game-container');
+
+      modal.style.display = 'none';
+      container.innerHTML = '';
+      notifyArcadeHubActivity();
+    }
+
+    // The Arcade Hub itself is an active site window once it has loaded.
+    window.addEventListener('load', () => {
+      notifyArcadeHubActivity();
+    });
+
+    window.addEventListener('mousedown', (event) => {
+      // Clicking the game modal's controls or library means Arcade Hub is
+      // the active floating window. Opening a game immediately reasserts
+      // the game title through openGame().
+      if (event.target.closest('#game-modal') || event.target.closest('.arcade-card')) {
+        notifyParentActivity(activeArcadeGameTitle || 'Arcade Hub', true);
+      }
+    }, true);
+
+    window.addEventListener('beforeunload', () => {
+      notifyParentActivity('Arcade Hub', false);
+    });
+
+    fetchGames(false);
+  </script>
+</body>
+</html>
