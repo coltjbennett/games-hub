@@ -14,6 +14,17 @@ const SORT_KEY = 'project-launcher-sort';
 const SEARCH_KEY = 'project-launcher-search';
 const STATUS_KEY = 'project-launcher-status';
 const CHAT_USERNAME_KEY = 'mqtt_chat_username_v1';
+const TRUSTED_ORIGIN = window.location.origin;
+
+function isTrustedSameOriginMessage(event, expectedSource = null) {
+  if (event.origin !== TRUSTED_ORIGIN) return false;
+  if (expectedSource && event.source !== expectedSource) return false;
+  return true;
+}
+
+function postToFrame(frame, message) {
+  if (frame && frame.contentWindow) frame.contentWindow.postMessage(message, TRUSTED_ORIGIN);
+}
 
 let highestZIndex = 1000;
 
@@ -61,13 +72,13 @@ function sendActivityStateToChat() {
   const chatWindowOpen = isFloatingWindowVisible(chatWindow);
   const activeWindow = activeWindowState ? { ...activeWindowState } : null;
 
-  chatFrame.contentWindow.postMessage({
+  postToFrame(chatFrame, {
     source: 'parent-shell',
     action: 'activityState',
     activeWindow,
     chatWindowOpen,
     isHomepage: !chatWindowOpen && !activeWindow
-  }, '*');
+  });
 }
 
 function setActiveFloatingWindow(win, explicitName = "") {
@@ -150,6 +161,7 @@ function setupActiveWindowTracking() {
 function setupActivityMessaging() {
   window.addEventListener('message', (event) => {
     const data = event.data || {};
+    if (!isTrustedSameOriginMessage(event)) return;
     if (data.source !== 'arcade-hub') return;
 
     const arcadeFrame = document.getElementById('arcade-frame');
@@ -602,33 +614,64 @@ function createAppletWindow(appletPath, options = {}) {
   if (options.width) win.style.width = options.width;
   if (options.height) win.style.height = options.height;
 
-  const iconHtml = options.icon ? `<img src="${options.icon}" class="win-title-icon" alt="" onerror="this.style.display='none';" />` : '';
+  const titleBar = document.createElement('div');
+  titleBar.className = 'panel-title-bar';
+  titleBar.style.fontFamily = "'W95FA', 'MS Sans Serif', sans-serif";
 
-  // Added flex styling to win-btns to guarantee the refresh button squeezes in perfectly
-  win.innerHTML = `
-    <div class="panel-title-bar" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">
-      <span style="display: flex; align-items: center;">
-        ${iconHtml}
-        <span id="${winId}-title" class="applet-win-title" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">${esc(initialTitle)}</span>
-      </span>
-      <span class="win-btns" style="display: flex; gap: 4px;">
-        <button type="button" class="win-btn btn-refresh" aria-label="Refresh">↻</button>
-        <button type="button" class="win-btn btn-maximize" aria-label="Maximize">□</button>
-        <button type="button" class="win-btn btn-close" aria-label="Close">✕</button>
-      </span>
-    </div>
-    <div class="app-window-body">
-      <iframe id="${frameId}" class="app-frame" src="${targetSrc}" title="${esc(initialTitle)}"></iframe>
-    </div>
-  `;
+  const titleGroup = document.createElement('span');
+  titleGroup.style.display = 'flex';
+  titleGroup.style.alignItems = 'center';
 
+  if (options.icon) {
+    const icon = document.createElement('img');
+    icon.src = options.icon;
+    icon.className = 'win-title-icon';
+    icon.alt = '';
+    icon.onerror = () => { icon.style.display = 'none'; };
+    titleGroup.appendChild(icon);
+  }
+
+  const titleSpan = document.createElement('span');
+  titleSpan.id = `${winId}-title`;
+  titleSpan.className = 'applet-win-title';
+  titleSpan.style.fontFamily = "'W95FA', 'MS Sans Serif', sans-serif";
+  titleSpan.textContent = initialTitle;
+  titleGroup.appendChild(titleSpan);
+
+  const windowButtons = document.createElement('span');
+  windowButtons.className = 'win-btns';
+  windowButtons.style.display = 'flex';
+  windowButtons.style.gap = '4px';
+
+  const makeWindowButton = (className, label, text) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `win-btn ${className}`;
+    button.setAttribute('aria-label', label);
+    button.textContent = text;
+    return button;
+  };
+
+  const refreshBtn = makeWindowButton('btn-refresh', 'Refresh', '↻');
+  const maxBtn = makeWindowButton('btn-maximize', 'Maximize', '□');
+  const closeBtn = makeWindowButton('btn-close', 'Close', '✕');
+  windowButtons.append(refreshBtn, maxBtn, closeBtn);
+  titleBar.append(titleGroup, windowButtons);
+
+  const body = document.createElement('div');
+  body.className = 'app-window-body';
+
+  const iframe = document.createElement('iframe');
+  iframe.id = frameId;
+  iframe.className = 'app-frame';
+  iframe.src = targetSrc;
+  iframe.title = initialTitle;
+  iframe.loading = keepAlive ? 'eager' : 'lazy';
+  iframe.referrerPolicy = 'no-referrer';
+  body.appendChild(iframe);
+
+  win.append(titleBar, body);
   document.body.appendChild(win);
-
-  const titleSpan = win.querySelector('.applet-win-title');
-  const iframe = win.querySelector(`#${frameId}`);
-  const refreshBtn = win.querySelector('.btn-refresh');
-  const maxBtn = win.querySelector('.btn-maximize');
-  const closeBtn = win.querySelector('.btn-close');
 
   window.addEventListener('blur', () => {
     setTimeout(() => {
@@ -758,6 +801,7 @@ function createAppletWindow(appletPath, options = {}) {
     if (triggerBtn) {
       const isVisible = !win.hidden && !win.classList.contains('minimized');
       triggerBtn.classList.toggle('active', isVisible);
+      triggerBtn.setAttribute('aria-expanded', isVisible ? 'true' : 'false');
     }
   }
 
@@ -825,6 +869,7 @@ function createAppletWindow(appletPath, options = {}) {
 
   if (triggerBtn) {
     triggerBtn.addEventListener('click', toggleWin);
+    triggerBtn.setAttribute('aria-expanded', 'false');
   }
 
   return { win, iframe, open: openWin, close: closeWin, minimize: minimizeWin, toggle: toggleWin, toggleMaximize: toggleMaximize };
@@ -937,6 +982,27 @@ function setupAppletsAndFloatingWindows() {
     icon: 'images/icons/clock.png',
     keepAlive: false
   });
+
+  createAppletWindow('web_proxy_browser_applet.html', {
+    id: 'browser-window',
+    iframeId: 'browser-frame',
+    triggerBtnId: 'taskbar-browser-btn',
+    title: 'Web Browser',
+    width: 'min(900px, calc(100vw - 36px))',
+    height: 'min(620px, calc(100vh - 110px))',
+    keepAlive: false
+  });
+
+  createAppletWindow('changelog.txt', {
+    id: 'changelog-window',
+    iframeId: 'changelog-frame',
+    triggerBtnId: 'changelog-btn',
+    title: 'Site Changelog',
+    width: 'min(760px, calc(100vw - 36px))',
+    height: 'min(600px, calc(100vh - 110px))',
+    keepAlive: false,
+    isRootPath: true
+  });
 }
 
 // ===== START MENU =====
@@ -970,14 +1036,16 @@ function setupVisitorCounter() {
   try {
     const KEY = 'colton-launcher-visits';
     const SESSION_KEY = 'colton-launcher-session';
-    const rawCount = localStorage.getItem(KEY);
+    const rawCount = safeGet(KEY);
     
     let count = (rawCount && !isNaN(rawCount)) ? parseInt(rawCount, 10) : 0;
     
-    if (!sessionStorage.getItem(SESSION_KEY)) {
+    let hasSession = false;
+    try { hasSession = sessionStorage.getItem(SESSION_KEY) === '1'; } catch (e) {}
+    if (!hasSession) {
       count += 1;
-      localStorage.setItem(KEY, count);
-      sessionStorage.setItem(SESSION_KEY, '1');
+      safeSet(KEY, count);
+      try { sessionStorage.setItem(SESSION_KEY, '1'); } catch (e) {}
     }
     
     const el = document.getElementById('visit-count');
@@ -1040,13 +1108,13 @@ function setupChatWidget() {
 
   function sendWindowStateToFrame(isOpen) {
     if (chatFrame && chatFrame.contentWindow) {
-      chatFrame.contentWindow.postMessage({
+      postToFrame(chatFrame, {
         source: 'parent-shell',
         action: isOpen ? 'chatWindowOpened' : 'chatWindowClosed',
         activeWindow: activeWindowState ? { ...activeWindowState } : null,
         chatWindowOpen: isOpen,
         isHomepage: !isOpen && !activeWindowState
-      }, '*');
+      });
 
       sendActivityStateToChat();
     }
@@ -1073,6 +1141,7 @@ function setupChatWidget() {
 
   window.addEventListener('message', (event) => {
     const data = event.data || {};
+    if (!isTrustedSameOriginMessage(event, chatFrame.contentWindow)) return;
     if (data.source !== 'universal-chat') return;
 
     if (data.kind === 'activityRequest') {

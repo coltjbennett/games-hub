@@ -400,6 +400,7 @@
         resetUI();
         statusText.textContent = "Error loading page.";
         fallbackLink.href = url;
+        fallbackLink.rel = 'noopener noreferrer';
         fallbackLink.textContent = url;
         errorOverlay.style.display = 'flex';
       };
@@ -408,11 +409,30 @@
         let targetUrl = urlInput.value.trim();
         if (!targetUrl) return;
 
-        // Auto format URL
-        if (!/^https?:\/\//i.test(targetUrl)) {
-          targetUrl = 'https://' + targetUrl;
-          urlInput.value = targetUrl;
+        if (!/^https?:\/\//i.test(targetUrl)) targetUrl = 'https://' + targetUrl;
+
+        let parsedUrl;
+        try {
+          parsedUrl = new URL(targetUrl);
+        } catch (error) {
+          showError(targetUrl);
+          statusText.textContent = 'Invalid URL.';
+          return;
         }
+
+        if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+          showError(parsedUrl.href);
+          statusText.textContent = 'Only HTTP and HTTPS pages are allowed.';
+          return;
+        }
+        if (parsedUrl.username || parsedUrl.password) {
+          showError(parsedUrl.href);
+          statusText.textContent = 'URLs containing embedded credentials are blocked.';
+          return;
+        }
+
+        targetUrl = parsedUrl.href;
+        urlInput.value = targetUrl;
 
         resetUI();
 

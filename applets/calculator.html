@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Scientific Calculator</title>
+  <meta name="theme-color" content="#c0c0c0">
+  <title>Calculator</title>
   <style>
     @font-face {
       font-family: "W95FA";
-      src: url('images/w95f.woff2') format('woff2'),
-           url('images/w95f.woff') format('woff');
+      src: url('../images/w95f.woff2') format('woff2'),
+           url('../images/w95f.woff') format('woff');
       font-weight: normal;
       font-style: normal;
     }
@@ -21,189 +22,396 @@
       --win-border-dark: #808080;
     }
 
-    * {
-      box-sizing: border-box;
+    * { box-sizing: border-box; }
+
+    html, body { width: 100%; height: 100%; }
+
+    body {
       margin: 0;
-      padding: 0;
-      font-family: "W95FA", "MS Sans Serif", sans-serif;
+      padding: 2px;
+      overflow: hidden;
+      background: var(--win-bg);
+      color: var(--win-text);
+      font-family: "W95FA", "MS Sans Serif", Tahoma, Arial, sans-serif;
       user-select: none;
     }
 
-    body {
-      background: var(--win-bg);
-      color: var(--win-text);
+    .calculator {
+      width: 100%;
+      height: 100%;
+      min-width: 280px;
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      padding: 12px;
-      height: 100vh;
-      overflow: hidden;
+      gap: 4px;
+    }
+
+    .menu-bar {
+      height: 20px;
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      padding: 1px 5px;
+      border-bottom: 1px solid var(--win-border-dark);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .display-frame {
+      padding: 2px;
+      border: 2px inset var(--win-border-dark);
+      background: #dcdcdc;
     }
 
     #display {
+      display: block;
       width: 100%;
-      height: 44px;
-      background: #ffffff;
-      border: 2px inset var(--win-border-dark);
-      font-size: 1.5rem;
+      height: 30px;
+      margin: 0;
+      padding: 1px 4px;
+      border: 1px solid #000;
+      background: #fff;
+      color: #000;
+      font-family: "Courier New", monospace;
+      font-size: 18px;
       text-align: right;
-      padding: 5px 8px;
-      color: #000000;
       outline: none;
+      user-select: text;
     }
 
-    .grid {
+    .mode-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11px;
+      min-height: 18px;
+    }
+
+    .mode-row span { white-space: nowrap; }
+
+    .memory-row, .keypad {
       display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      grid-template-rows: repeat(7, 1fr);
-      gap: 4px;
+      gap: 3px;
+    }
+
+    .memory-row {
+      grid-template-columns: repeat(4, 1fr);
+      min-height: 25px;
+    }
+
+    .keypad {
       flex: 1;
+      min-height: 0;
+      grid-template-columns: repeat(6, 1fr);
+      grid-template-rows: repeat(6, 1fr);
     }
 
     button {
-      background: var(--win-bg);
+      min-width: 0;
+      min-height: 0;
+      padding: 1px 2px;
       border: 2px outset var(--win-border-light);
-      color: var(--win-text);
-      font-size: 1rem;
+      background: var(--win-bg);
+      color: #000;
+      font-family: "W95FA", "MS Sans Serif", Tahoma, Arial, sans-serif;
+      font-size: 12px;
+      line-height: 1;
       cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
     }
 
-    button:active {
+    button:active,
+    button.pressed {
       border-style: inset;
-      padding: 2px 0 0 2px;
+      padding-top: 2px;
     }
-    
-    button.clear { color: #ff0000; font-weight: bold; }
-    button.op { color: var(--win-blue); font-weight: bold; }
-    button.func { color: #006600; font-size: 0.9rem; }
+
+    .menu-bar span::first-letter { text-decoration: underline; }
+    .memory-btn { font-size: 11px; }
+    .function { color: #000080; }
+    .operator { color: #000080; font-weight: bold; }
+    .clear { color: #800000; font-weight: bold; }
+    .equals { font-weight: bold; background: #d0d0d0; }
+    .wide { grid-column: span 2; }
   </style>
 </head>
 <body>
-  <input type="text" id="display" readonly value="0">
-  <div class="grid">
-    <!-- Row 1 -->
-    <button class="func" onclick="appendValue('sin(')">sin</button>
-    <button class="func" onclick="appendValue('cos(')">cos</button>
-    <button class="func" onclick="appendValue('tan(')">tan</button>
-    <button class="func" onclick="appendValue('log(')">log</button>
-    <button class="func" onclick="appendValue('ln(')">ln</button>
-    
-    <!-- Row 2 -->
-    <button class="func" onclick="appendValue('π')">π</button>
-    <button class="func" onclick="appendValue('e')">e</button>
-    <button class="func" onclick="appendValue('sqrt(')">√</button>
-    <button class="func" onclick="appendValue('^')">x^y</button>
-    <button class="func" onclick="appendValue('!')">n!</button>
-    
-    <!-- Row 3 -->
-    <button class="func" onclick="appendValue('(')">(</button>
-    <button class="func" onclick="appendValue(')')">)</button>
-    <button class="clear" onclick="clearDisplay()">C</button>
-    <button class="clear" onclick="backspace()">⌫</button>
-    <button class="op" onclick="appendValue('/')">÷</button>
-    
-    <!-- Row 4 -->
-    <button onclick="appendValue('7')">7</button>
-    <button onclick="appendValue('8')">8</button>
-    <button onclick="appendValue('9')">9</button>
-    <button class="op" onclick="appendValue('*')">×</button>
-    <button class="func" onclick="appendValue('²')">x²</button>
-    
-    <!-- Row 5 -->
-    <button onclick="appendValue('4')">4</button>
-    <button onclick="appendValue('5')">5</button>
-    <button onclick="appendValue('6')">6</button>
-    <button class="op" onclick="appendValue('-')">-</button>
-    <button class="func" onclick="appendValue('³')">x³</button>
-    
-    <!-- Row 6 -->
-    <button onclick="appendValue('1')">1</button>
-    <button onclick="appendValue('2')">2</button>
-    <button onclick="appendValue('3')">3</button>
-    <button class="op" onclick="appendValue('+')">+</button>
-    <button class="op" onclick="calculate()" style="grid-row: span 2;">=</button>
-    
-    <!-- Row 7 -->
-    <button onclick="appendValue('0')" style="grid-column: span 2;">0</button>
-    <button onclick="appendValue('.')">.</button>
-    <button class="func" onclick="appendValue('%')">%</button>
-  </div>
+  <main class="calculator" aria-label="Windows 95 style calculator">
+    <div class="menu-bar" aria-hidden="true">
+      <span>View</span>
+      <span>Edit</span>
+      <span>Help</span>
+    </div>
+
+    <div class="display-frame">
+      <input type="text" id="display" aria-label="Calculator display" readonly value="0">
+    </div>
+
+    <div class="mode-row">
+      <span id="memory-indicator">Memory: 0</span>
+      <span>Scientific / Radians</span>
+    </div>
+
+    <div class="memory-row">
+      <button class="memory-btn" type="button" onclick="memoryClear()">MC</button>
+      <button class="memory-btn" type="button" onclick="memoryRecall()">MR</button>
+      <button class="memory-btn" type="button" onclick="memoryStore()">MS</button>
+      <button class="memory-btn" type="button" onclick="memoryAdd()">M+</button>
+    </div>
+
+    <div class="keypad">
+      <button class="function" type="button" onclick="appendValue('sin(')">sin</button>
+      <button class="function" type="button" onclick="appendValue('cos(')">cos</button>
+      <button class="function" type="button" onclick="appendValue('tan(')">tan</button>
+      <button class="function" type="button" onclick="appendValue('log(')">log</button>
+      <button class="function" type="button" onclick="appendValue('ln(')">ln</button>
+      <button class="clear" type="button" onclick="clearDisplay()">C</button>
+
+      <button class="function" type="button" onclick="appendValue('sqrt(')">√</button>
+      <button class="function" type="button" onclick="appendValue('π')">π</button>
+      <button class="function" type="button" onclick="appendValue('e')">e</button>
+      <button class="function" type="button" onclick="appendValue('²')">x²</button>
+      <button class="function" type="button" onclick="appendValue('³')">x³</button>
+      <button class="clear" type="button" onclick="backspace()">Back</button>
+
+      <button type="button" onclick="appendValue('7')">7</button>
+      <button type="button" onclick="appendValue('8')">8</button>
+      <button type="button" onclick="appendValue('9')">9</button>
+      <button class="operator" type="button" onclick="appendValue('/')">÷</button>
+      <button class="function" type="button" onclick="appendValue('!')">n!</button>
+      <button class="operator" type="button" onclick="appendValue('(')">(</button>
+
+      <button type="button" onclick="appendValue('4')">4</button>
+      <button type="button" onclick="appendValue('5')">5</button>
+      <button type="button" onclick="appendValue('6')">6</button>
+      <button class="operator" type="button" onclick="appendValue('*')">×</button>
+      <button class="operator" type="button" onclick="appendValue('-')">−</button>
+      <button class="operator" type="button" onclick="appendValue(')')">)</button>
+
+      <button type="button" onclick="appendValue('1')">1</button>
+      <button type="button" onclick="appendValue('2')">2</button>
+      <button type="button" onclick="appendValue('3')">3</button>
+      <button class="operator" type="button" onclick="appendValue('+')">+</button>
+      <button class="operator" type="button" onclick="appendValue('^')">xʸ</button>
+      <button class="equals" type="button" onclick="calculate()">=</button>
+
+      <button class="wide" type="button" onclick="appendValue('0')">0</button>
+      <button type="button" onclick="appendValue('.')">.</button>
+      <button type="button" onclick="appendValue('%')">%</button>
+      <button class="clear" type="button" onclick="clearDisplay()">CE</button>
+    </div>
+  </main>
 
   <script>
-    const display = document.getElementById('display');
     let resetOnNext = false;
+    let memoryValue = 0;
+    const display = document.getElementById('display');
+    const memoryIndicator = document.getElementById('memory-indicator');
 
-    function appendValue(val) {
-      if (display.value === 'Error') display.value = '0';
-      if (resetOnNext && !isNaN(val)) {
-        display.value = val;
-        resetOnNext = false;
-      } else {
-        if (display.value === '0' && val !== '.') {
-          display.value = val;
-        } else {
-          display.value += val;
-        }
-        resetOnNext = false;
-      }
+    function updateMemoryIndicator() {
+      memoryIndicator.textContent = `Memory: ${Number.isFinite(memoryValue) ? memoryValue : 0}`;
     }
 
-    function clearDisplay() { 
-      display.value = '0'; 
+    function appendValue(value) {
+      if (resetOnNext) {
+        display.value = '';
+        resetOnNext = false;
+      }
+      if (display.value === '0' && /[0-9πe(]/.test(value)) display.value = '';
+      display.value += value;
+    }
+
+    function clearDisplay() {
+      display.value = '0';
       resetOnNext = false;
     }
 
     function backspace() {
-      if (display.value === 'Error') {
-        display.value = '0';
-        return;
+      if (resetOnNext) return clearDisplay();
+      display.value = display.value.length > 1 ? display.value.slice(0, -1) : '0';
+    }
+
+    function safeCurrentValue() {
+      try {
+        return evaluateExpression(display.value);
+      } catch (e) {
+        return NaN;
       }
-      display.value = display.value.slice(0, -1);
-      if (display.value === '') display.value = '0';
+    }
+
+    function memoryClear() {
+      memoryValue = 0;
+      updateMemoryIndicator();
+    }
+
+    function memoryRecall() {
+      display.value = String(memoryValue);
+      resetOnNext = false;
+    }
+
+    function memoryStore() {
+      const value = safeCurrentValue();
+      if (Number.isFinite(value)) memoryValue = value;
+      updateMemoryIndicator();
+    }
+
+    function memoryAdd() {
+      const value = safeCurrentValue();
+      if (Number.isFinite(value)) memoryValue += value;
+      updateMemoryIndicator();
+    }
+
+    function factorial(n) {
+      if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n) || n > 170) throw new Error('Invalid factorial');
+      let out = 1;
+      for (let i = 2; i <= n; i++) out *= i;
+      return out;
+    }
+
+    function tokenize(source) {
+      const tokens = [];
+      let i = 0;
+      while (i < source.length) {
+        const char = source[i];
+        if (/\s/.test(char)) { i++; continue; }
+        if (/\d|\./.test(char)) {
+          const start = i;
+          let dots = 0;
+          while (i < source.length && /[\d.]/.test(source[i])) {
+            if (source[i] === '.') dots++;
+            if (dots > 1) throw new Error('Invalid number');
+            i++;
+          }
+          const num = Number(source.slice(start, i));
+          if (!Number.isFinite(num)) throw new Error('Invalid number');
+          tokens.push({ type: 'number', value: num });
+          continue;
+        }
+        if (char === 'π') { tokens.push({ type: 'number', value: Math.PI }); i++; continue; }
+        if (char === 'e') { tokens.push({ type: 'number', value: Math.E }); i++; continue; }
+        if (/[A-Za-z]/.test(char)) {
+          const start = i;
+          while (i < source.length && /[A-Za-z]/.test(source[i])) i++;
+          tokens.push({ type: 'name', value: source.slice(start, i).toLowerCase() });
+          continue;
+        }
+        if ('+-*/^%!()²³'.includes(char)) { tokens.push({ type: char, value: char }); i++; continue; }
+        throw new Error('Invalid character');
+      }
+      return tokens;
+    }
+
+    function evaluateExpression(source) {
+      const tokens = tokenize(source.replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-'));
+      if (!tokens.length) throw new Error('Empty');
+      let pos = 0;
+
+      const peek = () => tokens[pos];
+      const take = (type) => {
+        if (peek()?.type !== type) throw new Error('Expected ' + type);
+        return tokens[pos++];
+      };
+
+      function parseExpression() {
+        let value = parseTerm();
+        while (peek()?.type === '+' || peek()?.type === '-') {
+          const op = tokens[pos++].type;
+          const rhs = parseTerm();
+          value = op === '+' ? value + rhs : value - rhs;
+        }
+        return value;
+      }
+
+      function parseTerm() {
+        let value = parsePower();
+        while (peek()?.type === '*' || peek()?.type === '/' || peek()?.type === '%') {
+          const op = tokens[pos++].type;
+          const rhs = parsePower();
+          if (op === '*') value *= rhs;
+          else if (op === '/') value /= rhs;
+          else value %= rhs;
+        }
+        return value;
+      }
+
+      function parsePower() {
+        let value = parseUnary();
+        if (peek()?.type === '^') {
+          pos++;
+          value = Math.pow(value, parsePower());
+        }
+        return value;
+      }
+
+      function parseUnary() {
+        if (peek()?.type === '+') { pos++; return parseUnary(); }
+        if (peek()?.type === '-') { pos++; return -parseUnary(); }
+        return parsePostfix();
+      }
+
+      function parsePostfix() {
+        let value = parsePrimary();
+        while (peek()?.type === '!' || peek()?.type === '²' || peek()?.type === '³') {
+          const op = tokens[pos++].type;
+          if (op === '!') value = factorial(value);
+          else value = Math.pow(value, op === '²' ? 2 : 3);
+        }
+        return value;
+      }
+
+      function parsePrimary() {
+        const token = peek();
+        if (!token) throw new Error('Unexpected end');
+        if (token.type === 'number') { pos++; return token.value; }
+        if (token.type === '(') {
+          pos++;
+          const value = parseExpression();
+          take(')');
+          return value;
+        }
+        if (token.type === 'name') {
+          const name = token.value;
+          pos++;
+          take('(');
+          const arg = parseExpression();
+          take(')');
+          const fns = {
+            sin: Math.sin,
+            cos: Math.cos,
+            tan: Math.tan,
+            log: Math.log10,
+            ln: Math.log,
+            sqrt: Math.sqrt
+          };
+          if (!fns[name]) throw new Error('Unknown function');
+          return fns[name](arg);
+        }
+        throw new Error('Unexpected token');
+      }
+
+      const result = parseExpression();
+      if (pos !== tokens.length || !Number.isFinite(result)) throw new Error('Invalid expression');
+      return result;
     }
 
     function calculate() {
       try {
         let expr = display.value;
-        
-        // Translate visual symbols into math operators
-        expr = expr.replace(/×/g, '*').replace(/÷/g, '/');
-        expr = expr.replace(/π/g, 'Math.PI').replace(/e/g, 'Math.E');
-        expr = expr.replace(/sin\(/g, 'Math.sin(');
-        expr = expr.replace(/cos\(/g, 'Math.cos(');
-        expr = expr.replace(/tan\(/g, 'Math.tan(');
-        expr = expr.replace(/log\(/g, 'Math.log10(');
-        expr = expr.replace(/ln\(/g, 'Math.log(');
-        expr = expr.replace(/sqrt\(/g, 'Math.sqrt(');
-        expr = expr.replace(/\^/g, '**');
-        expr = expr.replace(/([0-9.]+)?²/g, '($1**2)');
-        expr = expr.replace(/([0-9.]+)?³/g, '($1**3)');
-        expr = expr.replace(/([0-9.]+)?%/g, '($1/100)');
-        
-        // Custom simple parser for factorials (supports integers)
-        while (expr.includes('!')) {
-          expr = expr.replace(/(\d+)!/, (match, num) => {
-            let n = parseInt(num);
-            let fact = 1;
-            for(let i = 1; i <= n; i++) fact *= i;
-            return fact;
-          });
-        }
-
-        // Evaluate and correct floating point math bugs (e.g. 0.1 + 0.2 = 0.30000000000000004)
-        let result = Function('"use strict"; return (' + expr + ')')();
-        if (typeof result !== 'number' || isNaN(result)) throw new Error("Invalid");
-        
-        display.value = Math.round(result * 1e12) / 1e12;
-        resetOnNext = true;
+        const result = evaluateExpression(expr);
+        display.value = String(Math.round(result * 1e12) / 1e12);
       } catch (e) {
         display.value = 'Error';
-        resetOnNext = true;
       }
+      resetOnNext = true;
     }
+
+    window.addEventListener('keydown', (event) => {
+      if (/^[0-9.]$/.test(event.key)) { appendValue(event.key); event.preventDefault(); return; }
+      if (['+', '-', '*', '/', '^', '%', '(', ')'].includes(event.key)) { appendValue(event.key); event.preventDefault(); return; }
+      if (event.key === 'Enter' || event.key === '=') { calculate(); event.preventDefault(); return; }
+      if (event.key === 'Escape') { clearDisplay(); event.preventDefault(); return; }
+      if (event.key === 'Backspace') { backspace(); event.preventDefault(); }
+    });
+
+    updateMemoryIndicator();
   </script>
 </body>
 </html>

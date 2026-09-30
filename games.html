@@ -172,6 +172,14 @@
 
     let games = [];
 
+    function safeStorageGet(key) {
+      try { return localStorage.getItem(key); } catch (error) { return null; }
+    }
+
+    function safeStorageSet(key, value) {
+      try { localStorage.setItem(key, value); } catch (error) { /* cache is optional */ }
+    }
+
     async function fetchGames(forceRefresh = false) {
       const grid = document.getElementById('grid');
       if (forceRefresh) {
@@ -182,8 +190,8 @@
       
       try {
         let data;
-        const cachedData = localStorage.getItem('arcade_games_cache');
-        const lastFetchDate = localStorage.getItem('arcade_games_cache_date');
+        const cachedData = safeStorageGet('arcade_games_cache');
+        const lastFetchDate = safeStorageGet('arcade_games_cache_date');
         const today = new Date().toDateString();
         const needsDailyUpdate = lastFetchDate !== today;
 
@@ -203,12 +211,15 @@
             throw new Error('Failed to fetch repo contents.');
           } else {
             data = await response.json();
-            localStorage.setItem('arcade_games_cache', JSON.stringify(data));
-            localStorage.setItem('arcade_games_cache_date', today);
+            safeStorageSet('arcade_games_cache', JSON.stringify(data));
+            safeStorageSet('arcade_games_cache_date', today);
           }
         }
 
+        if (!Array.isArray(data)) throw new Error('GitHub returned an unexpected directory listing.');
+
         const validItems = data.filter(item => {
+          if (!item || typeof item.name !== 'string' || typeof item.type !== 'string') return false;
           if (item.name.startsWith('.')) return false;
           return item.type === 'dir' || (item.type === 'file' && item.name.toLowerCase().endsWith('.swf'));
         });
@@ -227,8 +238,8 @@
             baseName: baseName, 
             title: formatTitle(baseName),
             path: isSwf 
-              ? `${CDN_BASE}/${item.name}` 
-              : `${CDN_BASE}/${item.name}/index.html`,
+              ? `${CDN_BASE}/${encodeURIComponent(item.name)}` 
+              : `${CDN_BASE}/${encodeURIComponent(item.name)}/index.html`,
             isSwf: isSwf
           };
         });
@@ -248,31 +259,55 @@
 
     function renderGrid(gameList) {
       const grid = document.getElementById('grid');
+      grid.replaceChildren();
+
       if (gameList.length === 0) {
-        grid.innerHTML = `<div class="status-container">No games matching your search.</div>`;
+        const empty = document.createElement('div');
+        empty.className = 'status-container';
+        empty.textContent = 'No games matching your search.';
+        grid.appendChild(empty);
         return;
       }
 
-      grid.innerHTML = gameList.map((game) => `
-        <div class="project-card arcade-card" onclick="openGame('${game.path}', ${game.isSwf}, '${game.title.replace(/'/g, "\\'")}')">
-          <div class="card-image">
-            <img 
-              src="${CDN_BASE}/${game.baseName}/icon.png" 
-              alt="${game.title}"
-              onerror="tryNextIcon(this, '${game.baseName}', 1)"
-            />
-          </div>
-          <div class="card-body">
-            <h3>${game.title}</h3>
-          </div>
-        </div>
-      `).join('');
+      gameList.forEach((game) => {
+        const card = document.createElement('div');
+        card.className = 'project-card arcade-card';
+        card.tabIndex = 0;
+        card.setAttribute('role', 'button');
+        card.setAttribute('aria-label', `Open ${game.title}`);
+        card.addEventListener('click', () => openGame(game.path, game.isSwf, game.title));
+        card.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            openGame(game.path, game.isSwf, game.title);
+          }
+        });
+
+        const imageWrap = document.createElement('div');
+        imageWrap.className = 'card-image';
+        const img = document.createElement('img');
+        img.alt = game.title;
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        img.onerror = () => tryNextIcon(img, game.baseName, 0);
+        img.src = `${CDN_BASE}/${encodeURIComponent(game.baseName)}/icon.png`;
+        imageWrap.appendChild(img);
+
+        const body = document.createElement('div');
+        body.className = 'card-body';
+        const heading = document.createElement('h3');
+        heading.textContent = game.title;
+        body.appendChild(heading);
+
+        card.append(imageWrap, body);
+        grid.appendChild(card);
+      });
     }
 
     function tryNextIcon(imgElement, folderName, index) {
       if (index < ICON_CANDIDATES.length) {
         imgElement.onerror = () => tryNextIcon(imgElement, folderName, index + 1);
-        imgElement.src = `${CDN_BASE}/${folderName}/${ICON_CANDIDATES[index]}`;
+        imgElement.src = `${CDN_BASE}/${encodeURIComponent(folderName)}/${encodeURIComponent(ICON_CANDIDATES[index])}`;
       } else {
         imgElement.onerror = null;
         imgElement.src = FALLBACK_ICON;
@@ -300,7 +335,7 @@
         active,
         name: name || 'Arcade Hub',
         activityKind: name && name !== 'Arcade Hub' ? 'arcade-game' : 'arcade'
-      }, '*');
+      }, window.location.origin);
     }
 
     function stopArcadeActivityMonitor() {
@@ -348,12 +383,23 @@
     function openGame(url, isSwf, title) {
       const modal = document.getElementById('game-modal');
       const container = document.getElementById('game-container');
+      let safeUrl;
+      try {
+        safeUrl = new URL(url, window.location.href);
+      } catch (error) {
+        console.error('Invalid game URL:', error);
+        return;
+      }
+      if (safeUrl.protocol !== 'https:' && safeUrl.protocol !== 'http:') {
+        console.error('Blocked unsupported game URL scheme:', safeUrl.protocol);
+        return;
+      }
 
       // Update Title Bar
       document.getElementById('modal-title').innerText = title + (isSwf ? ' - Flash Arcade' : ' - HTML Arcade');
 
       // Clear previous content
-      container.innerHTML = '';
+      container.replaceChildren();
 
       if (isSwf) {
         // Embed Ruffle Player for SWF files
@@ -363,18 +409,19 @@
         player.style.height = '100%';
 
         container.appendChild(player);
-        player.load(url);
+        player.load(safeUrl.href);
 
         player.addEventListener('mousedown', () => notifyParentActivity(title, true));
         player.addEventListener('touchstart', () => notifyParentActivity(title, true), { passive: true });
       } else {
         // Embed iframe for HTML5 games
         const iframe = document.createElement('iframe');
-        iframe.src = url;
+        iframe.src = safeUrl.href;
         iframe.style.width = '100%';
         iframe.style.height = '100%';
         iframe.style.border = 'none';
         iframe.allow = 'autoplay; fullscreen; keyboard';
+        iframe.referrerPolicy = 'no-referrer';
         iframe.title = title;
 
         iframe.addEventListener('load', () => {
@@ -397,7 +444,7 @@
       const container = document.getElementById('game-container');
 
       modal.style.display = 'none';
-      container.innerHTML = '';
+      container.replaceChildren();
       notifyArcadeHubActivity();
     }
 

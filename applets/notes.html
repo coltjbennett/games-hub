@@ -8,8 +8,8 @@
   <style>
     @font-face {
       font-family: "W95FA";
-      src: url('images/w95f.woff2') format('woff2'),
-           url('images/w95f.woff') format('woff');
+      src: url('../images/w95f.woff2') format('woff2'),
+           url('../images/w95f.woff') format('woff');
       font-weight: normal;
       font-style: normal;
     }
@@ -30,14 +30,27 @@
       user-select: none;
     }
 
+    html::after,
+    body::before {
+      display: none !important;
+      content: none !important;
+      background: none !important;
+      box-shadow: none !important;
+      filter: none !important;
+      -webkit-filter: none !important;
+    }
+
     body {
-      background: var(--win-bg);
+      background: #c0c0c0 !important;
       color: var(--win-text);
       display: flex;
       height: 100vh;
       padding: 8px;
       gap: 8px;
       overflow: hidden;
+      box-shadow: none !important;
+      filter: none !important;
+      -webkit-filter: none !important;
     }
 
     .sidebar {
@@ -129,7 +142,16 @@
   </div>
 
   <script>
-    let notes = JSON.parse(localStorage.getItem('desktop_notes_app') || '[]');
+    let notes = [];
+    try {
+      const rawNotes = localStorage.getItem('desktop_notes_app');
+      const parsedNotes = rawNotes ? JSON.parse(rawNotes) : [];
+      notes = Array.isArray(parsedNotes) ? parsedNotes : [];
+    } catch (e) {
+      notes = [];
+    }
+
+    let saveTimer = null;
     let activeNoteId = null;
 
     const noteListEl = document.getElementById('noteList');
@@ -184,7 +206,7 @@
       if (note) {
         note.title = titleEl.value.trim() || 'Untitled Note';
         note.content = contentEl.value;
-        saveToStorage();
+        scheduleSave();
         renderList();
       }
     }
@@ -201,8 +223,19 @@
     }
 
     function saveToStorage() {
-      localStorage.setItem('desktop_notes_app', JSON.stringify(notes));
+      try {
+        localStorage.setItem('desktop_notes_app', JSON.stringify(notes));
+      } catch (e) {
+        console.warn('Unable to save notes locally.', e);
+      }
     }
+
+    function scheduleSave() {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveToStorage, 250);
+    }
+
+    window.addEventListener('beforeunload', saveToStorage);
 
     init();
   </script>
