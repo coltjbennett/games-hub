@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Snake</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #050505; overflow: hidden; font-family: 'Courier New', Courier, monospace; touch-action: none; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        canvas { background-color: #000; box-shadow: 0 0 20px rgba(0, 255, 0, 0.2); max-width: 100%; max-height: 60vh; object-fit: contain; border: 2px solid #0f0; }
+        #joystick { margin-top: 20px; position: relative; width: 150px; height: 150px; display: grid; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr 1fr; gap: 5px; }
+        .btn { background: rgba(0, 255, 0, 0.1); border: 2px solid #0f0; color: #0f0; font-weight: bold; font-size: 24px; display: flex; justify-content: center; align-items: center; user-select: none; border-radius: 10px; box-shadow: 0 0 10px #0f0, inset 0 0 10px #0f0; text-shadow: 0 0 5px #0f0; }
+        .btn:active { background: rgba(0, 255, 0, 0.3); box-shadow: 0 0 20px #0f0, inset 0 0 20px #0f0; }
+        .up { grid-column: 2; grid-row: 1; } .left { grid-column: 1; grid-row: 2; } .right { grid-column: 3; grid-row: 2; } .down { grid-column: 2; grid-row: 3; }
+        @media (hover: hover) and (pointer: fine) { #joystick { display: none; } canvas { max-height: 90vh; } }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="400" height="400"></canvas>
+    <div id="joystick">
+        <div class="btn up" id="btnUp">▲</div>
+        <div class="btn left" id="btnLeft">◄</div>
+        <div class="btn right" id="btnRight">►</div>
+        <div class="btn down" id="btnDown">▼</div>
+    </div>
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const TS = 20; const COLS = canvas.width / TS; const ROWS = canvas.height / TS;
+    
+    let snake, apple, dx, dy, score, gameState = 'START';
+    let lastTime = 0, moveInterval = 100;
+
+    function init() {
+        snake = [{x: 10, y: 10}, {x: 9, y: 10}, {x: 8, y: 10}];
+        dx = 1; dy = 0; score = 0;
+        placeApple();
+        gameState = 'PLAYING';
+    }
+
+    function placeApple() {
+        apple = { x: Math.floor(Math.random() * COLS), y: Math.floor(Math.random() * ROWS) };
+        if(snake.some(s => s.x === apple.x && s.y === apple.y)) placeApple();
+    }
+
+    function setDir(ndx, ndy) {
+        if(gameState !== 'PLAYING') { init(); return; }
+        if(dx === -ndx && dy === -ndy) return; // Prevent reversing
+        dx = ndx; dy = ndy;
+    }
+
+    window.addEventListener('keydown', e => {
+        if(e.key === 'ArrowUp' || e.key === 'w') setDir(0, -1);
+        if(e.key === 'ArrowDown' || e.key === 's') setDir(0, 1);
+        if(e.key === 'ArrowLeft' || e.key === 'a') setDir(-1, 0);
+        if(e.key === 'ArrowRight' || e.key === 'd') setDir(1, 0);
+    });
+
+    ['btnUp','btnDown','btnLeft','btnRight'].forEach((id, i) => {
+        const dirs = [[0,-1], [0,1], [-1,0], [1,0]];
+        document.getElementById(id).addEventListener('touchstart', e => { e.preventDefault(); setDir(...dirs[i]); });
+    });
+
+    function update(time) {
+        if(gameState !== 'PLAYING') return;
+        if(time - lastTime < moveInterval) return;
+        lastTime = time;
+
+        let head = { x: snake[0].x + dx, y: snake[0].y + dy };
+        
+        // Wall collision
+        if(head.x < 0 || head.x >= COLS || head.y < 0 || head.y >= ROWS || snake.some(s => s.x === head.x && s.y === head.y)) {
+            gameState = 'GAMEOVER'; return;
+        }
+
+        snake.unshift(head);
+        if(head.x === apple.x && head.y === apple.y) {
+            score += 10; placeApple();
+            moveInterval = Math.max(40, moveInterval - 2);
+        } else {
+            snake.pop();
+        }
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if(gameState === 'START' || gameState === 'GAMEOVER') {
+            ctx.fillStyle = gameState === 'START' ? '#0f0' : '#f00';
+            ctx.shadowBlur = 15; ctx.shadowColor = ctx.fillStyle; ctx.textAlign = 'center';
+            ctx.font = '40px Courier New'; ctx.fillText(gameState === 'START' ? 'NEON SNAKE' : 'GAME OVER', canvas.width/2, canvas.height/2 - 20);
+            ctx.font = '16px Courier New'; ctx.fillText(`SCORE: ${score||0} - PRESS TO PLAY`, canvas.width/2, canvas.height/2 + 20);
+            ctx.shadowBlur = 0; return;
+        }
+
+        // Draw Apple
+        ctx.fillStyle = '#f0f'; ctx.shadowBlur = 15; ctx.shadowColor = '#f0f';
+        ctx.fillRect(apple.x*TS + 2, apple.y*TS + 2, TS-4, TS-4);
+
+        // Draw Snake
+        ctx.fillStyle = '#0f0'; ctx.shadowBlur = 10; ctx.shadowColor = '#0f0';
+        snake.forEach(seg => ctx.fillRect(seg.x*TS + 1, seg.y*TS + 1, TS-2, TS-2));
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = '#fff'; ctx.font = '16px Courier New'; ctx.textAlign = 'left';
+        ctx.fillText(`SCORE: ${score}`, 10, 20);
+    }
+
+    function loop(time) { update(time); draw(); requestAnimationFrame(loop); }
+    requestAnimationFrame(loop);
+</script>
+</body>
+</html>

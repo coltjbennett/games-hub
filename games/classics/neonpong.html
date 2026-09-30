@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Neon Pong</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background-color: #050505; overflow: hidden; font-family: 'Courier New', Courier, monospace; touch-action: none; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+        canvas { background-color: #000; box-shadow: 0 0 20px rgba(255, 0, 255, 0.2); max-width: 100%; max-height: 70vh; object-fit: contain; }
+        #touchControls { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
+        .btn { width: 120px; height: 50px; background: rgba(255, 0, 255, 0.1); border: 2px solid #f0f; color: #f0f; font-weight: bold; font-size: 24px; display: flex; justify-content: center; align-items: center; user-select: none; border-radius: 10px; box-shadow: 0 0 10px #f0f, inset 0 0 10px #f0f; }
+        .btn:active { background: rgba(255, 0, 255, 0.3); box-shadow: 0 0 20px #f0f, inset 0 0 20px #f0f; }
+        @media (hover: hover) and (pointer: fine) { #touchControls { display: none; } canvas { max-height: 90vh; } }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="600" height="400"></canvas>
+    <div id="touchControls">
+        <div class="btn" id="btnUp">▲</div>
+        <div class="btn" id="btnDown">▼</div>
+    </div>
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    let p1, p2, ball, score = {p1: 0, p2: 0}, gameState = 'START';
+    const keys = { up: false, down: false };
+
+    function init() {
+        p1 = { x: 20, y: canvas.height/2 - 40, w: 10, h: 80, speed: 6, color: '#f0f' };
+        p2 = { x: canvas.width - 30, y: canvas.height/2 - 40, w: 10, h: 80, speed: 5, color: '#0ff' };
+        resetBall();
+        if(gameState === 'START') { score.p1 = 0; score.p2 = 0; gameState = 'PLAYING'; }
+    }
+
+    function resetBall() {
+        ball = { x: canvas.width/2, y: canvas.height/2, r: 6, dx: (Math.random()>0.5?1:-1)*5, dy: (Math.random()>0.5?1:-1)*3 };
+    }
+
+    const setKey = (k, v) => { if(gameState !== 'PLAYING' && v) init(); keys[k] = v; };
+    window.addEventListener('keydown', e => { if(e.key==='ArrowUp') setKey('up', true); if(e.key==='ArrowDown') setKey('down', true); });
+    window.addEventListener('keyup', e => { if(e.key==='ArrowUp') setKey('up', false); if(e.key==='ArrowDown') setKey('down', false); });
+    
+    ['btnUp', 'btnDown'].forEach((id, i) => {
+        let dir = i === 0 ? 'up' : 'down';
+        document.getElementById(id).addEventListener('touchstart', e => { e.preventDefault(); setKey(dir, true); });
+        document.getElementById(id).addEventListener('touchend', e => { e.preventDefault(); setKey(dir, false); });
+    });
+
+    function update() {
+        if(gameState !== 'PLAYING') return;
+
+        // Player Movement
+        if(keys.up) p1.y = Math.max(0, p1.y - p1.speed);
+        if(keys.down) p1.y = Math.min(canvas.height - p1.h, p1.y + p1.speed);
+
+        // Basic AI Movement
+        if(ball.y < p2.y + p2.h/2 - 10) p2.y -= p2.speed;
+        if(ball.y > p2.y + p2.h/2 + 10) p2.y += p2.speed;
+        p2.y = Math.max(0, Math.min(canvas.height - p2.h, p2.y));
+
+        // Ball Physics
+        ball.x += ball.dx; ball.y += ball.dy;
+
+        if(ball.y - ball.r < 0 || ball.y + ball.r > canvas.height) ball.dy *= -1;
+
+        let hitP1 = ball.x - ball.r < p1.x + p1.w && ball.y > p1.y && ball.y < p1.y + p1.h;
+        let hitP2 = ball.x + ball.r > p2.x && ball.y > p2.y && ball.y < p2.y + p2.h;
+
+        if(hitP1 || hitP2) {
+            ball.dx *= -1.1; // Speed up slightly
+            let p = hitP1 ? p1 : p2;
+            ball.dy = ((ball.y - (p.y + p.h/2)) / (p.h/2)) * 6;
+        }
+
+        // Scoring
+        if(ball.x < 0) { score.p2++; resetBall(); }
+        if(ball.x > canvas.width) { score.p1++; resetBall(); }
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        if(gameState === 'START') {
+            ctx.fillStyle = '#f0f'; ctx.shadowBlur = 15; ctx.shadowColor = '#f0f'; ctx.textAlign = 'center';
+            ctx.font = '40px Courier New'; ctx.fillText('NEON PONG', canvas.width/2, canvas.height/2 - 20);
+            ctx.font = '16px Courier New'; ctx.fillText('PRESS UP OR DOWN TO PLAY', canvas.width/2, canvas.height/2 + 20);
+            ctx.shadowBlur = 0; return;
+        }
+
+        // Center dashed line
+        ctx.strokeStyle = '#333'; ctx.setLineDash([10, 10]);
+        ctx.beginPath(); ctx.moveTo(canvas.width/2, 0); ctx.lineTo(canvas.width/2, canvas.height); ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Paddles
+        ctx.fillStyle = p1.color; ctx.shadowBlur = 15; ctx.shadowColor = p1.color;
+        ctx.fillRect(p1.x, p1.y, p1.w, p1.h);
+        ctx.fillStyle = p2.color; ctx.shadowColor = p2.color;
+        ctx.fillRect(p2.x, p2.y, p2.w, p2.h);
+
+        // Ball
+        ctx.fillStyle = '#fff'; ctx.shadowColor = '#fff';
+        ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Scores
+        ctx.fillStyle = '#fff'; ctx.font = '40px Courier New';
+        ctx.fillText(score.p1, canvas.width/4, 50);
+        ctx.fillText(score.p2, (canvas.width/4)*3, 50);
+    }
+
+    function loop() { update(); draw(); requestAnimationFrame(loop); }
+    requestAnimationFrame(loop);
+</script>
+</body>
+</html>
