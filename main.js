@@ -19,6 +19,8 @@ const THEME_KEY = 'project-launcher-theme-v1';
 const REDUCED_MOTION_KEY = 'project-launcher-reduced-motion-v1';
 const COMPACT_MODE_KEY = 'project-launcher-compact-v1';
 const HIGH_CONTRAST_KEY = 'project-launcher-high-contrast-v1';
+const LOW_POWER_KEY = 'project-launcher-low-power-v1';
+const DESKTOP_LAYOUT_KEY = 'project-launcher-layout-v2';
 const CHAT_USERNAME_KEY = 'mqtt_chat_username_v1';
 const TRUSTED_ORIGIN = window.location.origin;
 
@@ -233,6 +235,54 @@ function safeJsonGet(key, fallback) {
 
 function safeJsonSet(key, value) {
   safeSet(key, JSON.stringify(value));
+}
+
+function devicePrefersLowPower() {
+  return !!(navigator.connection?.saveData ||
+    (Number.isFinite(navigator.deviceMemory) && navigator.deviceMemory <= 2) ||
+    (Number.isFinite(navigator.hardwareConcurrency) && navigator.hardwareConcurrency <= 2));
+}
+
+function applyPerformanceMode() {
+  const html = document.documentElement;
+  const forced = safeGet(LOW_POWER_KEY) === 'true';
+  const auto = devicePrefersLowPower();
+  html.classList.toggle('auto-low-power', auto);
+  html.classList.toggle('low-power', forced || auto);
+  return forced || auto;
+}
+
+function saveDesktopLayout() {
+  const windows = {};
+  document.querySelectorAll('.floating-window').forEach(win => {
+    windows[win.id] = { hidden: !!win.hidden, minimized: win.classList.contains('minimized'), top: win.style.top || '', left: win.style.left || '', width: win.style.width || '', height: win.style.height || '', right: win.style.right || '', bottom: win.style.bottom || '', transform: win.style.transform || '', zIndex: win.style.zIndex || '' };
+  });
+  safeJsonSet(DESKTOP_LAYOUT_KEY, { version: 2, timestamp: Date.now(), windows });
+}
+
+function restoreDesktopLayout() {
+  const state = safeJsonGet(DESKTOP_LAYOUT_KEY, null);
+  if (!state || !state.windows) return;
+  Object.entries(state.windows).forEach(([id, saved]) => {
+    const win = document.getElementById(id);
+    if (!win || !saved) return;
+    ['top','left','width','height','right','bottom','transform'].forEach(prop => { if (saved[prop] !== undefined) win.style[prop] = saved[prop]; });
+    if (saved.zIndex) win.style.zIndex = saved.zIndex;
+    if (saved.hidden === false) { win.hidden = false; win.classList.toggle('minimized', !!saved.minimized); }
+  });
+}
+
+function exportThemePack() {
+  return { format:'games-hub-theme-pack', version:1, theme:safeGet(THEME_KEY) || 'win95-blue', reducedMotion:safeGet(REDUCED_MOTION_KEY)==='true', compactMode:safeGet(COMPACT_MODE_KEY)==='true', highContrast:safeGet(HIGH_CONTRAST_KEY)==='true', lowPower:safeGet(LOW_POWER_KEY)==='true', crt:safeGet('project-launcher-no-crt') !== 'true' };
+}
+
+function importThemePack(pack) {
+  if (!pack || pack.format !== 'games-hub-theme-pack') return false;
+  const themes = new Set(['win95-blue','windows-gray','win98-teal','olive','plum','dos-amber','blue-gray-nt','midnight-dos','classic','gray','midnight']);
+  if (!themes.has(pack.theme)) return false;
+  const theme = pack.theme === 'classic' ? 'win95-blue' : pack.theme === 'gray' ? 'windows-gray' : pack.theme === 'midnight' ? 'midnight-dos' : pack.theme;
+  safeSet(THEME_KEY, theme); safeSet(REDUCED_MOTION_KEY, String(!!pack.reducedMotion)); safeSet(COMPACT_MODE_KEY, String(!!pack.compactMode)); safeSet(HIGH_CONTRAST_KEY, String(!!pack.highContrast)); safeSet(LOW_POWER_KEY, String(!!pack.lowPower)); safeSet('project-launcher-no-crt', pack.crt === false ? 'true' : 'false');
+  applySavedAppearance(); return true;
 }
 
 function isFavorite(url) {
@@ -902,9 +952,10 @@ function createAppletWindow(appletPath, options = {}) {
   }
 
   function minimizeWin() {
-    // Minimize simply hides the window, leaving it running (useful for Paint or similar)
+    // Normal mode keeps hidden applets alive; Low Power Mode pauses non-essential iframes.
     win.classList.add('minimized');
     win.hidden = true;
+    if (document.documentElement.classList.contains('low-power') && !keepAlive) terminateIframe();
 
     if (activeWindowState && activeWindowState.id === win.id) {
       clearActiveFloatingWindow(win);
@@ -1319,11 +1370,12 @@ function setupToSModal() {
 // ===== V4 UX / CONVENIENCE LAYER =====
 function applySavedAppearance() {
   const html = document.documentElement;
-  const theme = safeGet(THEME_KEY) || 'classic';
+  const theme = safeGet(THEME_KEY) || 'win95-blue';
   html.dataset.theme = theme;
   html.classList.toggle('reduced-motion', safeGet(REDUCED_MOTION_KEY) === 'true');
   html.classList.toggle('compact-mode', safeGet(COMPACT_MODE_KEY) === 'true');
   html.classList.toggle('high-contrast', safeGet(HIGH_CONTRAST_KEY) === 'true');
+  applyPerformanceMode();
 }
 
 function persistAppearanceSetting(key, value) {
@@ -1575,7 +1627,7 @@ function setupFrameCommands() {
       } else if (data.action === 'setToggle' && [REDUCED_MOTION_KEY, COMPACT_MODE_KEY, HIGH_CONTRAST_KEY].includes(data.key)) {
         persistAppearanceSetting(data.key, Boolean(data.value));
       } else if (data.action === 'resetUi') {
-        [THEME_KEY, REDUCED_MOTION_KEY, COMPACT_MODE_KEY, HIGH_CONTRAST_KEY].forEach(key => safeSet(key, key === THEME_KEY ? 'classic' : 'false'));
+        [THEME_KEY, REDUCED_MOTION_KEY, COMPACT_MODE_KEY, HIGH_CONTRAST_KEY, LOW_POWER_KEY].forEach(key => safeSet(key, key === THEME_KEY ? 'win95-blue' : 'false'));
         applySavedAppearance();
         showGlobalToast('Interface preferences reset.');
       } else if (data.action === 'clearRecents') {
@@ -1587,6 +1639,18 @@ function setupFrameCommands() {
         safeJsonSet(FAVORITES_KEY, favorites);
         renderProjects();
         showGlobalToast('Favorites cleared.');
+      } else if (data.action === 'setLowPower') {
+        safeSet(LOW_POWER_KEY, String(Boolean(data.value))); applyPerformanceMode();
+        showGlobalToast(data.value ? 'Low Power Mode enabled.' : 'Low Power Mode disabled.');
+      } else if (data.action === 'exportTheme') {
+        const blob = new Blob([JSON.stringify(exportThemePack(), null, 2)], {type:'application/json'});
+        const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'games-hub-theme.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 0);
+      } else if (data.action === 'importTheme') {
+        showGlobalToast(importThemePack(data.value) ? 'Theme pack imported.' : 'Theme pack rejected.');
+      } else if (data.action === 'saveLayout') {
+        saveDesktopLayout(); showGlobalToast('Desktop layout saved.');
+      } else if (data.action === 'restoreLayout') {
+        restoreDesktopLayout(); showGlobalToast('Desktop layout restored.');
       } else if (data.action === 'install') {
         window.__gamesHubInstall?.();
       } else if (data.action === 'quickLaunch') {
@@ -1597,12 +1661,19 @@ function setupFrameCommands() {
 }
 
 function setupLandingPerformance() {
-  if ('requestIdleCallback' in window) {
-    requestIdleCallback(() => {
-      document.querySelectorAll('img[loading="lazy"]').forEach(img => {
+  if (document.documentElement.classList.contains('low-power')) return;
+  const images = Array.from(document.querySelectorAll('img[loading="lazy"]'));
+  if ('IntersectionObserver' in window) {
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        const img = entry.target;
         if ('decode' in img) img.decode().catch(() => {});
+        observer.unobserve(img);
       });
-    }, { timeout: 1800 });
+    }, { rootMargin: '240px' });
+    images.forEach(img => observer.observe(img));
+    return;
   }
 }
 
@@ -1622,10 +1693,13 @@ document.addEventListener('DOMContentLoaded', () => {
   setupActivityMessaging();
   setupActiveWindowTracking();
   setupAppletsAndFloatingWindows();
+  restoreDesktopLayout();
   setupGameLaunchers();
   setupChatWidget();
   setupPingBannerDismiss();
   applySavedAppearance();
+  window.addEventListener('beforeunload', saveDesktopLayout);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) saveDesktopLayout(); });
   setupNetworkStatus();
   setupCommandPalette();
   setupProjectTools();
@@ -1633,7 +1707,10 @@ document.addEventListener('DOMContentLoaded', () => {
   setupFrameCommands();
   setupLandingPerformance();
   updateTaskbarClock();
-  setInterval(updateTaskbarClock, 1000);
+  let clockTimer = null;
+  const syncClockTimer = () => { clearInterval(clockTimer); clockTimer = document.hidden ? null : setInterval(updateTaskbarClock, 1000); };
+  document.addEventListener('visibilitychange', syncClockTimer);
+  syncClockTimer();
 });
 
 if (sortToggle) {

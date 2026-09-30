@@ -1,7 +1,7 @@
 // data.js
 
 const siteData = {
-  version: "v4.0.0",
+  version: "v4.1.0",
   author: "COLTON BENNETT",
   location: "Waukesha, WI",
   heroTitle: "Project Launcher",
@@ -13,6 +13,10 @@ const siteData = {
 };
 
 const announcements = [
+  {
+    title: "v4.1 — Storage & performance upgrade",
+    content: "Persistent cache writes are bounded, chat history is compacted and compressed, media uploads are size-limited, the System Monitor includes Storage Manager diagnostics, and Low Power Mode pauses nonessential work while preserving features."
+  },
   {
     title: "v4.0 — Desktop upgrade",
     content: "The launcher now has a Control Panel, System Monitor, Timer, command palette, favorites, recent-project tracking, keyboard shortcuts, offline/PWA support, a live network indicator, and a more resilient Arcade cache."

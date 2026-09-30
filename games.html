@@ -169,7 +169,6 @@
     
     const ICON_CANDIDATES = ['icon.png', 'icon.webp', 'icon.jpg', 'icon.jpeg', 'logo.jpeg', 'logo.jpg', 'icon.svg', 'logo.png', 'app.png'];
     const FALLBACK_ICON = 'images/missing.png';
-    const ARCADE_CACHE_NAME = 'games-hub-arcade-v4'; 
 
     let games = [];
 
@@ -215,12 +214,6 @@
             data = await response.json();
             safeStorageSet('arcade_games_cache', JSON.stringify(data));
             safeStorageSet('arcade_games_cache_date', today);
-            try {
-              const cache = await caches.open(ARCADE_CACHE_NAME);
-              await cache.put(request, new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json' } }));
-            } catch (cacheError) {
-              console.warn('Arcade Cache API snapshot unavailable:', cacheError);
-            }
           }
         }
 
@@ -254,26 +247,26 @@
 
         renderGrid(games);
       } catch (err) {
+        // The directory snapshot is already kept in localStorage; avoid a
+      // duplicate Cache Storage copy.
+      if (cachedData) {
         try {
-          const cache = await caches.open(ARCADE_CACHE_NAME);
-          const cachedResponse = await cache.match(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/`);
-          if (cachedResponse) {
-            games = (await cachedResponse.json()).filter(item => item && typeof item.name === 'string' && (item.type === 'dir' || (item.type === 'file' && item.name.toLowerCase().endsWith('.swf')))).map(item => {
-              const isSwf = item.type === 'file' && item.name.toLowerCase().endsWith('.swf');
-              const baseName = isSwf ? item.name.replace(/\.swf$/i, '') : item.name;
-              return { name:item.name, baseName, title:formatTitle(baseName), path:isSwf ? `${CDN_BASE}/${encodeURIComponent(item.name)}` : `${CDN_BASE}/${encodeURIComponent(item.name)}/index.html`, isSwf };
-            });
-            renderGrid(games);
-            const note = document.createElement('div');
-            note.className = 'status-container';
-            note.textContent = 'Showing the last cached Arcade Hub directory.';
-            grid.prepend(note);
-            console.warn(err);
-            return;
-          }
-        } catch (cacheError) {
-          console.warn('Arcade Cache API fallback failed:', cacheError);
+          games = JSON.parse(cachedData).filter(item => item && typeof item.name === 'string' && (item.type === 'dir' || (item.type === 'file' && item.name.toLowerCase().endsWith('.swf')))).map(item => {
+            const isSwf = item.type === 'file' && item.name.toLowerCase().endsWith('.swf');
+            const baseName = isSwf ? item.name.replace(/\.swf$/i, '') : item.name;
+            return { name:item.name, baseName, title:formatTitle(baseName), path:isSwf ? `${CDN_BASE}/${encodeURIComponent(item.name)}` : `${CDN_BASE}/${encodeURIComponent(item.name)}/index.html`, isSwf };
+          });
+          renderGrid(games);
+          const note = document.createElement('div');
+          note.className = 'status-container';
+          note.textContent = 'Showing the last cached Arcade Hub directory.';
+          grid.prepend(note);
+          console.warn(err);
+          return;
+        } catch (localCacheError) {
+          console.warn('Arcade local snapshot fallback failed:', localCacheError);
         }
+      }
         grid.innerHTML = `<div class="status-container">${err.message}</div>`;
         console.error(err);
       }
@@ -382,7 +375,7 @@
       // Cross-origin HTML5 game iframes cannot be inspected directly. The
       // Arcade Hub can still see which child iframe currently has focus.
       arcadeActivityTimer = setInterval(() => {
-        if (!activeArcadeGameTitle) return;
+        if (document.hidden || !activeArcadeGameTitle) return;
 
         const modal = document.getElementById('game-modal');
         if (!modal || modal.style.display === 'none') return;
