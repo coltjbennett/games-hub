@@ -37,6 +37,17 @@ const announcements = [
 
 const projects = [
   {
+    title: 'Asphalt Rush',
+    url: 'games/asphalt-rush.html',
+    image: 'images/IMG_2376.jpeg',
+    alt: 'Asphalt Rush',
+    statusKey: 'new',
+    type: 'Racing',
+    tags: ['Street Racing', 'Customization', 'Driving', 'Racing', 'City', 'Underground', 'Under Development'],
+    description: 'Race through the city and earn your respect amongst the other racers, swerve around police, and upgrade your ride to stay competitive!',
+    featured: true
+  },
+  {
     title: 'FPS beta',
     url: 'games/fps.html',
     image: 'images/missing.png',
@@ -78,7 +89,7 @@ const projects = [
     type: 'Endless',
     tags: ['Endless', 'Mobile', 'Top Pick'],
     description: 'Roll through a void of platforms, collect crystals, navigate changing sectors, and go for high scores in this fast-paced endless runner!',
-    featured: true
+    featured: false
   },
   {
     title: 'City Striker',
