@@ -393,7 +393,22 @@
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('service-worker.js', { scope: './' }).catch(function (error) {
+        navigator.serviceWorker.register('service-worker.js', { scope: './' }).then(function (registration) {
+          // Check for a newer service worker every time the tab opens.
+          // With skipWaiting()/clients.claim() the newest worker takes control
+          // without requiring the user to manually clear browser storage.
+          return registration.update().catch(function (error) {
+            console.warn('Service worker update check failed:', error);
+          }).then(function () {
+            return navigator.serviceWorker.ready;
+          }).then(function (readyRegistration) {
+            // Ask the active worker to refresh its core cache from the live site.
+            // If the network is unavailable, the existing cache remains intact.
+            if (readyRegistration.active) {
+              readyRegistration.active.postMessage({ type: 'REFRESH_CORE' });
+            }
+          });
+        }).catch(function (error) {
           console.warn('Service worker registration failed:', error);
         });
       });
