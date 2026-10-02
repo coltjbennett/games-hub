@@ -1,7 +1,7 @@
 // data.js
 
 const siteData = {
-  version: "v4.1.1",
+  version: "v4.1.2",
   author: "COLTON BENNETT",
   location: "Waukesha, WI",
   heroTitle: "Project Launcher",
@@ -9,16 +9,16 @@ const siteData = {
   heroNote: "These are all made by me over the last year, and I do hope you enjoy!<br>Please excuse any bugs you find; I am still ironing things out.",
   marqueeText: "★★★ WELCOME TO COLTON'S PROJECT LAUNCHER ★★★ &nbsp;|&nbsp; BEST VIEWED IN 1024x768 &nbsp;|&nbsp; NETSCAPE NAVIGATOR 4.0 RECOMMENDED &nbsp;|&nbsp; ★★★ SIGN MY GUESTBOOK ★★★",
   footerCopyright: "© 2026 Colton Bennett",
-  footerLastUpdated: "October 2, 2026, 12:25:42"
+  footerLastUpdated: "October 2, 2026, 14:53:19"
 };
 
 const announcements = [
   {
-    title: "v4.1 — Storage & performance upgrade",
+    title: "v4.1.x — Storage & performance upgrade",
     content: "Persistent cache writes are bounded, chat history is compacted and compressed, media uploads are size-limited, the System Monitor includes Storage Manager diagnostics, and Low Power Mode pauses nonessential work while preserving features."
   },
   {
-    title: "v4.0 — Desktop upgrade",
+    title: "v4.0.x — Desktop upgrade",
     content: "The launcher now has a Control Panel, System Monitor, Timer, command palette, favorites, recent-project tracking, keyboard shortcuts, offline/PWA support, a live network indicator, and a more resilient Arcade cache."
   },
   {
@@ -27,7 +27,7 @@ const announcements = [
   },
   {
     title: "Game updates",
-    content: " - Removed the broken multiplayer from Pixel Ops, becuase I am making a proper multiplayer FPS."
+    content: " - Working on overhauls for many of the top games."
   },
   {
     title: "Site updates",

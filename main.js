@@ -21,6 +21,7 @@ const COMPACT_MODE_KEY = 'project-launcher-compact-v1';
 const HIGH_CONTRAST_KEY = 'project-launcher-high-contrast-v1';
 const LOW_POWER_KEY = 'project-launcher-low-power-v1';
 const fullscreenLowPowerWindows = new Set();
+const nativeFullscreenLowPowerWindows = new Set();
 const DESKTOP_LAYOUT_KEY = 'project-launcher-window-session-v1';
 const CHAT_USERNAME_KEY = 'mqtt_chat_username_v1';
 const TRUSTED_ORIGIN = window.location.origin;
@@ -273,7 +274,7 @@ function applyPerformanceMode() {
   const html = document.documentElement;
   const forced = safeGet(LOW_POWER_KEY) === 'true';
   const auto = devicePrefersLowPower();
-  const fullscreenForced = fullscreenLowPowerWindows.size > 0;
+  const fullscreenForced = fullscreenLowPowerWindows.size > 0 || nativeFullscreenLowPowerWindows.size > 0;
   html.classList.toggle('auto-low-power', auto);
   html.classList.toggle('low-power', forced || auto || fullscreenForced);
   sendActivityStateToChat();
@@ -287,6 +288,221 @@ function setFullscreenLowPower(win, enabled) {
   else fullscreenLowPowerWindows.delete(win.id);
 
   applyPerformanceMode();
+}
+
+function setNativeFullscreenLowPower(win, enabled) {
+  if (!win || win.id === 'chat-window') return;
+
+  if (enabled) nativeFullscreenLowPowerWindows.add(win.id);
+  else nativeFullscreenLowPowerWindows.delete(win.id);
+
+  applyPerformanceMode();
+}
+
+function ensureMinimizedWindowTray() {
+  let tray = document.getElementById('minimized-window-tray');
+  if (tray) return tray;
+
+  tray = document.createElement('div');
+  tray.id = 'minimized-window-tray';
+  tray.className = 'minimized-window-tray';
+  tray.hidden = true;
+  tray.setAttribute('aria-label', 'Minimized applications');
+  document.body.appendChild(tray);
+  return tray;
+}
+
+function positionMinimizedWindowTray() {
+  const tray = document.getElementById('minimized-window-tray');
+  if (!tray || tray.hidden) return;
+
+  const startMenu = document.getElementById('start-menu');
+  const startMenuOpen = startMenu && window.getComputedStyle(startMenu).display !== 'none';
+  if (!startMenuOpen) {
+    tray.style.left = '4px';
+    return;
+  }
+
+  const menuWidth = startMenu.getBoundingClientRect().width || 180;
+  const maxLeft = Math.max(4, window.innerWidth - tray.offsetWidth - 4);
+  tray.style.left = `${Math.min(menuWidth + 6, maxLeft)}px`;
+}
+
+function updateMinimizedWindowTray() {
+  const tray = ensureMinimizedWindowTray();
+  const minimizedWindows = Array.from(document.querySelectorAll('.floating-window'))
+    .filter(win => win.classList.contains('minimized'));
+
+  tray.replaceChildren();
+
+  minimizedWindows.forEach(win => {
+    const title = getFloatingWindowActivityName(win, 'Application');
+    const letter = Array.from(title.trim() || 'A')[0].toUpperCase();
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'minimized-window-btn';
+    button.textContent = letter;
+    button.title = `Restore ${title}`;
+    button.setAttribute('aria-label', `Restore ${title}`);
+    button.dataset.windowId = win.id;
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof win.__openFromMinimized === 'function') {
+        win.__openFromMinimized();
+      }
+    });
+    tray.appendChild(button);
+  });
+
+  tray.hidden = minimizedWindows.length === 0;
+  tray.classList.toggle('has-items', minimizedWindows.length > 0);
+  positionMinimizedWindowTray();
+}
+
+function setupMinimizedWindowTray() {
+  ensureMinimizedWindowTray();
+  window.addEventListener('resize', positionMinimizedWindowTray);
+}
+
+function installIframeFullscreenTracking(win, iframe) {
+  const install = () => {
+    try {
+      const childDocument = iframe.contentDocument;
+      const childWindow = iframe.contentWindow;
+      if (!childDocument || !childWindow) return;
+
+      if (iframe.__fullscreenCleanup) iframe.__fullscreenCleanup();
+
+      const showEmbeddedPing = (text) => {
+        try {
+          ensureIframePingOverlay(iframe);
+          childWindow.__gamesHubShowPing?.(text);
+        } catch (e) {}
+      };
+      childWindow.__gamesHubShowPingFromParent = showEmbeddedPing;
+
+      const onFullscreenChange = () => {
+        const active = !!childDocument.fullscreenElement;
+        setNativeFullscreenLowPower(win, active);
+        if (active) {
+          ensureIframePingOverlay(iframe);
+        } else {
+          childWindow.__gamesHubHidePing?.();
+        }
+      };
+
+      childDocument.addEventListener('fullscreenchange', onFullscreenChange);
+      iframe.__fullscreenCleanup = () => {
+        childDocument.removeEventListener('fullscreenchange', onFullscreenChange);
+      };
+
+      ensureIframePingOverlay(iframe);
+      onFullscreenChange();
+    } catch (e) {
+      // Cross-origin or otherwise inaccessible iframes simply use the parent
+      // window's fullscreen handling and cannot receive the embedded banner.
+    }
+  };
+
+  iframe.addEventListener('load', install);
+  install();
+}
+
+function ensureIframePingOverlay(iframe) {
+  try {
+    const doc = iframe.contentDocument;
+    const childWindow = iframe.contentWindow;
+    if (!doc || !doc.body || !childWindow) return null;
+
+    let overlay = doc.getElementById('__gamesHubPingOverlay');
+    if (!overlay) {
+      overlay = doc.createElement('div');
+      overlay.id = '__gamesHubPingOverlay';
+      overlay.setAttribute('role', 'status');
+      overlay.setAttribute('aria-live', 'polite');
+      overlay.style.position = 'fixed';
+      overlay.style.top = '10px';
+      overlay.style.left = '50%';
+      overlay.style.transform = 'translateX(-50%)';
+      overlay.style.width = 'min(420px, calc(100vw - 20px))';
+      overlay.style.maxHeight = '140px';
+      overlay.style.overflow = 'hidden';
+      overlay.style.padding = '7px 10px';
+      overlay.style.background = '#c0c0c0';
+      overlay.style.color = '#000';
+      overlay.style.border = '3px outset #fff';
+      overlay.style.boxShadow = '4px 4px 0 #000';
+      overlay.style.fontFamily = '"W95FA", "MS Sans Serif", Tahoma, sans-serif';
+      overlay.style.fontSize = '14px';
+      overlay.style.fontWeight = 'bold';
+      overlay.style.lineHeight = '1.35';
+      overlay.style.whiteSpace = 'pre-line';
+      overlay.style.overflowWrap = 'anywhere';
+      overlay.style.wordBreak = 'break-word';
+      overlay.style.pointerEvents = 'auto';
+      overlay.style.zIndex = '2147483647';
+      overlay.style.display = 'none';
+      overlay.style.textAlign = 'center';
+      overlay.addEventListener('click', () => { overlay.style.display = 'none'; });
+      doc.body.appendChild(overlay);
+    }
+
+    const repositionForFullscreen = () => {
+      const full = doc.fullscreenElement;
+      try {
+        if (full && full.nodeType === 1 && full !== doc.documentElement && full !== doc.body && full.appendChild) {
+          if (overlay.parentNode !== full) full.appendChild(overlay);
+          overlay.style.position = 'absolute';
+          overlay.style.top = '10px';
+        } else {
+          if (overlay.parentNode !== doc.body) doc.body.appendChild(overlay);
+          overlay.style.position = 'fixed';
+          overlay.style.top = '10px';
+        }
+      } catch (e) {}
+    };
+
+    const show = (text) => {
+      repositionForFullscreen();
+      overlay.textContent = text || '';
+      overlay.style.display = text ? 'block' : 'none';
+    };
+    const hide = () => { overlay.style.display = 'none'; };
+
+    childWindow.__gamesHubShowPing = show;
+    childWindow.__gamesHubHidePing = hide;
+    repositionForFullscreen();
+    return overlay;
+  } catch (e) {
+    return null;
+  }
+}
+
+function showPingInEmbeddedFrames(text) {
+  document.querySelectorAll('.floating-window iframe').forEach(iframe => {
+    try {
+      ensureIframePingOverlay(iframe);
+      iframe.contentWindow?.__gamesHubShowPing?.(text);
+    } catch (e) {}
+  });
+}
+
+function hidePingInEmbeddedFrames() {
+  document.querySelectorAll('.floating-window iframe').forEach(iframe => {
+    try { iframe.contentWindow?.__gamesHubHidePing?.(); } catch (e) {}
+  });
+}
+
+function updateParentFullscreenLowPower() {
+  document.querySelectorAll('.floating-window').forEach(win => {
+    if (win.id === 'chat-window') return;
+    const frame = win.querySelector('iframe');
+    const full = document.fullscreenElement;
+    const active = !!full && (full === frame || (full.closest && full.closest('.floating-window') === win));
+    if (active) setNativeFullscreenLowPower(win, true);
+    else if (!frame || !frame.contentDocument?.fullscreenElement) setNativeFullscreenLowPower(win, false);
+  });
 }
 
 function saveDesktopLayout() {
@@ -306,7 +522,7 @@ function saveDesktopLayout() {
       zIndex: win.style.zIndex || ''
     };
   });
-  safeSessionJsonSet(DESKTOP_LAYOUT_KEY, { version: 3, timestamp: Date.now(), windows });
+  safeSessionJsonSet(DESKTOP_LAYOUT_KEY, { version: 4, timestamp: Date.now(), windows });
 }
 
 function restoreDesktopLayout() {
@@ -324,6 +540,7 @@ function restoreDesktopLayout() {
     win.hidden = saved.hidden !== false;
     win.classList.toggle('minimized', !!saved.minimized);
   });
+  updateMinimizedWindowTray();
 }
 
 function resetAllWindowSizesAndPositions() {
@@ -841,10 +1058,11 @@ function createAppletWindow(appletPath, options = {}) {
     return button;
   };
 
+  const minimizeBtn = makeWindowButton('btn-minimize', 'Minimize', '−');
   const refreshBtn = makeWindowButton('btn-refresh', 'Refresh', '↻');
   const maxBtn = makeWindowButton('btn-maximize', 'Maximize', '□');
   const closeBtn = makeWindowButton('btn-close', 'Close', '✕');
-  windowButtons.append(refreshBtn, maxBtn, closeBtn);
+  windowButtons.append(minimizeBtn, refreshBtn, maxBtn, closeBtn);
   titleBar.append(titleGroup, windowButtons);
 
   const body = document.createElement('div');
@@ -861,6 +1079,7 @@ function createAppletWindow(appletPath, options = {}) {
 
   win.append(titleBar, body);
   document.body.appendChild(win);
+  installIframeFullscreenTracking(win, iframe);
 
   const defaultWindowStyle = {
     top: win.style.top || '',
@@ -957,8 +1176,9 @@ function createAppletWindow(appletPath, options = {}) {
 
     isMaximized = !!saved.maximized;
     win.classList.toggle('maximized', isMaximized);
-    if (isMaximized) setFullscreenLowPower(win, true);
+    if (isMaximized && !saved.minimized) setFullscreenLowPower(win, true);
     else setFullscreenLowPower(win, false);
+    if (saved.minimized) setNativeFullscreenLowPower(win, false);
     maxBtn.setAttribute('aria-label', isMaximized ? 'Restore' : 'Maximize');
     win.hidden = saved.hidden !== false;
     win.classList.toggle('minimized', !!saved.minimized);
@@ -968,6 +1188,7 @@ function createAppletWindow(appletPath, options = {}) {
     win.classList.remove('maximized', 'minimized');
     isMaximized = false;
     setFullscreenLowPower(win, false);
+    setNativeFullscreenLowPower(win, false);
     ['top','left','right','bottom','width','height','transform'].forEach(prop => {
       win.style[prop] = defaultWindowStyle[prop] || '';
     });
@@ -1032,6 +1253,13 @@ function createAppletWindow(appletPath, options = {}) {
     saveDesktopLayout();
   }
 
+  if (minimizeBtn) {
+    minimizeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      minimizeWin();
+    });
+  }
+
   // --- TERMINATION AND RELOAD LOGIC ---
   function terminateIframe() {
     if (!keepAlive) {
@@ -1077,6 +1305,7 @@ function createAppletWindow(appletPath, options = {}) {
     restoreIframe(); // Boots the app if it was closed previously
     win.hidden = false;
     win.classList.remove('minimized');
+    if (isMaximized && win.id !== 'chat-window') setFullscreenLowPower(win, true);
     if (!hasSessionOpening) {
       applyCascadePlacement();
       hasSessionOpening = true;
@@ -1085,6 +1314,7 @@ function createAppletWindow(appletPath, options = {}) {
     win.style.zIndex = highestZIndex;
     setActiveFloatingWindow(win, getFloatingWindowActivityName(win));
     updateBtnState();
+    updateMinimizedWindowTray();
     updateCRTState();
     saveDesktopLayout();
   }
@@ -1095,9 +1325,10 @@ function createAppletWindow(appletPath, options = {}) {
       win.classList.remove('maximized');
       setFullscreenLowPower(win, false);
     }
+    setNativeFullscreenLowPower(win, false);
     win.hidden = true;
     win.classList.remove('minimized');
-    terminateIframe(); // Kills audio and resources, unless keepAlive is true
+    terminateIframe(); // Close still releases non-persistent app resources.
 
     if (activeWindowState && activeWindowState.id === win.id) {
       clearActiveFloatingWindow(win);
@@ -1106,15 +1337,17 @@ function createAppletWindow(appletPath, options = {}) {
     }
 
     updateBtnState();
+    updateMinimizedWindowTray();
     updateCRTState();
     saveDesktopLayout();
   }
 
   function minimizeWin() {
-    // Normal mode keeps hidden applets alive; Low Power Mode pauses non-essential iframes.
+    // Minimize hides the window but keeps its iframe/document alive. This is
+    // deliberately different from Close, which may release non-persistent apps.
+    if (isMaximized && win.id !== 'chat-window') setFullscreenLowPower(win, false);
     win.classList.add('minimized');
     win.hidden = true;
-    if (document.documentElement.classList.contains('low-power') && !keepAlive) terminateIframe();
 
     if (activeWindowState && activeWindowState.id === win.id) {
       clearActiveFloatingWindow(win);
@@ -1123,6 +1356,7 @@ function createAppletWindow(appletPath, options = {}) {
     }
 
     updateBtnState();
+    updateMinimizedWindowTray();
     updateCRTState();
     saveDesktopLayout();
   }
@@ -1154,6 +1388,7 @@ function createAppletWindow(appletPath, options = {}) {
     triggerBtn.setAttribute('aria-expanded', 'false');
   }
 
+  win.__openFromMinimized = openWin;
   return { win, iframe, open: openWin, close: closeWin, minimize: minimizeWin, toggle: toggleWin, toggleMaximize: toggleMaximize };
 }
 
@@ -1330,6 +1565,7 @@ function setupStartMenu() {
     e.stopPropagation();
     const isHidden = window.getComputedStyle(startMenu).display === 'none';
     startMenu.style.display = isHidden ? 'flex' : 'none';
+    positionMinimizedWindowTray();
   });
 
   document.addEventListener('click', (e) => {
@@ -1482,10 +1718,36 @@ function setupChatWidget() {
 
 let pingBannerHideTimer = null;
 
+function getFullscreenPingHost() {
+  const maxed = Array.from(document.querySelectorAll('.floating-window.maximized:not([hidden]):not(.minimized)'))
+    .filter(win => win.id !== 'chat-window');
+  maxed.sort((a, b) => ((parseInt(b.style.zIndex || '0', 10) || 0) - (parseInt(a.style.zIndex || '0', 10) || 0)));
+  return maxed[0] || null;
+}
+
+function ensureFullscreenPingBanner(host) {
+  if (!host) return null;
+  let banner = host.querySelector(':scope > .fullscreen-ping-banner');
+  if (banner) return banner;
+
+  banner = document.createElement('div');
+  banner.className = 'panel fullscreen-ping-banner';
+  banner.innerHTML = `
+    <div class="panel-title-bar" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">
+      <span>Notification</span>
+    </div>
+    <div class="panel-body" data-fullscreen-ping-text style="text-align:center;font-weight:bold;font-size:14px;line-height:1.35;white-space:pre-line;overflow-wrap:anywhere;word-break:break-word;max-height:96px;overflow-y:auto;"></div>`;
+  banner.addEventListener('click', hidePingBanner);
+  host.appendChild(banner);
+  return banner;
+}
+
 function hidePingBanner() {
   const banner = document.getElementById('ping-banner');
-  if (!banner) return;
-  banner.style.top = '-140px';
+  if (banner) banner.style.top = '-140px';
+  document.querySelectorAll('.fullscreen-ping-banner').forEach(el => { el.style.display = 'none'; });
+  hidePingInEmbeddedFrames();
+  document.documentElement.classList.remove('ping-banner-open');
   clearTimeout(pingBannerHideTimer);
   pingBannerHideTimer = null;
 }
@@ -1495,10 +1757,25 @@ function showPingBanner(text) {
   const bannerText = document.getElementById('ping-banner-text');
   if (!banner || !bannerText) return;
 
+  document.documentElement.classList.add('ping-banner-open');
   bannerText.textContent = text;
   banner.style.top = '10px';
 
-  // Reset the auto-dismiss timer so a fresh ping always gets its own full 3s.
+  const host = getFullscreenPingHost();
+  document.querySelectorAll('.fullscreen-ping-banner').forEach(el => { el.style.display = 'none'; });
+  if (host) {
+    const embedded = ensureFullscreenPingBanner(host);
+    if (embedded) {
+      const textEl = embedded.querySelector('[data-fullscreen-ping-text]');
+      if (textEl) textEl.textContent = text;
+      embedded.style.display = 'block';
+    }
+  }
+
+  // Also inject the notification into app documents so it remains visible when
+  // the app/iframe itself owns the browser's Fullscreen API top layer.
+  showPingInEmbeddedFrames(text);
+
   clearTimeout(pingBannerHideTimer);
   pingBannerHideTimer = setTimeout(hidePingBanner, 3000);
 }
@@ -1857,6 +2134,8 @@ document.addEventListener('DOMContentLoaded', () => {
   setupCRTToggle();
   setupActivityMessaging();
   setupActiveWindowTracking();
+  setupMinimizedWindowTray();
+  document.addEventListener('fullscreenchange', updateParentFullscreenLowPower);
   setupAppletsAndFloatingWindows();
   restoreDesktopLayout();
   setupGameLaunchers();
@@ -1873,7 +2152,15 @@ document.addEventListener('DOMContentLoaded', () => {
   setupLandingPerformance();
   updateTaskbarClock();
   let clockTimer = null;
-  const syncClockTimer = () => { clearInterval(clockTimer); clockTimer = document.hidden ? null : setInterval(updateTaskbarClock, 1000); };
+  const syncClockTimer = () => {
+    clearInterval(clockTimer);
+    if (document.hidden) {
+      clockTimer = null;
+      return;
+    }
+    const clockInterval = document.documentElement.classList.contains('low-power') ? 2000 : 1000;
+    clockTimer = setInterval(updateTaskbarClock, clockInterval);
+  };
   document.addEventListener('visibilitychange', syncClockTimer);
   syncClockTimer();
 });

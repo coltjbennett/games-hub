@@ -780,6 +780,7 @@
             }
             if (isConnected && historyReadyForSync && (previousChatWindowOpen !== isChatWindowOpen || previousLowPowerMode !== parentLowPowerMode)) {
                 requestManifestBroadcast();
+                scheduleManifestTick();
             }
         }
 
@@ -2099,14 +2100,6 @@
             setupMqttListeners();
             requestParentActivityState();
             setInterval(checkPresence, 5000);
-            let manifestTickTimer = null;
-            const scheduleManifestTick = () => {
-                clearTimeout(manifestTickTimer);
-                manifestTickTimer = setTimeout(() => {
-                    if (isConnected && historyReadyForSync && !document.hidden) publishMessage(buildManifest());
-                    scheduleManifestTick();
-                }, syncUsesHalfRate() ? 120000 : 60000);
-            };
             scheduleManifestTick();
         })();
 
@@ -2993,24 +2986,45 @@
             return parentLowPowerMode || !isChatWindowOpen;
         }
 
+        function syncUsesClosedLowPowerRate() {
+            return parentLowPowerMode && !isChatWindowOpen;
+        }
+
         function getSyncBatchSize() {
-            return syncUsesHalfRate() ? Math.max(1, Math.floor(SYNC_BATCH_SIZE / 2)) : SYNC_BATCH_SIZE;
+            if (syncUsesClosedLowPowerRate()) return Math.max(1, Math.floor(SYNC_BATCH_SIZE * 0.25));
+            return syncUsesHalfRate() ? Math.max(1, Math.floor(SYNC_BATCH_SIZE * 0.5)) : SYNC_BATCH_SIZE;
         }
 
         function getSyncBatchIntervalMs() {
+            if (syncUsesClosedLowPowerRate()) return SYNC_BATCH_INTERVAL_MS * 4;
             return syncUsesHalfRate() ? SYNC_BATCH_INTERVAL_MS * 2 : SYNC_BATCH_INTERVAL_MS;
         }
 
         function getSyncManifestDebounceMs() {
+            if (syncUsesClosedLowPowerRate()) return SYNC_MANIFEST_DEBOUNCE_MS * 10;
             return syncUsesHalfRate() ? SYNC_MANIFEST_DEBOUNCE_MS * 2 : SYNC_MANIFEST_DEBOUNCE_MS;
         }
 
         function getSyncManifestMaxEntries() {
-            return syncUsesHalfRate() ? Math.max(1, Math.floor(SYNC_MANIFEST_MAX_ENTRIES / 2)) : SYNC_MANIFEST_MAX_ENTRIES;
+            if (syncUsesClosedLowPowerRate()) return Math.max(1, Math.floor(SYNC_MANIFEST_MAX_ENTRIES * 0.25));
+            return syncUsesHalfRate() ? Math.max(1, Math.floor(SYNC_MANIFEST_MAX_ENTRIES * 0.5)) : SYNC_MANIFEST_MAX_ENTRIES;
         }
 
         function getSyncManifestMinIntervalMs() {
+            if (syncUsesClosedLowPowerRate()) return 30000;
             return syncUsesHalfRate() ? 6000 : 3000;
+        }
+
+        let manifestTickTimer = null;
+        function scheduleManifestTick() {
+            clearTimeout(manifestTickTimer);
+            const interval = syncUsesClosedLowPowerRate()
+                ? 600000
+                : (syncUsesHalfRate() ? 120000 : 60000);
+            manifestTickTimer = setTimeout(() => {
+                if (isConnected && historyReadyForSync && !document.hidden) publishMessage(buildManifest());
+                scheduleManifestTick();
+            }, interval);
         }
         const SYNC_BUCKET_MS = 2 * 60 * 60 * 1000; // 2-hour buckets for recent history
         const SYNC_OLD_BUCKET_MS = 24 * 60 * 60 * 1000; // 1-day buckets for older history
@@ -3094,13 +3108,16 @@
 
         function requestManifestBroadcast() {
             if (manifestBroadcastTimer) clearTimeout(manifestBroadcastTimer);
+            const jitter = syncUsesClosedLowPowerRate()
+                ? 3000
+                : (syncUsesHalfRate() ? 600 : 300);
             manifestBroadcastTimer = setTimeout(() => {
                 const now = Date.now();
                 if (now - lastManifestBroadcastTime > getSyncManifestMinIntervalMs()) {
                     lastManifestBroadcastTime = now;
                     publishMessage({ type: "SYNC_MANIFEST_REQ", author: myUsername });
                 }
-            }, getSyncManifestDebounceMs() + Math.floor(Math.random() * (syncUsesHalfRate() ? 600 : 300)));
+            }, getSyncManifestDebounceMs() + Math.floor(Math.random() * jitter));
         }
 
         function handleManifestRequest(data) {
