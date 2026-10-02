@@ -23,7 +23,7 @@ const announcements = [
   },
   {
     title: "New releases",
-    content: " - A Universal Chatroom has been fully implemented, press the 'chat' button in the bottom right to open it! It connects all users that are currently on the site. Private messages to individual users, audio messages, file sharing, and replying to messages have all been added.<br> - New beta out for a multiplayer PvP FPS game"
+    content: " - NEW GAME: Asphalt Rush. A <i>Need For Speed</i>-inspired street racing game with corrupt police, buying and upgrading and customizing your cars, and racing through the city at night to earn your respect amongst the other racers and become the best.<br> - A Universal Chatroom has been fully implemented, press the 'chat' button in the bottom right to open it! It connects all users that are currently on the site. Private messages to individual users, audio messages, file sharing, and replying to messages have all been added.<br> - New beta out for a multiplayer PvP FPS game"
   },
   {
     title: "Game updates",
@@ -44,7 +44,7 @@ const projects = [
     statusKey: 'new',
     type: 'Racing',
     tags: ['Street Racing', 'Customization', 'Driving', 'Racing', 'City', 'Underground', 'Under Development'],
-    description: 'Race through the city and earn your respect amongst the other racers, swerve around police, and upgrade your ride to stay competitive!',
+    description: 'Race through the night city to earn your respect amongst the other racers, take down the corrupt police, and buy, customize, and upgrade your rides to stay competitive!',
     featured: true
   },
   {
