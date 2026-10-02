@@ -20,6 +20,7 @@ const REDUCED_MOTION_KEY = 'project-launcher-reduced-motion-v1';
 const COMPACT_MODE_KEY = 'project-launcher-compact-v1';
 const HIGH_CONTRAST_KEY = 'project-launcher-high-contrast-v1';
 const LOW_POWER_KEY = 'project-launcher-low-power-v1';
+const fullscreenLowPowerWindows = new Set();
 const DESKTOP_LAYOUT_KEY = 'project-launcher-window-session-v1';
 const CHAT_USERNAME_KEY = 'mqtt_chat_username_v1';
 const TRUSTED_ORIGIN = window.location.origin;
@@ -85,6 +86,7 @@ function sendActivityStateToChat() {
     action: 'activityState',
     activeWindow,
     chatWindowOpen,
+    lowPowerMode: document.documentElement.classList.contains('low-power'),
     isHomepage: !chatWindowOpen && !activeWindow
   });
 }
@@ -271,9 +273,20 @@ function applyPerformanceMode() {
   const html = document.documentElement;
   const forced = safeGet(LOW_POWER_KEY) === 'true';
   const auto = devicePrefersLowPower();
+  const fullscreenForced = fullscreenLowPowerWindows.size > 0;
   html.classList.toggle('auto-low-power', auto);
-  html.classList.toggle('low-power', forced || auto);
-  return forced || auto;
+  html.classList.toggle('low-power', forced || auto || fullscreenForced);
+  sendActivityStateToChat();
+  return forced || auto || fullscreenForced;
+}
+
+function setFullscreenLowPower(win, enabled) {
+  if (!win || win.id === 'chat-window') return;
+
+  if (enabled) fullscreenLowPowerWindows.add(win.id);
+  else fullscreenLowPowerWindows.delete(win.id);
+
+  applyPerformanceMode();
 }
 
 function saveDesktopLayout() {
@@ -944,6 +957,8 @@ function createAppletWindow(appletPath, options = {}) {
 
     isMaximized = !!saved.maximized;
     win.classList.toggle('maximized', isMaximized);
+    if (isMaximized) setFullscreenLowPower(win, true);
+    else setFullscreenLowPower(win, false);
     maxBtn.setAttribute('aria-label', isMaximized ? 'Restore' : 'Maximize');
     win.hidden = saved.hidden !== false;
     win.classList.toggle('minimized', !!saved.minimized);
@@ -952,6 +967,7 @@ function createAppletWindow(appletPath, options = {}) {
   function resetWindowGeometry() {
     win.classList.remove('maximized', 'minimized');
     isMaximized = false;
+    setFullscreenLowPower(win, false);
     ['top','left','right','bottom','width','height','transform'].forEach(prop => {
       win.style[prop] = defaultWindowStyle[prop] || '';
     });
@@ -996,6 +1012,7 @@ function createAppletWindow(appletPath, options = {}) {
 
       win.classList.add('maximized');
       isMaximized = true;
+      setFullscreenLowPower(win, true);
       if (maxBtn) maxBtn.setAttribute('aria-label', 'Restore');
     } else {
       win.classList.remove('maximized');
@@ -1008,6 +1025,7 @@ function createAppletWindow(appletPath, options = {}) {
       win.style.transform = savedStyle.transform;
 
       isMaximized = false;
+      setFullscreenLowPower(win, false);
       if (maxBtn) maxBtn.setAttribute('aria-label', 'Maximize');
     }
     updateCRTState();
@@ -1072,6 +1090,11 @@ function createAppletWindow(appletPath, options = {}) {
   }
 
   function closeWin() {
+    if (isMaximized) {
+      isMaximized = false;
+      win.classList.remove('maximized');
+      setFullscreenLowPower(win, false);
+    }
     win.hidden = true;
     win.classList.remove('minimized');
     terminateIframe(); // Kills audio and resources, unless keepAlive is true

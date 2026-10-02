@@ -532,6 +532,9 @@
         let isAdmin = false;
         let isOnHomepage = true;
         let isChatWindowOpen = false;
+        let parentLowPowerMode = false;
+        let lastPingPublishedAt = 0;
+        let pingIntervalTimer = null;
         let currentActivity = { id: null, kind: "homepage", name: "" };
         let hasJoinedRoomWindow = false;
         let lastSeenTime = 0;
@@ -735,9 +738,16 @@
         function applyParentActivityState(data, announcePresence = true) {
             if (!data || typeof data !== "object") return;
 
+            const previousChatWindowOpen = isChatWindowOpen;
+            const previousLowPowerMode = parentLowPowerMode;
+
             isChatWindowOpen = data.chatWindowOpen !== undefined
                 ? !!data.chatWindowOpen
                 : isChatWindowOpen;
+
+            parentLowPowerMode = data.lowPowerMode !== undefined
+                ? !!data.lowPowerMode
+                : parentLowPowerMode;
 
             currentActivity = normalizeActivity(
                 data.activeWindow,
@@ -764,8 +774,12 @@
 
             renderUserList();
 
+            startPingInterval();
             if (announcePresence && isConnected) {
                 publishPing();
+            }
+            if (isConnected && historyReadyForSync && (previousChatWindowOpen !== isChatWindowOpen || previousLowPowerMode !== parentLowPowerMode)) {
+                requestManifestBroadcast();
             }
         }
 
@@ -1875,20 +1889,24 @@
             if (hasUnread) { window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, CHAT_ORIGIN); }
         }
 
-        function publishPing() {
-            if (isConnected && myUsername) {
-                let uData = activeUsers.get(myUsername) || { joinTime: Date.now() };
-                publishMessage({
-                    type: "PING",
-                    author: myUsername,
-                    isGhost: isGhost,
-                    isOnHomepage: isOnHomepage,
-                    chatWindowOpen: isChatWindowOpen,
-                    joinTime: uData.joinTime,
-                    status: currentStatus,
-                    activity: { ...currentActivity }
-                });
-            }
+        function publishPing(force = false) {
+            if (!isConnected || !myUsername) return false;
+            if (parentLowPowerMode && !force && Date.now() - lastPingPublishedAt < getPingIntervalMs()) return false;
+
+            const uData = activeUsers.get(myUsername) || { joinTime: Date.now() };
+            const published = publishMessage({
+                type: "PING",
+                author: myUsername,
+                isGhost: isGhost,
+                isOnHomepage: isOnHomepage,
+                chatWindowOpen: isChatWindowOpen,
+                joinTime: uData.joinTime,
+                timestamp: Date.now(),
+                status: currentStatus,
+                activity: { ...currentActivity }
+            });
+            if (published) lastPingPublishedAt = Date.now();
+            return published;
         }
 
         function updateAndBroadcastPresence() {
@@ -1940,6 +1958,7 @@
                     });
                 }
                 publishPing();
+                if (isConnected && historyReadyForSync) requestManifestBroadcast();
             } else {
                 ui.userScreen.style.display = "block"; ui.chatScreen.style.display = "none";
             }
@@ -2057,7 +2076,7 @@
                             if (isConnected && historyReadyForSync) requestManifestBroadcast();
                         });
                         publishPing();
-                        if (!window.pingInterval) { window.pingInterval = setInterval(() => { if (isConnected) publishPing(); }, 5000); }
+                        startPingInterval()
                     }
                 });
             });
@@ -2080,7 +2099,15 @@
             setupMqttListeners();
             requestParentActivityState();
             setInterval(checkPresence, 5000);
-            setInterval(() => { if (isConnected && historyReadyForSync && !document.hidden) publishMessage(buildManifest()); }, 60000);
+            let manifestTickTimer = null;
+            const scheduleManifestTick = () => {
+                clearTimeout(manifestTickTimer);
+                manifestTickTimer = setTimeout(() => {
+                    if (isConnected && historyReadyForSync && !document.hidden) publishMessage(buildManifest());
+                    scheduleManifestTick();
+                }, syncUsesHalfRate() ? 120000 : 60000);
+            };
+            scheduleManifestTick();
         })();
 
         async function joinChat() {
@@ -2139,7 +2166,7 @@
                 requestManifestBroadcast();
             }
 
-            if (!window.pingInterval) { window.pingInterval = setInterval(() => { if (isConnected) publishPing(); }, 5000); }
+            startPingInterval()
         }
 
         function processPendingOutbox(targetUser) {
@@ -2960,6 +2987,31 @@
         const SYNC_BATCH_SIZE = 50;
         const SYNC_BATCH_INTERVAL_MS = 150;
         const SYNC_MANIFEST_DEBOUNCE_MS = 1200;
+        const SYNC_MANIFEST_MAX_ENTRIES = 300;
+
+        function syncUsesHalfRate() {
+            return parentLowPowerMode || !isChatWindowOpen;
+        }
+
+        function getSyncBatchSize() {
+            return syncUsesHalfRate() ? Math.max(1, Math.floor(SYNC_BATCH_SIZE / 2)) : SYNC_BATCH_SIZE;
+        }
+
+        function getSyncBatchIntervalMs() {
+            return syncUsesHalfRate() ? SYNC_BATCH_INTERVAL_MS * 2 : SYNC_BATCH_INTERVAL_MS;
+        }
+
+        function getSyncManifestDebounceMs() {
+            return syncUsesHalfRate() ? SYNC_MANIFEST_DEBOUNCE_MS * 2 : SYNC_MANIFEST_DEBOUNCE_MS;
+        }
+
+        function getSyncManifestMaxEntries() {
+            return syncUsesHalfRate() ? Math.max(1, Math.floor(SYNC_MANIFEST_MAX_ENTRIES / 2)) : SYNC_MANIFEST_MAX_ENTRIES;
+        }
+
+        function getSyncManifestMinIntervalMs() {
+            return syncUsesHalfRate() ? 6000 : 3000;
+        }
         const SYNC_BUCKET_MS = 2 * 60 * 60 * 1000; // 2-hour buckets for recent history
         const SYNC_OLD_BUCKET_MS = 24 * 60 * 60 * 1000; // 1-day buckets for older history
         const SYNC_OLD_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
@@ -2972,9 +3024,20 @@
         let manifestBroadcastTimer = null;
         let lastManifestBroadcastTime = 0;
 
+        function getPingIntervalMs() {
+            return parentLowPowerMode ? 10000 : 5000;
+        }
+
+        function startPingInterval() {
+            clearInterval(pingIntervalTimer);
+            pingIntervalTimer = setInterval(() => {
+                if (isConnected) publishPing();
+            }, getPingIntervalMs());
+        }
+
         function channelKey(kind, name) { return kind === "global" ? "global" : `dm:${name}`; }
 
-        const MANIFEST_MAX_ENTRIES = 300; // recent exact IDs stay tiny; bucket hashes cover older history without shipping every ID
+        const MANIFEST_MAX_ENTRIES = SYNC_MANIFEST_MAX_ENTRIES; // recent exact IDs stay tiny; bucket hashes cover older history without shipping every ID
 
         function buildHistoryBucketManifest(list) {
             const now = Date.now();
@@ -3000,7 +3063,8 @@
         }
 
         function buildManifest(forPeer) {
-            const globalSlice = messageHistory.length > MANIFEST_MAX_ENTRIES ? messageHistory.slice(-MANIFEST_MAX_ENTRIES) : messageHistory;
+            const manifestMaxEntries = getSyncManifestMaxEntries();
+            const globalSlice = messageHistory.length > manifestMaxEntries ? messageHistory.slice(-manifestMaxEntries) : messageHistory;
             const manifest = {
                 type: "SYNC_MANIFEST",
                 author: myUsername,
@@ -3014,7 +3078,7 @@
                     nuke: nukeMarker
                 }
             };
-            const sliceDm = (arr) => (arr.length > MANIFEST_MAX_ENTRIES ? arr.slice(-MANIFEST_MAX_ENTRIES) : arr);
+            const sliceDm = (arr) => (arr.length > manifestMaxEntries ? arr.slice(-manifestMaxEntries) : arr);
             const addDmManifest = (otherUser) => {
                 const arr = dmHistories[otherUser] || [];
                 manifest.dms[otherUser] = sliceDm(arr).map(m => ({ id: m.id, ts: m.timestamp || 0 }));
@@ -3032,11 +3096,11 @@
             if (manifestBroadcastTimer) clearTimeout(manifestBroadcastTimer);
             manifestBroadcastTimer = setTimeout(() => {
                 const now = Date.now();
-                if (now - lastManifestBroadcastTime > 3000) {
+                if (now - lastManifestBroadcastTime > getSyncManifestMinIntervalMs()) {
                     lastManifestBroadcastTime = now;
                     publishMessage({ type: "SYNC_MANIFEST_REQ", author: myUsername });
                 }
-            }, SYNC_MANIFEST_DEBOUNCE_MS + Math.floor(Math.random() * 300));
+            }, getSyncManifestDebounceMs() + Math.floor(Math.random() * (syncUsesHalfRate() ? 600 : 300)));
         }
 
         function handleManifestRequest(data) {
@@ -3161,7 +3225,7 @@
                 const queue = perPeer && perPeer[channel];
                 if (!queue || !queue.length) { syncDraining.delete(drainKey); return; }
 
-                const batch = queue.splice(0, SYNC_BATCH_SIZE);
+                const batch = queue.splice(0, getSyncBatchSize());
                 
                 // Re-compress the batch before sending it out so MQTT bounds aren't exceeded
                 const compressedBatch = batch.map(m => {
@@ -3181,7 +3245,7 @@
                 });
 
                 if (queue.length) {
-                    setTimeout(step, SYNC_BATCH_INTERVAL_MS);
+                    setTimeout(step, getSyncBatchIntervalMs());
                 } else {
                     syncDraining.delete(drainKey);
                 }
