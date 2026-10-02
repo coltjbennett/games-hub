@@ -392,26 +392,38 @@
   <script src="main.js"></script>
   <script>
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', function () {
-        navigator.serviceWorker.register('service-worker.js', { scope: './' }).then(function (registration) {
-          // Check for a newer service worker every time the tab opens.
-          // With skipWaiting()/clients.claim() the newest worker takes control
-          // without requiring the user to manually clear browser storage.
-          return registration.update().catch(function (error) {
-            console.warn('Service worker update check failed:', error);
-          }).then(function () {
-            return navigator.serviceWorker.ready;
+      (function () {
+        var reloadAfterUpdate = false;
+
+        // A service-worker update is checked independently of Cache Storage.
+        // This is what lets users stuck on an older cache migrate without
+        // opening System Monitor or manually clearing browser storage.
+        navigator.serviceWorker.addEventListener('controllerchange', function () {
+          if (reloadAfterUpdate) return;
+          reloadAfterUpdate = true;
+          window.location.reload();
+        });
+
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('service-worker.js', {
+            scope: './',
+            updateViaCache: 'none'
+          }).then(function (registration) {
+            return registration.update().then(function () {
+              if (registration.waiting) {
+                registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+              }
+              return navigator.serviceWorker.ready;
+            });
           }).then(function (readyRegistration) {
-            // Ask the active worker to refresh its core cache from the live site.
-            // If the network is unavailable, the existing cache remains intact.
             if (readyRegistration.active) {
               readyRegistration.active.postMessage({ type: 'REFRESH_CORE' });
             }
+          }).catch(function (error) {
+            console.warn('Service worker registration/update failed:', error);
           });
-        }).catch(function (error) {
-          console.warn('Service worker registration failed:', error);
         });
-      });
+      }());
     }
   </script>
 

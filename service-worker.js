@@ -1,4 +1,5 @@
-const CACHE = 'games-hub-v4-core-v4';
+const CACHE = 'games-hub-v4-core-v5';
+const VERSION = '4.1.3';
 const CORE = [
   './', './index.html', './styles.css', './main.js', './data.js',
   './manifest.webmanifest', './offline.html',
@@ -30,8 +31,14 @@ function shouldCache(url, response) {
 }
 
 self.addEventListener('message', event => {
-  if (!event.data || event.data.type !== 'REFRESH_CORE') return;
-  event.waitUntil(refreshCoreCache());
+  if (!event.data) return;
+  if (event.data.type === 'SKIP_WAITING') {
+    event.waitUntil(self.skipWaiting());
+    return;
+  }
+  if (event.data.type === 'REFRESH_CORE') {
+    event.waitUntil(refreshCoreCache());
+  }
 });
 
 async function refreshCoreCache() {
