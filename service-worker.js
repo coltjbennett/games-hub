@@ -2,7 +2,7 @@ const CACHE = 'games-hub-v4-core-v3';
 const CORE = [
   './', './index.html', './styles.css', './main.js', './data.js',
   './manifest.webmanifest', './offline.html',
-  './images/icon.JPG', './images/icon-192.png', './images/icon-512.png',
+  './images/icon.JPG', './games.html',
   './images/windows.png', './images/icons/chatroom.png', './images/icons/paint.png',
   './images/icons/weather.png', './images/icons/notes.png', './images/icons/calculator.png', './images/icons/clock.png'
 ];
