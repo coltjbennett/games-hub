@@ -6,8 +6,9 @@ const CACHE = CACHE_PREFIX + VERSION;
 const CORE = [
   './.gitignore', './changelog.txt', './chat_export_global.txt', './data.js',
   './games.html', './index.html', './LICENSE.txt', './llms.txt',
+  './CODE_OF_CONDUCT.md', './README.md', './CONTRIBUTING.md', './SECURITY.md',
   './main.js', './manifest.webmanifest', './offline.html', './package.json', './robots.txt',
-  './service-worker.js', './sitemap.xml', './styles.css',
+  './FOR-NITPICKS.md', './service-worker.js', './sitemap.xml', './styles.css',
   './applets/calculator.html', './applets/chatroom.html', './applets/clock.html',
   './applets/control-panel.html', './applets/makedata.html', './applets/notes.html',
   './applets/paint.html', './applets/placeholder.txt', './applets/system-monitor.html',
@@ -123,7 +124,6 @@ function shouldCache(url, response) {
   // Only full 200 responses (cache.put rejects 206 partial responses anyway).
   if (!response || !response.ok || response.status !== 200) return false;
   const path = url.pathname.replace(/^\/+/, '');
-  if (path.toLowerCase().endsWith('.md')) return false;
   return !path.includes('/') || path.startsWith('games/') || path.startsWith('applets/') || path.startsWith('images/');
 }
 
