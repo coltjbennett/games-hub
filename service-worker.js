@@ -5,7 +5,7 @@ const CACHE_PREFIX = 'games-hub-';
 const CACHE = CACHE_PREFIX + VERSION;
 const CORE = [
   './.gitignore', './changelog.txt', './chat_export_global.txt', './data.js',
-  './games.html', './index.html', './LICENSE.txt', './llms.txt',
+  './games.html', './index.html', './LICENSE.txt', './llms.txt', './links.txt',
   './CODE_OF_CONDUCT.md', './README.md', './CONTRIBUTING.md', './SECURITY.md',
   './main.js', './manifest.webmanifest', './offline.html', './package.json', './robots.txt',
   './FOR-NITPICKS.md', './service-worker.js', './sitemap.xml', './styles.css',
