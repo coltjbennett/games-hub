@@ -1,11 +1,11 @@
 // Bump VERSION on every release. The cache name is derived from it, so each
 // release gets a brand-new cache and the activate step deletes all old ones.
-const VERSION = '4.1.6';
+const VERSION = '4.1.3';
 const CACHE_PREFIX = 'games-hub-';
 const CACHE = CACHE_PREFIX + VERSION;
 const CORE = [
   './.gitignore', './changelog.txt', './chat_export_global.txt', './data.js',
-  './dependencies.js', './games.html', './index.html', './LICENSE.txt', './llms.txt',
+  './games.html', './index.html', './LICENSE.txt', './llms.txt',
   './main.js', './manifest.webmanifest', './offline.html', './package.json', './robots.txt',
   './service-worker.js', './sitemap.xml', './styles.css',
   './applets/calculator.html', './applets/chatroom.html', './applets/clock.html',
