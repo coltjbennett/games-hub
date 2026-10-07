@@ -314,7 +314,7 @@
             <div class="w95-titlebar"><span>Admin Tools</span><button onclick="closeModal('admin-tools-modal')" style="height: 18px; line-height: 10px;">X</button></div>
             <div class="w95-content" style="display: flex; flex-direction: column; gap: 8px;">
                 <button onclick="doClearSystem()">Clear System Msgs (Last <span id="sys-hr-count">1</span>h)</button>
-                <button onclick="doClearAllSystem()" style="color: #8b0000;">Clear ALL System Msgs</button>
+                <button onclick="doClearAllSystem()" style="color:#8b0000;">Clear All System Messages</button>
                 <button onclick="doClearAllRecent()" style="color: #8b0000;">Clear All Msgs (Last <span id="all-hr-count">1</span>h)</button>
                 <hr>
                 <button onclick="document.getElementById('admin-backup-input').click()">Restore Chat from Export File...</button>
@@ -411,7 +411,9 @@
             </div>
             <div style="font-size: 11px; margin-bottom: 8px;">History defaults to Forever. Automatic compaction only removes expired history when a finite retention period is selected.</div>
 
-            <button onclick="exportChat()" style="width: 100%; margin-bottom: 8px;">Export Chat History (Current Tab)</button>
+            <button onclick="exportChat()" style="width: 100%; margin-bottom: 6px;">Export Chat History (Current Tab)</button>
+            <button onclick="document.getElementById('settings-merge-input').click()" style="width: 100%; margin-bottom: 8px;">Merge from Export...</button>
+            <input id="settings-merge-input" type="file" accept=".txt,text/plain" style="display:none" onchange="mergeExportFromSettings(event)">
 
             <div style="display: flex; gap: 4px; align-items: center; margin-bottom: 6px;">
                 <label style="font-size: 12px;">Username:</label>
@@ -475,7 +477,6 @@
     <script>
         const ROOM_TOPIC = "universal-public-single-massive-room-v3-xyz123/messages";
         const STORAGE_KEY = "mqtt_chat_history_cache_v2";
-        const SYSTEM_SESSION_STORAGE_KEY = "mqtt_chat_system_history_session_v1";
         const USERNAME_KEY = "mqtt_chat_username_v1";
         const BLOCKED_KEY = "mqtt_chat_blocked_v1";
         const CLOSED_DMS_KEY = "mqtt_closed_dms_v1";
@@ -490,9 +491,9 @@
         const DEFAULT_CHAT_RETENTION_DAYS = 0;
         const DEFAULT_CHAT_HISTORY_MODE = "full-media";
         const ALLOWED_INCOMING_TYPES = new Set([
-            'MSG', 'DM', 'EDIT_MSG', 'DELETE_MSG', 'REACT_MSG', 'CLEAR_ALL', 'CLEAR_RECENT', 'CLEAR_SYSTEM_ALL',
+            'MSG', 'DM', 'EDIT_MSG', 'DELETE_MSG', 'REACT_MSG', 'CLEAR_ALL', 'CLEAR_RECENT',
             'CMD', 'PRESENCE', 'PING', 'RENAME', 'TYPING', 'MUTE_ATTEMPT', 'DM_READ',
-            'JOIN', 'LEAVE', 'SYNC_MANIFEST_REQ', 'SYNC_MANIFEST', 'SYNC_PULL', 'SYNC_PULL_RANGE', 'SYNC_CHUNK'
+            'JOIN', 'LEAVE', 'CLEAR_SYSTEM_ALL', 'SYNC_MANIFEST_REQ', 'SYNC_MANIFEST', 'SYNC_PULL', 'SYNC_PULL_RANGE', 'SYNC_CHUNK'
         ]);
 
         function isValidUsername(value) {
@@ -584,7 +585,6 @@
         let pendingName = "";
         let lastDisplayedTimestamp = 0;
         let historyReadyForSync = true;
-        let systemClearBefore = 0;
         let backupRestorePromise = Promise.resolve();
         let newMessageCount = 0;
         let renderedMsgCount = 250; 
@@ -626,8 +626,6 @@
 
         function safeGet(k) { try { return localStorage.getItem(k); } catch(e){ return null; } }
         function safeSet(k, v) { try { localStorage.setItem(k, v); } catch(e){} }
-        function safeSessionGet(k) { try { return sessionStorage.getItem(k); } catch(e){ return null; } }
-        function safeSessionSet(k, v) { try { sessionStorage.setItem(k, v); } catch(e){} }
         function safeParseJSON(value, fallback) {
             try {
                 const parsed = JSON.parse(value);
@@ -857,37 +855,102 @@
             renderUserList();
         }
 
+        function isJoinLeaveSystemEvent(m) {
+            return !!m && !!m.isSystem && /\bjoined the room\.|\bdisconnected\.|\bleft the room\./i.test(String(m.text || ""));
+        }
+
+        // Each join starts an independent per-user session. Keep that join/leave pair
+        // only when that same user sent at least one real message before leaving.
+        function filterSystemSessionsWithActivity(list) {
+            const source = Array.isArray(list) ? list : [];
+            const events = source.filter(isJoinLeaveSystemEvent).slice().sort((a,b) => (a.timestamp||0)-(b.timestamp||0));
+            const keepIds = new Set();
+            const openSessions = new Map();
+            for (const event of events) {
+                const text = String(event.text || "");
+                const joined = text.match(/^(.+?) joined the room\.?$/i);
+                const left = text.match(/^(.+?) (?:disconnected|left the room)\.?$/i);
+                if (joined) {
+                    const user = joined[1];
+                    if (!openSessions.has(user)) openSessions.set(user, []);
+                    openSessions.get(user).push({ join: event, activity: false });
+                } else if (left) {
+                    const user = left[1];
+                    const sessions = openSessions.get(user) || [];
+                    const session = sessions.shift();
+                    if (session && session.activity) { keepIds.add(session.join.id); keepIds.add(event.id); }
+                    if (!sessions.length) openSessions.delete(user);
+                }
+            }
+            // Match each real message to the most recent unclosed join for its author.
+            const sorted = source.slice().sort((a,b)=>(a.timestamp||0)-(b.timestamp||0));
+            const sessionsByUser = new Map();
+            for (const item of sorted) {
+                if (isJoinLeaveSystemEvent(item)) {
+                    const joined = String(item.text||"").match(/^(.+?) joined the room\.?$/i);
+                    const left = String(item.text||"").match(/^(.+?) (?:disconnected|left the room)\.?$/i);
+                    if (joined) {
+                        const u=joined[1]; if(!sessionsByUser.has(u)) sessionsByUser.set(u,[]); sessionsByUser.get(u).push({join:item, activity:false});
+                    } else if(left) {
+                        const u=left[1], sessions=sessionsByUser.get(u)||[]; const session=sessions.shift();
+                        if(session && session.activity) { keepIds.add(session.join.id); keepIds.add(item.id); }
+                        if(!sessions.length) sessionsByUser.delete(u);
+                    }
+                } else if (!item.isSystem && item.author) {
+                    const sessions=sessionsByUser.get(item.author)||[];
+                    if(sessions.length) sessions[sessions.length-1].activity=true;
+                }
+            }
+            return source.filter(m => !isJoinLeaveSystemEvent(m) || keepIds.has(m.id));
+        }
+
+        function mergeExportFromSettings(event) {
+            const file = event.target.files && event.target.files[0]; event.target.value = "";
+            if (!file) return;
+            file.text().then(async raw => {
+                const result = await restoreBackupText(raw, file.name, true);
+                messageHistory = filterSystemSessionsWithActivity(messageHistory);
+                rebuildMessageHistoryIdSet(); saveLocalHistory();
+                if (currentTab === "global") scheduleRenderActiveTabMessages();
+                customAlert(`Merged export: ${result.added} new messages/events, ${result.matched} matched existing records.`);
+            }).catch(() => customAlert("Could not merge that chat export."));
+        }
+
         function exportChat() {
             let list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
-            list = list.filter(m => !m.isSystem);
             let textData = `Chat Export [${currentTab}] - ${new Date().toLocaleString()}\n\n`;
             
-            list.forEach(m => {
+            const exportableList = filterSystemSessionsWithActivity(list).filter(m => !m.isSystem || isJoinLeaveSystemEvent(m));
+            exportableList.forEach(m => {
                 let timeStr = new Date(m.timestamp).toLocaleString();
-                let content = m.backupPlaceholder ? `[${m.backupPlaceholder}]` : m.isImage ? "[Image]" : m.isVideo ? "[Video]" : m.isAudio ? "[Voice Memo]" : m.isFile ? `[File: ${m.fileName}]` : m.text;
+                if (m.isSystem) {
+                    textData += `[${timeStr}] SYSTEM: ${m.text}\n`;
+                } else {
+                    let content = m.backupPlaceholder ? `[${m.backupPlaceholder}]` : m.isImage ? "[Image]" : m.isVideo ? "[Video]" : m.isAudio ? "[Voice Memo]" : m.isFile ? `[File: ${m.fileName}]` : m.text;
 
-                let replyTag = "";
-                if (m.replyTo) {
-                    const replyTime = m.replyTo.timestamp ? new Date(m.replyTo.timestamp).toLocaleString() : "";
-                    const replyContent = m.replyTo.isImage ? "[Image]" : m.replyTo.isVideo ? "[Video]" : m.replyTo.isAudio ? "[Voice Memo]" : m.replyTo.isFile ? "[File]" : (m.replyTo.text || "");
-                    const REPLY_PREVIEW_LENGTH = 40;
-                    const shortened = replyContent.length > REPLY_PREVIEW_LENGTH
-                        ? replyContent.slice(0, REPLY_PREVIEW_LENGTH - 1).trimEnd() + "…"
-                        : replyContent;
-                    replyTag = `[replying to: "${replyTime ? `[${replyTime}] ` : ""}${m.replyTo.author}: "${shortened}""] `;
+                    let replyTag = "";
+                    if (m.replyTo) {
+                        const replyTime = m.replyTo.timestamp ? new Date(m.replyTo.timestamp).toLocaleString() : "";
+                        const replyContent = m.replyTo.isImage ? "[Image]" : m.replyTo.isVideo ? "[Video]" : m.replyTo.isAudio ? "[Voice Memo]" : m.replyTo.isFile ? "[File]" : (m.replyTo.text || "");
+                        const REPLY_PREVIEW_LENGTH = 40;
+                        const shortened = replyContent.length > REPLY_PREVIEW_LENGTH
+                            ? replyContent.slice(0, REPLY_PREVIEW_LENGTH - 1).trimEnd() + "…"
+                            : replyContent;
+                        replyTag = `[replying to: "${replyTime ? `[${replyTime}] ` : ""}${m.replyTo.author}: "${shortened}""] `;
+                    }
+
+                    let reactionTag = "";
+                    if (m.reactions && Object.keys(m.reactions).length > 0) {
+                        const reactionStr = Object.entries(m.reactions)
+                            .map(([emoji, users]) => `${emoji}*${users.length}`)
+                            .join(", ");
+                        reactionTag = ` [reactions: ${reactionStr}]`;
+                    }
+
+                    let editTag = m.edited ? " [edited]" : "";
+
+                    textData += `[${timeStr}] ${replyTag}${m.author}: "${content}"${reactionTag}${editTag}\n`;
                 }
-
-                let reactionTag = "";
-                if (m.reactions && Object.keys(m.reactions).length > 0) {
-                    const reactionStr = Object.entries(m.reactions)
-                        .map(([emoji, users]) => `${emoji}*${users.length}`)
-                        .join(", ");
-                    reactionTag = ` [reactions: ${reactionStr}]`;
-                }
-
-                let editTag = m.edited ? " [edited]" : "";
-
-                textData += `[${timeStr}] ${replyTag}${m.author}: "${content}"${reactionTag}${editTag}\n`;
             });
 
             const blob = new Blob([textData], { type: 'text/plain' });
@@ -1372,81 +1435,13 @@
             return sanitized;
         }
 
-        function loadSystemSessionState() {
-            const raw = safeSessionGet(SYSTEM_SESSION_STORAGE_KEY);
-            const parsed = safeParseJSON(raw, null);
-            if (!parsed) return { clearBefore: 0, messages: [] };
-
-            if (Array.isArray(parsed)) {
-                return {
-                    clearBefore: 0,
-                    messages: sanitizeHistoryLoaded(parsed).filter(m => m.isSystem && !m.localOnly)
-                };
-            }
-
-            const clearBefore = Number.isFinite(parsed.clearBefore) ? parsed.clearBefore : 0;
-            const messages = sanitizeHistoryLoaded(parsed.messages).filter(m => m.isSystem && !m.localOnly);
-            return { clearBefore, messages };
-        }
-
-        function isSystemCleared(msg) {
-            return !!msg && !!msg.isSystem && !!systemClearBefore &&
-                Number.isFinite(msg.timestamp) && msg.timestamp <= systemClearBefore;
-        }
-
-        function getSessionSystemMessages() {
-            return messageHistory.filter(m => m && m.isSystem && !m.localOnly && !isSystemCleared(m));
-        }
-
-        function saveSystemSessionState() {
-            safeSessionSet(SYSTEM_SESSION_STORAGE_KEY, JSON.stringify({
-                version: 1,
-                clearBefore: systemClearBefore,
-                messages: getSessionSystemMessages()
-            }));
-        }
-
-        function isHistoryMessageSyncable(msg) {
-            if (!msg || !msg.id || isMessageTombstoned(msg)) return false;
-            if (isSystemCleared(msg)) return false;
-            return true;
-        }
-
-        async function loadLocalHistory() {
-            const loaded = sanitizeHistoryLoaded(await loadFromStorageWithCompression(STORAGE_KEY));
-            const sessionState = loadSystemSessionState();
-            systemClearBefore = sessionState.clearBefore;
-
-            // Migrate any legacy system messages out of durable history into this tab's
-            // session-only system history. Normal chat messages remain durable.
-            const legacySystem = loaded.filter(m => m.isSystem && !m.localOnly);
-            const durableMessages = loaded.filter(m => !m.isSystem);
-            const mergedSystems = new Map();
-
-            [...legacySystem, ...sessionState.messages].forEach(msg => {
-                if (!msg || isSystemCleared(msg)) return;
-                if (msg.id) mergedSystems.set(msg.id, msg);
-            });
-
-            messageHistory = [
-                ...durableMessages,
-                ...Array.from(mergedSystems.values())
-            ].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-
+        async function loadLocalHistory() { 
+            let loaded = await loadFromStorageWithCompression(STORAGE_KEY);
+            messageHistory = sanitizeHistoryLoaded(loaded);
             rebuildMessageHistoryIdSet();
-
-            // Rewrite the durable store without legacy system messages and keep the
-            // current system history only in sessionStorage.
-            await saveToStorageWithCompression(STORAGE_KEY, durableMessages);
-            saveSystemSessionState();
-
-            if (currentTab === "global") renderActiveTabMessages();
+            if(currentTab === "global") renderActiveTabMessages(); 
         }
-
-        function saveLocalHistory() {
-            saveToStorageDebounced(STORAGE_KEY, () => messageHistory.filter(m => !m.isSystem));
-            saveSystemSessionState();
-        }
+        function saveLocalHistory() { saveToStorageDebounced(STORAGE_KEY, () => messageHistory); }
         async function loadDmHistory(otherUser) { return await loadFromStorageWithCompression(`mqtt_dm_${myUsername}_${otherUser}`); }
         function saveDmHistory(otherUser) { saveToStorageDebounced(`mqtt_dm_${myUsername}_${otherUser}`, () => dmHistories[otherUser] || []); }
 
@@ -1600,17 +1595,8 @@
             const diffMin = Math.floor(diffSec / 60);
             const diffHr = Math.floor(diffMin / 60);
 
-            if (diffMs >= 86400000) {
-                return new Date(ts).toLocaleString([], {
-                    year: "numeric",
-                    month: "numeric",
-                    day: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit"
-                });
-            }
-
-            const timeStr = new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const dateTimeStr = new Date(ts).toLocaleString([], { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const timeStr = dateTimeStr;
             if (diffSec < 60) {
                 const sec = Math.max(1, diffSec);
                 return `${timeStr} (${sec} second${sec === 1 ? '' : 's'} ago)`;
@@ -2351,8 +2337,9 @@
                             activeUsers.delete(data.author);
                             if (!uData.isGhost) {
                                 const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} disconnected.`, timestamp: data.timestamp || Date.now() };
-                                messageHistory = mergeHistory(messageHistory, [sysObj], true); saveLocalHistory();
-                                if (currentTab === "global") appendSystemDOM(sysObj);
+                                messageHistory = mergeHistory(messageHistory, [sysObj], true);
+                                messageHistory = filterSystemSessionsWithActivity(messageHistory); rebuildMessageHistoryIdSet(); saveLocalHistory();
+                                if (currentTab === "global") scheduleRenderActiveTabMessages();
                             }
                             renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
                         }
@@ -2439,12 +2426,7 @@
                         }
                         else if (data.cmd === "UNMUTE") { isMuted = false; mutedAttemptCount = 0; if(muteTimeoutId) clearTimeout(muteTimeoutId); appendSystemDOM("You have been unmuted by an Admin."); }
                     }
-                    else if (data.type === "MUTE_ATTEMPT" && isAdmin) {
-                        const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} tried to send a message while muted (Attempt #${data.count})`, timestamp: data.timestamp || Date.now() };
-                        messageHistory = mergeHistory(messageHistory, [sysObj], true);
-                        saveLocalHistory();
-                        if (currentTab === "global") appendSystemDOM(sysObj);
-                    }
+                    else if (data.type === "MUTE_ATTEMPT" && isAdmin) { appendSystemDOM({ id: data.id || generateId(), isSystem: true, text: `${data.author} tried to send a message while muted (Attempt #${data.count})`, timestamp: data.timestamp || Date.now() }); }
                     else if (data.type === "DELETE_MSG") {
                         const ephemeralDelete = data.ephemeral === true;
                         const removeFromList = (list, allowAdmin = true) => {
@@ -2490,7 +2472,12 @@
                         messageHistory.push(sysObj); messageHistoryIdSet.add(sysObj.id); saveLocalHistory(); scheduleRenderActiveTabMessages();
                     }
                     else if (data.type === "CLEAR_SYSTEM_ALL") {
-                        clearAllSystemMessagesLocally(data.timestamp || Date.now());
+                        if (!ADMINS.includes(data.author)) return;
+                        addRangeTombstone(0, Date.now(), "system");
+                        messageHistory = messageHistory.filter(m => !m.isSystem);
+                        rebuildMessageHistoryIdSet(); saveLocalHistory();
+                        Object.keys(dmHistories).forEach(user => { dmHistories[user] = dmHistories[user].filter(m => !m.isSystem); saveDmHistory(user); });
+                        scheduleRenderActiveTabMessages();
                     }
                     else if (data.type === "CLEAR_ALL") {
                         const anchor = data.timestamp || Date.now();
@@ -3142,7 +3129,7 @@
             const buckets = new Map();
             const ordered = Array.isArray(list) ? list : [];
             ordered.forEach(m => {
-                if (!isHistoryMessageSyncable(m)) return;
+                if (!m || !m.id || isMessageTombstoned(m)) return;
                 const ts = m.timestamp || 0;
                 const age = now - ts;
                 const span = age >= SYNC_OLD_AFTER_MS ? SYNC_OLD_BUCKET_MS : SYNC_BUCKET_MS;
@@ -3162,15 +3149,13 @@
 
         function buildManifest(forPeer) {
             const manifestMaxEntries = getSyncManifestMaxEntries();
-            const syncableGlobal = messageHistory.filter(isHistoryMessageSyncable);
-            const globalSlice = syncableGlobal.length > manifestMaxEntries ? syncableGlobal.slice(-manifestMaxEntries) : syncableGlobal;
+            const globalSlice = messageHistory.length > manifestMaxEntries ? messageHistory.slice(-manifestMaxEntries) : messageHistory;
             const manifest = {
                 type: "SYNC_MANIFEST",
                 author: myUsername,
                 isGhost: isGhost,
-                systemClearBefore,
-                global: globalSlice.map(m => ({ id: m.id, ts: m.timestamp || 0, system: !!m.isSystem })),
-                globalBuckets: buildHistoryBucketManifest(syncableGlobal),
+                global: globalSlice.map(m => ({ id: m.id, ts: m.timestamp || 0 })),
+                globalBuckets: buildHistoryBucketManifest(messageHistory),
                 dms: {},
                 tomb: {
                     ids: Array.from(msgTombstones),
@@ -3218,16 +3203,6 @@
             if (!data.author) return;
             if (blockedUsers.has(data.author) && data.author !== myUsername) return;
 
-            if (Number.isFinite(data.systemClearBefore) && data.systemClearBefore > systemClearBefore) {
-                systemClearBefore = data.systemClearBefore;
-                const filtered = messageHistory.filter(m => !isSystemCleared(m));
-                if (filtered.length !== messageHistory.length) {
-                    messageHistory = filtered;
-                    rebuildMessageHistoryIdSet();
-                }
-                saveSystemSessionState();
-            }
-
             let tombChanged = false;
             if (data.tomb) {
                 (data.tomb.ids || []).forEach(id => { if (!msgTombstones.has(id)) { msgTombstones.add(id); tombChanged = true; } });
@@ -3262,11 +3237,11 @@
             const peerIds = new Set(peerManifestEntries.map(e => e.id).filter(Boolean));
             const localIds = new Set(localList.map(m => m.id).filter(Boolean));
 
-            const toGive = localList.filter(m => isHistoryMessageSyncable(m) && !peerIds.has(m.id));
+            const toGive = localList.filter(m => m.id && !peerIds.has(m.id) && !isMessageTombstoned(m));
             if (toGive.length) queueOutbound(peer, channel, toGive);
 
             const toRequestIds = peerManifestEntries
-                .filter(e => e.id && !localIds.has(e.id) && !msgTombstones.has(e.id) && !(e.system && e.ts <= systemClearBefore))
+                .filter(e => e.id && !localIds.has(e.id) && !msgTombstones.has(e.id))
                 .map(e => e.id);
             if (toRequestIds.length) publishMessage({ type: "SYNC_PULL", author: myUsername, target: peer, channel: channel, ids: toRequestIds });
 
@@ -3290,7 +3265,7 @@
             localBuckets.forEach(lb => {
                 const rb = remoteBuckets.get(lb.from);
                 if (!rb || rb.count !== lb.count || rb.hash !== lb.hash) {
-                    const bucketMessages = localList.filter(m => isHistoryMessageSyncable(m) && (m.timestamp || 0) >= lb.from && (m.timestamp || 0) < lb.to);
+                    const bucketMessages = localList.filter(m => m.id && !isMessageTombstoned(m) && (m.timestamp || 0) >= lb.from && (m.timestamp || 0) < lb.to);
                     if (bucketMessages.length) queueOutbound(peer, channel, bucketMessages);
                 }
             });
@@ -3300,7 +3275,7 @@
             if (data.target !== myUsername) return;
             const sourceList = data.channel === "global" ? messageHistory : (dmHistories[data.channel.replace("dm:", "")] || []);
             const idSet = new Set(data.ids || []);
-            const matches = sourceList.filter(m => idSet.has(m.id) && isHistoryMessageSyncable(m));
+            const matches = sourceList.filter(m => idSet.has(m.id) && !isMessageTombstoned(m));
             if (matches.length) queueOutbound(data.author, data.channel, matches);
         }
 
@@ -3311,7 +3286,7 @@
             const to = data.to || Number.MAX_SAFE_INTEGER;
             const matches = sourceList.filter(m => {
                 const ts = m.timestamp || 0;
-                return isHistoryMessageSyncable(m) && ts >= from && ts < to;
+                return m.id && ts >= from && ts < to && !isMessageTombstoned(m);
             });
             if (matches.length) queueOutbound(data.author, data.channel, matches);
         }
@@ -3322,9 +3297,7 @@
             if (!perPeer[channel]) perPeer[channel] = [];
 
             const existingIds = new Set(perPeer[channel].map(m => m.id));
-            msgs.filter(isHistoryMessageSyncable).forEach(m => {
-                if (!existingIds.has(m.id)) { perPeer[channel].push(m); existingIds.add(m.id); }
-            });
+            msgs.forEach(m => { if (!existingIds.has(m.id)) { perPeer[channel].push(m); existingIds.add(m.id); } });
 
             perPeer[channel].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
             drainOutboxFor(peer, channel);
@@ -3381,9 +3354,6 @@
                 } 
             });
 
-            data.messages = data.messages.filter(m => isHistoryMessageSyncable(m));
-            if (!data.messages.length) return;
-
             // Queue chunks briefly and merge them in one operation.  The previous code
             // rebuilt a Map over the entire history once per 50-message chunk, which made
             // large history recovery increasingly expensive (effectively O(n^2) over a sync).
@@ -3426,9 +3396,17 @@
             lines.forEach(line => {
                 if (!line || line.startsWith("Chat Export")) return;
 
-                // System messages are intentionally excluded from exports. Ignore legacy
-                // SYSTEM lines during restore so durable chat history cannot regain them.
-                if (/^\[[^\]]+\]\s+SYSTEM:\s+[\s\S]*$/.test(line)) return;
+                let systemMatch = line.match(/^\[([^\]]+)\]\s+SYSTEM:\s+([\s\S]*)$/);
+                if (systemMatch) {
+                    const timestamp = parseExportTimestamp(systemMatch[1]);
+                    const text = systemMatch[2];
+                    const baseKey = `${Math.floor(timestamp / 1000)}|SYSTEM|text|${text}`;
+                    const occurrence = occurrenceMap.get(baseKey) || 0;
+                    occurrenceMap.set(baseKey, occurrence + 1);
+                    const backupKey = hashStringStable(`${baseKey}|${occurrence}`);
+                    parsed.push({ id: `backup-${backupKey}`, backupKey, author: "SYSTEM", text, timestamp, isSystem: true, isGhost: false });
+                    return;
+                }
 
                 // Parse the timestamp first. A reply line contains additional colons
                 // and quotes inside the optional [replying to: ...] wrapper, so trying
@@ -3647,7 +3625,7 @@
                     return;
                 }
 
-                if (!forceRestore && isMessageTombstoned(m)) {
+                if (false && !forceRestore && isMessageTombstoned(m)) {
                     entries.push([m.backupKey, m.id, m.timestamp || 0, m.isSystem ? 1 : 0]);
                     return;
                 }
@@ -3678,6 +3656,8 @@
             const parsed = parseChatExportText(rawText);
             if (!parsed.length) return { added: 0, matched: 0, entries: [] };
             const result = mergeParsedBackupIntoHistory(parsed, forceRestore);
+            messageHistory = filterSystemSessionsWithActivity(messageHistory);
+            rebuildMessageHistoryIdSet();
             saveLocalHistory();
             if (currentTab === "global") scheduleRenderActiveTabMessages();
             return result;
@@ -3741,26 +3721,7 @@
 
         function openAdminTools() { document.getElementById('sys-hr-count').innerText = sysClearHours; document.getElementById('all-hr-count').innerText = allClearHours; openModal('admin-tools-modal'); }
         function doClearSystem() { if (!isAdmin) return; publishMessage({ type: "CLEAR_RECENT", targetType: "system", hours: sysClearHours, author: myUsername, id: generateId(), timestamp: Date.now() }); sysClearHours++; document.getElementById('sys-hr-count').innerText = sysClearHours; }
-        function clearAllSystemMessagesLocally(anchor) {
-            if (Number.isFinite(anchor) && anchor > systemClearBefore) systemClearBefore = anchor;
-            messageHistory = messageHistory.filter(m => !m.isSystem);
-            Object.keys(dmHistories).forEach(user => {
-                if (Array.isArray(dmHistories[user])) {
-                    dmHistories[user] = dmHistories[user].filter(m => !m.isSystem);
-                    saveDmHistory(user);
-                }
-            });
-            rebuildMessageHistoryIdSet();
-            saveSystemSessionState();
-            scheduleRenderActiveTabMessages();
-        }
-        function doClearAllSystem() {
-            if (!isAdmin) return;
-            if (!confirm("Are you sure you want to clear ALL system messages from the current session history?")) return;
-            const timestamp = Date.now();
-            clearAllSystemMessagesLocally(timestamp);
-            publishMessage({ type: "CLEAR_SYSTEM_ALL", author: myUsername, id: generateId(), timestamp });
-        }
+        function doClearAllSystem() { if (!isAdmin || !confirm("Clear all system messages from history? This does not delete real user messages.")) return; publishMessage({ type: "CLEAR_SYSTEM_ALL", author: myUsername, id: generateId(), timestamp: Date.now() }); }
         function doClearAllRecent() { if (!isAdmin) return; if (confirm(`Are you sure you want to delete ALL messages (system and user) from the last ${allClearHours} hour(s)?`)) { publishMessage({ type: "CLEAR_RECENT", targetType: "all", hours: allClearHours, author: myUsername, id: generateId(), timestamp: Date.now() }); allClearHours++; document.getElementById('all-hr-count').innerText = allClearHours; } }
         function deleteAnyMessage(id) {
             const msg = messageHistory.find(m => m.id === id) || Object.values(dmHistories).flat().find(m => m.id === id);
