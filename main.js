@@ -557,14 +557,14 @@ function resetAllWindowSizesAndPositions() {
 }
 
 function exportThemePack() {
-  return { format:'games-hub-theme-pack', version:1, theme:safeGet(THEME_KEY) || 'win95-blue', reducedMotion:safeGet(REDUCED_MOTION_KEY)==='true', compactMode:safeGet(COMPACT_MODE_KEY)==='true', highContrast:safeGet(HIGH_CONTRAST_KEY)==='true', lowPower:safeGet(LOW_POWER_KEY)==='true', crt:safeGet('project-launcher-no-crt') !== 'true' };
+  return { format:'games-hub-theme-pack', version:1, theme:safeGet(THEME_KEY) || 'win98-blue', reducedMotion:safeGet(REDUCED_MOTION_KEY)==='true', compactMode:safeGet(COMPACT_MODE_KEY)==='true', highContrast:safeGet(HIGH_CONTRAST_KEY)==='true', lowPower:safeGet(LOW_POWER_KEY)==='true', crt:safeGet('project-launcher-no-crt') !== 'true' };
 }
 
 function importThemePack(pack) {
   if (!pack || pack.format !== 'games-hub-theme-pack') return false;
-  const themes = new Set(['win95-blue','windows-gray','win98-teal','olive','plum','dos-amber','blue-gray-nt','midnight-dos','classic','gray','midnight']);
+  const themes = new Set(['win98-blue','win95-blue','windows-gray','win98-teal','olive','plum','dos-amber','blue-gray-nt','midnight-dos','classic','gray','midnight']);
   if (!themes.has(pack.theme)) return false;
-  const theme = pack.theme === 'classic' ? 'win95-blue' : pack.theme === 'gray' ? 'windows-gray' : pack.theme === 'midnight' ? 'midnight-dos' : pack.theme;
+  const theme = ['classic', 'win95-blue'].includes(pack.theme) ? 'win98-blue' : pack.theme === 'gray' ? 'windows-gray' : pack.theme === 'midnight' ? 'midnight-dos' : pack.theme;
   safeSet(THEME_KEY, theme); safeSet(REDUCED_MOTION_KEY, String(!!pack.reducedMotion)); safeSet(COMPACT_MODE_KEY, String(!!pack.compactMode)); safeSet(HIGH_CONTRAST_KEY, String(!!pack.highContrast)); safeSet(LOW_POWER_KEY, String(!!pack.lowPower)); safeSet('project-launcher-no-crt', pack.crt === false ? 'true' : 'false');
   applySavedAppearance(); return true;
 }
@@ -1814,7 +1814,7 @@ function setupToSModal() {
 // ===== V4 UX / CONVENIENCE LAYER =====
 function applySavedAppearance() {
   const html = document.documentElement;
-  const theme = safeGet(THEME_KEY) || 'win95-blue';
+  const theme = safeGet(THEME_KEY) || 'win98-blue';
   html.dataset.theme = theme;
   html.classList.toggle('reduced-motion', safeGet(REDUCED_MOTION_KEY) === 'true');
   html.classList.toggle('compact-mode', safeGet(COMPACT_MODE_KEY) === 'true');
@@ -2071,7 +2071,7 @@ function setupFrameCommands() {
       } else if (data.action === 'setToggle' && [REDUCED_MOTION_KEY, COMPACT_MODE_KEY, HIGH_CONTRAST_KEY].includes(data.key)) {
         persistAppearanceSetting(data.key, Boolean(data.value));
       } else if (data.action === 'resetUi') {
-        [THEME_KEY, REDUCED_MOTION_KEY, COMPACT_MODE_KEY, HIGH_CONTRAST_KEY, LOW_POWER_KEY].forEach(key => safeSet(key, key === THEME_KEY ? 'win95-blue' : 'false'));
+        [THEME_KEY, REDUCED_MOTION_KEY, COMPACT_MODE_KEY, HIGH_CONTRAST_KEY, LOW_POWER_KEY].forEach(key => safeSet(key, key === THEME_KEY ? 'win98-blue' : 'false'));
         applySavedAppearance();
         showGlobalToast('Interface preferences reset.');
       } else if (data.action === 'clearRecents') {
