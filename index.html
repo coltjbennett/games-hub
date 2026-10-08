@@ -48,17 +48,34 @@
     }
   </style>
 
-  <!-- Google Analytics is loaded only after the visitor accepts the Terms of Service. -->
+  <!--
+    Terms/consent state is versioned here because main.js historically stored
+    only `tosAccepted=true`. The homepage now treats the Terms version as the
+    source of truth and invalidates acceptance from older versions.
+  -->
   <script>
     (function () {
+      var CURRENT_TOS_VERSION = '2026-10-08';
+      window.CURRENT_TOS_VERSION = CURRENT_TOS_VERSION;
       window.dataLayer = window.dataLayer || [];
       window.__siteAnalyticsLoaded = false;
+
+      try {
+        var storedVersion = window.localStorage.getItem('tosAcceptedVersion');
+        if (storedVersion !== CURRENT_TOS_VERSION) {
+          // Force the site's existing TOS modal to appear for a new Terms version.
+          window.localStorage.removeItem('tosAccepted');
+          window.localStorage.removeItem('tosAcceptedVersion');
+        }
+      } catch (error) {
+        // If storage is unavailable, main.js will keep the Terms modal visible.
+      }
 
       function loadAnalytics() {
         if (window.__siteAnalyticsLoaded) return;
         window.__siteAnalyticsLoaded = true;
 
-        window.gtag = window.gtag || function () { dataLayer.push(arguments); };
+        window.gtag = window.gtag || function () { window.dataLayer.push(arguments); };
         window.gtag('js', new Date());
         window.gtag('config', 'G-TLMGMFFK63', {
           allow_google_signals: false,
@@ -68,13 +85,16 @@
         var script = document.createElement('script');
         script.async = true;
         script.src = 'https://www.googletagmanager.com/gtag/js?id=G-TLMGMFFK63';
+        script.setAttribute('data-site-purpose', 'post-tos-analytics');
         document.head.appendChild(script);
       }
 
       window.enableSiteAnalytics = loadAnalytics;
 
+      // Only load Analytics when the current Terms version has actually been accepted.
       try {
-        if (window.localStorage.getItem('tosAcceptedVersion') === '2026-10-02') {
+        if (window.localStorage.getItem('tosAcceptedVersion') === CURRENT_TOS_VERSION &&
+            window.localStorage.getItem('tosAccepted') === 'true') {
           loadAnalytics();
         }
       } catch (error) {
@@ -363,7 +383,7 @@
   </div>
 
   <div id="tos-modal-overlay" class="tos-overlay">
-    <div class="panel tos-modal-box">
+    <div class="panel tos-modal-box" role="dialog" aria-modal="true" aria-labelledby="tos-title" aria-describedby="tos-intro">
       <div class="panel-title-bar" style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">
         <span style="font-family: 'W95FA', 'MS Sans Serif', sans-serif !important;">TERMS OF SERVICE</span>
         <span class="win-btns">
@@ -371,77 +391,121 @@
         </span>
       </div>
       <div class="panel-body">
-        <h2 class="tos-title">Site Terms of Service & Usage Agreement</h2>
+        <h2 id="tos-title" class="tos-title">Site Terms of Service &amp; Usage Agreement</h2>
         <div class="tos-scroll-box">
-          <p><strong>Last Updated: October 2, 2026</strong></p>
-          <p>By clicking "I ACCEPT," accessing, browsing, or otherwise using this website, you confirm that you have read, understood, and agree to be bound by these Terms of Service. If you do not agree, you are prohibited from using this website.</p>
-  
-          <h3>1. Intellectual Property Rights</h3>
-          <p>Unless otherwise indicated, this website, its source code, assets, text, and graphics are the exclusive personal intellectual property of Colton Bennett. No form of Creative Commons license, implicit or explicit, has been granted for any content. You may not copy, reproduce, aggregate, republish, distribute, or exploit any part of this site without express written permission. Third-party names, marks, software, files, and references remain the property of their respective owners and may be subject to their own terms.</p>
-  
-          <h3>2. Prohibition of AI Scraping & Data Mining</h3>
-          <p>Consent to access this site is strictly conditional. We explicitly revoke any existing or assumed consent (including assumptions of "fair use" or "opt-out only" models) for the crawling, scraping, or utilization of this site's data by Artificial Intelligence (AI) training scrapers or Large Language Models (LLMs). Third-party names, marks, files, or references remain the property of their respective owners.</p>
+          <p><strong>Effective: October 8, 2026 &nbsp;|&nbsp; Version: 2026-10-08</strong></p>
+          <p id="tos-intro"><strong>Please read this before continuing.</strong> By clicking “I ACCEPT &amp; CONTINUE,” you confirm that you have read and understood these Terms, agree to follow them, and consent to the site practices specifically described as part of acceptance. If you do not agree, do not use the site or its community features.</p>
+
+          <h3>1. About These Terms</h3>
+          <p>These Terms govern your use of Colton Bennett’s personal website, project launcher, games, applets, arcade pages, chat/community features, and related services (collectively, the “Site”). The Site is a personal, independently operated project and is not a company, school, employer, or commercial service unless a particular page expressly says otherwise.</p>
+          <p>These Terms are intended to explain the rules and expectations for using the Site. They do not grant you ownership of the Site or its content, and they do not replace rights or obligations that cannot legally be waived.</p>
+
+          <h3>2. Intellectual Property and Site Content</h3>
+          <p>Unless otherwise identified, the original source code, original game designs, original artwork, text, interface designs, branding, and other original material created for the Site are owned by or licensed to Colton Bennett. No general Creative Commons, open-source, or other broad reuse license is granted merely because the Site or its source repository is publicly accessible.</p>
+          <p>You may view and use the Site through its intended interfaces. You may not, without permission, copy, republish, redistribute, sell, sublicense, substantially reproduce, or create a competing public service from the Site’s original material. Nothing in this section is intended to restrict rights granted by applicable law or by a separate license that expressly applies to particular material.</p>
+          <p>Third-party software, games, names, trademarks, libraries, images, music, videos, and other references remain the property of their respective owners and may be governed by separate licenses or terms.</p>
+
+          <h3>3. GitHub Repository and Public Source Availability</h3>
+          <p>The Site may be accompanied by a public GitHub repository. Public availability on GitHub does not, by itself, mean that all repository content is open source or freely reusable. GitHub’s own platform terms govern GitHub functionality, including viewing and forking of public repositories; any broader reuse of original Site material remains subject to the applicable license or permission from its owner.</p>
+
+          <h3>4. AI Crawling, Scraping, and Automated Data Collection</h3>
+          <p>The operator does not grant permission for automated collection of the Site’s original content for AI model training, dataset creation, bulk extraction, or similar data-mining purposes, except where a separate license, legal requirement, or explicit written permission provides otherwise.</p>
           <ul>
-              <li><strong>Prohibited Actions:</strong> Automated data collection by entities such as OpenAI (GPTBot), Google (Google-Extended), Anthropic, Meta, and similar AI training organizations is expressly forbidden.</li>
-              <li><strong>Permitted Actions:</strong> Traditional indexing search engines (e.g., Googlebot) and AI search agents acting specifically upon a real-time human prompt (e.g., ChatGPT-User) are permitted.</li>
+            <li><strong>Disallowed by policy:</strong> bulk scraping, automated dataset construction, and automated collection whose purpose is AI training or model development.</li>
+            <li><strong>Permitted by policy:</strong> ordinary search indexing and automated retrieval performed in response to a specific real-time request from a human user, provided the retrieval otherwise respects applicable technical and legal restrictions.</li>
           </ul>
-  
-          <h3>3. Permitted Use</h3>
-          <p>You may use the website for lawful personal, communicative, and entertainment purposes. You agree not to misuse the site, interfere with its operation, attempt unauthorized access, impersonate another person, abuse or harass other users, distribute malicious code, or use the site in a way that could harm others.</p>
+          <p>This policy is also expressed through the Site’s crawler-related files. It is a statement of the operator’s requested access policy and does not itself determine the legal status of every possible act of crawling or copying.</p>
 
-          <h3>4. Community Conduct</h3>
-          <p>When using chat or other community features, you agree to communicate respectfully and not use the service for harassment, threats, stalking, impersonation, spam, doxxing, sexual exploitation, illegal activity, or other abusive behavior. Do not deliberately expose another person's private information. The operator may restrict or remove access when necessary to protect users or the service.</p>
+          <h3>5. Acceptable Use</h3>
+          <p>You may use the Site for lawful personal, educational, entertainment, communicative, and development-related purposes. You agree not to intentionally interfere with the Site, its hosting, its network services, or other users’ access.</p>
+          <p>You may not use the Site to distribute malware, conduct attacks, impersonate another person, attempt unauthorized access, evade moderation in order to abuse other users, deliberately overload infrastructure, or use Site features to facilitate unlawful harm.</p>
 
-          <h3>5. Third-Party Links</h3>
-          <p>This website may include links to third-party sites or partner resources. Those sites are provided for convenience only. The operator of this website is not responsible for the content, policies, availability, or practices of third-party websites. Your use of third-party services is governed by their own terms and policies.</p>
+          <h3>6. Community Conduct</h3>
+          <p>When using chat or other community features, you must not use the Site for threats, targeted harassment, stalking, doxxing, non-consensual disclosure of private information, sexual exploitation, credible incitement of violence, malicious impersonation, spam, or other abusive conduct.</p>
+          <p>Casual language, jokes, memes, criticism, and disagreement are not automatically prohibited. The operator may intervene when behavior becomes abusive, disruptive, unsafe, unlawful, or materially harmful to the community or Site.</p>
 
-          <h3>6. No Warranties</h3>
-          <p>This website is provided on an “as is” and “as available” basis without warranties of any kind, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, and non-infringement.</p>
+          <h3>7. Chat, Usernames, and Public Visibility</h3>
+          <p>The Site includes a public-facing chat system. Depending on the feature being used, usernames, messages, replies, reactions, presence/activity information, attachments, and other content may be visible to other users.</p>
+          <p><strong>Do not treat chat as private communications.</strong> Other users may copy, screenshot, quote, save, or redistribute information they can see. The operator cannot guarantee that deleting something from the Site will cause every copy made by another person to disappear.</p>
 
-          <h3>7. Limitation of Liability</h3>
-          <p>To the fullest extent permitted by law, the operator of this website shall not be liable for any indirect, incidental, special, consequential, or punitive damages arising from or related to your use of the website.</p>
+          <h3>8. Public Archives, Backups, and Chat History</h3>
+          <p>Community records may be exported, backed up, archived, synchronized, or otherwise retained as part of operating and maintaining the Site. Some historical records may become publicly accessible, including through repository files or other public Site resources.</p>
+          <p>Because of this, do not submit passwords, financial information, precise location information, private correspondence, medical information, or other sensitive information to public chat or uploads.</p>
 
-          <h3>8. Changes to These Terms</h3>
-          <p>These Terms of Service may be updated from time to time. Any revised version will be posted on this page with the updated effective date. If you continue using the website after an updated version is posted, that continued use constitutes acceptance of the revised terms to the extent permitted by law.</p>
+          <h3>9. User-Submitted Content</h3>
+          <p>You retain ownership of original content you submit to the extent you legally own it. By submitting content to the Site, you grant the operator a non-exclusive, worldwide, royalty-free license to host, store, reproduce, display, transmit, back up, moderate, format, and distribute that content through Site features as reasonably necessary to operate, maintain, troubleshoot, preserve, or improve the Site and its community history.</p>
+          <p>You represent that you have the rights needed to submit the content and that your submission does not knowingly violate another person’s privacy, intellectual property rights, or applicable law.</p>
+          <p>You may ask the operator to remove content that you submitted, but removal may not be possible from backups, third-party caches, screenshots, copies held by other users, or external services. Nothing in these Terms guarantees deletion from every location once information has been transmitted to the Internet.</p>
 
-          <h3>9. Age Requirement and Consent</h3>
-          <p>You must be at least <strong>13 years old</strong> to use this website or its chat features. By clicking “I ACCEPT,” you affirm that you are at least 13 years old and that the information and permissions represented by this acceptance are truthful. If you are under the age of majority where you live, you should use the site only with any parent or guardian permission required by applicable law.</p>
+          <h3>10. Moderation and Enforcement</h3>
+          <p>The operator may remove, hide, restrict, archive, edit for technical formatting, or refuse to display content. The operator may also restrict, suspend, or terminate access to some or all Site features when reasonably necessary to protect users, the Site, or its operation.</p>
+          <p>Moderation may be performed without prior notice when circumstances require it. No particular moderation response time, preservation period, or level of enforcement is guaranteed. The operator may consider context, severity, repetition, intent, technical limitations, and the effect of conduct on other users.</p>
 
-          <h3>10. Google Analytics and Site Measurement</h3>
-          <p>After you accept these Terms, this website may use Google Analytics to collect basic, pseudonymous information about how the website is used. This may include information such as page views, approximate location, browser and device information, session statistics, and interactions with site features. Google Analytics may use a first-party identifier/cookie to distinguish visits and sessions. The site does not intentionally send names, email addresses, chat usernames, chat messages, or other directly identifying information to Google Analytics through its configured event tracking.</p>
-          <p><strong>Important:</strong> Google Analytics data should not be described as “100% anonymous.” Google describes its web Analytics data as pseudonymous and may collect approximate location and browser/device information. By clicking “I ACCEPT,” you consent to this analytics collection as described here. Google processes Analytics data under its own policies and terms.</p>
+          <h3>11. Accounts, Identity, and Authentication</h3>
+          <p>The Site may use browser-stored usernames, identifiers, or other client-side state rather than a traditional server-backed account system. Such identifiers should not be treated as proof of legal identity, ownership of a real-world identity, or secure authentication.</p>
+          <p>Do not impersonate another user or deliberately choose an identifier intended to deceive people about who you are. Because the Site is substantially client-side, certain account, moderation, or presence features may not provide the same security guarantees as a conventional server-backed service.</p>
 
-          <h3>11. Chat, Usernames, and Public History</h3>
-          <p>The website includes a public-facing chat/community system. Chat usernames, messages, replies, reactions, presence/activity information, and uploaded or shared content may be visible to other users. You should not post information that you want to keep private.</p>
-          <p><strong>Public history notice:</strong> Chat messages and related community records may be exported, backed up, archived, or otherwise published as part of the site's public history. Such exports may be viewable by the general public, including people who are not current chat users. By using the chat after accepting these Terms, you acknowledge and consent to this possibility. Do not use the chat for confidential, sensitive, or private communications.</p>
+          <h3>12. Analytics and Site Measurement</h3>
+          <p>After acceptance of this version of the Terms, the Site may load Google Analytics for site measurement. The configured implementation is intended to collect information such as page views, approximate geographic information, browser/device characteristics, session information, and interactions with Site features.</p>
+          <p>The Site’s configured event tracking is not intended to send chat messages, chat usernames, email addresses, or other directly identifying information as Analytics event parameters. However, analytics services are operated by third parties and may process technical information under their own terms and policies.</p>
+          <p><strong>Analytics is not described as anonymous.</strong> The information collected by analytics services may be pseudonymous or associated with identifiers used to distinguish sessions or visits. The Site does not control every aspect of Google’s processing once data has been transmitted to Google.</p>
 
-          <h3>12. User Content</h3>
-          <p>You retain ownership of original content you submit where you have the legal right to own it. However, by posting or uploading content to the site, you grant the site operator a non-exclusive, worldwide, royalty-free license to host, store, reproduce, display, distribute within the site's features, back up, moderate, and publicly archive that content as reasonably necessary to operate and maintain the website and its community history.</p>
-          <p>You are responsible for the content you submit. Do not upload or post material you do not have permission to share, or material that violates another person's privacy, intellectual property rights, or applicable law.</p>
+          <h3>13. Privacy and Information Handling</h3>
+          <p>The Site may process information you provide directly and information generated through normal browser operation. Depending on the feature, this can include usernames, messages, uploaded files, preferences, application state, diagnostic information, timestamps, cached content, and technical information needed to operate the Site.</p>
+          <p>The Site does not promise that information transmitted over public Internet services can remain confidential. Information stored in public repositories, public chat exports, public third-party services, or on another user’s device may remain accessible outside the operator’s control.</p>
+          <p>For privacy questions or requests concerning information under the operator’s control, use the contact method made available by the Site or its repository. The operator will make reasonable efforts to respond, but this personal project does not guarantee a particular response time or formal data-subject-request workflow.</p>
 
-          <h3>13. Moderation and Removal</h3>
-          <p>The operator may remove, hide, restrict, archive, or refuse to display content; restrict or suspend access; and take other reasonable moderation actions when necessary to protect the site, its users, or its operation. Moderation decisions may be made without prior notice. No particular level of moderation, message preservation, or response time is guaranteed.</p>
+          <h3>14. Cookies, Local Storage, IndexedDB, Cache Storage, and Offline Data</h3>
+          <p>The Site may store information locally in your browser using cookies, localStorage, sessionStorage, IndexedDB, Cache Storage, or similar browser mechanisms. This may include preferences, application state, chat history, settings, cached games and applets, offline resources, recent items, and Terms acceptance status.</p>
+          <p>Clearing browser data, using private browsing, changing browsers, or using another device may remove or reset some of this information. The Site cannot guarantee that locally stored information will survive browser updates, storage eviction, device changes, or user-initiated clearing.</p>
 
-          <h3>14. User Privacy and Information You Choose to Display</h3>
-          <p>You are responsible for deciding what personal information you disclose through usernames, profiles, chat messages, direct messages, attachments, game interactions, or other site features. Because some community content may become publicly viewable through chat history exports, you should assume that anything you post in chat could be copied, retained, or redistributed by other people even if the operator later removes it from the site.</p>
+          <h3>15. Third-Party Services and External Content</h3>
+          <p>The Site may rely on third-party services, libraries, content delivery networks, APIs, repositories, game hosts, analytics providers, messaging brokers, video platforms, or other external infrastructure. Examples may include GitHub, Google Analytics, HiveMQ/MQTT infrastructure, CDNs, Ruffle, YouTube, and other providers used by individual games or applets.</p>
+          <p>Third-party services have their own availability, security practices, licenses, privacy policies, and terms. The operator does not control those services and cannot guarantee their continued operation or policies.</p>
 
-          <h3>15. Cookies, Local Storage, and Offline Data</h3>
-          <p>The site may store information in your browser using mechanisms such as cookies, local storage, IndexedDB, Cache Storage, or similar browser features. This can include preferences, application state, cached content, chat history, settings, and Terms acceptance status. Clearing browser data may remove some locally stored information and may cause the site to ask you to accept these Terms again.</p>
+          <h3>16. Third-Party Games and Linked Material</h3>
+          <p>The Site may provide links, launchers, embeds, or directories for games and other material that were not created by the operator. Such material may be hosted elsewhere and may be subject to separate ownership and licensing terms. The presence of a link or launcher does not necessarily mean the operator owns, endorses, or guarantees the linked content.</p>
 
-          <h3>16. Service Availability and Changes</h3>
-          <p>The site, games, chat, applets, stored history, external services, and other features may change, become unavailable, or be removed at any time. The operator does not guarantee uninterrupted availability, permanent preservation of content, compatibility with every browser or device, or continued operation of third-party services.</p>
+          <h3>17. Security and Responsible Testing</h3>
+          <p>You agree not to exploit vulnerabilities, bypass access controls, steal or manipulate information belonging to other users, interfere with infrastructure, distribute malicious code, or intentionally degrade the service.</p>
+          <p>Good-faith security research should be limited to systems and data you are authorized to test, should avoid accessing other users’ private information, and should avoid unnecessary disruption. If you believe you have found a serious security issue, report it through the Site’s published security contact rather than publicly releasing sensitive exploit details first.</p>
 
-          <h3>17. Security and Abuse</h3>
-          <p>You agree not to attempt to bypass access controls, exploit vulnerabilities, interfere with other users, overload services, distribute malware, obtain information you are not authorized to access, or otherwise abuse the site's infrastructure. Security testing should be performed responsibly and only with authorization.</p>
+          <h3>18. Copyright Complaints and Rights Claims</h3>
+          <p>If you believe material hosted or displayed through the Site infringes your copyright or other legal rights, provide a clear description of the material, identify the work or right involved, explain why you believe the use is unauthorized, and provide a reliable way for the operator to contact you. The operator may remove or restrict disputed material while investigating a legitimate complaint.</p>
+          <p>This section is an informal notice-and-response process for a personal project and is not a statement that the Site qualifies as a designated service provider under any particular statutory safe-harbor regime.</p>
 
-          <h3>18. Governing Terms</h3>
-          <p>These Terms are intended to describe the rules for use of this personal website. If any provision is found unenforceable, the remaining provisions should remain in effect to the fullest extent permitted by law. Nothing in these Terms is intended to waive rights that cannot legally be waived.</p>
+          <h3>19. No Warranties</h3>
+          <p>The Site is provided on an “as is” and “as available” basis, to the fullest extent permitted by law, without warranties of any kind, express or implied. This includes, where legally permitted, warranties of merchantability, fitness for a particular purpose, non-infringement, availability, accuracy, compatibility, or uninterrupted operation.</p>
+          <p>The operator does not guarantee that games will run correctly, that chat history will be preserved, that external services will remain available, or that the Site will be free of bugs or security vulnerabilities.</p>
 
-          <h3>19. Acceptance</h3>
-          <p>By clicking “I ACCEPT,” you confirm all of the following: you are at least 13 years old; you have read and agree to these Terms; you consent to the Google Analytics collection described above after acceptance; you understand that chat content may be publicly archived or exported; and you understand that information you choose to post or upload may be seen, copied, or retained by other people.</p>
+          <h3>20. Limitation of Liability</h3>
+          <p>To the fullest extent permitted by applicable law, the operator will not be liable for indirect, incidental, special, consequential, exemplary, or punitive damages arising from or related to use of the Site, loss of data, loss of access, third-party services, user-generated content, or inability to use a Site feature.</p>
+          <p>Nothing in these Terms is intended to exclude or limit liability that cannot legally be excluded or limited.</p>
+
+          <h3>21. Indemnification</h3>
+          <p>To the extent permitted by applicable law, if your unlawful or unauthorized use of the Site causes a third party to bring a claim against the operator, you agree to be responsible for losses, damages, liabilities, and reasonable costs directly resulting from that conduct. This provision does not require you to indemnify the operator for the operator’s own unlawful conduct.</p>
+
+          <h3>22. Age Requirement</h3>
+          <p>You must be at least <strong>13 years old</strong> to use the Site or its chat features. By clicking “I ACCEPT &amp; CONTINUE,” you affirm that you meet this minimum age requirement. If you are under the age of majority where you live, you should use the Site only with any parental or guardian involvement required by applicable law.</p>
+
+          <h3>23. Changes to the Site</h3>
+          <p>The operator may add, remove, redesign, suspend, rename, or discontinue games, applets, chat features, accounts, storage mechanisms, external integrations, or other Site functionality at any time. Features may change as the project develops.</p>
+
+          <h3>24. Changes to These Terms</h3>
+          <p>These Terms may be revised from time to time. A revised version will display a new effective date/version. Where the Site can technically enforce versioned acceptance, you may be asked to accept the updated version before continuing to use the homepage. Continued use after an updated version is presented may constitute acceptance to the extent permitted by applicable law.</p>
+
+          <h3>25. Governing Law, Venue, and Severability</h3>
+          <p>These Terms are intended to be interpreted under applicable law. If a specific governing-law or venue rule is required for a dispute, the applicable law and competent courts determined under the operator’s place of residence or other legally applicable rules will control. The operator does not intend this provision to create a jurisdiction that applicable law would not otherwise permit.</p>
+          <p>If any provision is found invalid or unenforceable, that provision will be limited or removed to the minimum extent necessary, and the remaining provisions will continue in effect. A failure to enforce a provision on one occasion does not waive the operator’s ability to enforce it later.</p>
+
+          <h3>26. Entire Agreement</h3>
+          <p>These Terms, together with any specific rules or notices presented for a particular Site feature, describe the principal agreement governing your use of the Site. If a feature-specific rule conflicts with these Terms, the more specific rule applies to that feature unless it expressly says otherwise.</p>
+
+          <h3>27. Acceptance</h3>
+          <p>By clicking “I ACCEPT &amp; CONTINUE,” you confirm that you are at least 13 years old, that you have had an opportunity to read these Terms, that you agree to follow the Site’s usage and community rules, that you understand the public nature of chat and user-submitted content, and that you consent to the analytics practices described in Section 12 for this version of the Terms.</p>
         </div>
         <div class="tos-actions">
-          <button id="tos-accept-btn" class="tos-button">I ACCEPT</button>
+          <button id="tos-accept-btn" class="tos-button" type="button">I ACCEPT &amp; CONTINUE</button>
         </div>
       </div>
     </div>
@@ -454,6 +518,53 @@
 
   <script src="data.js"></script> 
   <script src="main.js"></script>
+
+  <!--
+    Compatibility bridge for the versioned Terms acceptance. main.js still
+    handles the existing `tosAccepted` flag and modal behavior; this bridge
+    additionally records the exact accepted Terms version and starts Analytics
+    only after that acceptance has occurred. Keeping this here means older
+    cached copies of main.js do not silently break consent/analytics behavior.
+  -->
+  <script>
+    (function () {
+      var TOS_VERSION = window.CURRENT_TOS_VERSION || '2026-10-08';
+
+      function recordCurrentTermsAcceptance() {
+        try {
+          window.localStorage.setItem('tosAccepted', 'true');
+          window.localStorage.setItem('tosAcceptedVersion', TOS_VERSION);
+          window.localStorage.setItem('tosAcceptedAt', new Date().toISOString());
+        } catch (error) {
+          // The site's existing TOS flow can still proceed if storage is blocked.
+        }
+
+        if (typeof window.enableSiteAnalytics === 'function') {
+          window.enableSiteAnalytics();
+        }
+      }
+
+      document.addEventListener('DOMContentLoaded', function () {
+        var acceptButton = document.getElementById('tos-accept-btn');
+        if (!acceptButton) return;
+
+        acceptButton.addEventListener('click', recordCurrentTermsAcceptance);
+
+        // If the user accepted the current Terms before this script initialized,
+        // ensure Analytics still starts for the current session.
+        try {
+          if (window.localStorage.getItem('tosAccepted') === 'true' &&
+              window.localStorage.getItem('tosAcceptedVersion') === TOS_VERSION &&
+              typeof window.enableSiteAnalytics === 'function') {
+            window.enableSiteAnalytics();
+          }
+        } catch (error) {
+          // Ignore storage access failures.
+        }
+      });
+    }());
+  </script>
+
   <script>
     if ('serviceWorker' in navigator) {
       (function () {
