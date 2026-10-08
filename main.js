@@ -1616,7 +1616,13 @@ function setupCRTToggle() {
   const crtToggleBtn = document.getElementById('crt-toggle-btn');
   if (!crtToggleBtn) return;
 
-  if (safeGet('project-launcher-no-crt') === 'true') {
+  const savedCrtPreference = safeGet('project-launcher-no-crt');
+  // First visit: default CRT effects to OFF. Once the user changes the setting,
+  // preserve that preference on subsequent visits.
+  if (savedCrtPreference === null) {
+    safeSet('project-launcher-no-crt', 'true');
+    document.documentElement.classList.add('no-crt');
+  } else if (savedCrtPreference === 'true') {
     document.documentElement.classList.add('no-crt');
   }
 
