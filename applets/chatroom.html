@@ -481,6 +481,7 @@
         const BLOCKED_KEY = "mqtt_chat_blocked_v1";
         const CLOSED_DMS_KEY = "mqtt_closed_dms_v1";
         const DM_READ_STATE_KEY = "mqtt_dm_reads_v1";
+        const SAVED_DM_TABS_KEY = "mqtt_saved_dm_tabs_v1";
         const ADMINS = ["Colton", "mr_puffy_5312"];
         const CHAT_ORIGIN = window.location.origin;
         const MAX_USERNAME_LENGTH = 32;
@@ -909,7 +910,6 @@
             if (!file) return;
             file.text().then(async raw => {
                 const result = await restoreBackupText(raw, file.name, true);
-                messageHistory = filterSystemSessionsWithActivity(messageHistory);
                 rebuildMessageHistoryIdSet(); saveLocalHistory();
                 if (currentTab === "global") scheduleRenderActiveTabMessages();
                 customAlert(`Merged export: ${result.added} new messages/events, ${result.matched} matched existing records.`);
@@ -918,11 +918,11 @@
 
         function exportChat() {
             let list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
-            let textData = `Chat Export [${currentTab}] - ${new Date().toLocaleString()}\n\n`;
+            let textData = `Chat Export [${currentTab}] - ${formatCentralDateTime(Date.now())}\n\n`;
             
             const exportableList = filterSystemSessionsWithActivity(list).filter(m => !m.isSystem || isJoinLeaveSystemEvent(m));
             exportableList.forEach(m => {
-                let timeStr = new Date(m.timestamp).toLocaleString();
+                let timeStr = formatCentralDateTime(m.timestamp);
                 if (m.isSystem) {
                     textData += `[${timeStr}] SYSTEM: ${m.text}\n`;
                 } else {
@@ -930,7 +930,7 @@
 
                     let replyTag = "";
                     if (m.replyTo) {
-                        const replyTime = m.replyTo.timestamp ? new Date(m.replyTo.timestamp).toLocaleString() : "";
+                        const replyTime = m.replyTo.timestamp ? formatCentralDateTime(m.replyTo.timestamp) : "";
                         const replyContent = m.replyTo.isImage ? "[Image]" : m.replyTo.isVideo ? "[Video]" : m.replyTo.isAudio ? "[Voice Memo]" : m.replyTo.isFile ? "[File]" : (m.replyTo.text || "");
                         const REPLY_PREVIEW_LENGTH = 40;
                         const shortened = replyContent.length > REPLY_PREVIEW_LENGTH
@@ -1438,6 +1438,7 @@
         async function loadLocalHistory() { 
             let loaded = await loadFromStorageWithCompression(STORAGE_KEY);
             messageHistory = sanitizeHistoryLoaded(loaded);
+            messageHistory = dedupeHistoryList(messageHistory).list;
             rebuildMessageHistoryIdSet();
             if(currentTab === "global") renderActiveTabMessages(); 
         }
@@ -1452,6 +1453,8 @@
                 if (c) { const parsed = safeParseJSON(c, []); if (Array.isArray(parsed)) closedDMs = new Set(parsed.filter(isValidUsername)); } } catch (e) {}
             try { const r = safeGet(DM_READ_STATE_KEY);
                 if (r) { const parsed = safeParseJSON(r, {}); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) dmReadWatermarks = parsed; } } catch (e) {}
+            let savedDmTabs = [];
+            try { const saved = safeGet(SAVED_DM_TABS_KEY); const parsed = safeParseJSON(saved || '[]', []); if (Array.isArray(parsed)) savedDmTabs = parsed.filter(u => isValidUsername(u) && u !== myUsername); } catch(e) {}
             
             document.getElementById('mute-sounds-chk').checked = safeGet('mqtt_mute_sounds') === 'true';
             const retentionEl = document.getElementById('chat-retention');
@@ -1471,7 +1474,7 @@
 
                 for (let key of keys) {
                     if (key.startsWith(`mqtt_dm_${myUsername}_`)) {
-                        let target = key.replace(`mqtt_dm_${myUsername}_`, "");
+                        let target = key.slice((`mqtt_dm_${myUsername}_`).length);
                         let hist = await loadFromStorageWithCompression(key);
                         hist = sanitizeHistoryLoaded(hist);
                         const dmDedupe = dedupeHistoryList(hist);
@@ -1483,7 +1486,13 @@
                         }
                     }
                 }
+                // Restore saved tabs even when their message history is currently empty.
+                savedDmTabs.forEach(target => { if (!closedDMs.has(target)) ensureDmTab(target); });
             }
+        }
+        function saveSavedDmTabs() {
+            const names = Array.from(document.querySelectorAll('[id^="tab-dm-"]')).map(el => el.id.slice('tab-dm-'.length)).filter(u => isValidUsername(u));
+            try { safeSet(SAVED_DM_TABS_KEY, JSON.stringify(names)); } catch(e) {}
         }
         function saveBlockedUsers() { try { localStorage.setItem(BLOCKED_KEY, JSON.stringify(Array.from(blockedUsers))); } catch (e) {} renderBlockedUI(); }
         function saveClosedDMs() { try { localStorage.setItem(CLOSED_DMS_KEY, JSON.stringify(Array.from(closedDMs))); } catch (e) {} }
@@ -1588,6 +1597,11 @@
             return txt;
         }
 
+        const CENTRAL_TIME_ZONE = 'America/Chicago';
+        function formatCentralDateTime(ts) {
+            return new Date(ts).toLocaleString('en-US', { timeZone: CENTRAL_TIME_ZONE, year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' });
+        }
+
         function formatTimestamp(ts) {
             const now = Date.now();
             const diffMs = Math.max(0, now - ts);
@@ -1595,7 +1609,7 @@
             const diffMin = Math.floor(diffSec / 60);
             const diffHr = Math.floor(diffMin / 60);
 
-            const dateTimeStr = new Date(ts).toLocaleString([], { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const dateTimeStr = formatCentralDateTime(ts);
             const timeStr = dateTimeStr;
             if (diffSec < 60) {
                 const sec = Math.max(1, diffSec);
@@ -1654,6 +1668,7 @@
                     if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); switchTab(tabId); }
                 });
                 ui.tabsBar.appendChild(tab);
+                saveSavedDmTabs();
             }
             return tabId;
         }
@@ -1669,6 +1684,7 @@
             e.stopPropagation();
             closedDMs.add(username); saveClosedDMs();
             const el = document.getElementById(`tab-dm-${username}`); if (el) el.remove();
+            saveSavedDmTabs();
             if (currentTab === `dm:${username}`) switchTab("global");
         }
 
@@ -2332,17 +2348,23 @@
                         if (!isGhost && data.author) processPendingOutbox(data.author);
                     }
                     else if (data.type === "LEAVE") {
-                        if (activeUsers.has(data.author)) {
-                            const uData = activeUsers.get(data.author);
-                            activeUsers.delete(data.author);
-                            if (!uData.isGhost) {
-                                const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} disconnected.`, timestamp: data.timestamp || Date.now() };
+                        const uData = activeUsers.get(data.author);
+                        if (data.author) activeUsers.delete(data.author);
+                        // Do not require an activeUsers entry: a missed PING/JOIN race must
+                        // not silently drop a real disconnect event.
+                        if (data.author && !data.isGhost && !(uData && uData.isGhost)) {
+                            const leaveTs = data.timestamp || Date.now();
+                            const lastJoin = messageHistory.filter(m => m.isSystem && m.text === `${data.author} joined the room.`).reduce((latest, m) => Math.max(latest, m.timestamp || 0), 0);
+                            const duplicateRecentLeave = messageHistory.some(m => m.isSystem && m.text === `${data.author} disconnected.` && (m.timestamp || 0) >= lastJoin && Math.abs(leaveTs - (m.timestamp || 0)) < 30000);
+                            const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} disconnected.`, timestamp: leaveTs };
+                            const alreadyPresent = messageHistory.some(m => m.id === sysObj.id);
+                            if (!alreadyPresent && !duplicateRecentLeave) {
                                 messageHistory = mergeHistory(messageHistory, [sysObj], true);
-                                messageHistory = filterSystemSessionsWithActivity(messageHistory); rebuildMessageHistoryIdSet(); saveLocalHistory();
-                                if (currentTab === "global") scheduleRenderActiveTabMessages();
+                                rebuildMessageHistoryIdSet(); saveLocalHistory();
+                                if (currentTab === "global") { appendSystemDOM(sysObj); }
                             }
-                            renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
                         }
+                        renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
                     }
                     else if (data.type === "MSG") {
                         if (blockedUsers.has(data.author) && data.author !== myUsername) return;
@@ -2796,7 +2818,25 @@
                 }
             });
 
-            const finalList = kept.filter((_, idx) => !remove.has(idx));
+            let finalList = kept.filter((_, idx) => !remove.has(idx));
+            // Retroactively collapse exact repeats exactly one hour apart. Identity is
+            // author + message content/media kind; system events are deliberately excluded.
+            const hourSeen = new Map();
+            const hourRemove = new Set();
+            finalList.forEach((msg, idx) => {
+                if (!msg || msg.isSystem || !msg.author || !Number.isFinite(msg.timestamp)) return;
+                const identity = JSON.stringify([msg.author, String(msg.text || ''), !!msg.isImage, !!msg.isVideo, !!msg.isAudio, !!msg.isFile, String(msg.fileName || '')]);
+                const bucket = hourSeen.get(identity) || [];
+                const duplicateIdx = bucket.find(prevIdx => Math.abs((finalList[prevIdx].timestamp || 0) - msg.timestamp) === 3600000);
+                if (duplicateIdx !== undefined) {
+                    const preferred = choosePreferredMessage(finalList[duplicateIdx], msg);
+                    const other = preferred === msg ? finalList[duplicateIdx] : msg;
+                    finalList[duplicateIdx] = mergeMessageMetadata(preferred, other);
+                    hourRemove.add(idx); changed = true; removed++;
+                } else bucket.push(idx);
+                hourSeen.set(identity, bucket);
+            });
+            finalList = finalList.filter((_, idx) => !hourRemove.has(idx));
             finalList.sort((a,b) => (a.timestamp || 0) - (b.timestamp || 0));
             return { list: finalList, changed, removed };
         }
@@ -3656,7 +3696,6 @@
             const parsed = parseChatExportText(rawText);
             if (!parsed.length) return { added: 0, matched: 0, entries: [] };
             const result = mergeParsedBackupIntoHistory(parsed, forceRestore);
-            messageHistory = filterSystemSessionsWithActivity(messageHistory);
             rebuildMessageHistoryIdSet();
             saveLocalHistory();
             if (currentTab === "global") scheduleRenderActiveTabMessages();
@@ -3759,9 +3798,12 @@
                 if (user !== myUsername && now - userData.lastSeen > 30000) {
                     activeUsers.delete(user);
                     if (!userData.isGhost) {
-                        const sysObj = { id: generateId(), isSystem: true, text: `${user} disconnected.`, timestamp: Date.now() };
-                        messageHistory = mergeHistory(messageHistory, [sysObj], true); saveLocalHistory();
-                        if (currentTab === "global") appendSystemDOM(sysObj);
+                        const recentlyDisconnected = messageHistory.some(m => m.isSystem && m.text === `${user} disconnected.` && Math.abs(Date.now() - (m.timestamp || 0)) < 30000);
+                        if (!recentlyDisconnected) {
+                            const sysObj = { id: generateId(), isSystem: true, text: `${user} disconnected.`, timestamp: Date.now() };
+                            messageHistory = mergeHistory(messageHistory, [sysObj], true); saveLocalHistory();
+                            if (currentTab === "global") appendSystemDOM(sysObj);
+                        }
                     }
                     changed = true;
                 }
