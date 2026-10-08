@@ -860,6 +860,55 @@
             return !!m && !!m.isSystem && /\bjoined the room\.|\bdisconnected\.|\bleft the room\./i.test(String(m.text || ""));
         }
 
+        function presenceEventKind(m) {
+            if (!isJoinLeaveSystemEvent(m)) return null;
+            const text = String(m.text || "");
+            const joined = text.match(/^(.+?) joined the room\.?$/i);
+            const left = text.match(/^(.+?) (?:disconnected|left the room)\.?$/i);
+            return joined ? { user: joined[1], kind: "join", text: `${joined[1]} joined the room.` } :
+                   left ? { user: left[1], kind: "leave", text: `${left[1]} disconnected.` } : null;
+        }
+
+        // Retroactively collapse duplicate join/leave events when no real user-authored
+        // message separates them. A real message is a hard boundary, preserving later
+        // reconnect/disconnect events even when their text matches an earlier event.
+        function dedupeConsecutivePresenceEvents(list) {
+            const source = Array.isArray(list) ? list : [];
+            // Evaluate chronologically so this also repairs old histories and imported exports.
+            const ordered = source.map((item, index) => ({ item, index }))
+                .sort((a, b) => (Number(a.item.timestamp) || 0) - (Number(b.item.timestamp) || 0) || a.index - b.index);
+            const keep = new Set();
+            let previousPresenceKey = null;
+            let previousPresenceText = null;
+            for (const { item } of ordered) {
+                const event = presenceEventKind(item);
+                if (!event) {
+                    // Any intervening record breaks consecutiveness; especially, a user-authored
+                    // message must preserve the later join/leave as a distinct event.
+                    previousPresenceKey = null;
+                    previousPresenceText = null;
+                    keep.add(item);
+                    continue;
+                }
+                const key = `${event.user}\u0000${event.kind}`;
+                const duplicate = previousPresenceKey === key && previousPresenceText === event.text;
+                if (!duplicate) keep.add(item);
+                previousPresenceKey = key;
+                previousPresenceText = event.text;
+            }
+            return source.filter(item => keep.has(item));
+        }
+
+        // A disconnect is valid once per join session. This guards both duplicate
+        // broker delivery and repeated timeout checks from flooding the room history.
+        function hasDisconnectAfterLatestJoin(list, username) {
+            const events = (Array.isArray(list) ? list : []).map((m, index) => ({ m, index, e: presenceEventKind(m) }))
+                .filter(x => x.e && x.e.user === username)
+                .sort((a, b) => (Number(a.m.timestamp) || 0) - (Number(b.m.timestamp) || 0) || a.index - b.index);
+            if (!events.length) return false;
+            return events[events.length - 1].e.kind === "leave";
+        }
+
         // Each join starts an independent per-user session. Keep that join/leave pair
         // only when that same user sent at least one real message before leaving.
         function filterSystemSessionsWithActivity(list) {
@@ -902,7 +951,7 @@
                     if(sessions.length) sessions[sessions.length-1].activity=true;
                 }
             }
-            return source.filter(m => !isJoinLeaveSystemEvent(m) || keepIds.has(m.id));
+            return dedupeConsecutivePresenceEvents(source.filter(m => !isJoinLeaveSystemEvent(m) || keepIds.has(m.id)));
         }
 
         function mergeExportFromSettings(event) {
@@ -1439,6 +1488,9 @@
             let loaded = await loadFromStorageWithCompression(STORAGE_KEY);
             messageHistory = sanitizeHistoryLoaded(loaded);
             messageHistory = dedupeHistoryList(messageHistory).list;
+            const beforePresenceDedupe = messageHistory.length;
+            messageHistory = dedupeConsecutivePresenceEvents(messageHistory);
+            if (messageHistory.length !== beforePresenceDedupe) saveLocalHistory();
             rebuildMessageHistoryIdSet();
             if(currentTab === "global") renderActiveTabMessages(); 
         }
@@ -2336,7 +2388,12 @@
                         if (data.author !== myUsername) roomPresenceEpoch++;
                         if (!isGhost) processPendingOutbox(data.author);
                         const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} joined the room.`, timestamp: data.timestamp || Date.now() };
-                        messageHistory = mergeHistory(messageHistory, [sysObj], true); saveLocalHistory(); if (currentTab === "global") appendSystemDOM(sysObj);
+                        const latestPresence = [...messageHistory].reverse().find(m => { const e = presenceEventKind(m); return e && e.user === data.author; });
+                        const latestKind = presenceEventKind(latestPresence);
+                        if (!(latestKind && latestKind.kind === "join" && Math.abs((sysObj.timestamp || 0) - (latestPresence.timestamp || 0)) < 30000)) {
+                            messageHistory = dedupeConsecutivePresenceEvents(mergeHistory(messageHistory, [sysObj], true));
+                            rebuildMessageHistoryIdSet(); saveLocalHistory(); if (currentTab === "global") { scheduleRenderActiveTabMessages(); }
+                        }
                         
                         if (data.author !== myUsername) {
                             setTimeout(() => {
@@ -2354,14 +2411,13 @@
                         // not silently drop a real disconnect event.
                         if (data.author && !data.isGhost && !(uData && uData.isGhost)) {
                             const leaveTs = data.timestamp || Date.now();
-                            const lastJoin = messageHistory.filter(m => m.isSystem && m.text === `${data.author} joined the room.`).reduce((latest, m) => Math.max(latest, m.timestamp || 0), 0);
-                            const duplicateRecentLeave = messageHistory.some(m => m.isSystem && m.text === `${data.author} disconnected.` && (m.timestamp || 0) >= lastJoin && Math.abs(leaveTs - (m.timestamp || 0)) < 30000);
                             const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} disconnected.`, timestamp: leaveTs };
                             const alreadyPresent = messageHistory.some(m => m.id === sysObj.id);
-                            if (!alreadyPresent && !duplicateRecentLeave) {
-                                messageHistory = mergeHistory(messageHistory, [sysObj], true);
+                            const hasActiveSession = !hasDisconnectAfterLatestJoin(messageHistory, data.author);
+                            if (!alreadyPresent && hasActiveSession) {
+                                messageHistory = dedupeConsecutivePresenceEvents(mergeHistory(messageHistory, [sysObj], true));
                                 rebuildMessageHistoryIdSet(); saveLocalHistory();
-                                if (currentTab === "global") { appendSystemDOM(sysObj); }
+                                if (currentTab === "global") { scheduleRenderActiveTabMessages(); }
                             }
                         }
                         renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
@@ -2844,7 +2900,7 @@
         function dedupeAllHistories() {
             let changed = false, removed = 0;
             const globalResult = dedupeHistoryList(messageHistory);
-            messageHistory = globalResult.list;
+            messageHistory = dedupeConsecutivePresenceEvents(globalResult.list);
             changed ||= globalResult.changed; removed += globalResult.removed;
             Object.keys(dmHistories).forEach(user => {
                 const result = dedupeHistoryList(dmHistories[user]);
@@ -3686,7 +3742,7 @@
 
             // Also clean any duplicate backup copies created by the previous version.
             const afterDedupe = dedupeHistoryList(messageHistory);
-            messageHistory = afterDedupe.list;
+            messageHistory = dedupeConsecutivePresenceEvents(afterDedupe.list);
             rebuildMessageHistoryIdSet();
 
             return { added: additions.length, matched, deduped: beforeDedupe.removed + afterDedupe.removed, entries };
@@ -3798,11 +3854,10 @@
                 if (user !== myUsername && now - userData.lastSeen > 30000) {
                     activeUsers.delete(user);
                     if (!userData.isGhost) {
-                        const recentlyDisconnected = messageHistory.some(m => m.isSystem && m.text === `${user} disconnected.` && Math.abs(Date.now() - (m.timestamp || 0)) < 30000);
-                        if (!recentlyDisconnected) {
+                        if (!hasDisconnectAfterLatestJoin(messageHistory, user)) {
                             const sysObj = { id: generateId(), isSystem: true, text: `${user} disconnected.`, timestamp: Date.now() };
-                            messageHistory = mergeHistory(messageHistory, [sysObj], true); saveLocalHistory();
-                            if (currentTab === "global") appendSystemDOM(sysObj);
+                            messageHistory = dedupeConsecutivePresenceEvents(mergeHistory(messageHistory, [sysObj], true)); rebuildMessageHistoryIdSet(); saveLocalHistory();
+                            if (currentTab === "global") scheduleRenderActiveTabMessages();
                         }
                     }
                     changed = true;
