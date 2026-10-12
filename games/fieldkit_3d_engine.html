@@ -1308,7 +1308,7 @@ class GrabSystem {
     sg.addColorStop(0, 'rgba(255,255,255,0.82)'); sg.addColorStop(.46, 'rgba(255,255,255,0.42)'); sg.addColorStop(1, 'rgba(255,255,255,0)');
     sx.fillStyle = sg; sx.fillRect(0, 0, 128, 128);
     this._shadowTexture = new THREE.CanvasTexture(sc); this._shadowTexture.colorSpace = THREE.SRGBColorSpace;
-    this._shadowMaterial = new THREE.MeshBasicMaterial({ color: 0x72ff83, map: this._shadowTexture, transparent: true, opacity: .58, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, toneMapped: false });
+    this._shadowMaterial = new THREE.MeshBasicMaterial({ color: 0x72f58a, map: this._shadowTexture, transparent: true, opacity: .42, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, toneMapped: false });
     this._shadowGeometry = null; this._shadowMesh = null; this._shadowLastEntity = null;
     rig.lookFilter = (dx, dy) => this.input.isDown('rotate') && this.rotateHeld(dx, dy);
     this._offs = [
@@ -1427,12 +1427,12 @@ class GrabSystem {
     const pos = new THREE.Vector3();
     this._shadowGroup.visible = false; // don't sample last frame's own decal geometry
 
-    // Project onto the nearest receiving surface. Downward rays form the ground
-    // footprint; horizontal rays also let the green projection wrap onto nearby walls.
-    const castToReceiver = (origin, patchX, patchZ, direction = downDir) => {
-      this._shadowRay.set(origin, direction);
+    // Cast straight down, as if illuminated by a light directly overhead. Keep only
+    // upward-facing receiver surfaces; overhead light should not paint vertical walls.
+    const castToReceiver = (origin, patchX, patchZ) => {
+      this._shadowRay.set(origin, downDir);
       this._shadowRay.near = .015;
-      this._shadowRay.far = Math.max(30, size.y + size.x + size.z + 10);
+      this._shadowRay.far = Math.max(30, size.y + 10);
       const hits = this._shadowRay.intersectObjects(this.engine.scene.children, true);
       for (const hit of hits) {
         if (!hit.object.isMesh || !hit.object.visible || hit.object === this._shadowMesh) continue;
@@ -1445,9 +1445,7 @@ class GrabSystem {
         const normal = hit.face
           ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize()
           : (hit.normal ? hit.normal.clone().normalize() : up.clone());
-        // Accept floor, sloped, and vertical receiver faces; horizontal projection
-        // rays below are what allow color to continue down the sides of obstacles.
-        if (normal.dot(direction) > -.08) continue;
+        if (normal.dot(up) < .62) continue;
 
         // Lay a soft green patch tangent to the receiving surface, just above it.
         const ref = Math.abs(normal.x) < .92 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1);
@@ -1455,8 +1453,8 @@ class GrabSystem {
         const v = new THREE.Vector3().crossVectors(normal, u).normalize();
         const c = hit.point.clone().addScaledVector(normal, .012);
         // The tangent basis runs along world Z then X on flat ground, so swap widths here.
-        const hw = Math.max(.018, patchZ * .52);
-        const hh = Math.max(.018, patchX * .52);
+        const hw = Math.max(.018, patchZ * .56);
+        const hh = Math.max(.018, patchX * .56);
         const base = patches.length / 3;
         for (const [du, dv, uv] of [[-1,-1,[0,0]],[1,-1,[1,0]],[1,1,[1,1]],[-1,1,[0,1]]]) {
           const pt = c.clone().addScaledVector(u, du * hw).addScaledVector(v, dv * hh);
@@ -1489,13 +1487,7 @@ class GrabSystem {
           }
         }
         if (!occupied) continue;
-        castToReceiver(top, stepX, stepZ, downDir);
-        // Side-wrap projection: sample from the object's volume at this footprint
-        // location and cast outward to nearby vertical surfaces. Keep the subtle glow
-        // constrained to surfaces the rays actually hit.
-        const sideOrigin = new THREE.Vector3(x, center.y, z);
-        const sideDirs = [new THREE.Vector3(1,0,0), new THREE.Vector3(-1,0,0), new THREE.Vector3(0,0,1), new THREE.Vector3(0,0,-1)];
-        for (const sideDir of sideDirs) castToReceiver(sideOrigin, stepX * .7, stepZ * .7, sideDir);
+        castToReceiver(top, stepX, stepZ);
       }
     }
 
