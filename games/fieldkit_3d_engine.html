@@ -1300,9 +1300,19 @@ class GrabSystem {
     this._retry = false; this._pending = []; this._hoverTick = 0;
     this._o = new THREE.Vector3(); this._d = new THREE.Vector3(); this._tp = new THREE.Vector3(); this._q = new THREE.Quaternion(); this._q2 = new THREE.Quaternion();
     this._Y = new THREE.Vector3(0, 1, 0); this._wp = new CANNON.Vec3(); this._rel = new CANNON.Vec3(); this._F = new CANNON.Vec3(); this._lp = new CANNON.Vec3();
+    // Shape-conforming green footprint: only shown for rigid holds, never spring holds.
+    this._shadowTick = 0; this._shadowRay = new THREE.Raycaster(); this._shadowShapeRay = new THREE.Raycaster(); this._shadowDir = new THREE.Vector3();
+    this._shadowGroup = new THREE.Group(); this._shadowGroup.name = '__held_placement_shadow__'; this._shadowGroup.visible = false; engine.scene.add(this._shadowGroup);
+    const sc = document.createElement('canvas'); sc.width = sc.height = 128;
+    const sx = sc.getContext('2d'), sg = sx.createRadialGradient(64, 64, 3, 64, 64, 63);
+    sg.addColorStop(0, 'rgba(255,255,255,0.82)'); sg.addColorStop(.46, 'rgba(255,255,255,0.42)'); sg.addColorStop(1, 'rgba(255,255,255,0)');
+    sx.fillStyle = sg; sx.fillRect(0, 0, 128, 128);
+    this._shadowTexture = new THREE.CanvasTexture(sc); this._shadowTexture.colorSpace = THREE.SRGBColorSpace;
+    this._shadowMaterial = new THREE.MeshBasicMaterial({ color: 0x72ff83, map: this._shadowTexture, transparent: true, opacity: .58, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, toneMapped: false });
+    this._shadowGeometry = null; this._shadowMesh = null; this._shadowLastEntity = null;
     rig.lookFilter = (dx, dy) => this.input.isDown('rotate') && this.rotateHeld(dx, dy);
     this._offs = [
-      engine.onFixedUpdate((dt) => this._fixed(dt)), engine.onAfterPhysics(() => this._restoreCheck()), engine.onFrame(() => this._hoverUpdate()),
+      engine.onFixedUpdate((dt) => this._fixed(dt)), engine.onAfterPhysics(() => this._restoreCheck()), engine.onFrame(() => { this._hoverUpdate(); this._updateHoldShadow(); }),
       this.input.onPress('grab', () => this.press('input')), this.input.onRelease('grab', () => this.release('input')),
       this.input.onPress('push', () => this.push()), engine.events.on('reset', () => this.dropAll()),
     ];
@@ -1392,6 +1402,119 @@ class GrabSystem {
       if (dist > this.reach + 3) this.drop('lost');
     }
   }
+  _updateHoldShadow() {
+    const h = this.held;
+    if (!h || this.mode !== 'rigid' || !h.e.mesh || h.e.body.__entity !== h.e) {
+      this._shadowGroup.visible = false; this._shadowLastEntity = null; return;
+    }
+    // Rebuild every third frame. The object's actual mesh is tested at each sample;
+    // its axis-aligned bounds are used only to define the sampling region, never as the shadow.
+    if (++this._shadowTick % 3 !== 0 && this._shadowLastEntity === h.e) return;
+    const heldMesh = h.e.mesh; heldMesh.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(heldMesh);
+    if (!Number.isFinite(bounds.min.x) || bounds.isEmpty()) { this._shadowGroup.visible = false; return; }
+
+    const size = bounds.getSize(new THREE.Vector3());
+    const center = bounds.getCenter(new THREE.Vector3());
+    const sampleSpacing = .085;
+    const nx = Math.max(3, Math.min(42, Math.ceil(size.x / sampleSpacing) + 1));
+    const nz = Math.max(3, Math.min(42, Math.ceil(size.z / sampleSpacing) + 1));
+    const stepX = size.x > .001 ? size.x / (nx - 1) : sampleSpacing;
+    const stepZ = size.z > .001 ? size.z / (nz - 1) : sampleSpacing;
+    const patches = [], uvs = [], indices = [];
+    const downDir = new THREE.Vector3(0, -1, 0);
+    const up = new THREE.Vector3(0, 1, 0);
+    const pos = new THREE.Vector3();
+    this._shadowGroup.visible = false; // don't sample last frame's own decal geometry
+
+    // Project onto the nearest receiving surface. Downward rays form the ground
+    // footprint; horizontal rays also let the green projection wrap onto nearby walls.
+    const castToReceiver = (origin, patchX, patchZ, direction = downDir) => {
+      this._shadowRay.set(origin, direction);
+      this._shadowRay.near = .015;
+      this._shadowRay.far = Math.max(30, size.y + size.x + size.z + 10);
+      const hits = this._shadowRay.intersectObjects(this.engine.scene.children, true);
+      for (const hit of hits) {
+        if (!hit.object.isMesh || !hit.object.visible || hit.object === this._shadowMesh) continue;
+        let node = hit.object, entity = null;
+        while (node) {
+          if (node.userData && node.userData.entity) { entity = node.userData.entity; break; }
+          node = node.parent;
+        }
+        if (entity === h.e) continue;
+        const normal = hit.face
+          ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize()
+          : (hit.normal ? hit.normal.clone().normalize() : up.clone());
+        // Accept floor, sloped, and vertical receiver faces; horizontal projection
+        // rays below are what allow color to continue down the sides of obstacles.
+        if (normal.dot(direction) > -.08) continue;
+
+        // Lay a soft green patch tangent to the receiving surface, just above it.
+        const ref = Math.abs(normal.x) < .92 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 0, 1);
+        const u = new THREE.Vector3().crossVectors(ref, normal).normalize();
+        const v = new THREE.Vector3().crossVectors(normal, u).normalize();
+        const c = hit.point.clone().addScaledVector(normal, .012);
+        // The tangent basis runs along world Z then X on flat ground, so swap widths here.
+        const hw = Math.max(.018, patchZ * .52);
+        const hh = Math.max(.018, patchX * .52);
+        const base = patches.length / 3;
+        for (const [du, dv, uv] of [[-1,-1,[0,0]],[1,-1,[1,0]],[1,1,[1,1]],[-1,1,[0,1]]]) {
+          const pt = c.clone().addScaledVector(u, du * hw).addScaledVector(v, dv * hh);
+          patches.push(pt.x, pt.y, pt.z); uvs.push(uv[0], uv[1]);
+        }
+        indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        return true; // only the nearest valid surface receives this sample
+      }
+      return false;
+    };
+
+    // A footprint sample is valid only if a vertical ray really intersects the held
+    // object's mesh. This rejects empty space inside its world-space bounding rectangle,
+    // so the green shadow follows the silhouette instead of becoming a square.
+    this._shadowShapeRay.set(new THREE.Vector3(), downDir);
+    this._shadowShapeRay.near = .005;
+    this._shadowShapeRay.far = Math.max(.1, size.y + .12);
+    for (let ix = 0; ix < nx; ix++) {
+      const x = size.x < .001 ? center.x : bounds.min.x + size.x * ix / (nx - 1);
+      for (let iz = 0; iz < nz; iz++) {
+        const z = size.z < .001 ? center.z : bounds.min.z + size.z * iz / (nz - 1);
+        const top = new THREE.Vector3(x, bounds.max.y + .055, z);
+        this._shadowShapeRay.ray.origin.copy(top);
+        this._shadowShapeRay.far = Math.max(.1, size.y + .12);
+        const shapeHits = this._shadowShapeRay.intersectObject(heldMesh, true);
+        let occupied = false;
+        for (const hit of shapeHits) {
+          if (hit.object.isMesh && hit.object.visible && hit.distance <= this._shadowShapeRay.far) {
+            occupied = true; break;
+          }
+        }
+        if (!occupied) continue;
+        castToReceiver(top, stepX, stepZ, downDir);
+        // Side-wrap projection: sample from the object's volume at this footprint
+        // location and cast outward to nearby vertical surfaces. Keep the subtle glow
+        // constrained to surfaces the rays actually hit.
+        const sideOrigin = new THREE.Vector3(x, center.y, z);
+        const sideDirs = [new THREE.Vector3(1,0,0), new THREE.Vector3(-1,0,0), new THREE.Vector3(0,0,1), new THREE.Vector3(0,0,-1)];
+        for (const sideDir of sideDirs) castToReceiver(sideOrigin, stepX * .7, stepZ * .7, sideDir);
+      }
+    }
+
+    if (this._shadowGeometry) this._shadowGeometry.dispose();
+    this._shadowGeometry = new THREE.BufferGeometry();
+    this._shadowGeometry.setAttribute('position', new THREE.Float32BufferAttribute(patches, 3));
+    this._shadowGeometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    this._shadowGeometry.setIndex(indices);
+    this._shadowGeometry.computeBoundingSphere();
+    if (!this._shadowMesh) {
+      this._shadowMesh = new THREE.Mesh(this._shadowGeometry, this._shadowMaterial);
+      this._shadowMesh.frustumCulled = false;
+      this._shadowGroup.add(this._shadowMesh);
+    } else {
+      this._shadowMesh.geometry = this._shadowGeometry;
+    }
+    this._shadowLastEntity = h.e;
+    this._shadowGroup.visible = indices.length > 0;
+  }
   push() {                                                  // throw what you hold, or shove what you aim at
     let e = this.held?.e, point = null;
     if (e) this.drop('push'); else { const hit = this._aim(this.reach + this.rig.armForward + 6); e = hit?.entity; point = hit?.point; }
@@ -1407,7 +1530,7 @@ class GrabSystem {
     const hit = this._aim(this.reach + this.rig.armForward + .6), e = hit?.entity;
     this.hover = (e && this._grabbable(e) && e.body.mass <= this.maxMass && hit.distance - this.rig.armForward <= this.reach) ? e : null;
   }
-  dispose() { this.dropAll(); for (const off of this._offs) off(); this.rig.lookFilter = null; }
+  dispose() { this.dropAll(); for (const off of this._offs) off(); this.rig.lookFilter = null; this.engine.scene.remove(this._shadowGroup); this._shadowGeometry?.dispose(); this._shadowMaterial?.dispose(); this._shadowTexture?.dispose(); }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
