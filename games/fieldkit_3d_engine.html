@@ -121,6 +121,9 @@
   #help-card pre { background:rgba(0,0,0,.3); border:1px solid var(--line); border-radius:8px; padding:11px; overflow:auto; white-space:pre; font-size:10px; line-height:1.55; color:#dce9f2; user-select:text; -webkit-user-select:text; }
   #boot-error { display:none; position:absolute; z-index:99; inset:14px; padding:18px; overflow:auto; white-space:pre-wrap; background:#190f12; border:1px solid #9b4652; border-radius:12px; color:#ffdce1; font:13px/1.6 ui-monospace,monospace; user-select:text; -webkit-user-select:text; }
   #boot-error strong { color:#ff9ca6; }
+  #weld-btn { position:absolute; left:50%; bottom:calc(58px + var(--sb)); transform:translateX(-50%); display:none; pointer-events:auto; border-color:var(--accent); color:var(--accent); background:var(--panel2); font-weight:800; padding:10px 16px; z-index:6; }
+  #weld-btn.on { display:block; }
+  #t-pick { right:112px; bottom:196px; width:56px; height:56px; border-color:rgba(141,245,198,.7); }
 </style>
 </head>
 <body>
@@ -147,7 +150,7 @@
 <div id="vignette"></div>
 
 <div id="hud">
-  <section id="brand" class="panel"><div class="logo">F</div><div><div class="brand-name">FIELDKIT <i>3D</i></div><div class="brand-sub">single-file engine · v6</div></div></section>
+  <section id="brand" class="panel"><div class="logo">F</div><div><div class="brand-name">FIELDKIT <i>3D</i></div><div class="brand-sub">single-file engine · v7</div></div></section>
   <section id="diag" class="panel">
     <div class="row"><span>Frame rate</span><span id="d-fps">-- FPS</span></div>
     <div class="row"><span>Physics bodies</span><span id="d-bodies">0</span></div>
@@ -168,6 +171,7 @@
   <div id="crosshair" aria-hidden="true"></div>
   <div id="hint" class="panel">Click to capture mouse · <b>WASD</b> move · <b>Space</b> jump · <b>E</b> grab · <b>F</b> push · <b>Q</b>+move mouse rotates a rigid-held object · <b>Tab</b> menu</div>
   <div id="toast" role="status" aria-live="polite"></div>
+  <button id="weld-btn" class="chip" type="button">⚭ WELD [H]</button>
 </div>
 
 <div id="touch" aria-label="Touch controls">
@@ -178,6 +182,7 @@
     <button class="tbtn" id="t-grab" data-action="grab" type="button"><b>GRAB</b><small id="t-grab-sub">HOLD</small></button>
     <button class="tbtn" id="t-push" data-action="push" type="button"><b>PUSH</b></button>
     <button class="tbtn ctx" id="t-rotate" data-action="rotate" type="button"><b>ROTATE</b><small>+ DRAG</small></button>
+    <button class="tbtn ctx" id="t-pick" data-action="pick" type="button"><b>PICK</b><small>POINT</small></button>
     <button class="tbtn ctx" id="t-interact" data-action="interact" type="button"><b>ENTER</b><small>VEHICLE</small></button>
   </div>
 </div>
@@ -557,7 +562,7 @@ class Atmosphere {
 const DEFAULT_BINDINGS = {
   moveForward: ['KeyW', 'ArrowUp'], moveBack: ['KeyS', 'ArrowDown'], moveLeft: ['KeyA', 'ArrowLeft'], moveRight: ['KeyD', 'ArrowRight'],
   jump: ['Space'], sprint: ['ShiftLeft', 'ShiftRight'], grab: ['KeyE'], push: ['KeyF'], rotate: ['KeyQ'], interact: ['KeyG'],
-  camera: ['KeyV'], reset: ['KeyR'], pause: ['KeyP'], menu: ['Tab'],
+  camera: ['KeyV'], weld: ['KeyH'], pick: ['KeyB'], connect: ['KeyJ'], reset: ['KeyR'], pause: ['KeyP'], menu: ['Tab'],
 };
 const GAMEPAD_BUTTONS = { 0: 'jump', 1: 'push', 2: 'grab', 3: 'camera', 4: 'rotate', 5: 'interact', 6: 'secondary', 7: 'primary', 9: 'menu', 10: 'sprint' };
 
@@ -1638,6 +1643,395 @@ class VehicleController {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// 10b. CONNECTIONS + STRUCTURES
+//   weld  = rigid lock (snaps the two picked points together, faces flush, no clipping)
+//   link  = invisible rope that only pulls when stretched (inelastic → bungee)
+//   hinge = pin joint, axis parallel/perpendicular to the attachment axis, free or sprung,
+//           and the two parts ignore each other inside a radius around the pin.
+//   JointSystem also exposes weld()/hinge()/rope() in world space for scripted structures.
+// ════════════════════════════════════════════════════════════════════════════
+const STRUCT_GAP = .004;          // every spawned part is 4 mm smaller than its slot, so nothing starts overlapped
+const STRUCTURE_TINTS = [0xe6a86a, 0x73b9ff, 0x8df5c6, 0xc29aff, 0xff858c, 0xf2d36f];
+function brickWall(S, cx, cz, per, rows) {
+  const bw = .6, bh = .25, bd = .3, o = (r, i) => ({ mass: .7, texture: { type: 'brick', seed: 7 + ((r + i + 9) % 3) }, friction: .62, restitution: 0 });
+  for (let r = 0; r < rows; r++) {
+    const y = bh / 2 + r * bh;
+    if (r % 2 === 0) for (let i = 0; i < per; i++) S.box([cx + (i - (per - 1) / 2) * bw, y, cz], [bw, bh, bd], o(r, i));
+    else {
+      for (let i = 0; i < per - 1; i++) S.box([cx + (i - (per - 2) / 2) * bw, y, cz], [bw, bh, bd], o(r, i));
+      for (const s of [-1, 1]) S.box([cx + s * (per * bw / 2 - bw / 4), y, cz], [bw / 2, bh, bd], o(r, s));
+    }
+  }
+}
+// build(S): S.box(localPos,size,opts,yaw) · S.sphere(localPos,r,opts) · S.weld(a,b) · S.hinge(a,b,localPos,localAxis,opts) · S.rope(a,localA,b,localB,opts)
+// local axes: x = right, y = up, z = away from you. mass:0 = fixed in place.
+const STRUCTURES = {
+  jenga: { label: 'Jenga tower', dist: 5, build(S) {
+    const L = .78, W = .26, H = .24;
+    for (let k = 0; k < 15; k++) for (let i = -1; i <= 1; i++) {
+      const o = { mass: .45, texture: 'wood', textureTint: STRUCTURE_TINTS[(k + i + 1) % 6], friction: .5, restitution: 0 }, y = H / 2 + k * H;
+      if (k % 2 === 0) S.box([0, y, i * W], [L, H, W], o); else S.box([i * W, y, 0], [W, H, L], o);
+    }
+  } },
+  pyramid: { label: 'Block pyramid', dist: 6, build(S) {
+    const s = .7, n = 5;
+    for (let k = 0; k < n; k++) { const m = n - k;
+      for (let i = 0; i < m; i++) for (let j = 0; j < m; j++)
+        S.box([(i - (m - 1) / 2) * s, s / 2 + k * s, (j - (m - 1) / 2) * s], [s, s, s], { mass: 1.2, texture: 'wood', textureTint: STRUCTURE_TINTS[k % 6], friction: .6, restitution: 0 }); }
+  } },
+  wall: { label: 'Brick wall', dist: 6, build(S) { brickWall(S, 0, 0, 7, 9); } },
+  dominoes: { label: 'Domino spiral', dist: 6, build(S) {
+    let a = 0, r = 4.2;
+    for (let i = 0; i < 40 && r > 1.3; i++) {
+      S.box([Math.cos(a) * r, .5, Math.sin(a) * r], [.5, 1, .12], { mass: .45, color: STRUCTURE_TINTS[i % 6], friction: .5, restitution: 0 }, -a);
+      a += .56 / r; r = 4.2 - .22 * a;
+    }
+  } },
+  house: { label: 'Welded house', dist: 9, build(S) {
+    const m = { friction: .8, restitution: 0 }, wo = (mass) => ({ ...m, mass, texture: { type: 'brick', repeat: [2, 1] } });
+    const floor = S.box([0, .15, 0], [5, .3, 4], { ...m, mass: 30, texture: 'concrete' });
+    const back = S.box([0, 1.6, 1.9], [5, 2.6, .2], wo(10)), left = S.box([-2.4, 1.6, 0], [.2, 2.6, 3.6], wo(8)), right = S.box([2.4, 1.6, 0], [.2, 2.6, 3.6], wo(8));
+    const fl = S.box([-1.55, 1.6, -1.9], [1.9, 2.6, .2], wo(6)), fr = S.box([1.55, 1.6, -1.9], [1.9, 2.6, .2], wo(6)), lintel = S.box([0, 2.6, -1.9], [1.2, .6, .2], wo(2));
+    const roof = S.box([0, 3.025, 0], [5.4, .25, 4.4], { ...m, mass: 14, texture: 'stone' });
+    for (const w of [back, left, right, fl, fr]) S.weld(floor, w);
+    S.weld(fl, lintel); S.weld(fr, lintel); for (const w of [back, left, right]) S.weld(w, roof);
+  } },
+  bridge: { label: 'Suspension bridge', dist: 17, build(S) {
+    const N = 12, len = 14, pitch = len / N, y = 1.28, stone = { mass: 0, texture: 'stone' };
+    const aA = S.box([0, .6, -8.2], [3.2, 1.2, 2.4], stone), aB = S.box([0, .6, 8.2], [3.2, 1.2, 2.4], stone);
+    for (const sz of [-1, 1]) for (let k = 1; k <= 3; k++) S.box([0, .15 * k, sz * (9.4 + (3 - k) * .6 + .3)], [3.2, .3 * k, .6], stone);   // 0.3 m steps up to each end
+    const tp = {};
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) tp[sx + ',' + sz] = S.box([sx * 1.5, 3.1, sz * 4.5], [.5, 6.2, .5], { mass: 0, texture: 'metal' });
+    for (const sz of [-1, 1]) S.box([0, 6.1, sz * 4.5], [3.5, .3, .5], { mass: 0, texture: 'metal' });
+    const planks = [];
+    for (let i = 0; i < N; i++) planks.push(S.box([0, y, -len / 2 + (i + .5) * pitch], [2.4, .16, pitch], { mass: 3, texture: 'wood', textureTint: STRUCTURE_TINTS[i % 2 ? 0 : 5], friction: .9, restitution: 0 }));
+    const ax = [1, 0, 0], ho = { radius: 1.7 };
+    S.hinge(aA, planks[0], [0, y, -len / 2], ax, ho);
+    for (let i = 0; i < N - 1; i++) S.hinge(planks[i], planks[i + 1], [0, y, -len / 2 + (i + 1) * pitch], ax, ho);
+    S.hinge(planks[N - 1], aB, [0, y, len / 2], ax, ho);
+    for (let i = 0; i < N; i++) { const zc = -len / 2 + (i + .5) * pitch, sz = zc < 0 ? -1 : 1;
+      for (const sx of [-1, 1]) S.rope(tp[sx + ',' + sz], [sx * 1.5, 6.2, sz * 4.5], planks[i], [sx * 1.2, y + .08, zc], { visible: true, slack: 1.002 }); }
+  } },
+  chain: { label: 'Hinged chain pendulum', dist: 6, build(S) {
+    const n = 9, ph = .5, mt = { mass: 0, texture: 'metal' };
+    S.box([-1.2, 2.1, 0], [.3, 4.2, .3], mt); S.box([1.2, 2.1, 0], [.3, 4.2, .3], mt); const bar = S.box([0, 4.1, 0], [2.7, .2, .3], mt);
+    let prev = bar;
+    for (let i = 0; i < n; i++) { const link = S.box([0, 3.75 - i * ph, 0], [.14, .5, .14], { mass: .6, texture: 'wood', friction: .4, restitution: 0 }); S.hinge(prev, link, [0, 4 - i * ph, 0], i % 2 ? [0, 0, 1] : [1, 0, 0], { radius: .3 }); prev = link; }
+    const ball = S.sphere([0, 4 - n * ph - .35, 0], .35, { mass: 4, color: 0xff858c, friction: .4, restitution: .1 }); S.hinge(prev, ball, [0, 4 - n * ph, 0], n % 2 ? [0, 0, 1] : [1, 0, 0], { radius: .3 });
+  } },
+  wrecker: { label: 'Wrecking ball + wall', dist: 7, build(S) {
+    const L = 3.4, ang = 1.1, mt = { mass: 0, texture: 'metal' }, by = 4.2 - L * Math.cos(ang), bz = -L * Math.sin(ang);
+    S.box([-2.6, 2.2, 0], [.4, 4.4, .4], mt); S.box([2.6, 2.2, 0], [.4, 4.4, .4], mt); const bar = S.box([0, 4.3, 0], [5.6, .2, .4], mt);
+    const ball = S.sphere([0, by, bz], .7, { userData: { awake: true }, mass: 30, texture: 'metal', textureTint: 0x6a7480, friction: .4, restitution: .1 });
+    S.rope(bar, [0, 4.2, 0], ball, [0, by, bz], { slack: 1, visible: true });
+    brickWall(S, 0, 2.8, 6, 9);
+  } },
+};
+
+class JointSystem {
+  constructor(game) {
+    this.game = game; this.engine = game.engine; this.cam = game.player.camera; this.grab = game.grab; this.input = game.input;
+    this.joints = []; this.hinges = []; this.structs = []; this.settle = []; this.nextId = 1;
+    this.A = null; this.B = null; this.armed = null; this.reopenPanel = false; this.cand = null; this.ui = null; this.onChange = null;
+    this.opts = { type: 'weld', elasticity: 0, axisMode: 'perp', axisAngle: 0, spring: 0, radius: 1, showAll: false };
+    this._pa = new CANNON.Vec3(); this._pb = new CANNON.Vec3(); this._F = new CANNON.Vec3(); this._R = new CANNON.Vec3();
+    this._qa = new THREE.Quaternion(); this._qb = new THREE.Quaternion(); this._qd = new THREE.Quaternion(); this._qe = new THREE.Quaternion(); this._v = new THREE.Vector3();
+    const eng = this.engine, scene = eng.scene;
+    const mk = (c) => { const m = new THREE.Mesh(new THREE.SphereGeometry(.09, 14, 10), new THREE.MeshBasicMaterial({ color: c, depthTest: false, transparent: true, opacity: .95, toneMapped: false })); m.renderOrder = 999; m.visible = false; m.frustumCulled = false; scene.add(m); return m; };
+    this.mA = mk(0x72f58a); this.mB = mk(0x73b9ff);
+    this.line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: .55 }));
+    this.line.renderOrder = 998; this.line.visible = false; this.line.frustumCulled = false; scene.add(this.line);
+    this.arrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 1.4, 0xffcc80, .3, .16);
+    this.arrow.line.material.depthTest = false; this.arrow.cone.material.depthTest = false; this.arrow.line.renderOrder = this.arrow.cone.renderOrder = 999; this.arrow.visible = false; scene.add(this.arrow);
+    this.viz = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xffd36e, depthTest: false, transparent: true, opacity: .9 }));
+    this.viz.renderOrder = 997; this.viz.frustumCulled = false; this.viz.visible = false; scene.add(this.viz);
+
+    // hinge pairs ignore each other's contacts inside a radius around the pin (hook into the narrowphase)
+    const np = eng.world.narrowphase; this._filterOn = !!(np && typeof np.getContacts === 'function');
+    if (this._filterOn) {
+      const orig = np.getContacts.bind(np), self = this;
+      np.getContacts = function (p1, p2, world, result, old, fr, fp) {
+        const n0 = result.length, f0 = fr.length; orig(p1, p2, world, result, old, fr, fp);
+        if (self.hinges.length) { self._cull(result, n0); self._cull(fr, f0); }
+      };
+    }
+    const prev = this.cam.lookFilter;                                       // Q + look turns the hinge axis while previewing
+    this.cam.lookFilter = (dx, dy) => (this.axisEditing && this.input.isDown('rotate') && this.rotateAxis(dx, dy)) || (prev ? prev(dx, dy) : false);
+    eng.onFixedUpdate((dt) => this._fixed(dt)); eng.onAfterPhysics(() => this._after()); eng.onFrame(() => this._frame());
+    eng.events.on('before-reset', () => { this.clearAll(); this.clearSelection(); this.structs.length = 0; this.settle.length = 0; });
+    eng.events.on('entity-removed', (e) => { this.removeFor(e); if (this.A?.e === e) this.A = null; if (this.B?.e === e) this.B = null; this.onChange?.(); });
+    const wb = document.getElementById('weld-btn');
+    wb.addEventListener('pointerdown', (ev) => { ev.preventDefault(); ev.stopPropagation(); this.weldCandidate(); });
+  }
+  get axisEditing() { return !!(this.A && this.B && this.opts.type === 'hinge' && this.opts.axisMode === 'perp'); }
+  _alive(e) { return this.engine.entities.includes(e); }
+  _roles() {
+    const dyn = (e) => e.body.type === CANNON.Body.DYNAMIC && e.body.mass > 0;
+    if (this.B && dyn(this.B.e)) return { fixed: this.A, mover: this.B }; if (this.A && dyn(this.A.e)) return { fixed: this.B, mover: this.A }; return null;
+  }
+
+  // ---- picking ------------------------------------------------------------------------------
+  arm(slot) {
+    this.armed = slot; this.reopenPanel = true; this.ui?.close(); this.input.lock().catch(() => {}); this.onChange?.();
+    toast(`Aim at a point on object ${slot}, then click (or press B)`);
+  }
+  disarm() { this.armed = null; this.onChange?.(); }
+  pick(slot) {
+    const o = new THREE.Vector3(), d = new THREE.Vector3(); this.cam.getAimRay(o, d);
+    const hit = this.engine.raycast(o, d, 60); if (!hit || !hit.entity) { toast('Aim at an object'); return false; }
+    const e = hit.entity; let restart = false;
+    if (!slot) { slot = this.armed || (!this.A ? 'A' : !this.B ? 'B' : 'A'); restart = !this.armed && this.A && this.B && slot === 'A'; }
+    const other = slot === 'A' ? this.B : this.A; if (other && other.e === e) { toast('Pick a point on a different object'); return false; }
+    const b = e.body, lp = new CANNON.Vec3(), ln = new CANNON.Vec3();
+    b.pointToLocalFrame(new CANNON.Vec3(hit.point.x, hit.point.y, hit.point.z), lp); b.vectorToLocalFrame(new CANNON.Vec3(hit.normal.x, hit.normal.y, hit.normal.z), ln);
+    const P = { e, local: lp, localN: ln };
+    if (slot === 'A') { this.A = P; if (restart) this.B = null; } else this.B = P;
+    this.engine.audio.play('grab');
+    if (this.armed === 'A') { this.armed = 'B'; toast(`Point A on ${e.name}. Now aim at object B`); }
+    else if (this.armed === 'B') { this.armed = null; toast(`Point B on ${e.name}. Choose a joint type and press CREATE`); if (this.reopenPanel) { this.reopenPanel = false; this.ui?.open(); } }
+    else toast(`Point ${slot}: ${e.name}${this.A && this.B ? ' · press J to create (menu has options)' : ''}`);
+    this.onChange?.(); return true;
+  }
+  clearSelection() { this.A = this.B = null; this.armed = null; this.reopenPanel = false; this.onChange?.(); }
+  swap() { const t = this.A; this.A = this.B; this.B = t; this.onChange?.(); }
+
+  // ---- creating from the menu -----------------------------------------------------------------
+  create() {
+    const { A, B, opts } = this;
+    if (!A || !B) { toast('Pick a point on two objects first (menu → PICK A / PICK B, or press B twice)'); return; }
+    if (A.e === B.e) { toast('Pick points on two different objects'); return; }
+    if (!this._alive(A.e) || !this._alive(B.e)) { this.clearSelection(); return; }
+    if (opts.type === 'link') {
+      const wa = A.e.body.pointToWorldFrame(A.local, new CANNON.Vec3()), wb = B.e.body.pointToWorldFrame(B.local, new CANNON.Vec3());
+      const j = this.rope(A.e, new THREE.Vector3(wa.x, wa.y, wa.z), B.e, new THREE.Vector3(wb.x, wb.y, wb.z), { elasticity: opts.elasticity, visible: false });
+      if (j) toast(opts.elasticity > 0 ? `Elastic link created (${Math.round(opts.elasticity * 100)}% stretch)` : 'Inelastic link created');
+    } else {
+      const r = this._roles(); if (!r) { toast('At least one object must be movable'); return; }
+      const { nf, pivot } = this._snap(r.fixed, r.mover);
+      if (opts.type === 'weld') { this.weld(A.e, B.e); toast(`Welded ${A.e.name} to ${B.e.name}`); }
+      else { this.hinge(A.e, B.e, pivot, this._axisFromNormal(nf), { spring: opts.spring, radius: opts.radius }); toast(`Hinge created (${opts.spring > 0 ? 'sprung' : 'free spin'})`); }
+    }
+    this.clearSelection();
+  }
+  _axisFromNormal(n) {
+    if (this.opts.axisMode === 'par') return n.clone();
+    const ref = Math.abs(n.y) < .9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+    return new THREE.Vector3().crossVectors(n, ref).normalize().applyAxisAngle(n, this.opts.axisAngle);
+  }
+  rotateAxis(dx) { this.opts.axisAngle = ((this.opts.axisAngle + dx * 2) % TAU + TAU) % TAU; this.onChange?.(); return true; }
+  _snap(F, M) {                                             // put M's point on F's point, faces opposed (flush), minimal rotation
+    const fb = F.e.body, mb = M.e.body; if (this.grab.held && this.grab.held.e === M.e) this.grab.drop('joint');
+    const T = (v) => new THREE.Vector3(v.x, v.y, v.z), pf = fb.pointToWorldFrame(F.local, new CANNON.Vec3());
+    const nf = T(fb.vectorToWorldFrame(F.localN, new CANNON.Vec3())).normalize();
+    const qm = new THREE.Quaternion(mb.quaternion.x, mb.quaternion.y, mb.quaternion.z, mb.quaternion.w);
+    const nm = T(M.localN).applyQuaternion(qm).normalize();
+    const qn = new THREE.Quaternion().setFromUnitVectors(nm, nf.clone().negate()).multiply(qm);
+    const pivot = T(pf), pos = pivot.clone().sub(T(M.local).applyQuaternion(qn));
+    this._put(M.e, pos, qn); return { nf, pivot };
+  }
+  _put(e, pos, q) {
+    const b = e.body; b.position.set(pos.x, pos.y, pos.z); b.quaternion.set(q.x, q.y, q.z, q.w); b.velocity.set(0, 0, 0); b.angularVelocity.set(0, 0, 0); b.aabbNeedsUpdate = true; b.wakeUp();
+    e.prevPos.set(pos.x, pos.y, pos.z); e.renderPos.copy(e.prevPos); e.prevQuat.copy(q); e.renderQuat.copy(q);
+    if (e.mesh) { e.mesh.position.copy(pos); e.mesh.quaternion.copy(q); }
+  }
+
+  // ---- touch-weld: hold an object against another, press WELD ------------------------------------
+  _after() {
+    const h = this.grab.held; if (!h) return; const hb = h.e.body, cs = this.engine.world.contacts;
+    for (let i = 0; i < cs.length; i++) {
+      const c = cs[i], o = c.bi === hb ? c.bj : c.bj === hb ? c.bi : null; if (!o) continue;
+      const oe = o.__entity; if (!oe || oe.tags.has('player') || oe.tags.has('vehicle') || oe.name === 'Ground' || this._welded(h.e, oe)) continue;
+      this.cand = { a: h.e, b: oe, t: performance.now() }; break;
+    }
+  }
+  _welded(a, b) { return this.joints.some((j) => j.type === 'weld' && ((j.a === a && j.b === b) || (j.a === b && j.b === a))); }
+  weldCandidate() {
+    const c = this.cand;
+    if (!c || performance.now() - c.t > 700 || !this._alive(c.a) || !this._alive(c.b)) { toast('Hold an object against another one, then press WELD'); return; }
+    if (this.grab.held && (this.grab.held.e === c.a || this.grab.held.e === c.b)) this.grab.drop('weld');
+    for (const e of [c.a, c.b]) { e.body.velocity.set(0, 0, 0); e.body.angularVelocity.set(0, 0, 0); }
+    this.weld(c.a, c.b); this.cand = null; toast(`Welded ${c.a.name} to ${c.b.name}`); this.engine.audio.play('pad');
+  }
+
+  // ---- low-level creators (world space, also used by the structures) ----------------------------------
+  _reg(j) {
+    this.joints.push(j); if (j.type === 'hinge') this.hinges.push(j);
+    const s = this.engine.world.solver; s.iterations = Math.max(s.iterations, 18); this.onChange?.(); return j;
+  }
+  weld(a, b, o = {}) {                                     // freezes the current relative pose
+    const c = new CANNON.LockConstraint(a.body, b.body, { maxForce: o.maxForce ?? 1e6, collideConnected: false }); this.engine.world.addConstraint(c);
+    const m = new CANNON.Vec3((a.body.position.x + b.body.position.x) / 2, (a.body.position.y + b.body.position.y) / 2, (a.body.position.z + b.body.position.z) / 2);
+    return this._reg({ id: this.nextId++, type: 'weld', a, b, constraint: c, la: a.body.pointToLocalFrame(m, new CANNON.Vec3()), visible: !!o.visible });
+  }
+  hinge(a, b, wp, axisW, o = {}) {
+    const V = (v) => new CANNON.Vec3(v.x, v.y, v.z), pa = a.body.pointToLocalFrame(V(wp), new CANNON.Vec3()), pb = b.body.pointToLocalFrame(V(wp), new CANNON.Vec3());
+    const ax = a.body.vectorToLocalFrame(V(axisW), new CANNON.Vec3()), bx = b.body.vectorToLocalFrame(V(axisW), new CANNON.Vec3());
+    const c = new CANNON.HingeConstraint(a.body, b.body, { pivotA: pa, axisA: ax, pivotB: pb, axisB: bx, maxForce: o.maxForce ?? 1e6, collideConnected: !!this._filterOn });
+    this.engine.world.addConstraint(c);
+    const qa = new THREE.Quaternion(a.body.quaternion.x, a.body.quaternion.y, a.body.quaternion.z, a.body.quaternion.w), qb = new THREE.Quaternion(b.body.quaternion.x, b.body.quaternion.y, b.body.quaternion.z, b.body.quaternion.w);
+    return this._reg({ id: this.nextId++, type: 'hinge', a, b, constraint: c, la: pa, lb: pb, axisLA: new THREE.Vector3(ax.x, ax.y, ax.z).normalize(), axisLB: new THREE.Vector3(bx.x, bx.y, bx.z).normalize(),
+      q0: qa.invert().multiply(qb), spring: clamp(o.spring ?? 0, 0, 1), radius: o.radius ?? 1, pivotW: new CANNON.Vec3(), visible: !!o.visible });
+  }
+  rope(a, wpA, b, wpB, o = {}) {                           // pulls only when stretched; elasticity 0 = (almost) inelastic, 1 = bungee
+    if (a.body.invMass + b.body.invMass === 0) { toast('A link needs at least one movable object'); return null; }
+    const V = (v) => new CANNON.Vec3(v.x, v.y, v.z), e = clamp(o.elasticity ?? 0, 0, 1);
+    return this._reg({ id: this.nextId++, type: 'link', a, b, la: a.body.pointToLocalFrame(V(wpA), new CANNON.Vec3()), lb: b.body.pointToLocalFrame(V(wpB), new CANNON.Vec3()),
+      L: Math.max(.05, wpA.distanceTo(wpB) * (o.slack ?? 1)), omega: 26 * Math.pow(.09, e), zeta: 1 - .88 * e, elasticity: e, visible: !!o.visible });
+  }
+  remove(j) {
+    const i = this.joints.indexOf(j); if (i === -1) return; this.joints.splice(i, 1);
+    const k = this.hinges.indexOf(j); if (k !== -1) this.hinges.splice(k, 1);
+    if (j.constraint) this.engine.world.removeConstraint(j.constraint);
+    j.a.body.wakeUp(); j.b.body.wakeUp(); this.onChange?.();
+  }
+  removeFor(e) { for (const j of [...this.joints]) if (j.a === e || j.b === e) this.remove(j); }
+  removeLast() { const j = this.joints[this.joints.length - 1]; if (j) { this.remove(j); toast('Removed last joint'); } else toast('No joints'); }
+  clearAll() { for (const j of [...this.joints]) this.remove(j); }
+
+  // ---- per-step behaviour -------------------------------------------------------------------------------------
+  _fixed() {
+    for (const j of this.joints) { if (j.type === 'link') this._ropeStep(j); else if (j.type === 'hinge') this._hingeStep(j); }
+    for (let i = this.settle.length - 1; i >= 0; i--) {                       // brief extra damping so freshly spawned stacks settle calmly
+      const s = this.settle[i]; if (--s.t > 0) continue;
+      s.bodies.forEach((b, n) => { b.linearDamping = s.ld[n]; b.angularDamping = s.ad[n]; }); this.settle.splice(i, 1);
+    }
+  }
+  _ropeStep(j) {
+    const A = j.a.body, B = j.b.body, pa = this._pa, pb = this._pb; A.pointToWorldFrame(j.la, pa); B.pointToWorldFrame(j.lb, pb);
+    const dx = pb.x - pa.x, dy = pb.y - pa.y, dz = pb.z - pa.z, len = Math.hypot(dx, dy, dz), st = len - j.L; if (st <= 0 || len < 1e-6) return;
+    const ia = A.invMass, ib = B.invMass; if (ia + ib === 0) return; const me = 1 / (ia + ib), nx = dx / len, ny = dy / len, nz = dz / len;
+    const rax = pa.x - A.position.x, ray = pa.y - A.position.y, raz = pa.z - A.position.z, rbx = pb.x - B.position.x, rby = pb.y - B.position.y, rbz = pb.z - B.position.z;
+    const wa = A.angularVelocity, wb = B.angularVelocity, va = A.velocity, vb = B.velocity;
+    const vax = va.x + wa.y * raz - wa.z * ray, vay = va.y + wa.z * rax - wa.x * raz, vaz = va.z + wa.x * ray - wa.y * rax;
+    const vbx = vb.x + wb.y * rbz - wb.z * rby, vby = vb.y + wb.z * rbx - wb.x * rbz, vbz = vb.z + wb.x * rby - wb.y * rbx;
+    const rel = (vbx - vax) * nx + (vby - vay) * ny + (vbz - vaz) * nz;
+    const f = Math.min(me * 350, me * j.omega * j.omega * st + 2 * j.zeta * j.omega * me * Math.max(0, rel));
+    if (ia > 0) { A.wakeUp(); this._F.set(nx * f, ny * f, nz * f); this._R.set(rax, ray, raz); A.applyForce(this._F, this._R); }
+    if (ib > 0) { B.wakeUp(); this._F.set(-nx * f, -ny * f, -nz * f); this._R.set(rbx, rby, rbz); B.applyForce(this._F, this._R); }
+  }
+  _hingeStep(j) {
+    const A = j.a.body, B = j.b.body; A.pointToWorldFrame(j.la, j.pivotW);
+    const ia = A.invMass, ib = B.invMass; if (ia + ib === 0) return;
+    if (A.sleepState === CANNON.Body.SLEEPING && B.sleepState === CANNON.Body.SLEEPING) return;
+    const I = .3 / (ia + ib), wn = j.spring * 12, k = I * wn * wn, c = I * (.12 + .5 * wn);        // free spin keeps a whisper of friction
+    this._qa.set(A.quaternion.x, A.quaternion.y, A.quaternion.z, A.quaternion.w); this._qb.set(B.quaternion.x, B.quaternion.y, B.quaternion.z, B.quaternion.w);
+    const kW = this._v.copy(j.axisLA).applyQuaternion(this._qa);
+    this._qd.copy(this._qa).invert().multiply(this._qb); this._qd.premultiply(this._qe.copy(j.q0).invert());
+    let w = this._qd.w, s = this._qd.x * j.axisLB.x + this._qd.y * j.axisLB.y + this._qd.z * j.axisLB.z; if (w < 0) { w = -w; s = -s; }
+    const th = 2 * Math.atan2(s, w), wr = (B.angularVelocity.x - A.angularVelocity.x) * kW.x + (B.angularVelocity.y - A.angularVelocity.y) * kW.y + (B.angularVelocity.z - A.angularVelocity.z) * kW.z;
+    const tau = -(k * th + c * wr); if (Math.abs(tau) < 1e-9) return;
+    if (ib > 0) B.torque.set(B.torque.x + kW.x * tau, B.torque.y + kW.y * tau, B.torque.z + kW.z * tau);
+    if (ia > 0) A.torque.set(A.torque.x - kW.x * tau, A.torque.y - kW.y * tau, A.torque.z - kW.z * tau);
+  }
+  _cull(arr, start) {
+    let w = start; for (let i = start; i < arr.length; i++) { const c = arr[i]; if (!this._hingeIgnores(c)) arr[w++] = c; } arr.length = w;
+  }
+  _hingeIgnores(c) {
+    const bi = c.bi, bj = c.bj; if (!c.ri) return false;
+    for (const h of this.hinges) {
+      const A = h.a.body, B = h.b.body; if (!((bi === A && bj === B) || (bi === B && bj === A))) continue;
+      const dx = bi.position.x + c.ri.x - h.pivotW.x, dy = bi.position.y + c.ri.y - h.pivotW.y, dz = bi.position.z + c.ri.z - h.pivotW.z;
+      if (dx * dx + dy * dy + dz * dz < h.radius * h.radius) return true;
+    }
+    return false;
+  }
+
+  // ---- visuals ---------------------------------------------------------------------------------------------------------
+  _world(P, out) { return out.set(P.local.x, P.local.y, P.local.z).applyQuaternion(P.e.renderQuat).add(P.e.renderPos); }
+  _frame() {
+    const A = this.A, B = this.B, wA = this._wa || (this._wa = new THREE.Vector3()), wB = this._wb || (this._wb = new THREE.Vector3());
+    this.mA.visible = !!A; this.mB.visible = !!B;
+    if (A) this.mA.position.copy(this._world(A, wA)); if (B) this.mB.position.copy(this._world(B, wB));
+    this.line.visible = !!(A && B); if (A && B) { const p = this.line.geometry.attributes.position; p.setXYZ(0, wA.x, wA.y, wA.z); p.setXYZ(1, wB.x, wB.y, wB.z); p.needsUpdate = true; }
+    const r = this.axisEditing ? this._roles() : null; this.arrow.visible = !!r;
+    if (r) { const n = new THREE.Vector3(r.fixed.localN.x, r.fixed.localN.y, r.fixed.localN.z).applyQuaternion(r.fixed.e.renderQuat).normalize(); this.arrow.position.copy(r === this._roles() && r.fixed === A ? wA : wB); this.arrow.setDirection(this._axisFromNormal(n)); }
+    const show = this.joints.filter((j) => this.opts.showAll || j.visible); this.viz.visible = show.length > 0;
+    if (show.length) {
+      const arr = new Float32Array(show.length * 18), pa = this._pa, pb = this._pb; let n = 0; const put = (x, y, z) => { arr[n++] = x; arr[n++] = y; arr[n++] = z; };
+      for (const j of show) {
+        j.a.body.pointToWorldFrame(j.la, pa);
+        if (j.type === 'link') { j.b.body.pointToWorldFrame(j.lb, pb); put(pa.x, pa.y, pa.z); put(pb.x, pb.y, pb.z); }
+        else { const s = .09; put(pa.x - s, pa.y, pa.z); put(pa.x + s, pa.y, pa.z); put(pa.x, pa.y - s, pa.z); put(pa.x, pa.y + s, pa.z); put(pa.x, pa.y, pa.z - s); put(pa.x, pa.y, pa.z + s); }
+      }
+      this.viz.geometry.setAttribute('position', new THREE.BufferAttribute(arr.subarray(0, n), 3));
+    }
+    const wbtn = document.getElementById('weld-btn'), c = this.cand, ok = !!c && performance.now() - c.t < 700 && this._alive(c.a) && this._alive(c.b);
+    wbtn.classList.toggle('on', ok); if (ok && wbtn._for !== c) { wbtn._for = c; wbtn.textContent = `⚭ WELD ${c.a.name} + ${c.b.name} [H]`; }
+  }
+
+  // ---- structures -------------------------------------------------------------------------------------------------------------
+  spawnStructure(name) {
+    const def = STRUCTURES[name]; if (!def) return;
+    const eng = this.engine, yaw = this.cam.yaw, p = this.game.player.position, fx = Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = Math.sin(yaw);
+    const x = p.x + fx * def.dist, z = p.z + fz * def.dist, hit = eng.raycast({ x, y: p.y + 30, z }, { x: 0, y: -1, z: 0 }, 80), gy = hit ? hit.point.y : 0;
+    const toW = (l) => [x + rx * l[0] + fx * l[2], gy + l[1], z + rz * l[0] + fz * l[2]], V = (l) => { const w = toW(l); return new THREE.Vector3(w[0], w[1], w[2]); };
+    const dir = (l) => new THREE.Vector3(rx * l[0] + fx * l[2], l[1], rz * l[0] + fz * l[2]), ents = [], axis = new CANNON.Vec3(0, 1, 0), q = new CANNON.Quaternion();
+    const S = {
+      box: (pos, size, o = {}, ry = 0) => { q.setFromAxisAngle(axis, -yaw + ry); const e = eng.addBox({ ...o, position: toW(pos), size: size.map((s) => Math.max(.02, s - STRUCT_GAP)), quaternion: [q.x, q.y, q.z, q.w], name: o.name || 'Block' }); ents.push(e); return e; },
+      sphere: (pos, r, o = {}) => { const e = eng.addSphere({ ...o, position: toW(pos), radius: r - STRUCT_GAP / 2, name: o.name || 'Ball' }); ents.push(e); return e; },
+      weld: (a, b) => this.weld(a, b),
+      hinge: (a, b, lp, la, o) => this.hinge(a, b, V(lp), dir(la).normalize(), o),
+      rope: (a, la, b, lb, o) => this.rope(a, V(la), b, V(lb), o),
+    };
+    def.build(S);
+    const dyn = ents.map((e) => e.body).filter((b) => b.mass > 0);
+    this.settle.push({ bodies: dyn, ld: dyn.map((b) => b.linearDamping), ad: dyn.map((b) => b.angularDamping), t: 50 });
+    const sv = eng.world.solver; sv.iterations = Math.max(sv.iterations, 20);
+    for (const b of dyn) { b.linearDamping = .8; b.angularDamping = .8; if (b.__entity.userData.awake) b.wakeUp(); else b.sleep(); }   // start asleep: stacks stay put until something touches them
+    this.structs.push(ents); toast(`${def.label} spawned (${ents.length} parts)`); this.engine.audio.play('pad'); this.onChange?.();
+  }
+  removeLastStructure() { const s = this.structs.pop(); if (!s) { toast('No spawned structures'); return; } for (const e of s) this.engine.remove(e); toast('Structure removed'); this.onChange?.(); }
+}
+
+function buildJointUI(game) {
+  const { engine, input, joints } = game, body = $('panel-body'), o = joints.opts;
+  const h = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+  const section = (title) => { const d = h('details'); d.open = true; d.append(h('summary', null, title)); return d; };
+  const refreshers = [];
+  const slider = (p, label, min, max, step, get, set, fmt) => {
+    const w = h('div', 'set'), head = h('div', 'set-head'), out = h('output'), inp = h('input'); inp.type = 'range'; inp.min = min; inp.max = max; inp.step = step;
+    head.append(h('span', null, label), out); w.append(head, inp); p.append(w);
+    const refresh = () => { inp.value = get(); out.textContent = fmt(+get()); }; refresh(); refreshers.push(refresh);
+    inp.addEventListener('input', () => { set(+inp.value); out.textContent = fmt(+inp.value); }); inp.addEventListener('change', () => inp.blur()); return w;
+  };
+  const select = (p, label, opts, get, set) => {
+    const w = h('div', 'set'), s = h('select', 'sel'); w.append(h('div', 'set-head', `<span>${label}</span>`), s);
+    for (const [v, t] of opts) { const op = h('option', null, t); op.value = v; s.append(op); }
+    const refresh = () => { s.value = get(); }; refresh(); refreshers.push(refresh); s.addEventListener('change', () => { set(s.value); s.blur(); }); p.append(w); return w;
+  };
+  const buttons = (p, list) => { const row = h('div', 'btns'); for (const [text, cls, fn] of list) { const b = h('button', 'btn ' + (cls || ''), text); b.type = 'button'; b.addEventListener('click', () => { fn(); b.blur(); }); row.append(b); } p.append(row); return row; };
+
+  const cs = section('CONNECT · WELD / LINK / HINGE');
+  const status = h('div', 'set'); cs.append(status);
+  buttons(cs, [['PICK A', 'primary', () => joints.arm('A')], ['PICK B', 'primary', () => joints.arm('B')], ['SWAP', '', () => joints.swap()], ['CLEAR', 'warn', () => joints.clearSelection()]]);
+  const typeSel = select(cs, 'Joint type', [['weld', 'Weld · snap together, rigid'], ['link', 'Link · invisible rope'], ['hinge', 'Hinge · pin joint']], () => o.type, (v) => { o.type = v; sync(); });
+  const linkG = h('div'), hingeG = h('div'); cs.append(linkG, hingeG);
+  slider(linkG, 'Rope elasticity', 0, 1, .01, () => o.elasticity, (v) => { o.elasticity = v; }, (v) => v === 0 ? 'inelastic' : Math.round(v * 100) + '%');
+  select(hingeG, 'Hinge axis', [['perp', 'Perpendicular to attachment axis'], ['par', 'Parallel to attachment axis']], () => o.axisMode, (v) => { o.axisMode = v; sync(); });
+  const angW = slider(hingeG, 'Axis rotation (or Q + look)', 0, 359, 1, () => o.axisAngle * 180 / Math.PI, (v) => { o.axisAngle = v * Math.PI / 180; }, (v) => Math.round(v) + '°');
+  slider(hingeG, 'Springiness', 0, 1, .01, () => o.spring, (v) => { o.spring = v; }, (v) => v === 0 ? 'free spin' : Math.round(v * 100) + '%');
+  slider(hingeG, 'No-clip radius around pin', .1, 3, .05, () => o.radius, (v) => { o.radius = v; }, (v) => v.toFixed(2) + ' m');
+  buttons(cs, [['CREATE JOINT [J]', 'primary', () => joints.create()], ['UNDO LAST', '', () => joints.removeLast()], ['REMOVE ALL', 'warn', () => { joints.clearAll(); toast('All joints removed'); }]]);
+  const showL = h('label', 'chk'), showC = h('input'); showC.type = 'checkbox'; showL.append(showC, document.createTextNode('Show connections (pins + ropes)')); showC.addEventListener('change', () => { o.showAll = showC.checked; showC.blur(); }); cs.append(showL);
+  const info = h('div', 'set'); info.style.cssText = 'font-size:10px;color:#8fa1ae;line-height:1.5'; cs.append(info);
+  cs.append(h('div', 'set', '<span style="font-size:10px;color:#8fa1ae;line-height:1.5">Quick weld: hold an object (E, rigid mode) against another and press <b style="color:var(--accent)">H</b> / WELD. Pick points: <b style="color:var(--accent)">B</b> or click while armed.</span>'));
+
+  const ss = section('STRUCTURES'); let chosen = 'jenga';
+  select(ss, 'Structure', Object.entries(STRUCTURES).map(([k, v]) => [k, v.label]), () => chosen, (v) => { chosen = v; });
+  buttons(ss, [['SPAWN IN FRONT', 'primary', () => joints.spawnStructure(chosen)], ['REMOVE LAST', 'warn', () => joints.removeLastStructure()]]);
+
+  function sync() { linkG.style.display = o.type === 'link' ? '' : 'none'; hingeG.style.display = o.type === 'hinge' ? '' : 'none'; angW.style.display = o.axisMode === 'perp' ? '' : 'none'; }
+  const upd = () => {
+    const nm = (P) => P ? `${P.e.name}` : '—';
+    status.innerHTML = `<div class="row"><span style="color:#72f58a">● Point A${joints.armed === 'A' ? ' (aiming…)' : ''}</span><span>${nm(joints.A)}</span></div><div class="row"><span style="color:#73b9ff">● Point B${joints.armed === 'B' ? ' (aiming…)' : ''}</span><span>${nm(joints.B)}</span></div>`;
+    info.textContent = `${joints.joints.length} joint${joints.joints.length === 1 ? '' : 's'} active`; refreshers.forEach((r) => r());
+  };
+  joints.onChange = upd; joints.ui = { close: () => $('panel').classList.remove('open'), open: () => { $('panel').classList.add('open'); input.unlock(); } };
+  sync(); upd();
+  const first = body.firstElementChild; first.after(cs, ss);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // 11. GAMEPLAY HELPERS: small recipes, copy and bend them
 // ════════════════════════════════════════════════════════════════════════════
 function raycastFromCamera(engine, maxDistance = 200) {      // what the crosshair is looking at: { entity, point, normal, distance } | null
@@ -1758,7 +2152,10 @@ function setupGameplay(game) {
   input.onPress('reset', () => { engine.reset(); toast('World reset'); });
   input.onPress('pause', game.togglePause);
   input.onPress('interact', () => { if (vehicle.driver) vehicle.exit(); else if (vehicle.isNear(player.position, 4.5)) vehicle.enter(player); });
-  input.onPress('primary', () => grab.push());                                     // left click = push / throw
+  input.onPress('primary', () => { if (game.joints.armed) game.joints.pick(); else grab.push(); });
+  input.onPress('pick', () => game.joints.pick());
+  input.onPress('weld', () => game.joints.weldCandidate());
+  input.onPress('connect', () => game.joints.create());                                     // left click = push / throw
   input.onPress('secondary', () => input.press('grab', 'mouse-secondary'));        // right click = grab (hold or toggle, by mode)
   input.onRelease('secondary', () => input.release('grab', 'mouse-secondary'));
   engine.events.on('before-reset', () => { if (vehicle.driver) vehicle.exit(); });
@@ -1900,14 +2297,14 @@ function buildDebugUI(game, touch) {
   input.onPress('menu', () => setPanel(!panel.classList.contains('open')));
   document.addEventListener('pointerlockchange', () => { if (document.pointerLockElement === engine.canvas) panel.classList.remove('open'); });
   if (!IS_TOUCH_DEVICE) setPanel(false);
-  $('hint').innerHTML = 'Click to capture · <b>WASD</b> move · <b>Space</b> jump · <b>E</b> / right-click grab · <b>F</b> / click push · <b>Q</b>+look rotate held · <b>G</b> car · <b>Tab</b> menu';
+  $('hint').innerHTML = 'Click to capture · <b>WASD</b> move · <b>Space</b> jump · <b>E</b> / right-click grab · <b>F</b> / click push · <b>Q</b>+look rotate held · <b>H</b> weld · <b>B</b> pick point · <b>J</b> create joint · <b>G</b> car · <b>Tab</b> menu';
 
   // HUD: ~10 Hz
   const xh = $('crosshair'), interactLabel = $('t-interact').querySelector('b'); let acc = 0;
   engine.onFrame((dt) => {
     const holding = grab.held, can = !holding && grab.hover;
     xh.classList.toggle('hit', !!can); xh.classList.toggle('holding', !!holding);
-    touch.setContext('t-rotate', !!holding && grab.mode === 'rigid');
+    touch.setContext('t-rotate', (!!holding && grab.mode === 'rigid') || game.joints.axisEditing); touch.setContext('t-pick', !!game.joints.armed);
     const near = vehicle.driver || vehicle.isNear(player.position, 4.5); touch.setContext('t-interact', near); if (near && interactLabel) interactLabel.textContent = vehicle.driver ? 'EXIT' : 'ENTER';
     $('t-grab-sub').textContent = grab.mode === 'rigid' ? 'TAP' : 'HOLD';
     acc += dt; if (acc < .1) return; acc = 0;
@@ -1930,10 +2327,12 @@ buildWorld(engine, game);
 game.player = new PlayerController(engine);
 game.vehicle = new VehicleController(engine, { position: [12, 1.2, 9], rotation: [0, -.7, 0] });
 game.grab = new GrabSystem(engine, game.player.camera, { mode: GAME_CONFIG.grab.mode, playerBody: game.player.motor.body, notify: toast });
+game.joints = new JointSystem(game);
 engine.seal();                                                      // everything above is "the level"; anything created later is removed by reset()
 setupGameplay(game);
 game.touch = new TouchControls(game);
 buildDebugUI(game, game.touch);
+buildJointUI(game);
 engine.start();
 toast(IS_TOUCH_DEVICE ? 'Drag the left side to move · drag the right side to look · ☰ opens tuning' : 'Click the world to capture the mouse · Tab opens live tuning');
 window.game = game;                                                 // handy in the devtools console: game.player.motor.jumpSpeed = 8
