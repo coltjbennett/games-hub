@@ -60,16 +60,20 @@ async function refresh(){
   try{const e=await navigator.storage?.estimate();if(e&&e.quota){const ratio=(e.usage||0)/e.quota*100;$('storage-bar').style.width=Math.min(100,ratio)+'%';$('storage-text').textContent=`${fmtBytes(e.usage||0)} used of ${fmtBytes(e.quota)} (${ratio.toFixed(1)}%)`}}catch(_){$('storage-text').textContent='Storage estimate unavailable.'}
   const notes=[];if(document.visibilityState==='hidden')notes.push('Monitor paused while hidden.');if(navigator.connection?.saveData)notes.push('Data Saver detected; the launcher can automatically enter Low Power Mode.');if(!navigator.onLine)notes.push('Offline mode active.');$('notes').textContent=notes.length?notes.join(' '):'No browser-side warnings detected.';
 }
-let raf=0,frames=0,last=performance.now();function frame(now){if(document.hidden)return;frames++;if(now-last>=1000){const fps=frames*1000/(now-last);const rounded=Math.round(fps);$('fps-text').textContent=`${rounded} FPS`;$('fps-bar').style.width=Math.min(100,rounded/1.2)+'%';frames=0;last=now}raf=requestAnimationFrame(frame)}
-function startFps(){if(raf)cancelAnimationFrame(raf);if(!document.hidden){last=performance.now();frames=0;raf=requestAnimationFrame(frame)}}
-document.addEventListener('visibilitychange',()=>{startFps();if(!document.hidden)refresh()});
+let visible=false;const isActive=()=>visible&&!document.hidden;
+let raf=0,frames=0,last=performance.now();function frame(now){if(!isActive()){raf=0;return}frames++;if(now-last>=1000){const fps=frames*1000/(now-last);const rounded=Math.round(fps);$('fps-text').textContent=`${rounded} FPS`;$('fps-bar').style.width=Math.min(100,rounded/1.2)+'%';frames=0;last=now}raf=requestAnimationFrame(frame)}
+function startFps(){if(raf)cancelAnimationFrame(raf);raf=0;if(isActive()){last=performance.now();frames=0;raf=requestAnimationFrame(frame)}}
+document.addEventListener('visibilitychange',()=>{startFps();startTimer();if(isActive())refresh()});
 $('refresh-storage').onclick=refreshStorage;
 $('clear-caches').onclick=async()=>{if(confirm('Delete all site Cache Storage?')){for(const n of await caches.keys())await caches.delete(n);await refreshStorage();}};
 $('clear-session').onclick=()=>{if(confirm('Clear this tab sessionStorage?')){try{sessionStorage.clear()}catch(_){};refreshStorage()}};
 $('clear-local').onclick=()=>{if(!confirm('Clear launcher localStorage? This can remove theme settings and game saves. Chat IndexedDB is not affected.'))return;const keep=['mqtt_chat_history_cache_v2','mqtt_chat_username_v1'];for(let i=localStorage.length-1;i>=0;i--){const k=localStorage.key(i)||'';if(!keep.includes(k)&&!k.startsWith('mqtt_chat_'))localStorage.removeItem(k)}refreshStorage();};
 $('clear-idb').onclick=async()=>{if(!indexedDB.databases||!confirm('Delete all IndexedDB databases for this site? Chat history stored in localForage will be deleted.'))return;for(const db of await indexedDB.databases()){if(db.name)indexedDB.deleteDatabase(db.name)}setTimeout(refreshStorage,300)};
-refresh();refreshStorage();startFps();
-let refreshTimer=null;const startTimer=()=>{clearInterval(refreshTimer);refreshTimer=document.hidden?null:setInterval(()=>{refresh();refreshStorage()},5000)};document.addEventListener('visibilitychange',startTimer);startTimer();window.addEventListener('online',refresh);window.addEventListener('offline',refresh);window.addEventListener('resize',refresh);
+let refreshTimer=null,tick=0;const startTimer=()=>{clearInterval(refreshTimer);refreshTimer=null;if(isActive())refreshTimer=setInterval(()=>{refresh();if(++tick%6===0)refreshStorage()},5000)};
+// This window lives in a display:none iframe when closed, where document.hidden stays false.
+// IntersectionObserver is what actually reports whether the monitor can be seen, so the FPS loop,
+// the 5s refresh and the Cache/IndexedDB scan only run while it is open.
+if('IntersectionObserver' in window){new IntersectionObserver(es=>{const v=es.some(e=>e.isIntersecting);if(v===visible)return;visible=v;startFps();startTimer();if(v){refresh();refreshStorage()}}).observe(document.documentElement)}else{visible=true;refresh();refreshStorage();startFps();startTimer()}window.addEventListener('online',refresh);window.addEventListener('offline',refresh);window.addEventListener('resize',refresh);
 </script>
 </body>
 </html>
