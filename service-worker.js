@@ -20,7 +20,7 @@ const CORE = [
   './games/classics/pelletmuncher.html', './games/classics/snake.html', './games/enginesim.html',
   './games/fps.html', './games/gangwars.html', './games/gh-clicker.html', './games/ghengis.html',
   './games/labyrinthine.html', './games/legacysim.html', './games/megalith.html',
-  './games/pixel-ops.html', './games/placeholder.txt', './games/warzone.html'
+  './games/pixel-ops.html', './games/placeholder.txt', './games/warzone.html', './games/fieldkit_3d_engine.html'
 ];
 
 // Every file in /images and its subfolders.
