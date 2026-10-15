@@ -44,6 +44,30 @@ let highestZIndex = 1000;
 // and nested iframes, then shares that state with the chatroom.
 let activeWindowState = null;
 
+// ===== PERFORMANCE: GAME-OPEN STATE & BACKGROUND FRAME THROTTLING =====
+// Game-like windows (games + the arcade hub) are the expensive ones. While one
+// is visible the launcher drops its decorative full-page effects (see the
+// html.game-open rules in styles.css), and when several are visible at once the
+// ones that are not the active window are throttled so they stop competing for
+// the same main thread.
+const HEAVY_WINDOW_KINDS = new Set(['game', 'arcade']);
+const BACKGROUND_FRAME_MS = 33; // ~30 fps for visible-but-inactive game windows
+
+function getVisibleHeavyWindows() {
+  return Array.from(document.querySelectorAll('.floating-window'))
+    .filter(win => HEAVY_WINDOW_KINDS.has(win.dataset.activityKind) && isFloatingWindowVisible(win));
+}
+
+function refreshBackgroundThrottle() {
+  const heavy = getVisibleHeavyWindows();
+  const several = heavy.length > 1;
+  document.querySelectorAll('.floating-window').forEach(win => {
+    if (!HEAVY_WINDOW_KINDS.has(win.dataset.activityKind)) { win.__ghBackground = false; return; }
+    const isActive = !!activeWindowState && activeWindowState.id === win.id;
+    win.__ghBackground = several && isFloatingWindowVisible(win) && !isActive;
+  });
+}
+
 function getFloatingWindowActivityName(win, fallback = "Application") {
   if (!win) return fallback;
   const titleEl = win.querySelector('.applet-win-title');
@@ -87,7 +111,7 @@ function sendActivityStateToChat() {
     action: 'activityState',
     activeWindow,
     chatWindowOpen,
-    lowPowerMode: document.documentElement.classList.contains('low-power'),
+    lowPowerMode: document.documentElement.classList.contains('low-power') || document.documentElement.classList.contains('game-open'),
     isHomepage: !chatWindowOpen && !activeWindow
   });
 }
@@ -110,6 +134,7 @@ function setActiveFloatingWindow(win, explicitName = "") {
   activeWindowState = nextState;
 
   if (changed) {
+    refreshBackgroundThrottle();
     sendActivityStateToChat();
   }
 }
@@ -128,6 +153,7 @@ function clearActiveFloatingWindow(win = null) {
 
   if (activeWindowState !== null) {
     activeWindowState = null;
+    refreshBackgroundThrottle();
     sendActivityStateToChat();
   }
 }
@@ -365,6 +391,48 @@ function setupMinimizedWindowTray() {
   window.addEventListener('resize', positionMinimizedWindowTray);
 }
 
+// Wraps requestAnimationFrame inside same-origin game iframes so that, when more
+// than one game window is visible, the inactive ones tick at ~30fps instead of
+// competing at full rate. The active window (or a lone game) is never touched.
+function installFrameThrottle(win, iframe) {
+  if (!HEAVY_WINDOW_KINDS.has(win.dataset.activityKind)) return;
+  const patch = () => {
+    try {
+      const w = iframe.contentWindow;
+      if (!w || w.__ghRafPatched || typeof w.requestAnimationFrame !== 'function') return;
+      w.__ghRafPatched = true;
+      const nativeRaf = w.requestAnimationFrame.bind(w);
+      const nativeCancel = w.cancelAnimationFrame.bind(w);
+      const pending = new Map();
+      let seq = 0;
+      w.requestAnimationFrame = (callback) => {
+        if (!win.__ghBackground) return nativeRaf(callback);
+        const id = 1e9 + (++seq);
+        const entry = { timer: 0, raf: 0 };
+        entry.timer = w.setTimeout(() => {
+          entry.raf = nativeRaf((ts) => { pending.delete(id); callback(ts); });
+        }, BACKGROUND_FRAME_MS);
+        pending.set(id, entry);
+        return id;
+      };
+      w.cancelAnimationFrame = (id) => {
+        const entry = pending.get(id);
+        if (entry) {
+          w.clearTimeout(entry.timer);
+          if (entry.raf) nativeCancel(entry.raf);
+          pending.delete(id);
+          return;
+        }
+        nativeCancel(id);
+      };
+    } catch (e) {
+      // Cross-origin frames cannot be patched; they simply run unthrottled.
+    }
+  };
+  iframe.addEventListener('load', patch);
+  patch();
+}
+
 function installIframeFullscreenTracking(win, iframe) {
   const install = () => {
     try {
@@ -541,6 +609,7 @@ function restoreDesktopLayout() {
     win.classList.toggle('minimized', !!saved.minimized);
   });
   updateMinimizedWindowTray();
+  updateCRTState();
 }
 
 function resetAllWindowSizesAndPositions() {
@@ -763,7 +832,7 @@ function renderProjects() {
       tagsWrapper.innerHTML = '';
       project.tags.forEach(tag => {
         const span = document.createElement('span');
-        span.className = `tag ${tag.includes('Top Pick') ? 'tag--featured' : tag === 'Under development' ? 'tag--dev' : ''}`;
+        span.className = `tag ${tag.includes('Top Pick') ? 'tag--featured' : tag.toLowerCase() === 'under development' ? 'tag--dev' : ''}`;
         span.textContent = tag;
         tagsWrapper.appendChild(span);
       });
@@ -804,12 +873,17 @@ function renderProjects() {
 
 // ===== WINDOW MANAGER UTILS =====
 function updateCRTState() {
+  const root = document.documentElement;
   const anyMaximized = document.querySelectorAll('.app-window.maximized:not([hidden]):not(.minimized)').length > 0;
-  if (anyMaximized) {
-    document.documentElement.classList.add('temp-no-crt');
-  } else {
-    document.documentElement.classList.remove('temp-no-crt');
-  }
+  root.classList.toggle('temp-no-crt', anyMaximized);
+
+  // Any visible game/arcade window (maximized or not) switches the launcher's
+  // decorative effects off until it is closed or minimized.
+  const gameOpen = getVisibleHeavyWindows().length > 0;
+  const changed = root.classList.contains('game-open') !== gameOpen;
+  root.classList.toggle('game-open', gameOpen);
+  refreshBackgroundThrottle();
+  if (changed) sendActivityStateToChat();
 }
 
 // ===== IN-PAGE WINDOW BUTTONS (FOR REGULAR PAGE PANELS) =====
@@ -859,6 +933,12 @@ function makeWindowDraggableAndResizable(win) {
 
     let isResizing = false;
     let startX, startY, startW, startH, startLeft, startTop;
+    let resizeRaf = 0;
+    let resizePoint = null;
+
+    const pointOf = (e) => e.type.startsWith('touch')
+      ? { x: e.touches[0].clientX, y: e.touches[0].clientY }
+      : { x: e.clientX, y: e.clientY };
 
     const startResize = (e) => {
       if (win.classList.contains('maximized')) return;
@@ -866,11 +946,10 @@ function makeWindowDraggableAndResizable(win) {
       if (e.cancelable) e.preventDefault();
       isResizing = true;
 
-      const clientX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
-      const clientY = e.type.startsWith('touch') ? e.touches[0].clientY : e.clientY;
-
-      startX = clientX;
-      startY = clientY;
+      const p = pointOf(e);
+      startX = p.x;
+      startY = p.y;
+      resizePoint = p;
 
       const rect = win.getBoundingClientRect();
       startW = rect.width;
@@ -893,15 +972,14 @@ function makeWindowDraggableAndResizable(win) {
       document.addEventListener('touchend', stopResize);
     };
 
-    const onResize = (e) => {
-      if (!isResizing) return;
-      if (e.cancelable) e.preventDefault();
+    // Layout work is batched to one update per animation frame so a fast mouse
+    // does not force several full iframe re-layouts per frame.
+    const applyResize = () => {
+      resizeRaf = 0;
+      if (!isResizing || !resizePoint) return;
 
-      const clientX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
-      const clientY = e.type.startsWith('touch') ? e.touches[0].clientY : e.clientY;
-
-      const dx = clientX - startX;
-      const dy = clientY - startY;
+      const dx = resizePoint.x - startX;
+      const dy = resizePoint.y - startY;
 
       const minW = 280;
       const minH = 200;
@@ -917,8 +995,17 @@ function makeWindowDraggableAndResizable(win) {
       }
     };
 
+    const onResize = (e) => {
+      if (!isResizing) return;
+      if (e.cancelable) e.preventDefault();
+      resizePoint = pointOf(e);
+      if (!resizeRaf) resizeRaf = requestAnimationFrame(applyResize);
+    };
+
     const stopResize = () => {
       if (!isResizing) return;
+      if (resizeRaf) { cancelAnimationFrame(resizeRaf); resizeRaf = 0; }
+      applyResize(); // commit the final pointer position
       isResizing = false;
       if (iframe) iframe.style.pointerEvents = 'auto';
       document.removeEventListener('mousemove', onResize);
@@ -935,6 +1022,10 @@ function makeWindowDraggableAndResizable(win) {
   if (titleBar) {
     let isDragging = false;
     let startX, startY, initialLeft, initialTop;
+    let dragRaf = 0;
+    let dragPoint = null;
+    let dragLeft = 0;
+    let dragTop = 0;
 
     const startDrag = (e) => {
       if (e.target.closest('button')) return;
@@ -946,10 +1037,13 @@ function makeWindowDraggableAndResizable(win) {
 
       startX = clientX;
       startY = clientY;
+      dragPoint = { x: clientX, y: clientY };
 
       const rect = win.getBoundingClientRect();
       initialLeft = rect.left;
       initialTop = rect.top;
+      dragLeft = initialLeft;
+      dragTop = initialTop;
 
       win.style.left = initialLeft + 'px';
       win.style.top = initialTop + 'px';
@@ -959,11 +1053,24 @@ function makeWindowDraggableAndResizable(win) {
       if (iframe) iframe.style.pointerEvents = 'none';
       highestZIndex++;
       win.style.zIndex = highestZIndex;
+      win.style.willChange = 'translate';
 
       document.addEventListener('mousemove', onDrag);
       document.addEventListener('mouseup', stopDrag);
       document.addEventListener('touchmove', onDrag, { passive: false });
       document.addEventListener('touchend', stopDrag);
+    };
+
+    // While dragging, the window is moved with the compositor-only `translate`
+    // property (no layout, no iframe resize). left/top are committed on release.
+    const applyDrag = () => {
+      dragRaf = 0;
+      if (!isDragging || !dragPoint) return;
+      const dx = dragPoint.x - startX;
+      const dy = dragPoint.y - startY;
+      dragLeft = Math.max(0, Math.min(window.innerWidth - 80, initialLeft + dx));
+      dragTop = Math.max(0, Math.min(window.innerHeight - 30, initialTop + dy));
+      win.style.translate = `${dragLeft - initialLeft}px ${dragTop - initialTop}px`;
     };
 
     const onDrag = (e) => {
@@ -972,17 +1079,19 @@ function makeWindowDraggableAndResizable(win) {
 
       const clientX = e.type.startsWith('touch') ? e.touches[0].clientX : e.clientX;
       const clientY = e.type.startsWith('touch') ? e.touches[0].clientY : e.clientY;
-
-      const dx = clientX - startX;
-      const dy = clientY - startY;
-
-      win.style.left = Math.max(0, Math.min(window.innerWidth - 80, initialLeft + dx)) + 'px';
-      win.style.top = Math.max(0, Math.min(window.innerHeight - 30, initialTop + dy)) + 'px';
+      dragPoint = { x: clientX, y: clientY };
+      if (!dragRaf) dragRaf = requestAnimationFrame(applyDrag);
     };
 
     const stopDrag = () => {
       if (!isDragging) return;
+      if (dragRaf) { cancelAnimationFrame(dragRaf); dragRaf = 0; }
+      applyDrag(); // commit the final pointer position
       isDragging = false;
+      win.style.left = dragLeft + 'px';
+      win.style.top = dragTop + 'px';
+      win.style.translate = '';
+      win.style.willChange = '';
       if (iframe) iframe.style.pointerEvents = 'auto';
       document.removeEventListener('mousemove', onDrag);
       document.removeEventListener('mouseup', stopDrag);
@@ -1003,6 +1112,8 @@ function createAppletWindow(appletPath, options = {}) {
   const frameId = options.iframeId || (winId + '-frame');
   const initialTitle = options.title || 'Applet';
   const keepAlive = options.keepAlive || false; // Used to prevent iframe destruction
+  const deferLoad = options.deferLoad || false; // Don't load the app until it is first opened
+  let deferredLoaded = !deferLoad;
 
   const win = document.createElement('div');
   win.id = winId;
@@ -1013,7 +1124,7 @@ function createAppletWindow(appletPath, options = {}) {
     winId.startsWith('game-win-') ? 'game' :
     'window'
   );
-  win.role = 'dialog';
+  win.setAttribute('role', 'dialog');
   win.setAttribute('aria-labelledby', `${winId}-title`);
   win.hidden = options.hidden !== undefined ? options.hidden : true;
 
@@ -1071,7 +1182,7 @@ function createAppletWindow(appletPath, options = {}) {
   const iframe = document.createElement('iframe');
   iframe.id = frameId;
   iframe.className = 'app-frame';
-  iframe.src = targetSrc;
+  iframe.src = deferLoad ? 'about:blank' : targetSrc;
   iframe.title = initialTitle;
   iframe.loading = keepAlive ? 'eager' : 'lazy';
   iframe.referrerPolicy = 'no-referrer';
@@ -1080,6 +1191,13 @@ function createAppletWindow(appletPath, options = {}) {
   win.append(titleBar, body);
   document.body.appendChild(win);
   installIframeFullscreenTracking(win, iframe);
+  installFrameThrottle(win, iframe);
+
+  function ensureDeferredLoaded() {
+    if (deferredLoaded) return;
+    deferredLoaded = true;
+    iframe.src = targetSrc;
+  }
 
   const defaultWindowStyle = {
     top: win.style.top || '',
@@ -1182,6 +1300,7 @@ function createAppletWindow(appletPath, options = {}) {
     maxBtn.setAttribute('aria-label', isMaximized ? 'Restore' : 'Maximize');
     win.hidden = saved.hidden !== false;
     win.classList.toggle('minimized', !!saved.minimized);
+    if (!win.hidden && !win.classList.contains('minimized')) ensureDeferredLoaded();
   }
 
   function resetWindowGeometry() {
@@ -1302,6 +1421,7 @@ function createAppletWindow(appletPath, options = {}) {
   }
 
   function openWin() {
+    ensureDeferredLoaded();
     restoreIframe(); // Boots the app if it was closed previously
     win.hidden = false;
     win.classList.remove('minimized');
@@ -1519,7 +1639,8 @@ function setupAppletsAndFloatingWindows() {
     width: 'min(760px, calc(100vw - 36px))',
     height: 'min(660px, calc(100vh - 110px))',
     icon: 'images/icon.JPG',
-    keepAlive: true
+    keepAlive: true,
+    deferLoad: true
   });
 
   createAppletWindow('system-monitor.html', {
@@ -1529,7 +1650,8 @@ function setupAppletsAndFloatingWindows() {
     title: 'System Monitor',
     width: 'min(760px, calc(100vw - 36px))',
     height: 'min(640px, calc(100vh - 110px))',
-    keepAlive: true
+    keepAlive: true,
+    deferLoad: true
   });
 
   createAppletWindow('timer.html', {
