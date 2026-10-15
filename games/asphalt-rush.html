@@ -76,7 +76,7 @@ const swM=new T.MeshLambertMaterial({map:tex(64,64,(g,w,h)=>{g.fillStyle='#c4baa
 const bms=[0xd2553a,0x2fa3c4,0xf0b23a,0x9a5bd0,0xece6d6].map(c=>{const ca=document.createElement('canvas'),cb=document.createElement('canvas');ca.width=ca.height=cb.width=cb.height=64;const ga=ca.getContext('2d'),gb=cb.getContext('2d');ga.fillStyle='#'+c.toString(16).padStart(6,'0');ga.fillRect(0,0,64,64);gb.fillStyle='#000';gb.fillRect(0,0,64,64);
  for(let y=4;y<64;y+=16)for(let x=4;x<64;x+=16){const l=Math.random()<.35;ga.fillStyle=l?'#ffd77a':'#1b2434';ga.fillRect(x,y,9,10);if(l){gb.fillStyle='#ffd27a';gb.fillRect(x,y,9,10)}}
  const mk=cv=>{const t=new T.CanvasTexture(cv);t.wrapS=t.wrapT=T.RepeatWrapping;t.anisotropy=8;return t};return new T.MeshLambertMaterial({map:mk(ca),emissive:0xffffff,emissiveMap:mk(cb),emissiveIntensity:0})});
-const rdM=[0,new T.MeshStandardMaterial({map:roadT(1),roughness:.5,metalness:.15,envMapIntensity:.3}),new T.MeshStandardMaterial({map:roadT(2),roughness:.5,metalness:.15,envMapIntensity:.3})];
+const rdM=[0,new T.MeshLambertMaterial({map:roadT(1)}),new T.MeshLambertMaterial({map:roadT(2)})];
 const M=c=>new T.MeshStandardMaterial({color:c,roughness:.6,metalness:.2,envMapIntensity:.3}),em=c=>new T.MeshBasicMaterial({color:c});
 const gP=new T.PlaneGeometry(S,S).rotateX(-Math.PI/2),gV=new T.PlaneGeometry(16,S).rotateX(-Math.PI/2),gH16=new T.PlaneGeometry(16,S).rotateX(-Math.PI/2),gH34=new T.PlaneGeometry(34,S).rotateX(-Math.PI/2);
 const trG=new T.CylinderGeometry(.2,.3,2.2,6),lfG=new T.SphereGeometry(1.6,8,6),trM=M(0x5a3c22),lfM=[0x1faa3c,0x3bc243,0x8bc34a].map(M),poG=new T.CylinderGeometry(.1,.12,6,6),poM=M(0x555a60),laG=new T.SphereGeometry(.35,8,6),laM=em(0xfff2b0),biG=new T.CylinderGeometry(.45,.4,1,8),biM=M(0x2f5d3a);
@@ -89,6 +89,9 @@ const beamG=new T.ConeGeometry(2.4,16,14,1,true).rotateX(-Math.PI/2).translate(0
 const rampM=new T.MeshLambertMaterial({map:tex(64,64,(g,w,h)=>{g.fillStyle='#222';g.fillRect(0,0,w,h);g.fillStyle='#ffc400';for(let i=-64;i<128;i+=32){g.beginPath();g.moveTo(i,0);g.lineTo(i+16,0);g.lineTo(i+80,64);g.lineTo(i+64,64);g.fill()}},2,3),emissive:0x664400});
 // ---------- procedural cars ----------
 function ext(pts,w,bev){const sh=new T.Shape();pts.forEach((q,i)=>i?sh.lineTo(q[0],q[1]):sh.moveTo(q[0],q[1]));const d=w-bev*2,g=new T.ExtrudeGeometry(sh,{depth:d,bevelEnabled:bev>0,bevelThickness:bev,bevelSize:bev,bevelSegments:2,curveSegments:1});g.translate(0,0,-d/2);g.rotateY(-Math.PI/2);return g}
+let ENV=null;
+try{const es=new T.Scene(),ec=document.createElement('canvas');ec.width=256;ec.height=128;const ex=ec.getContext('2d'),gr=ex.createLinearGradient(0,0,0,128);gr.addColorStop(0,'#05061a');gr.addColorStop(.5,'#3a2a6a');gr.addColorStop(.62,'#ff7aa8');gr.addColorStop(.7,'#201a40');gr.addColorStop(1,'#0a0a14');ex.fillStyle=gr;ex.fillRect(0,0,256,128);for(let n=0;n<40;n++){ex.fillStyle=['#ffd9a0','#00e5ff','#ff2d95'][n%3];ex.fillRect(Math.random()*256,70+Math.random()*30,3+Math.random()*10,2)}
+ es.add(new T.Mesh(new T.SphereGeometry(50,24,12),new T.MeshBasicMaterial({map:new T.CanvasTexture(ec),side:T.BackSide})));ENV=new T.PMREMGenerator(R).fromScene(es,.02).texture}catch(e){}
 const sm1=p=>{const o=[];for(let i=0;i<p.length;i++){const a=p[i],b=p[(i+1)%p.length];o.push([a[0]*.75+b[0]*.25,a[1]*.75+b[1]*.25],[a[0]*.25+b[0]*.75,a[1]*.25+b[1]*.75])}return o};
 const exG=new T.CylinderGeometry(.075,.075,.3,10).rotateX(Math.PI/2),lensG=new T.SphereGeometry(.09,8,6),fall=[],vAx=new T.Vector3(),
 shM=new T.MeshBasicMaterial({map:tex(64,64,(g,w,h)=>{const q=g.createRadialGradient(32,32,2,32,32,32);q.addColorStop(0,'rgba(0,0,0,.9)');q.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=q;g.fillRect(0,0,64,64)}),transparent:true,depthWrite:false,opacity:.6,polygonOffset:true,polygonOffsetFactor:-2}),
@@ -96,7 +99,7 @@ lgG=new T.PlaneGeometry(13,13).rotateX(-Math.PI/2),lgM=new T.MeshBasicMaterial({
 const arcG=(R,t)=>new T.TorusGeometry(R,t,6,14,Math.PI).rotateY(Math.PI/2);
 function carMesh(ci,u,col,cop,ug,us,rco,hco){
  const s=CARS[ci],g=new T.Group(),b=new T.Group(),h=s.L/2,W=s.W,L=s.L;g.add(b);
- const bm=new T.MeshPhysicalMaterial({color:col??s.clr,metalness:.6,roughness:.22,clearcoat:1,clearcoatRoughness:.04,envMapIntensity:.7,side:T.DoubleSide}),dk=new T.MeshStandardMaterial({color:0x121212,roughness:.7}),gl=new T.MeshStandardMaterial({color:0x0a1420,metalness:.95,roughness:.05}),cr=new T.MeshStandardMaterial({color:0xdddddd,metalness:1,roughness:.15});
+ const bm=new T.MeshPhysicalMaterial({color:col??s.clr,metalness:.6,roughness:.22,clearcoat:1,clearcoatRoughness:.04,envMap:ENV,envMapIntensity:.7,side:T.DoubleSide}),dk=new T.MeshStandardMaterial({color:0x121212,roughness:.7}),gl=new T.MeshStandardMaterial({color:0x0a1420,metalness:.95,roughness:.05}),cr=new T.MeshStandardMaterial({color:0xdddddd,metalness:1,roughness:.15});
  const pf=[[h,.3],[h,s.hh*.75],[h-.35,s.hh],[s.a,s.hh+.03],[s.b,s.rh],[s.c,s.rh],[s.d,s.th],[-h+.2,s.th],[-h,s.th-.1],[-h,.3]];
  const bd=new T.Mesh(ext(sm1(pf),W,.07),bm);bd.castShadow=true;b.add(bd);
  const cab=[pf[3],pf[4],pf[5],pf[6]],cx=cab.reduce((q,p)=>q+p[0],0)/4,cy=cab.reduce((q,p)=>q+p[1],0)/4;
@@ -142,7 +145,7 @@ function carMesh(ci,u,col,cop,ug,us,rco,hco){
  if(u[4])for(const sx of[-1,1])bx(b,.12,.12,.4,cr,sx*.3,.45,-h-.1);
  if(cop)g.userData.lb=[bx(b,.5,.12,.3,em(0xff0000),-.3,s.rh+.08,(s.b+s.c)/2),bx(b,.5,.12,.3,em(0x0040ff),.3,s.rh+.08,(s.b+s.c)/2)];
  return g}
-const rdD=[0,1,2].map(k=>k?new T.MeshStandardMaterial({map:rdM[k].map,roughness:.5,metalness:.15,envMapIntensity:.3,side:T.DoubleSide}):0),grM=new T.MeshLambertMaterial({map:tex(64,64,(g,w,h)=>{g.fillStyle='#3f7a3a';g.fillRect(0,0,w,h);spk(g,w,h,500,.25)},S/8,S/8)}),
+const rdD=[0,1,2].map(k=>k?new T.MeshLambertMaterial({map:rdM[k].map,side:T.DoubleSide}):0),grM=new T.MeshLambertMaterial({map:tex(64,64,(g,w,h)=>{g.fillStyle='#3f7a3a';g.fillRect(0,0,w,h);spk(g,w,h,500,.25)},S/8,S/8)}),
 farmM=[0xc9a63a,0x6aa84f,0x8a6a3c].map(c=>new T.MeshLambertMaterial({color:c})),barnM=M(0x9c2f27),wM=M(0xe8e8e8),pineG=new T.ConeGeometry(2.2,8.5,7),pineM=M(0x1d5c2e),trkG=new T.CylinderGeometry(.35,.5,2.4,6),rockG=new T.DodecahedronGeometry(1,0),rockM=M(0x777a80),pstG=new T.BoxGeometry(1,1,1),pstM=em(0xdddddd),
 roofG=new T.ConeGeometry(1,1,4).rotateY(Math.PI/4),roofMs=[0x7a2e22,0x3b3f4a,0x5a4632].map(M),hsM=[bms[0],bms[4],bms[2]],indM=M(0x8a8f96),contMs=[0xc0392b,0x2980b9,0xe6a23c,0x27ae60].map(M),tankG=new T.CylinderGeometry(6,6,20,16),tankM=M(0xcfd3d8),stkG=new T.CylinderGeometry(1.6,2.4,40,10),siloG=new T.CylinderGeometry(2.5,2.5,12,12),turG=new T.CylinderGeometry(.6,1,50,8),bladeG=new T.BoxGeometry(1,22,.4),ringG=new T.TorusGeometry(7,.35,6,24),ringM=em(0x00ffcc),roofP=new T.CylinderGeometry(5.5,5.5,12.5,3).rotateZ(Math.PI/2).rotateX(-Math.PI/2);
 function mkCountry(g,i,j,x0,z0,w,r,boxes,pl){
@@ -373,8 +376,6 @@ P.m.userData.fl.visible=nt&&tr>0;P.m.userData.fl.scale.z=.7+Math.random()*.6;
  if(mt>0&&(mt-=dt)<=0)$('msg').textContent='';
 }
 rebuild();chunks();P.y=H(P.x,P.z);for(let i=0;i<18;i++)mkNpc();cam.position.set(P.x-8,P.y+4,P.z);
-try{const es=new T.Scene(),ec=document.createElement('canvas');ec.width=256;ec.height=128;const ex=ec.getContext('2d'),gr=ex.createLinearGradient(0,0,0,128);gr.addColorStop(0,'#05061a');gr.addColorStop(.5,'#3a2a6a');gr.addColorStop(.62,'#ff7aa8');gr.addColorStop(.7,'#201a40');gr.addColorStop(1,'#0a0a14');ex.fillStyle=gr;ex.fillRect(0,0,256,128);for(let n=0;n<40;n++){ex.fillStyle=['#ffd9a0','#00e5ff','#ff2d95'][n%3];ex.fillRect(Math.random()*256,70+Math.random()*30,3+Math.random()*10,2)}
- es.add(new T.Mesh(new T.SphereGeometry(50,24,12),new T.MeshBasicMaterial({map:new T.CanvasTexture(ec),side:T.BackSide})));sc.environment=new T.PMREMGenerator(R).fromScene(es,.02).texture}catch(e){}
 let last=performance.now(),sv=0;
 function frame(now){requestAnimationFrame(frame);const dt=Math.min(.05,(now-last)/1000);last=now;if(!paused)step(dt);if((sv+=dt)>5){sv=0;save()}R.render(sc,cam)}
 requestAnimationFrame(frame);
