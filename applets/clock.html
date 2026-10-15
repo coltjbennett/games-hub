@@ -3,257 +3,498 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Clock</title>
+  <meta name="color-scheme" content="light">
+  <title>Windows 95 Clock</title>
   <style>
+    /* The file lives in /applets/, while shared assets live in the repository root. */
     @font-face {
       font-family: "W95FA";
-      src: url('images/w95f.woff2') format('woff2'),
-           url('images/w95f.woff') format('woff');
-      font-weight: normal;
+      src: url("../images/w95f.woff2") format("woff2"),
+           url("../images/w95f.woff") format("woff");
       font-style: normal;
+      font-weight: 400;
+      font-display: swap;
     }
 
     :root {
       --win-bg: #c0c0c0;
       --win-blue: #000080;
-      --win-text: #000000;
-      --win-border-light: #ffffff;
-      --win-border-dark: #808080;
+      --win-text: #000;
+      --win-light: #fff;
+      --win-mid: #dfdfdf;
+      --win-shadow: #808080;
+      --win-dark: #404040;
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: "W95FA", "MS Sans Serif", sans-serif;
-      user-select: none;
-    }
-
+    * { box-sizing: border-box; }
+    html, body { width: 100%; min-width: 0; min-height: 100%; margin: 0; }
     body {
+      padding: 8px;
       background: var(--win-bg);
       color: var(--win-text);
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-      padding: 10px;
+      font: 13px "W95FA", "MS Sans Serif", Tahoma, sans-serif;
+      overflow-x: hidden;
     }
-
-    .tabs {
-      display: flex;
-      gap: 4px;
-      padding-bottom: 10px;
-    }
-
-    .tab-btn {
-      flex: 1;
+    button, input { font: inherit; color: inherit; }
+    button {
+      min-height: 28px;
+      padding: 4px 10px;
+      border: 2px solid;
+      border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
+      border-radius: 0;
       background: var(--win-bg);
-      border: 2px outset var(--win-border-light);
-      color: var(--win-text);
-      padding: 6px 0;
       cursor: pointer;
-      font-size: 12px;
     }
-
+    button:active, button.pressed {
+      border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark);
+      padding: 5px 9px 3px 11px;
+    }
+    button:focus-visible, input:focus-visible { outline: 1px dotted #000; outline-offset: -4px; }
+    .window {
+      width: 100%;
+      max-width: 560px;
+      margin: 0 auto;
+      padding: 3px;
+      border: 2px solid;
+      border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
+      background: var(--win-bg);
+      box-shadow: 1px 1px 0 #000;
+    }
+    .titlebar {
+      min-height: 25px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 3px 6px;
+      color: #fff;
+      background: var(--win-blue);
+      font-weight: bold;
+      letter-spacing: .1px;
+    }
+    .title-icon {
+      width: 16px; height: 16px; flex: 0 0 16px;
+      display: grid; place-items: center;
+      color: #000; background: #c0c0c0;
+      border: 1px solid #fff;
+      font-size: 11px;
+    }
+    .titlebar span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tabs { display: flex; gap: 3px; padding: 8px 3px 0; }
+    .tab-btn { flex: 1; min-width: 0; padding: 5px 3px; }
     .tab-btn.active {
-      border: 2px inset var(--win-border-light);
-      background: #e0e0e0;
+      position: relative;
+      z-index: 1;
+      border-bottom-color: var(--win-bg);
+      background: var(--win-bg);
       font-weight: bold;
     }
-
     .view {
       display: none;
-      flex-direction: column;
+      min-height: 300px;
+      padding: 16px 10px;
+      border: 2px solid;
+      border-color: var(--win-shadow) var(--win-light) var(--win-light) var(--win-shadow);
       align-items: center;
       justify-content: center;
-      flex: 1;
+      flex-direction: column;
       gap: 12px;
-      border: 2px inset var(--win-border-dark);
-      background: #ffffff;
+      background: var(--win-bg);
     }
-
     .view.active { display: flex; }
-    
-    .digital-clock { 
-      font-size: 2.5rem; 
-      letter-spacing: 1px; 
+    .clock-face {
+      position: relative;
+      width: min(66vw, 260px);
+      height: min(66vw, 260px);
+      min-width: 190px;
+      min-height: 190px;
+      max-width: 260px;
+      max-height: 260px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: #fff;
+      border: 4px solid;
+      border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark);
+      box-shadow: inset 1px 1px 0 #777, 2px 2px 0 #eee;
+      touch-action: manipulation;
+    }
+    .tick {
+      position: absolute;
+      left: 50%; top: 50%;
+      width: 2px; height: 7px;
+      background: #222;
+      transform-origin: 50% calc(100% + 91px);
+      margin-left: -1px;
+      margin-top: -98px;
+    }
+    .tick.major { width: 3px; height: 12px; margin-left: -1.5px; margin-top: -98px; transform-origin: 50% 98px; }
+    .number {
+      position: absolute;
+      left: 50%; top: 50%;
+      width: 26px; height: 22px;
+      margin: -11px 0 0 -13px;
+      text-align: center;
+      line-height: 22px;
+      font-size: 16px;
       font-weight: bold;
     }
-    
-    .date-display { font-size: 13px; color: #555; }
-    
-    .controls { display: flex; gap: 8px; }
-
-    button.action {
-      background: var(--win-bg);
-      border: 2px outset var(--win-border-light);
-      color: var(--win-text);
-      padding: 4px 14px;
-      cursor: pointer;
-      font-size: 12px;
+    .hand {
+      position: absolute;
+      left: 50%; top: 50%;
+      border-radius: 4px;
+      transform-origin: 50% 100%;
+      transform: translate(-50%, -100%) rotate(0deg);
     }
-
-    button.action:active {
-      border-style: inset;
-      padding: 5px 13px 3px 15px;
+    .hand.hour { width: 6px; height: 58px; margin-top: -1px; background: #111; }
+    .hand.minute { width: 4px; height: 80px; background: #222; }
+    .hand.second { width: 2px; height: 88px; background: #c00000; }
+    .hub {
+      position: absolute; left: 50%; top: 50%;
+      width: 12px; height: 12px; margin: -6px;
+      border-radius: 50%; background: #222;
+      border: 2px solid #777;
+      z-index: 2;
     }
-
-    input[type="number"], input[type="time"] {
-      background: #ffffff;
-      border: 2px inset var(--win-border-dark);
-      color: var(--win-text);
-      padding: 4px 8px;
+    .date-display { text-align: center; font-size: 13px; }
+    .clock-digital { font-size: 15px; font-weight: bold; }
+    .panel {
+      width: min(100%, 340px);
+      padding: 12px;
+      border: 2px solid;
+      border-color: var(--win-light) var(--win-shadow) var(--win-shadow) var(--win-light);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .stopwatch-display {
+      font-size: clamp(28px, 8vw, 40px);
+      font-weight: bold;
+      font-variant-numeric: tabular-nums;
+    }
+    .controls { display: flex; flex-wrap: wrap; justify-content: center; gap: 7px; }
+    .field-row { display: flex; align-items: center; flex-wrap: wrap; justify-content: center; gap: 8px; }
+    input[type="time"] {
+      min-height: 30px;
+      padding: 3px 6px;
+      background: #fff;
+      border: 2px solid;
+      border-color: var(--win-shadow) var(--win-light) var(--win-light) var(--win-shadow);
+    }
+    .status {
+      width: 100%;
+      min-height: 36px;
+      padding: 8px;
       text-align: center;
-      outline: none;
-      font-size: 13px;
+      background: #fff;
+      border: 2px solid;
+      border-color: var(--win-shadow) var(--win-light) var(--win-light) var(--win-shadow);
+      overflow-wrap: anywhere;
+    }
+    .status.alarming { background: #fff2cc; font-weight: bold; }
+    .small { font-size: 12px; color: #333; text-align: center; line-height: 1.4; }
+    .hidden { display: none !important; }
+    .statusbar {
+      display: flex; justify-content: space-between; gap: 8px;
+      margin-top: 4px; padding: 4px 6px;
+      border: 1px solid;
+      border-color: var(--win-shadow) var(--win-light) var(--win-light) var(--win-shadow);
+      font-size: 11px;
+    }
+    @media (max-width: 300px) {
+      body { padding: 4px; }
+      .view { padding: 12px 4px; }
+      .tabs { padding-left: 0; padding-right: 0; }
+      .tab-btn { font-size: 11px; }
+      .clock-face { min-width: 176px; min-height: 176px; }
+      .tick { transform-origin: 50% calc(100% + 79px); margin-top: -86px; }
+      .tick.major { margin-top: -86px; transform-origin: 50% 86px; }
+      .hand.hour { height: 48px; }
+      .hand.minute { height: 64px; }
+      .hand.second { height: 72px; }
+      .number { font-size: 14px; }
     }
   </style>
 </head>
 <body>
-  <div class="tabs">
-    <button class="tab-btn active" id="btn-clock" onclick="showTab('clock')">Clock</button>
-    <button class="tab-btn" id="btn-stopwatch" onclick="showTab('stopwatch')">Stopwatch</button>
-    <button class="tab-btn" id="btn-timer" onclick="showTab('timer')">Timer</button>
-    <button class="tab-btn" id="btn-alarm" onclick="showTab('alarm')">Alarm</button>
-  </div>
+  <main class="window" aria-label="Windows 95 clock applet">
+    <div class="titlebar"><span class="title-icon" aria-hidden="true">◷</span><span>Clock</span></div>
+    <nav class="tabs" aria-label="Clock tools">
+      <button class="tab-btn active" id="btn-clock" type="button" data-tab="clock" aria-selected="true">Clock</button>
+      <button class="tab-btn" id="btn-stopwatch" type="button" data-tab="stopwatch" aria-selected="false">Stopwatch</button>
+      <button class="tab-btn" id="btn-alarm" type="button" data-tab="alarm" aria-selected="false">Alarm</button>
+    </nav>
 
-  <div id="clockView" class="view active">
-    <div class="digital-clock" id="clockDisplay">00:00:00</div>
-    <div class="date-display" id="dateDisplay">---</div>
-  </div>
+    <section id="clockView" class="view active" aria-label="Analog clock">
+      <div class="clock-face" id="clockFace" role="img" aria-label="Analog clock face">
+        <div id="ticks" aria-hidden="true"></div>
+        <div id="numbers" aria-hidden="true"></div>
+        <div class="hand hour" id="hourHand"></div>
+        <div class="hand minute" id="minuteHand"></div>
+        <div class="hand second" id="secondHand"></div>
+        <div class="hub"></div>
+      </div>
+      <div class="clock-digital" id="clockDigital">--:--:--</div>
+      <div class="date-display" id="dateDisplay">Loading date…</div>
+    </section>
 
-  <div id="stopwatchView" class="view">
-    <div class="digital-clock" id="swDisplay">00:00.00</div>
-    <div class="controls">
-      <button class="action" onclick="startSW()">Start</button>
-      <button class="action" onclick="stopSW()">Stop</button>
-      <button class="action" onclick="resetSW()">Reset</button>
-    </div>
-  </div>
+    <section id="stopwatchView" class="view" aria-label="Stopwatch">
+      <div class="panel">
+        <div class="stopwatch-display" id="swDisplay" role="timer">00:00.00</div>
+        <div class="controls">
+          <button type="button" id="swStart">Start</button>
+          <button type="button" id="swStop">Stop</button>
+          <button type="button" id="swReset">Reset</button>
+        </div>
+      </div>
+    </section>
 
-  <div id="timerView" class="view">
-    <div>
-      <input type="number" id="timerSec" min="1" max="3600" value="60" style="width: 70px;"> sec
-    </div>
-    <div class="digital-clock" id="timerDisplay">01:00</div>
-    <div class="controls">
-      <button class="action" onclick="startTimer()">Start</button>
-      <button class="action" onclick="resetTimer()">Reset</button>
-    </div>
-  </div>
-
-  <div id="alarmView" class="view">
-    <input type="time" id="alarmTime">
-    <button class="action" onclick="setAlarm()">Set Alarm</button>
-    <div id="alarmMsg" class="date-display" style="margin-top: 8px;">No alarm set</div>
-  </div>
+    <section id="alarmView" class="view" aria-label="Alarm settings">
+      <div class="panel">
+        <strong>Set alarm time</strong>
+        <div class="field-row">
+          <label for="alarmTime">Time:</label>
+          <input type="time" id="alarmTime" required>
+        </div>
+        <div class="controls">
+          <button type="button" id="setAlarm">Set Alarm</button>
+          <button type="button" id="clearAlarm">Clear</button>
+          <button type="button" id="stopAlarm" class="hidden">Stop Alarm</button>
+        </div>
+        <div id="alarmMsg" class="status" role="status" aria-live="polite">No alarm set</div>
+        <div class="small">Keep this page open for the alarm to sound. Your browser may limit sound or background activity in an iframe.</div>
+      </div>
+    </section>
+    <div class="statusbar"><span id="fontStatus">Windows 95 style</span><span id="tzStatus">Local time</span></div>
+  </main>
 
   <script>
-    // Tab switching Logic
-    function showTab(name) {
-      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      document.getElementById(name + 'View').classList.add('active');
-      document.getElementById('btn-' + name).classList.add('active');
-    }
+    (() => {
+      "use strict";
 
-    // --- Clock Logic ---
-    function updateClock() {
-      const now = new Date();
-      document.getElementById('clockDisplay').innerText = now.toLocaleTimeString();
-      document.getElementById('dateDisplay').innerText = now.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
-      checkAlarm(now);
-    }
-    setInterval(updateClock, 1000);
-    updateClock(); // Initial paint
+      const $ = (id) => document.getElementById(id);
+      const tabs = [...document.querySelectorAll("[data-tab]")];
+      const views = [...document.querySelectorAll(".view")];
 
-    // --- Stopwatch Logic ---
-    let swInterval = null;
-    let swStartTime = 0;
-    let swElapsedTime = 0;
-
-    function startSW() {
-      if (swInterval) return;
-      swStartTime = Date.now() - swElapsedTime;
-      swInterval = setInterval(() => {
-        swElapsedTime = Date.now() - swStartTime;
-        let totalSec = Math.floor(swElapsedTime / 1000);
-        let ms = Math.floor((swElapsedTime % 1000) / 10).toString().padStart(2, '0');
-        let s = (totalSec % 60).toString().padStart(2, '0');
-        let m = Math.floor(totalSec / 60).toString().padStart(2, '0');
-        document.getElementById('swDisplay').innerText = `${m}:${s}.${ms}`;
-      }, 10);
-    }
-    
-    function stopSW() { 
-      clearInterval(swInterval); 
-      swInterval = null; 
-    }
-    
-    function resetSW() { 
-      stopSW(); 
-      swElapsedTime = 0; 
-      document.getElementById('swDisplay').innerText = '00:00.00'; 
-    }
-
-    // --- Timer Logic ---
-    let timerInterval = null;
-    let timerEndTime = 0;
-    
-    function startTimer() {
-      resetTimer();
-      let secondsInput = parseInt(document.getElementById('timerSec').value) || 0;
-      if (secondsInput <= 0) return;
-      
-      timerEndTime = Date.now() + (secondsInput * 1000);
-      updateTimerDisplay(secondsInput);
-      
-      timerInterval = setInterval(() => {
-        let remaining = Math.max(0, Math.ceil((timerEndTime - Date.now()) / 1000));
-        updateTimerDisplay(remaining);
-        
-        if (remaining <= 0) {
-          clearInterval(timerInterval);
-          timerInterval = null;
-          setTimeout(() => alert('Timer Finished!'), 10);
-        }
-      }, 100);
-    }
-    
-    function resetTimer() { 
-      if(timerInterval) clearInterval(timerInterval);
-      timerInterval = null;
-      let initSec = parseInt(document.getElementById('timerSec').value) || 0;
-      updateTimerDisplay(initSec);
-    }
-    
-    function updateTimerDisplay(totalSeconds) {
-      let m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
-      let s = (totalSeconds % 60).toString().padStart(2, '0');
-      document.getElementById('timerDisplay').innerText = `${m}:${s}`;
-    }
-
-    // --- Alarm Logic ---
-    let alarmTarget = null;
-    let alarmTriggered = false;
-
-    function setAlarm() {
-      const val = document.getElementById('alarmTime').value;
-      if (!val) return;
-      alarmTarget = val;
-      alarmTriggered = false;
-      document.getElementById('alarmMsg').innerText = `Alarm set for ${val}`;
-    }
-    
-    function checkAlarm(now) {
-      if (!alarmTarget || alarmTriggered) return;
-      
-      const currentHM = now.toTimeString().slice(0, 5); // Grabs HH:MM in 24hr format
-      if (currentHM === alarmTarget && now.getSeconds() === 0) {
-        alarmTriggered = true; // Prevent multiple alerts within the same minute
-        setTimeout(() => alert('Your alarm is finished.'), 10);
-        document.getElementById('alarmMsg').innerText = 'Alarm passed.';
+      function showTab(name) {
+        views.forEach((view) => view.classList.toggle("active", view.id === name + "View"));
+        tabs.forEach((tab) => {
+          const active = tab.dataset.tab === name;
+          tab.classList.toggle("active", active);
+          tab.setAttribute("aria-selected", String(active));
+        });
       }
-    }
+      tabs.forEach((tab) => tab.addEventListener("click", () => showTab(tab.dataset.tab)));
+
+      // Draw the clock marks and numerals once; only the hands need updating.
+      for (let i = 0; i < 60; i++) {
+        const tick = document.createElement("div");
+        tick.className = "tick" + (i % 5 === 0 ? " major" : "");
+        tick.style.transform = `rotate(${i * 6}deg)`;
+        $("ticks").appendChild(tick);
+      }
+      for (let i = 1; i <= 12; i++) {
+        const number = document.createElement("div");
+        number.className = "number";
+        number.textContent = String(i);
+        const angle = (i * 30 - 90) * Math.PI / 180;
+        // Coordinates scale with the rendered clock face.
+        const placeNumber = () => {
+          const radius = $("clockFace").getBoundingClientRect().width * 0.355;
+          number.style.transform = `translate(${Math.cos(angle) * radius}px, ${Math.sin(angle) * radius}px)`;
+        };
+        number.dataset.number = String(i);
+        number._placeNumber = placeNumber;
+        $("numbers").appendChild(number);
+      }
+      function positionClockMarks() {
+        $("numbers").querySelectorAll(".number").forEach((el) => el._placeNumber());
+        const face = $("clockFace");
+        const size = face.getBoundingClientRect().width;
+        const ticks = $("ticks").children;
+        for (const tick of ticks) {
+          const major = tick.classList.contains("major");
+          const length = major ? size * 0.047 : size * 0.027;
+          tick.style.height = `${length}px`;
+          tick.style.marginTop = `${-size * 0.385 - length}px`;
+          tick.style.transformOrigin = `50% ${size * 0.385 + length}px`;
+        }
+      }
+
+      function updateClock() {
+        const now = new Date();
+        const seconds = now.getSeconds() + now.getMilliseconds() / 1000;
+        const minutes = now.getMinutes() + seconds / 60;
+        const hours = (now.getHours() % 12) + minutes / 60;
+        $("hourHand").style.transform = `translate(-50%, -100%) rotate(${hours * 30}deg)`;
+        $("minuteHand").style.transform = `translate(-50%, -100%) rotate(${minutes * 6}deg)`;
+        $("secondHand").style.transform = `translate(-50%, -100%) rotate(${seconds * 6}deg)`;
+        $("clockDigital").textContent = now.toLocaleTimeString();
+        $("dateDisplay").textContent = now.toLocaleDateString(undefined, {
+          weekday: "long", month: "short", day: "numeric", year: "numeric"
+        });
+        checkAlarm(now);
+      }
+
+      // Stopwatch uses elapsed wall-clock time, so it stays accurate if a tab is throttled.
+      let swRunning = false;
+      let swStartedAt = 0;
+      let swElapsed = 0;
+      function paintStopwatch() {
+        const elapsed = swElapsed + (swRunning ? Date.now() - swStartedAt : 0);
+        const centiseconds = Math.floor(elapsed / 10);
+        const minutes = Math.floor(centiseconds / 6000);
+        const seconds = Math.floor(centiseconds / 100) % 60;
+        const cs = centiseconds % 100;
+        $("swDisplay").textContent =
+          `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
+      }
+      $("swStart").addEventListener("click", () => {
+        if (!swRunning) { swStartedAt = Date.now(); swRunning = true; }
+        paintStopwatch();
+      });
+      $("swStop").addEventListener("click", () => {
+        if (swRunning) { swElapsed += Date.now() - swStartedAt; swRunning = false; }
+        paintStopwatch();
+      });
+      $("swReset").addEventListener("click", () => {
+        swRunning = false; swElapsed = 0; swStartedAt = 0; paintStopwatch();
+      });
+
+      // Alarm: compare timestamps rather than requiring a single exact second.
+      // This catches a target minute even if the browser delays an interval briefly.
+      let alarmTarget = null;
+      let lastClockCheck = Date.now();
+      let audioContext = null;
+      let alarmOscillator = null;
+      let alarmGain = null;
+      let alarmSoundTimer = null;
+
+      function alarmStatus(message, alarming = false) {
+        $("alarmMsg").textContent = message;
+        $("alarmMsg").classList.toggle("alarming", alarming);
+      }
+      function localDateKey(date) {
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+      }
+      async function prepareAudio() {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return false;
+        try {
+          if (!audioContext) audioContext = new AudioContextClass();
+          if (audioContext.state === "suspended") await audioContext.resume();
+          return audioContext.state === "running";
+        } catch (_) { return false; }
+      }
+      function startAlarmSound() {
+        stopAlarmSound();
+        if (!audioContext || audioContext.state !== "running") return;
+        try {
+          alarmOscillator = audioContext.createOscillator();
+          alarmGain = audioContext.createGain();
+          alarmOscillator.type = "square";
+          alarmOscillator.frequency.value = 880;
+          alarmGain.gain.value = 0.0001;
+          alarmOscillator.connect(alarmGain);
+          alarmGain.connect(audioContext.destination);
+          alarmOscillator.start();
+          const pulse = () => {
+            if (!alarmGain || !audioContext) return;
+            const t = audioContext.currentTime;
+            alarmGain.gain.cancelScheduledValues(t);
+            alarmGain.gain.setValueAtTime(0.0001, t);
+            alarmGain.gain.setValueAtTime(0.12, t + 0.04);
+            alarmGain.gain.setValueAtTime(0.0001, t + 0.28);
+          };
+          pulse();
+          alarmSoundTimer = window.setInterval(pulse, 650);
+        } catch (_) { stopAlarmSound(); }
+      }
+      function stopAlarmSound() {
+        if (alarmSoundTimer !== null) window.clearInterval(alarmSoundTimer);
+        alarmSoundTimer = null;
+        if (alarmOscillator) {
+          try { alarmOscillator.stop(); } catch (_) {}
+          try { alarmOscillator.disconnect(); } catch (_) {}
+        }
+        if (alarmGain) { try { alarmGain.disconnect(); } catch (_) {} }
+        alarmOscillator = null;
+        alarmGain = null;
+      }
+      async function setAlarm() {
+        const value = $("alarmTime").value;
+        if (!value) {
+          alarmStatus("Choose a time first.");
+          $("alarmTime").focus();
+          return;
+        }
+        await prepareAudio(); // User gesture allows the browser to unlock audio where supported.
+        const now = new Date();
+        const [hours, minutes] = value.split(":").map(Number);
+        const target = new Date(now);
+        target.setHours(hours, minutes, 0, 0);
+        if (target.getTime() <= now.getTime()) target.setDate(target.getDate() + 1);
+        alarmTarget = { value, timestamp: target.getTime(), dateKey: localDateKey(target), fired: false };
+        stopAlarmSound();
+        $("stopAlarm").classList.add("hidden");
+        alarmStatus(`Alarm set for ${value} (${target.toLocaleDateString()}).`);
+      }
+      function clearAlarm() {
+        alarmTarget = null;
+        stopAlarmSound();
+        $("stopAlarm").classList.add("hidden");
+        alarmStatus("No alarm set");
+      }
+      function fireAlarm() {
+        if (!alarmTarget || alarmTarget.fired) return;
+        alarmTarget.fired = true;
+        alarmStatus(`⏰ Alarm! It is ${alarmTarget.value}.`, true);
+        $("stopAlarm").classList.remove("hidden");
+        startAlarmSound();
+        // No blocking alert: it can freeze or be suppressed in embedded frames.
+      }
+      function checkAlarm(now) {
+        if (alarmTarget && !alarmTarget.fired && now.getTime() >= alarmTarget.timestamp) {
+          fireAlarm();
+        }
+        lastClockCheck = now.getTime();
+      }
+      $("setAlarm").addEventListener("click", setAlarm);
+      $("clearAlarm").addEventListener("click", clearAlarm);
+      $("stopAlarm").addEventListener("click", () => {
+        stopAlarmSound();
+        $("stopAlarm").classList.add("hidden");
+        if (alarmTarget) alarmStatus(`Alarm for ${alarmTarget.value} has sounded.`);
+      });
+
+      // Keep the page current after returning from a suspended/backgrounded iframe.
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+          const now = new Date();
+          updateClock();
+          if (swRunning) paintStopwatch();
+        }
+      });
+      window.addEventListener("pageshow", () => {
+        updateClock();
+        if (swRunning) paintStopwatch();
+        positionClockMarks();
+      });
+      window.addEventListener("resize", positionClockMarks);
+
+      // Check often, but derive the time from Date each time to avoid interval drift.
+      window.setInterval(updateClock, 100);
+      window.setInterval(() => { if (swRunning) paintStopwatch(); }, 25);
+      updateClock();
+      positionClockMarks();
+
+      // The custom font is loaded asynchronously; report whether it resolved.
+      if (document.fonts && document.fonts.load) {
+        document.fonts.load('13px "W95FA"').then((faces) => {
+          $("fontStatus").textContent = faces.length ? "W95FA font loaded" : "Fallback font";
+        }).catch(() => { $("fontStatus").textContent = "Fallback font"; });
+      }
+      $("tzStatus").textContent = Intl.DateTimeFormat().resolvedOptions().timeZone || "Local time";
+    })();
   </script>
 </body>
 </html>
