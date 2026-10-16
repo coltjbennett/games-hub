@@ -1,6 +1,6 @@
 // Bump VERSION on every release. The cache name is derived from it, so each
 // release gets a brand-new cache and the activate step deletes all old ones.
-const VERSION = '4.1.3';
+const VERSION = '4.1.4';
 const CACHE_PREFIX = 'games-hub-';
 const CACHE = CACHE_PREFIX + VERSION;
 const CORE = [
@@ -68,6 +68,7 @@ const EXTERNAL_DEPENDENCIES = [
   { url: 'https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js', mode: 'no-cors' },
   { url: 'https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js', mode: 'no-cors' },
   { url: 'https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js', mode: 'no-cors' },
+  { url: 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js', mode: 'no-cors' },
   { url: 'https://unpkg.com/x-frame-bypass@1.0.2', mode: 'cors' }
 ];
 const EXTERNAL_DEPENDENCY_URLS = new Set(EXTERNAL_DEPENDENCIES.map(dep => dep.url));
