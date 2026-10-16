@@ -476,6 +476,43 @@
       parent.postMessage({ __win95ProxyApplet: true, action: 'navigate', url: resolved.href, method }, '*');
     } catch (_) {}
   };
+  // Route common JavaScript network requests through the same public proxy.
+  // This helps many games load API/configuration resources, though some APIs
+  // require cookies, WebSockets, or headers public proxies cannot provide.
+  const proxify = value => {
+    try {
+      const resolved = new URL(value, document.baseURI);
+      if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') return value;
+      if (resolved.hostname === 'proxy.cors.dev') return resolved.href;
+      return 'https://proxy.cors.dev/' + resolved.href;
+    } catch (_) { return value; }
+  };
+  const nativeFetch = window.fetch ? window.fetch.bind(window) : null;
+  if (nativeFetch) window.fetch = (input, init) => {
+    try {
+      if (input instanceof Request) return nativeFetch(new Request(proxify(input.url), input), init);
+      return nativeFetch(proxify(String(input)), init);
+    } catch (_) { return nativeFetch(input, init); }
+  };
+  const nativeXhrOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+    return nativeXhrOpen.call(this, method, proxify(String(url)), ...rest);
+  };
+  const nativeOpen = window.open;
+  window.open = function(url, ...args) {
+    if (url && /^https?:/i.test(String(url))) postToBrowser(url, 'GET');
+    else if (nativeOpen) return nativeOpen.call(window, url, ...args);
+    return null;
+  };
+  // Meta refresh redirects can be handled before they escape to a direct URL.
+  const refreshMeta = document.querySelector('meta[http-equiv="refresh" i]');
+  if (refreshMeta) {
+    const match = String(refreshMeta.content || '').match(/url\s*=\s*['\"]?([^'\"]+)/i);
+    if (match) {
+      refreshMeta.remove();
+      postToBrowser(match[1].trim(), 'GET');
+    }
+  }
   document.addEventListener('click', event => {
     if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     const link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
@@ -518,15 +555,57 @@
 <\/script>`;
       };
 
+      const proxyAssetUrl = raw => {
+        const value = String(raw || '').trim();
+        if (!value || value.startsWith('#') || /^(data:|blob:|javascript:|mailto:|tel:)/i.test(value)) return value;
+        try {
+          const absolute = new URL(value, window.__proxyCurrentTarget || lastTargetUrl);
+          if (absolute.protocol !== 'http:' && absolute.protocol !== 'https:') return value;
+          // Route static assets through the proxy as well, so relative paths,
+          // CDN resources, and assets on other hosts use the same fetch path.
+          return 'https://proxy.cors.dev/' + absolute.href;
+        } catch (_) { return value; }
+      };
+
+      const rewriteSrcset = value => String(value || '').split(',').map(candidate => {
+        const parts = candidate.trim().split(/\s+/);
+        if (parts[0]) parts[0] = proxyAssetUrl(parts[0]);
+        return parts.join(' ');
+      }).join(', ');
+
       const prepareDocument = (rawHtml, targetUrl) => {
         let page = String(rawHtml || '');
-        // A remote CSP meta tag can block injected navigation handlers and
-        // site assets. Response headers are not copied into srcdoc, so remove
-        // only the equivalent meta directives and let the sandbox provide isolation.
+        // Remove response-equivalent meta policies that otherwise interfere
+        // with a document reconstructed from the proxy response.
         page = page.replace(/<meta\b[^>]*http-equiv\s*=\s*(['"]?)content-security-policy\1[^>]*>/gi, '');
         page = page.replace(/<meta\b[^>]*http-equiv\s*=\s*(['"]?)x-frame-options\1[^>]*>/gi, '');
         page = page.replace(/<base\b[^>]*>/gi, '');
         page = page.replace(/\s+crossorigin\s*=\s*(['"]).*?\1/gi, '');
+
+        // Rewrite common static asset attributes, but leave ordinary links and
+        // form actions alone: those are routed by the navigation bridge.
+        page = page.replace(/\b(src|poster|data-src|data-original|data-lazy-src)\s*=\s*(["'])(.*?)\2/gi,
+          (whole, attr, quote, value) => `${attr}=${quote}${escapeAttribute(proxyAssetUrl(value))}${quote}`);
+        page = page.replace(/\bsrcset\s*=\s*(["'])(.*?)\1/gi,
+          (whole, quote, value) => `srcset=${quote}${escapeAttribute(rewriteSrcset(value))}${quote}`);
+        page = page.replace(/\bstyle\s*=\s*(["'])(.*?)\1/gi, (whole, quote, value) => {
+          const rewritten = value.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi,
+            (match, q, url) => `url("${escapeAttribute(proxyAssetUrl(url))}")`);
+          return `style=${quote}${rewritten}${quote}`;
+        });
+        page = page.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi,
+          (whole, quote, url) => `url("${escapeAttribute(proxyAssetUrl(url))}")`);
+
+        // Keep stylesheet/script/icon links working when their href/src is
+        // relative to the target site. Do not rewrite normal navigation links.
+        page = page.replace(/<link\b([^>]*?)\bhref\s*=\s*(["'])(.*?)\2([^>]*)>/gi,
+          (whole, before, quote, href, after) => {
+            const rel = ((before + ' ' + after).match(/\brel\s*=\s*(["'])(.*?)\1/i) || [,'',''])[2].toLowerCase();
+            if (/stylesheet|icon|preload|modulepreload|manifest|prefetch|apple-touch-icon/.test(rel)) {
+              return `<link${before}href=${quote}${escapeAttribute(proxyAssetUrl(href))}${quote}${after}>`;
+            }
+            return whole;
+          });
 
         const injection = '<base href="' + escapeAttribute(targetUrl) + '">' + makeBridgeScript(targetUrl);
         if (/<head\b[^>]*>/i.test(page)) {
@@ -602,6 +681,7 @@
         try {
           const result = await fetchThroughProxies(targetUrl, token);
           if (token !== navigationToken) return;
+          window.__proxyCurrentTarget = targetUrl;
           proxyFrame.srcdoc = prepareDocument(result.html, targetUrl);
           resetUI();
           statusText.textContent = `Loaded via ${result.proxyName}. Some site features may be unavailable.`;
@@ -610,7 +690,7 @@
           showError(
             targetUrl,
             'None of the available public proxies could load this page.',
-            `${error.message || 'The proxy requests failed.'} Sites with anti-bot protection, sign-in requirements, large pages, or complex JavaScript may not work inside this applet. Use Open Direct to load the site in a normal browser tab.`
+            `${error.message || 'The proxy requests failed.'} Sites with anti-bot protection, sign-in requirements, WebSockets, or complex game engines may still fail; public proxies cannot reproduce every browser feature. Use Open Direct to load the site in a normal browser tab.`
           );
         }
       };
