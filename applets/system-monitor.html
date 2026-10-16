@@ -18,17 +18,22 @@
     <div class="tiny" style="margin:7px 0">Cache Storage is measured by enumerating cached responses. localStorage/sessionStorage are counted directly. IndexedDB is shown as a browser-estimated remainder when per-database sizes are unavailable.</div>
     <table class="storage-table"><thead><tr><th>Bucket</th><th>Estimate</th><th>Details</th></tr></thead><tbody id="storage-rows"></tbody></table>
     <div class="actions">
+      <button class="btn" id="export-data">Export site data (.zip)</button>
+      <button class="btn" id="import-data">Import site data (.zip)</button>
+      <input id="import-file" type="file" accept=".zip,application/zip" hidden>
       <button class="btn" id="refresh-storage">Refresh</button>
       <button class="btn" id="clear-caches">Clear site caches</button>
       <button class="btn" id="clear-local">Clear launcher localStorage</button><button class="btn" id="clear-session">Clear sessionStorage</button>
       <button class="btn danger" id="clear-idb">Delete site IndexedDB</button>
     </div>
     <div class="tiny" id="storage-note" style="margin-top:7px"></div>
+    <div class="tiny" id="backup-note" role="status" aria-live="polite" style="margin-top:7px">Backup includes accessible localStorage, IndexedDB, and Origin Private File System (OPFS) data. Session storage and Cache Storage are excluded.</div>
   </div>
 
   <div class="panel"><div class="bar">CACHE / DATABASE DIAGNOSTICS</div><div class="scroll"><table class="storage-table"><thead><tr><th>Name</th><th>Type</th><th>Estimate</th></tr></thead><tbody id="detail-rows"></tbody></table></div></div>
   <div class="panel"><div class="tiny" id="notes"></div></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 const fmtBytes=n=>{if(!Number.isFinite(n))return 'n/a';const u=['B','KB','MB','GB'];let i=0,v=Math.max(0,n);while(v>=1024&&i<u.length-1){v/=1024;i++}return `${v.toFixed(i?1:0)} ${u[i]}`};
@@ -60,6 +65,233 @@ async function refresh(){
   try{const e=await navigator.storage?.estimate();if(e&&e.quota){const ratio=(e.usage||0)/e.quota*100;$('storage-bar').style.width=Math.min(100,ratio)+'%';$('storage-text').textContent=`${fmtBytes(e.usage||0)} used of ${fmtBytes(e.quota)} (${ratio.toFixed(1)}%)`}}catch(_){$('storage-text').textContent='Storage estimate unavailable.'}
   const notes=[];if(document.visibilityState==='hidden')notes.push('Monitor paused while hidden.');if(navigator.connection?.saveData)notes.push('Data Saver detected; the launcher can automatically enter Low Power Mode.');if(!navigator.onLine)notes.push('Offline mode active.');$('notes').textContent=notes.length?notes.join(' '):'No browser-side warnings detected.';
 }
+
+// Site-data backup/restore. Browser security intentionally prevents access to HttpOnly
+// cookies, browser-managed autofill/password data, and other origins' storage.
+const backupNote = message => { $('backup-note').textContent = message; };
+const requestResult = request => new Promise((resolve,reject) => {
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error || new Error('IndexedDB request failed'));
+});
+const transactionDone = tx => new Promise((resolve,reject) => {
+  tx.oncomplete = () => resolve();
+  tx.onabort = tx.onerror = () => reject(tx.error || new Error('IndexedDB transaction failed'));
+});
+
+// JSON-compatible tagged encoding preserves common IndexedDB structured-clone types.
+function encodeValue(value) {
+  if (value === undefined) return {$backupType:'Undefined'};
+  if (typeof value === 'bigint') return {$backupType:'BigInt',value:String(value)};
+  if (value instanceof Date) return {$backupType:'Date',value:value.toISOString()};
+  if (value instanceof Blob) return {$backupType:'Blob',mime:value.type,base64:null};
+  if (value instanceof ArrayBuffer) return {$backupType:'ArrayBuffer',base64:bytesToBase64(new Uint8Array(value))};
+  if (ArrayBuffer.isView(value)) return {$backupType:'TypedArray',name:value.constructor.name,base64:bytesToBase64(new Uint8Array(value.buffer,value.byteOffset,value.byteLength))};
+  if (value instanceof Map) return {$backupType:'Map',value:[...value.entries()].map(([k,v])=>[encodeValue(k),encodeValue(v)])};
+  if (value instanceof Set) return {$backupType:'Set',value:[...value].map(encodeValue)};
+  if (Array.isArray(value)) return value.map(encodeValue);
+  if (value && typeof value === 'object') {
+    if (value instanceof Blob) return value;
+    const out={};
+    for (const [k,v] of Object.entries(value)) out[k]=encodeValue(v);
+    return out;
+  }
+  return value;
+}
+function bytesToBase64(bytes) {
+  let binary=''; const chunk=0x8000;
+  for(let i=0;i<bytes.length;i+=chunk) binary+=String.fromCharCode(...bytes.subarray(i,i+chunk));
+  return btoa(binary);
+}
+function base64ToBytes(text) {
+  const binary=atob(text), out=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++) out[i]=binary.charCodeAt(i);
+  return out;
+}
+async function encodeForZip(value, zip, path) {
+  if (value instanceof Blob) {
+    const filePath=path || `blobs/${crypto.randomUUID()}.bin`;
+    zip.file(filePath, value);
+    return {$backupType:'BlobFile',path:filePath,mime:value.type};
+  }
+  if (value instanceof ArrayBuffer) return {$backupType:'ArrayBuffer',base64:bytesToBase64(new Uint8Array(value))};
+  if (ArrayBuffer.isView(value)) return {$backupType:'TypedArray',name:value.constructor.name,base64:bytesToBase64(new Uint8Array(value.buffer,value.byteOffset,value.byteLength))};
+  if (value === undefined) return {$backupType:'Undefined'};
+  if (typeof value === 'bigint') return {$backupType:'BigInt',value:String(value)};
+  if (value instanceof Date) return {$backupType:'Date',value:value.toISOString()};
+  if (value instanceof Map) {
+    const entries=[]; for(const [k,v] of value) entries.push([await encodeForZip(k,zip),await encodeForZip(v,zip)]);
+    return {$backupType:'Map',value:entries};
+  }
+  if (value instanceof Set) { const values=[]; for(const v of value) values.push(await encodeForZip(v,zip)); return {$backupType:'Set',value:values}; }
+  if (Array.isArray(value)) { const a=[]; for(const v of value) a.push(await encodeForZip(v,zip)); return a; }
+  if (value && typeof value==='object') {
+    const out={}; for(const [k,v] of Object.entries(value)) out[k]=await encodeForZip(v,zip); return out;
+  }
+  return value;
+}
+async function decodeFromZip(value, zip) {
+  if (Array.isArray(value)) { const a=[]; for(const v of value) a.push(await decodeFromZip(v,zip)); return a; }
+  if (!value || typeof value!=='object') return value;
+  switch(value.$backupType) {
+    case 'Undefined': return undefined;
+    case 'BigInt': return BigInt(value.value);
+    case 'Date': return new Date(value.value);
+    case 'BlobFile': { const f=zip.file(value.path); if(!f) throw new Error('Missing backup blob: '+value.path); return new Blob([await f.async('uint8array')],{type:value.mime||''}); }
+    case 'ArrayBuffer': { const b=base64ToBytes(value.base64); return b.buffer; }
+    case 'TypedArray': {
+      const b=base64ToBytes(value.base64), C=globalThis[value.name];
+      if(typeof C!=='function') throw new Error('Unsupported typed array: '+value.name);
+      if(value.name==='DataView') return new DataView(b.buffer);
+      return new C(b.buffer,0,Math.floor(b.byteLength/C.BYTES_PER_ELEMENT));
+    }
+    case 'Map': { const m=new Map(); for(const [k,v] of value.value) m.set(await decodeFromZip(k,zip),await decodeFromZip(v,zip)); return m; }
+    case 'Set': { const s=new Set(); for(const v of value.value) s.add(await decodeFromZip(v,zip)); return s; }
+    default: { const out={}; for(const [k,v] of Object.entries(value)) out[k]=await decodeFromZip(v,zip); return out; }
+  }
+}
+function openDatabase(name, version, upgrade) {
+  return new Promise((resolve,reject)=>{
+    const req=version ? indexedDB.open(name,version) : indexedDB.open(name);
+    req.onupgradeneeded=()=>{ if(upgrade) upgrade(req.result,req.transaction); };
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error||new Error('Could not open database '+name));
+    req.onblocked=()=>reject(new Error('Database open blocked: '+name+' (close other tabs using this site)'));
+  });
+}
+async function exportDatabases(zip) {
+  if(!indexedDB.databases) throw new Error('This browser does not expose the IndexedDB database list, so a complete database backup cannot be made here.');
+  const result=[];
+  for(const info of await indexedDB.databases()) {
+    if(!info.name) continue;
+    const db=await openDatabase(info.name);
+    try {
+      const stores=[];
+      for(const storeName of [...db.objectStoreNames]) {
+        const tx=db.transaction(storeName,'readonly'), store=tx.objectStore(storeName);
+        const keys=await requestResult(store.getAllKeys());
+        const values=await requestResult(store.getAll());
+        const indexes=[...store.indexNames].map(n=>{const i=store.index(n);return {name:i.name,keyPath:i.keyPath,unique:i.unique,multiEntry:i.multiEntry}});
+        stores.push({name:store.name,keyPath:store.keyPath,autoIncrement:store.autoIncrement,indexes,
+          records:await Promise.all(values.map(async (v,i)=>({key:await encodeForZip(keys[i],zip),value:await encodeForZip(v,zip)})))});
+        await transactionDone(tx);
+      }
+      result.push({name:db.name,version:db.version,stores});
+    } finally { db.close(); }
+  }
+  return result;
+}
+async function exportOPFS(zip) {
+  if(!navigator.storage?.getDirectory) return {supported:false,files:[]};
+  const files=[];
+  async function walk(dir, prefix='') {
+    for await (const [name,handle] of dir.entries()) {
+      const path=prefix ? `${prefix}/${name}` : name;
+      if(handle.kind==='directory') await walk(handle,path);
+      else { const file=await handle.getFile(); zip.file('opfs/'+path,file); files.push({path:'opfs/'+path}); }
+    }
+  }
+  try { await walk(await navigator.storage.getDirectory()); return {supported:true,files}; }
+  catch(e) { return {supported:true,files,error:String(e)}; }
+}
+async function exportSiteData() {
+  if(!window.JSZip) throw new Error('ZIP library did not load. Connect to the internet and reload this page, then try again.');
+  const zip=new JSZip();
+  const local={}; for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);local[k]=localStorage.getItem(k);}
+  const manifest={format:'system-monitor-site-data-backup',version:1,createdAt:new Date().toISOString(),
+    origin:location.origin,localStorage:local,indexedDB:await exportDatabases(zip),
+    opfs:await exportOPFS(zip),limitations:[
+      'Session storage and Cache Storage are intentionally excluded.',
+      'Only storage accessible to this page for this origin can be included.',
+      'Cookies, especially HttpOnly cookies, browser-managed data, and other origins are not accessible to webpage JavaScript.'
+    ]};
+  zip.file('site-data.json',JSON.stringify(manifest));
+  const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
+  const url=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=url; a.download='site-data-backup-'+new Date().toISOString().replace(/[:.]/g,'-')+'.zip';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),30000);
+  return manifest;
+}
+function deleteDatabase(name) {
+  return new Promise((resolve,reject)=>{
+    const req=indexedDB.deleteDatabase(name); req.onsuccess=()=>resolve();
+    req.onerror=()=>reject(req.error||new Error('Could not delete database '+name));
+    req.onblocked=()=>reject(new Error('Deletion blocked for '+name+'. Close other tabs using this site and retry.'));
+  });
+}
+async function restoreDatabases(entries, zip) {
+  if(!indexedDB.databases) throw new Error('This browser cannot list IndexedDB databases; restore is stopped to avoid leaving old data mixed with the backup.');
+  const existing=await indexedDB.databases();
+  for(const info of existing) if(info.name) await deleteDatabase(info.name);
+  for(const item of entries) {
+    const db=await openDatabase(item.name,item.version,(created,tx)=>{
+      for(const st of item.stores) {
+        if(created.objectStoreNames.contains(st.name)) continue;
+        const store=created.createObjectStore(st.name,{keyPath:st.keyPath,autoIncrement:st.autoIncrement});
+        for(const idx of st.indexes||[]) store.createIndex(idx.name,idx.keyPath,{unique:idx.unique,multiEntry:idx.multiEntry});
+      }
+    });
+    try {
+      for(const st of item.stores) {
+        if(!db.objectStoreNames.contains(st.name)) throw new Error('Missing object store '+st.name+' in '+item.name);
+        const tx=db.transaction(st.name,'readwrite'), store=tx.objectStore(st.name);
+        for(const record of st.records) {
+          const key=await decodeFromZip(record.key,zip), value=await decodeFromZip(record.value,zip);
+          if(store.keyPath===null) store.put(value,key); else store.put(value);
+        }
+        await transactionDone(tx);
+      }
+    } finally { db.close(); }
+  }
+}
+async function restoreOPFS(info, zip) {
+  if(!info?.supported || !navigator.storage?.getDirectory) return;
+  const root=await navigator.storage.getDirectory();
+  async function clearDir(dir) {
+    for await(const [name,handle] of dir.entries()) {
+      if(handle.kind==='directory') { const child=await dir.getDirectoryHandle(name); await clearDir(child); await dir.removeEntry(name,{recursive:true}); }
+      else await dir.removeEntry(name);
+    }
+  }
+  await clearDir(root);
+  for(const entry of info.files||[]) {
+    const relative=entry.path.replace(/^opfs\//,'').split('/');
+    const filename=relative.pop(); let dir=root;
+    for(const part of relative) dir=await dir.getDirectoryHandle(part,{create:true});
+    const handle=await dir.getFileHandle(filename,{create:true}), writer=await handle.createWritable();
+    const file=zip.file(entry.path);
+    if(!file) throw new Error('Missing OPFS file '+entry.path);
+    await writer.write(await file.async('uint8array')); await writer.close();
+  }
+}
+$('export-data').onclick=async()=>{
+  $('export-data').disabled=true; backupNote('Creating backup ZIP…');
+  try { const m=await exportSiteData(); backupNote(`Backup downloaded. Included ${Object.keys(m.localStorage).length} localStorage entries, ${m.indexedDB.length} IndexedDB database(s), and ${m.opfs.files.length} OPFS file(s).`); }
+  catch(e) { backupNote('Export failed: '+(e?.message||e)); console.error(e); alert('Export failed: '+(e?.message||e)); }
+  finally { $('export-data').disabled=false; }
+};
+$('import-data').onclick=()=>{ $('import-file').value=''; $('import-file').click(); };
+$('import-file').onchange=async event=>{
+  const file=event.target.files?.[0]; if(!file) return;
+  if(!window.JSZip) { alert('ZIP library did not load. Connect to the internet and reload this page.'); return; }
+  if(!confirm('Importing replaces this origin’s localStorage, IndexedDB databases, and OPFS files with the backup. This can overwrite saves and chat history. Cache Storage and sessionStorage are not changed. Continue?')) return;
+  backupNote('Reading backup ZIP…');
+  try {
+    const zip=await JSZip.loadAsync(file), mf=zip.file('site-data.json');
+    if(!mf) throw new Error('This ZIP does not contain site-data.json and is not a recognized backup.');
+    const manifest=JSON.parse(await mf.async('text'));
+    if(manifest.format!=='system-monitor-site-data-backup'||manifest.version!==1) throw new Error('Unsupported or invalid backup format.');
+    if(manifest.origin!==location.origin && !confirm(`This backup was created for ${manifest.origin}, but this page is ${location.origin}. Restore it here anyway?`)) { backupNote('Import cancelled.'); return; }
+    if(!confirm('Final confirmation: current localStorage and all current IndexedDB databases will be deleted before restoration. Make sure you have a backup of the current site data if needed.')) { backupNote('Import cancelled.'); return; }
+    backupNote('Restoring localStorage…');
+    localStorage.clear(); for(const [k,v] of Object.entries(manifest.localStorage||{})) localStorage.setItem(k,v);
+    backupNote('Restoring IndexedDB…'); await restoreDatabases(manifest.indexedDB||[],zip);
+    backupNote('Restoring OPFS files…'); await restoreOPFS(manifest.opfs,zip);
+    backupNote('Import completed. Reload the page so other site components reload their restored data.');
+    alert('Import completed. Reload the page now. Some application components may need a reload before they see restored data.');
+    await refreshStorage();
+  } catch(e) { backupNote('Import failed: '+(e?.message||e)); console.error(e); alert('Import failed: '+(e?.message||e)+'. Some data may already have been replaced; reload and inspect the site.'); }
+};
+
 let visible=false;const isActive=()=>visible&&!document.hidden;
 let raf=0,frames=0,last=performance.now();function frame(now){if(!isActive()){raf=0;return}frames++;if(now-last>=1000){const fps=frames*1000/(now-last);const rounded=Math.round(fps);$('fps-text').textContent=`${rounded} FPS`;$('fps-bar').style.width=Math.min(100,rounded/1.2)+'%';frames=0;last=now}raf=requestAnimationFrame(frame)}
 function startFps(){if(raf)cancelAnimationFrame(raf);raf=0;if(isActive()){last=performance.now();frames=0;raf=requestAnimationFrame(frame)}}
