@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Web Proxy Applet</title>
+  <title>Web Browser</title>
   
   
   <style>
@@ -476,7 +476,8 @@
           url: target => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(target)
         }
       ];
-      const PROXY_TIMEOUT_MS = 8500;
+      const PROXY_TIMEOUT_MS = 12000;
+      let activeProxy = PROXIES[0];
 
       let activeController = null;
       let progressInterval = null;
@@ -630,12 +631,20 @@
 
       // The proxied HTML lives in an opaque-origin sandbox. Its bridge can
       // request navigation via postMessage, but cannot read this applet's DOM.
-      const makeBridgeScript = target => {
+      const makeBridgeScript = (target, proxyName) => {
         const safeTarget = JSON.stringify(target).replace(/</g, '\\u003c');
+        const safeProxyName = JSON.stringify(proxyName || 'CORS.dev').replace(/</g, '\\u003c');
         return `
 <script>
 (() => {
   const proxyTarget = ${safeTarget};
+  const proxyName = ${safeProxyName};
+  const proxyUrl = url => {
+    const value = String(url);
+    if (proxyName === 'AllOrigins') return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(value);
+    if (proxyName === 'CodeTabs') return 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(value);
+    return 'https://proxy.cors.dev/' + value;
+  };
   const postToBrowser = (url, method = 'GET', action = 'navigate') => {
     try {
       const resolved = new URL(url, document.baseURI);
@@ -650,8 +659,8 @@
     try {
       const resolved = new URL(value, document.baseURI);
       if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') return value;
-      if (resolved.hostname === 'proxy.cors.dev') return resolved.href;
-      return 'https://proxy.cors.dev/' + resolved.href;
+      if (resolved.hostname === 'proxy.cors.dev' || resolved.hostname === 'api.allorigins.win' || resolved.hostname === 'api.codetabs.com') return resolved.href;
+      return proxyUrl(resolved.href);
     } catch (_) { return value; }
   };
   const nativeFetch = window.fetch ? window.fetch.bind(window) : null;
@@ -719,15 +728,15 @@
 <\/script>`;
       };
 
-      const proxyAssetUrl = raw => {
+      const proxyAssetUrl = (raw, baseUrl, proxy = activeProxy) => {
         const value = String(raw || '').trim();
         if (!value || value.startsWith('#') || /^(data:|blob:|javascript:|mailto:|tel:)/i.test(value)) return value;
         try {
-          const absolute = new URL(value, window.__proxyCurrentTarget || lastTargetUrl);
+          const absolute = new URL(value, baseUrl || window.__proxyCurrentTarget || lastTargetUrl);
           if (absolute.protocol !== 'http:' && absolute.protocol !== 'https:') return value;
-          // Route static assets through the proxy as well, so relative paths,
-          // CDN resources, and assets on other hosts use the same fetch path.
-          return 'https://proxy.cors.dev/' + absolute.href;
+          // Use the same proxy that successfully served the document. Mixing proxy
+          // providers often breaks relative CSS URLs and CDN asset requests.
+          return proxy.url(absolute.href);
         } catch (_) { return value; }
       };
 
@@ -737,7 +746,7 @@
         return parts.join(' ');
       }).join(', ');
 
-      const prepareDocument = (rawHtml, targetUrl) => {
+      const prepareDocument = async (rawHtml, targetUrl, proxy) => {
         let page = String(rawHtml || '');
         // Remove response-equivalent meta policies that otherwise interfere
         // with a document reconstructed from the proxy response.
@@ -760,18 +769,50 @@
         page = page.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi,
           (whole, quote, url) => `url("${escapeAttribute(proxyAssetUrl(url))}")`);
 
-        // Keep stylesheet/script/icon links working when their href/src is
-        // relative to the target site. Do not rewrite normal navigation links.
+        // Resolve assets using the successful document proxy. CSS is fetched and
+        // inlined so url(...) references resolve against the stylesheet's original
+        // URL rather than the public proxy's URL (a common cause of missing images/fonts).
+        const cssLinks = [];
         page = page.replace(/<link\b([^>]*?)\bhref\s*=\s*(["'])(.*?)\2([^>]*)>/gi,
           (whole, before, quote, href, after) => {
             const rel = ((before + ' ' + after).match(/\brel\s*=\s*(["'])(.*?)\1/i) || [,'',''])[2].toLowerCase();
-            if (/stylesheet|icon|preload|modulepreload|manifest|prefetch|apple-touch-icon/.test(rel)) {
-              return `<link${before}href=${quote}${escapeAttribute(proxyAssetUrl(href))}${quote}${after}>`;
+            if (/stylesheet/.test(rel)) {
+              const marker = `__APPLET_CSS_${cssLinks.length}__`;
+              try { cssLinks.push({ marker, url: new URL(href, targetUrl).href }); return marker; }
+              catch (_) { return whole; }
+            }
+            if (/icon|preload|modulepreload|manifest|prefetch|apple-touch-icon/.test(rel)) {
+              return `<link${before}href=${quote}${escapeAttribute(proxyAssetUrl(href, targetUrl, proxy))}${quote}${after}>`;
             }
             return whole;
           });
 
-        const injection = '<base href="' + escapeAttribute(targetUrl) + '">' + makeBridgeScript(targetUrl);
+        const cssFetch = async url => {
+          const response = await fetch(proxy.url(url), { credentials: 'omit', cache: 'no-store' });
+          if (!response.ok) throw new Error('CSS request failed: ' + response.status);
+          return response.text();
+        };
+        for (const item of cssLinks) {
+          let replacement = '';
+          try {
+            let css = await cssFetch(item.url);
+            css = css.replace(/url\(\s*(["']?)(.*?)\1\s*\)/gi, (whole, q, resource) => {
+              const trimmed = resource.trim();
+              if (!trimmed || /^(data:|blob:|#)/i.test(trimmed)) return whole;
+              return `url("${escapeAttribute(proxyAssetUrl(trimmed, item.url, proxy))}")`;
+            });
+            css = css.replace(/@import\s+(?:url\()?\s*(["'])(.*?)\1\s*\)?/gi, (whole, q, imported) => {
+              return `@import url("${escapeAttribute(proxyAssetUrl(imported, item.url, proxy))}")`;
+            });
+            replacement = `<style>/* proxied stylesheet: ${escapeAttribute(item.url)} */\n${css}\n</style>`;
+          } catch (_) {
+            // Keep a proxied link as a fallback if CSS text cannot be retrieved.
+            replacement = `<link rel="stylesheet" href="${escapeAttribute(proxyAssetUrl(item.url, targetUrl, proxy))}">`;
+          }
+          page = page.replace(item.marker, replacement);
+        }
+
+        const injection = '<base href="' + escapeAttribute(targetUrl) + '">' + makeBridgeScript(targetUrl, proxy.name);
         if (/<head\b[^>]*>/i.test(page)) {
           page = page.replace(/<head\b[^>]*>/i, match => match + '\n' + injection + '\n');
         } else if (/<html\b[^>]*>/i.test(page)) {
@@ -807,7 +848,7 @@
             if (!/<(?:!doctype|html|head|body|script|title|main|div|article|svg)\b/i.test(content)) {
               throw new Error('The proxy returned a response that does not look like a webpage.');
             }
-            return { html: content, proxyName: proxy.name };
+            return { html: content, proxyName: proxy.name, proxy };
           } catch (error) {
             if (token !== navigationToken) throw new DOMException('Navigation canceled', 'AbortError');
             const reason = error && error.name === 'AbortError'
@@ -852,12 +893,14 @@
           const result = await fetchThroughProxies(targetUrl, token);
           if (token !== navigationToken) return;
           window.__proxyCurrentTarget = targetUrl;
+          activeProxy = result.proxy;
           const titleMatch = result.html.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
           const loadedTitle = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim() : '';
           const activeTab = getActiveTab();
           if (activeTab && activeTab.id === activeTabId && loadedTitle) activeTab.title = loadedTitle.slice(0, 80);
           renderTabs();
-          proxyFrame.srcdoc = prepareDocument(result.html, targetUrl);
+          proxyFrame.srcdoc = await prepareDocument(result.html, targetUrl, result.proxy);
+          if (token !== navigationToken) return;
           resetUI();
           statusText.textContent = `Loaded via ${result.proxyName}. Links open in applet tabs.`;
         } catch (error) {
