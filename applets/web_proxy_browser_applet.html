@@ -152,6 +152,78 @@
       padding: 3px 9px 1px 11px;
     }
 
+    /* Internal applet tabs: links open here instead of creating real browser tabs. */
+    .tab-strip {
+      display: flex;
+      align-items: stretch;
+      gap: 3px;
+      min-height: 27px;
+      padding: 4px 6px 0;
+      border-bottom: 1px solid var(--win-border-dark);
+      box-shadow: 0 1px 0 var(--win-border-light);
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: thin;
+    }
+
+    .applet-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+      max-width: 220px;
+      min-width: 82px;
+      height: 22px;
+      padding: 2px 6px;
+      font-size: 11px;
+      color: var(--win-text-dark);
+      background: #b8b8b8;
+      border: 1px solid var(--win-border-dark);
+      border-bottom: 0;
+      cursor: pointer;
+    }
+
+    .applet-tab.active {
+      background: var(--win-text-light);
+      border-top: 1px solid var(--win-border-light);
+      border-left: 1px solid var(--win-border-light);
+      position: relative;
+      top: 1px;
+      font-weight: bold;
+    }
+
+    .applet-tab-title {
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .applet-tab-close {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      width: 13px;
+      height: 13px;
+      border: 1px solid transparent;
+      background: transparent;
+      font-size: 12px;
+      line-height: 10px;
+      cursor: pointer;
+    }
+
+    .applet-tab-close:hover { border-color: var(--win-border-dark); }
+
+    .new-applet-tab {
+      width: 23px;
+      min-width: 23px;
+      height: 22px;
+      padding: 0;
+      font-size: 16px;
+      line-height: 16px;
+    }
+
     /* Content Area */
     .viewport-container {
       flex-grow: 1;
@@ -311,14 +383,22 @@
         <span class="address-label"><u>A</u>ddress:</span>
         <input type="text" id="url-input" class="search-input" placeholder="http://..." value="https://example.com" autocomplete="off" />
         <button type="button" id="go-btn" class="win95-btn">Go</button>
-        <button type="button" id="direct-btn" class="win95-btn" title="Open the address in a normal browser tab">Open Direct</button>
+        <button type="button" id="direct-btn" class="win95-btn" title="Manually open the address outside the applet">Open Direct</button>
       </div>
+    </div>
+
+    <div class="tab-strip" id="tab-strip" role="tablist" aria-label="Applet browser tabs">
+      <button type="button" class="applet-tab active" data-tab-id="1" role="tab" aria-selected="true">
+        <span class="applet-tab-title">Example Domain</span>
+        <span class="applet-tab-close" role="button" aria-label="Close tab" title="Close tab">×</span>
+      </button>
+      <button type="button" class="win95-btn new-applet-tab" id="new-tab-btn" title="New tab" aria-label="New tab">+</button>
     </div>
     
     <div class="viewport-container">
       
-      <!-- Remote pages are sandboxed so proxied page scripts cannot access this applet. -->
-      <iframe id="proxy-frame" title="Proxied webpage" sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads allow-modals allow-pointer-lock allow-presentation" src="about:blank"></iframe>
+      <!-- Remote pages are sandboxed; all ordinary links are routed to applet tabs. -->
+      <iframe id="proxy-frame" title="Proxied webpage" sandbox="allow-scripts allow-forms allow-downloads allow-modals allow-pointer-lock allow-presentation" src="about:blank"></iframe>
       
       <div id="loading-overlay" class="overlay">
         <div class="dialog-box">
@@ -341,7 +421,7 @@
           <div class="dialog-content">
             <span class="error-text" id="error-summary">The page could not be loaded through the available public proxies.</span>
             <span id="error-detail">Some websites block proxy traffic, require cookies, or use features that cannot run inside an embedded page.</span>
-            <a id="fallback-link" class="fallback-link" href="#" target="_blank" rel="noopener noreferrer"></a>
+            <a id="fallback-link" class="fallback-link" href="#"></a>
             <div class="dialog-buttons">
               <button type="button" class="win95-btn" id="open-error-direct-btn">Open Directly</button>
               <button type="button" class="win95-btn" id="close-error-btn">OK</button>
@@ -365,6 +445,8 @@
       const goBtn = document.getElementById('go-btn');
       const directBtn = document.getElementById('direct-btn');
       const proxyFrame = document.getElementById('proxy-frame');
+      const tabStrip = document.getElementById('tab-strip');
+      const newTabBtn = document.getElementById('new-tab-btn');
 
       const loadingOverlay = document.getElementById('loading-overlay');
       const loadingText = document.getElementById('loading-text');
@@ -400,6 +482,91 @@
       let progressInterval = null;
       let navigationToken = 0;
       let lastTargetUrl = 'https://example.com/';
+      let nextTabId = 2;
+      let activeTabId = 1;
+      const tabs = [{ id: 1, url: 'https://example.com/', title: 'Example Domain' }];
+
+      const getActiveTab = () => tabs.find(tab => tab.id === activeTabId) || tabs[0];
+
+      const titleForUrl = rawUrl => {
+        try {
+          const url = new URL(rawUrl);
+          return url.hostname.replace(/^www\./i, '') || 'New Tab';
+        } catch (_) { return 'New Tab'; }
+      };
+
+      const renderTabs = () => {
+        tabStrip.querySelectorAll('.applet-tab').forEach(node => node.remove());
+        for (const tab of tabs) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'applet-tab' + (tab.id === activeTabId ? ' active' : '');
+          button.dataset.tabId = String(tab.id);
+          button.setAttribute('role', 'tab');
+          button.setAttribute('aria-selected', tab.id === activeTabId ? 'true' : 'false');
+          button.title = tab.url;
+
+          const title = document.createElement('span');
+          title.className = 'applet-tab-title';
+          title.textContent = tab.title || titleForUrl(tab.url);
+          button.appendChild(title);
+
+          const close = document.createElement('span');
+          close.className = 'applet-tab-close';
+          close.setAttribute('role', 'button');
+          close.setAttribute('aria-label', 'Close tab');
+          close.title = 'Close tab';
+          close.textContent = '×';
+          button.appendChild(close);
+          tabStrip.insertBefore(button, newTabBtn);
+        }
+      };
+
+      const createTab = (rawUrl, title) => {
+        let url;
+        try { url = normaliseUrl(rawUrl); }
+        catch (error) {
+          showError(String(rawUrl || ''), 'That address is not valid.', error.message);
+          return;
+        }
+        const tab = { id: nextTabId++, url, title: title || titleForUrl(url) };
+        tabs.push(tab);
+        activeTabId = tab.id;
+        renderTabs();
+        navigate(url);
+      };
+
+      const activateTab = tabId => {
+        const tab = tabs.find(item => item.id === tabId);
+        if (!tab || tab.id === activeTabId) return;
+        activeTabId = tab.id;
+        renderTabs();
+        navigate(tab.url);
+      };
+
+      const closeTab = tabId => {
+        if (tabs.length <= 1) {
+          const tab = tabs[0];
+          tab.url = 'https://example.com/';
+          tab.title = 'New Tab';
+          activeTabId = tab.id;
+          renderTabs();
+          navigate(tab.url);
+          return;
+        }
+        const index = tabs.findIndex(tab => tab.id === tabId);
+        if (index < 0) return;
+        const wasActive = tabs[index].id === activeTabId;
+        tabs.splice(index, 1);
+        if (wasActive) {
+          const replacement = tabs[Math.min(index, tabs.length - 1)];
+          activeTabId = replacement.id;
+          renderTabs();
+          navigate(replacement.url);
+        } else {
+          renderTabs();
+        }
+      };
 
       const renderProgressBar = () => {
         progressContainer.innerHTML = '';
@@ -469,11 +636,11 @@
 <script>
 (() => {
   const proxyTarget = ${safeTarget};
-  const postToBrowser = (url, method = 'GET') => {
+  const postToBrowser = (url, method = 'GET', action = 'navigate') => {
     try {
       const resolved = new URL(url, document.baseURI);
       if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') return;
-      parent.postMessage({ __win95ProxyApplet: true, action: 'navigate', url: resolved.href, method }, '*');
+      parent.postMessage({ __win95ProxyApplet: true, action, url: resolved.href, method }, '*');
     } catch (_) {}
   };
   // Route common JavaScript network requests through the same public proxy.
@@ -498,10 +665,10 @@
   XMLHttpRequest.prototype.open = function(method, url, ...rest) {
     return nativeXhrOpen.call(this, method, proxify(String(url)), ...rest);
   };
-  const nativeOpen = window.open;
-  window.open = function(url, ...args) {
-    if (url && /^https?:/i.test(String(url))) postToBrowser(url, 'GET');
-    else if (nativeOpen) return nativeOpen.call(window, url, ...args);
+  // Sites often use window.open for game windows and search results. Keep those
+  // inside this applet as a new internal tab; never create a real browser popup.
+  window.open = function(url) {
+    if (url && String(url) !== 'about:blank') postToBrowser(url, 'GET', 'new-tab');
     return null;
   };
   // Meta refresh redirects can be handled before they escape to a direct URL.
@@ -513,28 +680,25 @@
       postToBrowser(match[1].trim(), 'GET');
     }
   }
-  document.addEventListener('click', event => {
-    if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  const handleLinkActivation = event => {
+    if (event.defaultPrevented) return;
+    if (event.type === 'click' && event.button !== 0) return;
+    if (event.type === 'auxclick' && event.button !== 1) return;
     const link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
     if (!link || link.hasAttribute('download')) return;
-    const targetName = (link.getAttribute('target') || '').toLowerCase();
-    if (targetName && targetName !== '_self') return;
     const rawHref = link.getAttribute('href');
     if (!rawHref || /^\s*javascript:/i.test(rawHref) || /^\s*mailto:/i.test(rawHref) || /^\s*tel:/i.test(rawHref)) return;
     let resolved;
     try { resolved = new URL(rawHref, document.baseURI); } catch (_) { return; }
     if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') return;
-    const current = new URL(proxyTarget);
-    if (resolved.origin === current.origin && resolved.pathname === current.pathname && resolved.search === current.search && resolved.hash) {
-      event.preventDefault();
-      const id = decodeURIComponent(resolved.hash.slice(1));
-      const targetElement = document.getElementById(id) || document.getElementsByName(id)[0];
-      if (targetElement && targetElement.scrollIntoView) targetElement.scrollIntoView();
-      return;
-    }
+    // Every normal web link opens as a new tab in the applet, even links marked
+    // target=_blank and Ctrl/Cmd-clicks. Same-page anchors are included too.
     event.preventDefault();
-    postToBrowser(resolved.href, 'GET');
-  }, true);
+    event.stopPropagation();
+    postToBrowser(resolved.href, 'GET', 'new-tab');
+  };
+  document.addEventListener('click', handleLinkActivation, true);
+  document.addEventListener('auxclick', handleLinkActivation, true);
   document.addEventListener('submit', event => {
     const form = event.target;
     if (!form || !form.tagName || form.tagName.toLowerCase() !== 'form') return;
@@ -671,6 +835,12 @@
         const token = navigationToken;
         cancelActiveRequest();
         lastTargetUrl = targetUrl;
+        const activeTab = getActiveTab();
+        if (activeTab) {
+          activeTab.url = targetUrl;
+          if (!activeTab.title || activeTab.title === 'New Tab') activeTab.title = titleForUrl(targetUrl);
+          renderTabs();
+        }
         urlInput.value = targetUrl;
         resetUI();
         loadingOverlay.style.display = 'flex';
@@ -682,9 +852,14 @@
           const result = await fetchThroughProxies(targetUrl, token);
           if (token !== navigationToken) return;
           window.__proxyCurrentTarget = targetUrl;
+          const titleMatch = result.html.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
+          const loadedTitle = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim() : '';
+          const activeTab = getActiveTab();
+          if (activeTab && activeTab.id === activeTabId && loadedTitle) activeTab.title = loadedTitle.slice(0, 80);
+          renderTabs();
           proxyFrame.srcdoc = prepareDocument(result.html, targetUrl);
           resetUI();
-          statusText.textContent = `Loaded via ${result.proxyName}. Some site features may be unavailable.`;
+          statusText.textContent = `Loaded via ${result.proxyName}. Links open in applet tabs.`;
         } catch (error) {
           if (token !== navigationToken || (error && error.name === 'AbortError')) return;
           showError(
@@ -704,6 +879,19 @@
           showError(String(rawUrl || urlInput.value || ''), 'That address is not valid.', error.message);
         }
       };
+
+      tabStrip.addEventListener('click', event => {
+        const tabButton = event.target.closest('.applet-tab');
+        if (!tabButton) return;
+        const tabId = Number(tabButton.dataset.tabId);
+        if (event.target.closest('.applet-tab-close')) closeTab(tabId);
+        else activateTab(tabId);
+      });
+      newTabBtn.addEventListener('click', () => createTab('https://example.com/', 'New Tab'));
+      fallbackLink.addEventListener('click', event => {
+        event.preventDefault();
+        createTab(lastTargetUrl, titleForUrl(lastTargetUrl));
+      });
 
       goBtn.addEventListener('click', () => navigate());
       directBtn.addEventListener('click', () => openDirect());
@@ -728,7 +916,7 @@
       window.addEventListener('message', event => {
         // Only accept requests from the applet's own sandboxed frame.
         if (event.source !== proxyFrame.contentWindow || !event.data || event.data.__win95ProxyApplet !== true) return;
-        if (event.data.action === 'navigate') {
+        if (event.data.action === 'navigate' || event.data.action === 'new-tab') {
           if (event.data.method !== 'GET') {
             showError(lastTargetUrl, 'This form needs a request type the public proxies may not support.', 'Open the site directly in a separate browser tab to submit this form.');
             return;
@@ -736,13 +924,15 @@
           try {
             const requestedUrl = new URL(event.data.url);
             if (requestedUrl.protocol !== 'http:' && requestedUrl.protocol !== 'https:') return;
-            navigate(requestedUrl.href);
+            if (event.data.action === 'new-tab') createTab(requestedUrl.href, titleForUrl(requestedUrl.href));
+            else navigate(requestedUrl.href);
           } catch (_) {}
         } else if (event.data.action === 'unsupported-form') {
           showError(lastTargetUrl, 'This page submitted a form that uses ' + String(event.data.method || 'a non-GET method') + '.', 'Public browser proxies do not consistently support form submissions of this type. Open the site directly in a separate browser tab to continue.');
         }
       });
 
+      renderTabs();
       navigate();
     });
   </script>
