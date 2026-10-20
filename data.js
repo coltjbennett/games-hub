@@ -1,7 +1,7 @@
 // data.js
 
 const siteData = {
-  version: "v4.1.4",
+  version: "v4.1.5",
   author: "COLTON BENNETT",
   location: "Waukesha, WI",
   heroTitle: "Project Launcher",
@@ -9,7 +9,7 @@ const siteData = {
   heroNote: "These are all made by me over the last year, and I do hope you enjoy!<br>Please excuse any bugs you find; I am still ironing things out.",
   marqueeText: "★★★ WELCOME TO COLTON'S PROJECT LAUNCHER ★★★ &nbsp;|&nbsp; BEST VIEWED IN 1024x768 &nbsp;|&nbsp; NETSCAPE NAVIGATOR 4.0 RECOMMENDED &nbsp;|&nbsp; ★★★ SIGN MY GUESTBOOK ★★★",
   footerCopyright: "© 2026 Colton Bennett",
-  footerLastUpdated: "October 16, 2026, 08:35:19"
+  footerLastUpdated: "October 20, 2026, 12:57:00"
 };
 
 const announcements = [
@@ -199,6 +199,17 @@ const projects = [
     type: 'FPS',
     tags: ['Shooter', 'Multiplayer', 'Under development'],
     description: 'THIS IS NOT A COMPLETE GAME; THIS IS A TEST OF A NEW ENGINE I AM ROLLING OUT FOR MULTIPLAYER FPS GAMES',
+    featured: false
+  },
+  {
+    title: 'Fieldkit 3D Engine',
+    url: 'games/fieldkit_3d_engine.html',
+    image: 'images/missing.png',
+    alt: 'Fieldkit 3D Engine',
+    statusKey: 'beta',
+    type: 'Engine / Sandbox',
+    tags: ['3D', 'Physics', 'Sandbox', 'Game Engine', 'Under development'],
+    description: 'A single-file 3D game engine and physics sandbox with rendering, character and vehicle controllers, object interaction, touch controls, and a configurable world. Built as a starting point for creating more games.',
     featured: false
   }
 ];
