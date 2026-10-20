@@ -573,8 +573,8 @@
         #hud-root.split .hud { position: absolute; bottom: 8px; width: 50%; overflow: visible; }
         #hud-root.split .hud[data-p="0"] { left: 4px; }
         #hud-root.split .hud[data-p="1"] { right: 4px; width: calc(50% - 4px); }
-        #hud-root.split .hud-inner { width: 160%; transform: scale(0.625); transform-origin: bottom left; }
-        #hud-root.split .hud[data-p="0"] .hud-inner { width: calc(160% - 6px); }
+        #hud-root.split .hud-inner { width: 135%; transform: scale(0.74); transform-origin: bottom left; }
+        #hud-root.split .hud[data-p="0"] .hud-inner { width: calc(135% - 6px); }
         #split-divider { display: none; position: absolute; left: 50%; top: 0; width: 4px; height: 100%; margin-left: -2px; z-index: 8; background: linear-gradient(180deg,#d4af37,#7a5c12); box-shadow: 0 0 12px rgba(0,0,0,.9); pointer-events: none; }
         body.split #split-divider { display: block; }
         .p-budget-bar { display: none; background: rgba(20,16,12,.95); border: 2px solid #5c4033; border-radius: 10px; padding: 6px 12px; margin-bottom: 6px; color: #f4f1de; font-weight: bold; font-size: 15px; align-self: flex-start; width: fit-content; gap: 14px; align-items: center; pointer-events: auto; }
@@ -634,6 +634,10 @@
         #result-sub { color: #a8dadc; margin-bottom: 14px; font-style: italic; }
         .menu-row2 { display: flex; gap: 10px; } .menu-row2 .menu-btn { min-width: 0; }
         @media (max-height: 520px) { .menu-panel { padding: 12px 20px; } .menu-btn { padding: 8px 14px; margin: 5px 0; } .menu-sub { margin-bottom: 8px; } }
+
+        #unit-tip { position: fixed; z-index: 400; max-width: 200px; background: rgba(15,11,7,.96); border: 1px solid #d4af37; border-radius: 6px; padding: 5px 8px; font: 11px/1.35 Georgia, serif; color: #f4f1de; pointer-events: none; display: none; box-shadow: 0 4px 14px rgba(0,0,0,.85); }
+        #unit-tip b { color: #ffd700; } #unit-tip .tc { color: #52b788; } #unit-tip .tl { color: #ff9a9a; display: block; margin-top: 2px; }
+        .btn.locked { pointer-events: auto !important; }
 
 </style>
 </head>
@@ -749,6 +753,7 @@
         <div id="hud-root"></div>
     </div>
 
+    <div id="unit-tip"></div>
     <button id="btn-pause" title="Pause (Esc)">⏸</button>
     <div id="fps-counter"></div>
 
@@ -831,7 +836,7 @@
                     <li><b>Delete</b> – brush away your own units, walls, paths and flags for a refund.</li>
                     <li><b>Wooden Walls</b> – drag to build a palisade. They block movement and shots (cannons, trebuchets and siege towers fire over them). Blocked units chop walls down.</li>
                 </ul>
-                <b>Support:</b> Shamans heal, Throat Singers and Siege Towers rage-buff allies (faint circles show range while placing). Siege Towers also loose arrows at up to 4 targets at once.
+                <b>Support:</b> Shamans heal, Throat Singers and Siege Towers rage-buff allies (faint circles show range while placing). Siege Towers also loose arrows at up to 7 targets at once.
                 <br><br><b>Versus:</b> split screen, two players can touch at once. Each player's units only follow their own paths and flags.
                 <br><br><b>Camera:</b> Space+drag rotate · Shift+drag pan · wheel zoom · two-finger drag/pinch on touch.
             </div>
@@ -859,6 +864,15 @@
         // =====================================================================
         const TEAMS = { MONGOL: 'MONGOL', CHINESE: 'CHINESE' };
         const GAME_STATES = { PLACEMENT: 'PLACEMENT', SIMULATION: 'SIMULATION', VICTORY: 'VICTORY', DEFEAT: 'DEFEAT' };
+        // ########################################################################
+        // ##  CAMPAIGN DIFFICULTY KNOB  —  EASY TO TUNE  ##
+        // ##  The Dynasty (enemy) army budget = player's level budget × this number.
+        // ##  1.10 = Dynasty gets 10% MORE budget than the Mongols. 1.00 = equal. 0.90 = 10% less.
+        // ##  (Campaign only; 2-player versus always gives both players the same budget.)
+        // ########################################################################
+        const DYNASTY_BUDGET_MULTIPLIER = 1.10;
+        // ########################################################################
+
         const SIM_DT = 1 / 60;          // fixed simulation step (seconds)
         const SPEED_K = 0.5;            // original speeds were tuned for 30 moves/s; we step at 60/s
         const MAP_X = 54, MAP_Z = 34;   // walkable bounds
@@ -887,25 +901,25 @@
         // ---------------------------------------------------------------- UNITS
         const UNIT_TYPES = {
             SWORD:   { enabled: true, name: 'Swordsman', unlock: 1, cost: 10, hp: 130, range: 2.75, damage: 18, speed: 0.085, attackSpeed: 1000, color: 0x2e52b2, enemyColor: 0xb22e2e, radius: 0.65, desc: 'Reliable front-line melee fighter. Can detect stealthed Assassins.' },
-            SPEAR:   { enabled: true, name: 'Spearman', unlock: 2, cost: 14, hp: 110, range: 5, damage: 20, speed: 0.07, attackSpeed: 1100, color: 0x1b7337, enemyColor: 0x8f2323, radius: 0.65, desc: 'Long-reach melee unit. Deals bonus damage from distance.' },
+            SPEAR:   { enabled: true, name: 'Spearman', unlock: 2, cost: 11, hp: 110, range: 5, damage: 20, speed: 0.07, attackSpeed: 1100, color: 0x1b7337, enemyColor: 0x8f2323, radius: 0.65, desc: 'Long-reach melee unit. Deals bonus damage from distance.' },
             WALL:    { enabled: true, structure: true, name: 'Wooden Wall', unlock: 4, cost: 5, hp: 240, range: 0, damage: 0, speed: 0, attackSpeed: 9999, color: 0x8a5a36, enemyColor: 0x8a5a36, radius: 0, desc: 'Drag to build a palisade. Blocks movement and shots; only cannons, trebuchets and siege towers fire over it. Blocked units chop it down.' },
-            BOW:     { enabled: true, name: 'Archer', unlock: 5, cost: 20, hp: 100, range: 22.0, damage: 20, speed: 0.055, attackSpeed: 2000, color: 0xc69214, enemyColor: 0x932793, radius: 0.65, ranged: true, desc: 'Ranged attacker with high range. Kites away from close threats. Buffed by Siege Tower.' },
-            CROSSBOW:{ enabled: true, name: 'Crossbowman', unlock: 8, cost: 26, hp: 105, range: 20, damage: 42, speed: 0.05, attackSpeed: 3000, color: 0x3d7a7a, enemyColor: 0x7a3d4d, radius: 0.65, ranged: true, desc: 'Slow-loading arbalest. Heavy bolts pierce through to a second enemy behind the target. Buffed by Siege Tower.' },
-            ASSASSIN:{ enabled: true, name: 'Assassin', unlock: 10, cost: 30, hp: 95, range: 1.5, damage: 34, speed: 0.15, attackSpeed: 500, color: 0x2b2b2b, enemyColor: 0x1c1c1c, radius: 0.6, desc: 'Extremely fast melee striker. Slips into stealth when not fighting. Dodges Shaolin attacks (28%).' },
-            SHIELD:  { enabled: true, name: 'Shield Guard', unlock: 12, cost: 22, hp: 240, range: 2.6, damage: 11, speed: 0.062, attackSpeed: 900, color: 0x6b7b8c, enemyColor: 0x8c6b6b, radius: 0.75, desc: 'Dao-and-shield infantry. Takes 55% less damage from arrows and bolts that hit the shield, 20% less from melee strikes.' },
-            COMMANDER:{ enabled: true, name: 'Commander', unlock: 15, cost: 60, hp: 250, range: 10.0, damage: 25, speed: 0.08, attackSpeed: 1200, color: 0x800000, enemyColor: 0x4a0000, radius: 0.7, desc: "Holds units in formation. Nearby allies won't advance until enemies enter the aura ring." },
-            CANNON:  { enabled: true, name: 'Cannon', unlock: 15, cost: 90, hp: 200, range: 40.0, damage: 100, speed: 0.03, attackSpeed: 4400, color: 0x424242, enemyColor: 0x5c636e, radius: 0.95, ranged: true, artillery: true, desc: 'Long-range siege weapon. Massive AoE splash on impact. Fires over walls. Buffed by Siege Tower.' },
-            SHAMAN:  { enabled: true, name: 'Tengri Shaman', unlock: 20, cost: 45, hp: 110, range: 18.0, damage: -30, speed: 0.07, attackSpeed: 2000, color: 0x2a9d8f, enemyColor: 0x264653, radius: 0.65, desc: 'Support healer. Restores HP to the most wounded nearby ally each pulse.' },
-            SHAOLIN: { enabled: true, name: 'Shaolin Monk', unlock: 25, cost: 25, hp: 160, range: 2.8, damage: 28, speed: 0.10, attackSpeed: 850, color: 0xe65c00, enemyColor: 0xcc5200, radius: 0.65, desc: 'Fast melee fighter with a 28% dodge chance against all attacks.' },
-            THROATSINGER:{ enabled: true, name: 'Throat Singer', unlock: 30, cost: 50, hp: 200, range: 12.0, damage: 0, speed: 0.06, attackSpeed: 1500, color: 0x6a0dad, enemyColor: 0x4b0082, radius: 0.7, desc: 'Support aura unit. Rages MELEE allies in range: +20% speed, +30% damage, faster attacks. Buff lasts 4s.' },
-            HORSE_ARCHER:{ enabled: true, name: 'Horse Archer', unlock: 33, cost: 40, hp: 150, range: 17, damage: 15, speed: 0.19, attackSpeed: 1100, color: 0xf2c200, enemyColor: 0xff7fb0, radius: 1.0, ranged: true, desc: 'Mounted skirmisher. Shoots on the move, keeps its distance, and lands a stronger Parthian shot while retreating.' },
-            CAVALRY: { enabled: true, name: 'Horse Rider', unlock: 35, cost: 35, hp: 240, range: 3.2, damage: 32, speed: 0.17, attackSpeed: 950, color: 0x107acc, enemyColor: 0x7a1010, radius: 1.0, desc: 'Fast mounted melee. Charging from a distance sprints faster and the first strike deals 2× damage.' },
-            FIRELANCE:{ enabled: true, name: 'Fire Lance', unlock: 40, cost: 45, hp: 120, range: 9.0, damage: 40, speed: 0.08, attackSpeed: 2500, color: 0xd62828, enemyColor: 0xb51717, radius: 0.65, ranged: true, desc: 'Ranged cone blast. Hits all enemies in a forward arc. Buffed by Siege Tower.' },
-            SIEGE_TOWER:{ enabled: true, name: 'Siege Tower', unlock: 45, cost: 90, hp: 450, range: 24.0, auraRange: 13.0, damage: 14, speed: 0.021, attackSpeed: 2200, color: 0x8b6914, enemyColor: 0x6b4f0f, radius: 2.6, ranged: true, artillery: true, desc: 'Rolling tower. Rages RANGED allies in its aura and rains arrows on up to 4 different targets at once. Fires over walls.' },
-            KESHIK:  { enabled: true, name: 'Keshik Guard', unlock: 50, cost: 80, hp: 430, range: 4.2, damage: 46, speed: 0.15, attackSpeed: 1000, color: 0xb8860b, enemyColor: 0x8a2a2a, radius: 1.15, desc: "Imperial heavy lancers. Devastating 2× charge on the first strike and shrugs off 25% of ranged damage." },
-            BOMBER:  { enabled: true, name: 'Thunder Bomber', unlock: 55, cost: 38, hp: 100, range: 15, damage: 46, speed: 0.07, attackSpeed: 3200, color: 0x8c4a2f, enemyColor: 0x5e3a6e, radius: 0.65, ranged: true, desc: 'Hurls thunder-crash bombs. Area damage that stuns everything caught in the blast. Buffed by Siege Tower.' },
-            TREBUCHET:{ enabled: true, name: 'Trebuchet', unlock: 60, cost: 150, hp: 280, range: 54, minRange: 15, damage: 150, speed: 0.016, attackSpeed: 7500, color: 0x7a5a30, enemyColor: 0x5a4a38, radius: 2.4, ranged: true, artillery: true, desc: 'Counterweight siege engine (huihui pao). Enormous range and splash, but cannot hit close targets. Fires over walls.' },
-            WAR_ELEPHANT:{ enabled: true, name: 'War Elephant', unlock: 75, cost: 140, hp: 650, range: 4.5, damage: 65, speed: 0.05, attackSpeed: 2200, color: 0x75685c, enemyColor: 0x594f46, radius: 1.9, desc: 'Massive melee unit. Stomp attack knocks back and damages all nearby enemies.' },
+            BOW:     { enabled: true, name: 'Archer', unlock: 5, cost: 13, hp: 100, range: 22.0, damage: 20, speed: 0.055, attackSpeed: 2000, color: 0xc69214, enemyColor: 0x932793, radius: 0.65, ranged: true, desc: 'Ranged attacker with high range. Kites away from close threats. Buffed by Siege Tower.' },
+            CROSSBOW:{ enabled: true, name: 'Crossbowman', unlock: 8, cost: 20, hp: 105, range: 20, damage: 42, speed: 0.05, attackSpeed: 3000, color: 0x3d7a7a, enemyColor: 0x7a3d4d, radius: 0.65, ranged: true, desc: 'Slow-loading arbalest. Heavy bolts pierce through to a second enemy behind the target. Buffed by Siege Tower.' },
+            ASSASSIN:{ enabled: true, name: 'Assassin', unlock: 10, cost: 17, hp: 95, range: 1.5, damage: 34, speed: 0.15, attackSpeed: 500, color: 0x2b2b2b, enemyColor: 0x1c1c1c, radius: 0.6, desc: 'Extremely fast melee striker. Slips into stealth when not fighting. Dodges Shaolin attacks (28%).' },
+            SHIELD:  { enabled: true, name: 'Shield Guard', unlock: 12, cost: 14, hp: 240, range: 2.6, damage: 11, speed: 0.062, attackSpeed: 900, color: 0x6b7b8c, enemyColor: 0x8c6b6b, radius: 0.75, desc: 'Dao-and-shield infantry. Takes 55% less damage from arrows and bolts that hit the shield, 20% less from melee strikes.' },
+            COMMANDER:{ enabled: true, name: 'Commander', unlock: 15, cost: 50, hp: 250, range: 10.0, damage: 25, speed: 0.08, attackSpeed: 1200, color: 0x800000, enemyColor: 0x4a0000, radius: 0.7, desc: "Holds units in formation. Nearby allies won't advance until enemies enter the aura ring." },
+            CANNON:  { enabled: true, name: 'Cannon', unlock: 15, cost: 100, hp: 200, range: 40.0, damage: 70, speed: 0.03, attackSpeed: 4600, color: 0x424242, enemyColor: 0x5c636e, radius: 0.95, ranged: true, artillery: true, desc: 'Long-range siege weapon. Massive AoE splash on impact. Fires over walls. Buffed by Siege Tower.' },
+            SHAMAN:  { enabled: true, name: 'Tengri Shaman', unlock: 20, cost: 16, hp: 110, range: 18.0, damage: -55, speed: 0.07, attackSpeed: 1600, color: 0x2a9d8f, enemyColor: 0x264653, radius: 0.65, desc: 'Support healer. Restores 55 HP to the most wounded nearby ally every 1.6s.' },
+            SHAOLIN: { enabled: true, name: 'Shaolin Monk', unlock: 25, cost: 20, hp: 160, range: 2.8, damage: 28, speed: 0.10, attackSpeed: 850, color: 0xe65c00, enemyColor: 0xcc5200, radius: 0.65, desc: 'Fast melee fighter with a 28% dodge chance against all attacks.' },
+            THROATSINGER:{ enabled: true, name: 'Throat Singer', unlock: 30, cost: 27, hp: 200, range: 12.0, damage: 0, speed: 0.06, attackSpeed: 1500, color: 0x6a0dad, enemyColor: 0x4b0082, radius: 0.7, desc: 'Support aura unit. Rages MELEE allies in range: +20% speed, +30% damage, faster attacks. Buff lasts 4s.' },
+            HORSE_ARCHER:{ enabled: true, name: 'Horse Archer', unlock: 33, cost: 40, hp: 120, range: 17, damage: 9, speed: 0.19, attackSpeed: 1200, color: 0xf2c200, enemyColor: 0xff7fb0, radius: 1.0, ranged: true, desc: 'Mounted skirmisher. Shoots on the move, keeps its distance, and lands a stronger Parthian shot while retreating.' },
+            CAVALRY: { enabled: true, name: 'Horse Rider', unlock: 35, cost: 25, hp: 240, range: 3.2, damage: 32, speed: 0.17, attackSpeed: 950, color: 0x107acc, enemyColor: 0x7a1010, radius: 1.0, desc: 'Fast mounted melee. Charging from a distance sprints faster and the first strike deals 2× damage.' },
+            FIRELANCE:{ enabled: true, name: 'Fire Lance', unlock: 40, cost: 36, hp: 120, range: 9.0, damage: 40, speed: 0.08, attackSpeed: 2500, color: 0xd62828, enemyColor: 0xb51717, radius: 0.65, ranged: true, desc: 'Ranged cone blast. Hits all enemies in a forward arc. Buffed by Siege Tower.' },
+            SIEGE_TOWER:{ enabled: true, name: 'Siege Tower', unlock: 45, cost: 85, hp: 450, range: 24.0, auraRange: 13.0, damage: 14, speed: 0.021, attackSpeed: 2200, color: 0x8b6914, enemyColor: 0x6b4f0f, radius: 2.6, ranged: true, artillery: true, desc: 'Rolling tower. Rages RANGED allies in its aura and rains arrows on up to 7 different targets at once. Fires over walls.' },
+            KESHIK:  { enabled: true, name: 'Keshik Guard', unlock: 50, cost: 44, hp: 430, range: 4.2, damage: 46, speed: 0.15, attackSpeed: 1000, color: 0xb8860b, enemyColor: 0x8a2a2a, radius: 1.15, desc: "Imperial heavy lancers. Devastating 2× charge on the first strike and shrugs off 25% of ranged damage." },
+            BOMBER:  { enabled: true, name: 'Thunder Bomber', unlock: 55, cost: 31, hp: 100, range: 15, damage: 28, speed: 0.07, attackSpeed: 3600, color: 0x8c4a2f, enemyColor: 0x5e3a6e, radius: 0.65, ranged: true, desc: 'Hurls thunder-crash bombs. Area damage that stuns everything caught in the blast. Buffed by Siege Tower.' },
+            TREBUCHET:{ enabled: true, name: 'Trebuchet', unlock: 60, cost: 120, hp: 280, range: 54, minRange: 15, damage: 150, speed: 0.016, attackSpeed: 7500, color: 0x7a5a30, enemyColor: 0x5a4a38, radius: 2.4, ranged: true, artillery: true, desc: 'Counterweight siege engine (huihui pao). Enormous range and splash, but cannot hit close targets. Fires over walls.' },
+            WAR_ELEPHANT:{ enabled: true, name: 'War Elephant', unlock: 75, cost: 230, hp: 650, range: 4.5, damage: 65, speed: 0.05, attackSpeed: 2200, color: 0x75685c, enemyColor: 0x594f46, radius: 1.9, desc: 'Massive melee unit. Stomp attack knocks back and damages all nearby enemies.' },
             TENGRI_AVATAR:{ enabled: true, sandbox: true, name: "Tengri's Avatar", unlock: 1, cost: 360, hp: 3600, range: 15.0, damage: 220, speed: 0.14, attackSpeed: 420, color: 0xffd700, enemyColor: 0x8be9ff, radius: 1.5 },
             GENGHIS: { enabled: true, name: 'Genghis Khan', unlock: 1, cost: 0, hp: 850, range: 4.0, damage: 60, speed: 0.12, attackSpeed: 750, color: 0xd4af37, enemyColor: 0xd64527, radius: 0.8 },
             TARGET_MARK:{ enabled: true, name: 'Target Mark', unlock: 1, cost: 0, hp: 1, range: 8.0, damage: 0, speed: 0, attackSpeed: 9999, color: 0xbb0000, enemyColor: 0xbb0000, radius: 0 },
@@ -1129,7 +1143,7 @@
                 this.alive = false;
                 this.mesh = new THREE.Mesh(G('Sphere', 0.38, 8, 8), solidMat(0x222222));
                 this.mesh.castShadow = false; scene.add(this.mesh);
-                this.position = new THREE.Vector3(); this.targetLastPos = new THREE.Vector3(); this.startPos = new THREE.Vector3();
+                this.position = new THREE.Vector3(); this.targetLastPos = new THREE.Vector3(); this.startPos = new THREE.Vector3(); this.aim = new THREE.Vector3(); this.ballistic = false;
             }
             fire(startPos, targetUnit, damage, type, team, owner) {
                 this.alive = true; this.position.copy(startPos); this.startPos.copy(startPos);
@@ -1145,10 +1159,22 @@
                     case 'BOULDER': this.speed = 0.26; this.arc = 17; this.mesh.geometry = G('Dodecahedron', 0.95, 0); this.mesh.material = solidMat(0x777068, 1, 0, true); break;
                     default: this.speed = 0.32; this.arc = 7.5; this.mesh.geometry = G('Sphere', 0.4, 8, 8); this.mesh.material = fabMat(0x222222, 0.7); // CANNONBALL
                 }
+                this.ballistic = (type === 'CANNONBALL' || type === 'BOULDER' || type === 'BOMB');
+                if (this.ballistic) {
+                    const tp = targetUnit.mesh.position, vx = targetUnit.vx || 0, vz = targetUnit.vz || 0; let ax = tp.x, az = tp.z;
+                    for (let k = 0; k < 5; k++) { const gy = getTerrainHeight(ax, az); const T = Math.hypot(ax - startPos.x, az - startPos.z, gy - startPos.y) / this.speed; ax = clamp(tp.x + vx * T, -MAP_X, MAP_X); az = clamp(tp.z + vz * T, -MAP_Z, MAP_Z); }
+                    this.aim.set(ax, getTerrainHeight(ax, az) + 0.15, az); this.totalDistance = this.startPos.distanceTo(this.aim);
+                }
                 this.mesh.position.copy(this.position); this.mesh.visible = true;
             }
             update() {
                 if (!this.alive) return;
+                if (this.ballistic) {
+                    this.progress += this.speed; const f = Math.min(1, this.progress / Math.max(0.01, this.totalDistance));
+                    this.position.lerpVectors(this.startPos, this.aim, f); this.mesh.position.copy(this.position); this.mesh.position.y += Math.sin(f * Math.PI) * this.arc;
+                    this.mesh.rotation.x += 0.12; this.mesh.rotation.z += 0.09;
+                    if (f >= 1) { this.mesh.position.copy(this.aim); this.resolveImpact(); } return;
+                }
                 const t = this.targetUnit;
                 if (t && t.alive) this.targetLastPos.set(t.mesh.position.x, t.mesh.position.y + aimOffset(t), t.mesh.position.z);
                 this.progress += this.speed;
@@ -1188,7 +1214,7 @@
                     this._splash(c, 6.8, d => this.damage * (1 - d / 6.8 * 0.8), { ranged: true, proj: 'BOULDER' });
                 } else if (this.type === 'BOMB') {
                     createExplosionEffect(c, 0xffcc33, 22); createExplosionEffect(c, 0xff5500, 12, true);
-                    this._splash(c, 4.2, d => this.damage * (1 - d / 4.2 * 0.6), { ranged: true, proj: 'BOMB' }, 1300);
+                    this._splash(c, 3.6, d => this.damage * (1 - d / 3.6 * 0.6), { ranged: true, proj: 'BOMB' }, 700);
                 } else if (this.type === 'LIGHTNING') {
                     if (T && T.alive) {
                         const impact = c.clone();
@@ -2040,12 +2066,13 @@
             base.add(mk(G('Box', 6.0, 0.4, 0.5), dark, 0, 0.35, -1.4, true)); base.add(mk(G('Box', 6.0, 0.4, 0.5), dark, 0, 0.35, 1.4, true)); base.add(mk(G('Box', 0.5, 0.4, 3.3), dark, 2.4, 0.35, 0, true)); base.add(mk(G('Box', 0.5, 0.4, 3.3), dark, -2.4, 0.35, 0, true));
             for (const z of [-1.4, 1.4]) for (const s of [-1, 1]) { const leg = mk(G('Box', 0.34, 5.2, 0.34), wood, s * 0.9, 2.7, z, true); leg.rotation.z = -s * 0.33; base.add(leg); }
             addm(base, mk(G('Cylinder', 0.18, 0.18, 3.4, 8), iron, 0, 5.0, 0)).rotation.x = Math.PI / 2;
+            // arm: LONG sling end points BACK (-x), heavy counterweight at the FRONT (+x); the throw swings up and over, forwards
             const arm = pivot(base, 0, 5.0, 0); rig.arm = arm;
-            arm.add(mk(G('Box', 8.2, 0.34, 0.4), wood, 2.4, 0, 0, true));
-            const cw = mk(G('Box', 1.7, 1.7, 1.9), solidMat(0x666056, 0.9, 0.1, true), -1.9, -1.0, 0, true); arm.add(cw); arm.add(mk(G('Box', 1.74, 0.2, 1.94), fabMat(TEAM_CLOTH[team]), -1.9, -0.35, 0));
-            const sling = pivot(arm, 6.4, 0, 0); sling.add(mk(G('Cylinder', 0.02, 0.02, 2.2), dark, 0, -1.1, 0)); sling.add(mk(G('Sphere', 0.5, 7, 7), solidMat(0x777068, 1.0, 0, true), 0, -2.2, 0)); rig.sling = sling; rig.ball = sling.children[1];
+            arm.add(mk(G('Box', 8.2, 0.34, 0.4), wood, -2.4, 0, 0, true));
+            arm.add(mk(G('Box', 1.7, 1.7, 1.9), solidMat(0x666056, 0.9, 0.1, true), 1.9, -1.0, 0, true)); arm.add(mk(G('Box', 1.74, 0.2, 1.94), fabMat(TEAM_CLOTH[team]), 1.9, -0.35, 0));
+            const sling = pivot(arm, -6.4, 0, 0); sling.add(mk(G('Cylinder', 0.02, 0.02, 1.4), dark, 0, -0.7, 0)); sling.add(mk(G('Sphere', 0.5, 7, 7), solidMat(0x777068, 1.0, 0, true), 0, -1.4, 0)); rig.sling = sling; rig.ball = sling.children[1];
             rig.wheels = []; for (const [x, z] of [[-2.4, -1.9], [2.4, -1.9], [-2.4, 1.9], [2.4, 1.9]]) { const w = pivot(base, x, 0.55, z); addm(w, mk(G('Cylinder', 0.55, 0.55, 0.3, 10), dark, 0, 0, 0)).rotation.x = Math.PI / 2; rig.wheels.push(w); }
-            base.add(mk(G('Cylinder', 0.07, 0.07, 1.6), dark, -2.9, 1.2, 0)); const fl = mk(G('Plane', 1.1, 0.7), new THREE.MeshStandardMaterial({ map: TextureFactory.getFabric(TEAM_CLOTH[team]), side: THREE.DoubleSide }), -2.4, 1.7, 0); fl.rotation.y = Math.PI / 2; base.add(fl); rig.flag = fl;
+            base.add(mk(G('Cylinder', 0.07, 0.07, 1.6), dark, 2.9, 1.2, 0)); const fl = mk(G('Plane', 1.1, 0.7), new THREE.MeshStandardMaterial({ map: TextureFactory.getFabric(TEAM_CLOTH[team]), side: THREE.DoubleSide }), 2.9, 1.7, 0.6); fl.rotation.y = Math.PI / 2; base.add(fl); rig.flag = fl;
             const wg = pivot(root, 0, 3, 0); wg.name = 'weaponGroup'; rig.weapon = wg; rig.body = base.children[0];
             return rig;
         }
@@ -2131,7 +2158,7 @@
                 this.animTime = Math.random() * 50; this.animPhase = Math.random() * 6;
                 this.isAttackingAnim = false; this.attackAnimProgress = 0; this.genghisHomeTarget = new THREE.Vector3(-35, 0, 0);
                 const ring = this.mesh.getObjectByName('rangeRing'); if (ring) ring.visible = (gameState === GAME_STATES.PLACEMENT) && SETTINGS.rings;
-                this.mesh.matrixAutoUpdate = true;
+                this.mesh.matrixAutoUpdate = true; this.id = Unit.nextId = (Unit.nextId || 0) + 1; this.px = x; this.pz = z; this.vx = 0; this.vz = 0; this.sepAt = 0; this.csx = 0; this.csz = 0; this.cn = 0; this.navCheckAt = 0; this.navDirect = true; this.losAt = 0; this.losTarget = null; this.losWall = null;
             }
             setPlacementVisuals(on) { const r = this.mesh.getObjectByName('rangeRing'); if (r) r.visible = on && SETTINGS.rings; }
             applyBuff(ms = 4000) {
@@ -2163,16 +2190,19 @@
                     const idle = simTime - Math.max(this.lastAttackTime, this.lastDamagedAt) > 3000;
                     if (idle && !this.isInvisible) this.setGhost(true); else if (!idle && this.isInvisible) this.setGhost(false);
                 }
-                if (simTime < this.stunUntil) { this.isMoving = false; if (this.isStunnedFx !== true) { this.isStunnedFx = true; spawnFloatingCombatText(this.mesh.position, 'STUN', 0xffee66); } return; }
+                if (simTime < this.stunUntil) { this.isMoving = false; this.vx = this.vz = 0; if (this.isStunnedFx !== true) { this.isStunnedFx = true; spawnFloatingCombatText(this.mesh.position, 'STUN', 0xffee66); } return; }
                 this.isStunnedFx = false;
                 this.executeBehaviorAI();
-                this.mesh.position.y = getTerrainHeight(this.mesh.position.x, this.mesh.position.z);
+                const pp = this.mesh.position; this.vx = this.vx * 0.55 + (pp.x - this.px) * 0.45; this.vz = this.vz * 0.55 + (pp.z - this.pz) * 0.45; this.px = pp.x; this.pz = pp.z;
+                if (((simTick + this.id) & 3) === 0) pp.y = getTerrainHeight(pp.x, pp.z);
             }
 
             // ---------------------------------------------------------- movement helpers
             navDir(tx, tz) {
                 const p = this.mesh.position; const dx = tx - p.x, dz = tz - p.z; const d = Math.hypot(dx, dz) || 1;
-                if (!navActive || d < 2.2 || lineClear(p.x, p.z, tx, tz, this.big)) { this.path = null; return [dx / d, dz / d]; }
+                if (!navActive || d < 2.2) { this.path = null; return [dx / d, dz / d]; }
+                if (simTime >= this.navCheckAt || Math.hypot(tx - this.pathGX, tz - this.pathGZ) > 6) { this.navCheckAt = simTime + 110 + Math.random() * 90; this.navDirect = lineClear(p.x, p.z, tx, tz, this.big); if (this.navDirect) this.path = null; this.pathGX = this.navDirect ? tx : this.pathGX; this.pathGZ = this.navDirect ? tz : this.pathGZ; }
+                if (this.navDirect) return [dx / d, dz / d];
                 if (!this.path || this.pathVer !== navVersion || simTime > this.repathAt || Math.hypot(tx - this.pathGX, tz - this.pathGZ) > 5) {
                     if (pathBudget > 0) {
                         pathBudget--; this.path = findPath(p.x, p.z, tx, tz, this.big, this.team); this.pathIdx = 0; this.pathVer = navVersion; this.pathGX = tx; this.pathGZ = tz;
@@ -2191,13 +2221,17 @@
             stepMove(dx, dz, mult = 1, noFace = false) {
                 if (this.type === 'SIEGE_TOWER') { dz = 0; dx = dx > 0.05 ? 1 : (dx < -0.05 ? -1 : 0); noFace = true; if (dx === 0) { this.isMoving = false; return 0; } }
                 const p = this.mesh.position; let sx = 0, sz = 0, n = 0; const bound = Math.max(1.4, this.radius * 2.2);
-                const near = unitGrid.getNearby(this, bound + 1.0);
-                for (let i = 0; i < near.length; i++) {
-                    const o = near[i]; if (o === this || !o.alive) continue;
-                    const ex = p.x - o.mesh.position.x, ez = p.z - o.mesh.position.z; const d = Math.hypot(ex, ez);
-                    const lim = o.team === this.team ? Math.max(bound, o.radius * 2.2) : (this.radius + o.radius) * 0.75;
-                    if (d > 0.001 && d < lim) { const w = 1 / Math.max(d, 0.1); sx += ex / d * w; sz += ez / d * w; n++; }
-                }
+                if (simTime >= this.sepAt) {
+                    this.sepAt = simTime + 70 + Math.random() * 50;
+                    const near = unitGrid.getNearby(this, bound + 1.0);
+                    for (let i = 0; i < near.length; i++) {
+                        const o = near[i]; if (o === this || !o.alive) continue;
+                        const ex = p.x - o.mesh.position.x, ez = p.z - o.mesh.position.z; const d = Math.hypot(ex, ez);
+                        const lim = o.team === this.team ? Math.max(bound, o.radius * 2.2) : (this.radius + o.radius) * 0.75;
+                        if (d > 0.001 && d < lim) { const w = 1 / Math.max(d, 0.1); sx += ex / d * w; sz += ez / d * w; n++; }
+                    }
+                    this.csx = sx; this.csz = sz; this.cn = n;
+                } else { sx = this.csx; sz = this.csz; n = this.cn; }
                 let mx = dx, mz = dz;
                 if (this.type === 'SIEGE_TOWER') { sz = 0; }
                 if (n > 0) { mx += (sx / n) * 1.3; mz += (sz / n) * 1.3; const l = Math.hypot(mx, mz) || 1; mx /= l; mz /= l; }
@@ -2280,7 +2314,7 @@
                 this.retarget(hold);
                 if (this.shouldChopWall()) { this.chopWall(); return; }
                 const tg = this.target;
-                if (!tg || !tg.alive) { this.isMoving = false; this.canFireLast = false; return; }
+                if (!tg || !tg.alive) { this.canFireLast = false; if (t === 'SHAMAN' && !hold) { this.supportPositioning(); return; } this.isMoving = false; return; }
                 const p = this.mesh.position; const dx = tg.mesh.position.x - p.x, dz = tg.mesh.position.z - p.z; const dist = Math.hypot(dx, dz) || 0.001;
                 const ux = dx / dist, uz = dz / dist;
                 if (hold) {
@@ -2321,7 +2355,7 @@
                 if (this.type === 'SHAMAN' && d > this.range) { this.canFireLast = false; return false; }
                 if (this.config.minRange && d < this.config.minRange) { this.canFireLast = false; return false; }
                 this.obstruct = null;
-                if (!this.config.artillery && walls.length && tg.team !== this.team) { const w = wallBetween(p.x, p.z, tg.mesh.position.x, tg.mesh.position.z); if (w) { this.obstruct = w; this.canFireLast = false; return false; } }
+                if (!this.config.artillery && walls.length && tg.team !== this.team) { if (simTime >= this.losAt || this.losTarget !== tg) { this.losAt = simTime + 140 + Math.random() * 60; this.losTarget = tg; this.losWall = wallBetween(p.x, p.z, tg.mesh.position.x, tg.mesh.position.z); } const w = this.losWall && this.losWall.alive ? this.losWall : null; if (w) { this.obstruct = w; this.canFireLast = false; return false; } }
                 this.canFireLast = true; this.faceDir(tg.mesh.position.x - p.x, tg.mesh.position.z - p.z, 0.2);
                 if (simTime - this.lastAttackTime > this.curAtkSpd()) { this.lastAttackTime = simTime; this.fireAttackRoutine(); return true; }
                 return false;
@@ -2397,9 +2431,9 @@
                 if (!c.length) return; c.sort((a, b) => a[0] - b[0]);
                 this.lastVolley = simTime; this.lastAttackTime = simTime; this.flapUntil = simTime + 900; this.isAttackingAnim = true; this.attackAnimProgress = 0;
                 const a = this.mesh.rotation.y, ca = Math.cos(a), sa = -Math.sin(a); const dmg = this.isBuffed ? this.damage * 1.3 : this.damage;
-                const n = Math.min(4, c.length);
+                const n = Math.min(7, c.length);
                 for (let i = 0; i < n; i++) {
-                    const o = new THREE.Vector3(p.x + ca * 2.4 + (-sa) * (i - 1.5) * 0.35, p.y + 6.5, p.z + sa * 2.4 + ca * (i - 1.5) * 0.35);
+                    const o = new THREE.Vector3(p.x + ca * 2.4 + (-sa) * (i - 3) * 0.3, p.y + 6.5, p.z + sa * 2.4 + ca * (i - 3) * 0.3);
                     const pr = projectilesPool.get(); pr.fire(o, c[i][1], dmg, 'ARROW', this.team, this); activeProjectiles.push(pr);
                 }
                 this.target = c[0][1];
@@ -2419,7 +2453,7 @@
                 else if (T === 'TREBUCHET') { shoot('BOULDER', 3.5, 6.5); createExplosionEffect(at(2.5, 3), 0x998877, 8); }
                 else if (T === 'FIRELANCE') this.executeConeStrike(at(0, 1.0), dmg, 0xff5500);
                 else if (T === 'WAR_ELEPHANT') this.executeElephantStomp(dmg);
-                else if (T === 'SHAMAN') { if (tg && tg.team === this.team) { spawnFloatingCombatText(tg.mesh.position, '+30', 0x2a9d8f); tg.hp = Math.min(tg.hp + 30, tg.maxHp); createExplosionEffect(tg.mesh.position.clone().add(new THREE.Vector3(0, 1, 0)), 0x2a9d8f, 5, true); } }
+                else if (T === 'SHAMAN') { if (tg && tg.team === this.team) { spawnFloatingCombatText(tg.mesh.position, '+55', 0x2a9d8f); tg.hp = Math.min(tg.hp + 55, tg.maxHp); createExplosionEffect(tg.mesh.position.clone().add(new THREE.Vector3(0, 1, 0)), 0x2a9d8f, 5, true); } }
                 else if (T === 'TENGRI_AVATAR') this.executeTengriWrath(dmg, at(0, 1.2));
                 else if (tg && tg.alive) {
                     if ((T === 'CAVALRY' || T === 'KESHIK') && this.charging) { dmg *= 2; this.charging = false; this.chargeDist = 0; spawnFloatingCombatText(tg.mesh.position, 'CHARGE HIT!', 0xff6622); createExplosionEffect(tg.mesh.position.clone().add(new THREE.Vector3(0, 1, 0)), 0xddccaa, 10); }
@@ -2550,9 +2584,9 @@
                     }
                     case 'trebuchet': {
                         for (const w of r.wheels) w.rotation.z -= this.moveDelta / 0.55; this.moveDelta *= 0.5;
-                        const age = simTime - this.fireAt; const rest = -0.62; let ang = rest;
-                        if (age < 650) ang = rest + (1.25 - rest) * (age / 650) ** 1.6; else if (age < 1800) ang = 1.25 - Math.sin((age - 650) * 0.012) * 0.06; else ang = 1.25 + (rest - 1.25) * clamp((age - 1800) / Math.max(1500, this.attackSpeed - 2800), 0, 1);
-                        r.arm.rotation.z = ang; r.sling.rotation.z = -ang * 0.9 + (age < 650 ? 0.8 : 0); r.ball.visible = age > 2500 || age < 0; r.flag.rotation.y = Math.sin(now * 4) * 0.4;
+                        const age = simTime - this.fireAt; const rest = 0.5, thrown = -2.3; let ang = rest;
+                        if (age < 650) ang = rest + (thrown - rest) * (age / 650) ** 1.6; else if (age < 1800) ang = thrown + Math.sin((age - 650) * 0.012) * 0.05; else ang = thrown + (rest - thrown) * clamp((age - 1800) / Math.max(1500, this.attackSpeed - 2800), 0, 1);
+                        r.arm.rotation.z = ang; r.sling.rotation.z = -ang * 0.95 + (age < 650 ? Math.sin(age * 0.01) * 0.3 : 0); r.ball.visible = age > 2500 || age < 0; r.flag.rotation.y = Math.sin(now * 4) * 0.4;
                         break;
                     }
                     case 'avatar': {
@@ -2592,7 +2626,7 @@
             ctx.camera.lookAt(c.target);
         }
         function resetCams() {
-            players.forEach((p, i) => { const vs = players.length === 2; p.cam.theta = vs ? (i === 0 ? Math.PI : 0) : Math.PI / 2; p.cam.phi = vs ? 0.8 : 0.95; p.cam.radius = vs ? 50 : 60; p.cam.target.set(vs ? (i === 0 ? -10 : 10) : 0, 0, 0); });
+            players.forEach((p, i) => { const vs = players.length === 2; p.cam.theta = vs ? (i === 0 ? Math.PI : 0) : Math.PI / 2; p.cam.phi = vs ? 0.8 : 0.95; const asp = (innerWidth / 2) / innerHeight; p.cam.radius = vs ? clamp(80 / (2 * Math.tan(THREE.MathUtils.degToRad(22.5)) * asp), 60, 128) : 60; p.cam.target.set(vs ? (i === 0 ? -6 : 6) : 0, 0, 0); });
         }
         function layoutViewports() {
             const W = innerWidth, H = innerHeight;
@@ -2606,7 +2640,7 @@
             if (appMode === 'versus') return false; return !(godUnlockAll || c.unlock <= currentLevelIdx + 1);
         };
         const SELECTABLE = () => Object.keys(UNIT_TYPES).filter(k => UNIT_TYPES[k].enabled && !['GENGHIS', 'TARGET_MARK', 'WAYPOINT', 'OBJECTIVE'].includes(k) && !(appMode === 'versus' && UNIT_TYPES[k].sandbox && !sandboxUnlocked && !godUnlockAll))
-            .sort((a, b) => UNIT_TYPES[a].unlock - UNIT_TYPES[b].unlock);
+            .sort((a, b) => ((UNIT_TYPES[a].sandbox ? 1e6 : 0) + UNIT_TYPES[a].unlock) - ((UNIT_TYPES[b].sandbox ? 1e6 : 0) + UNIT_TYPES[b].unlock));
 
         // ---------------------------------------------------------------- HUD
         function buildHUDs() {
@@ -2637,14 +2671,29 @@
                     </div></div></div>`;
                 root.appendChild(hud); ctx.hud = hud;
                 hud.addEventListener('click', e => onHudClick(ctx, e));
+                hud.addEventListener('pointerover', e => { const b = e.target.closest('[data-unit-type]'); if (b && e.pointerType !== 'touch') showTip(b, false); });
+                hud.addEventListener('pointerdown', e => { const b = e.target.closest('[data-unit-type]'); if (b && e.pointerType === 'touch') showTip(b, true); });
+                hud.addEventListener('pointerout', e => { if (e.pointerType !== 'touch' && e.target.closest('[data-unit-type]')) hideTip(); });
                 populateUnitButtons(ctx);
             });
             refreshHUD();
         }
+        const TOOL_TIPS = { WAYPOINT: ['Draw Path', 'Drag to draw a route. Units placed near its start follow it, fighting as they go.'], TARGET_MARK: ['Target Flag', 'Enemies inside its ring become priority targets.'], DELETE: ['Delete Brush', 'Drag over your own units, walls, paths and flags to remove them for a refund.'] };
+        let _tipTimer = 0;
+        function hideTip() { el('unit-tip').style.display = 'none'; }
+        function showTip(btn, touch) {
+            const k = btn.dataset.unitType, tip = el('unit-tip'); const c = UNIT_TYPES[k]; const tt = TOOL_TIPS[k]; let h;
+            if (tt) h = `<b>${tt[0]}</b><br>${tt[1]}`;
+            else if (c) { h = `<b>${c.name}</b> <span class="tc">${c.structure ? '$' + c.cost + '/piece' : '$' + c.cost}</span><br>${c.desc || ''}`; if (btn.classList.contains('locked')) h += `<span class="tl">🔒 Unlocks at ${c.sandbox ? 'campaign completion' : 'level ' + c.unlock}</span>`; }
+            else return;
+            tip.innerHTML = h; tip.style.display = 'block'; const r = btn.getBoundingClientRect(); const w = tip.offsetWidth, hh = tip.offsetHeight;
+            tip.style.left = clamp(r.left + r.width / 2 - w / 2, 4, innerWidth - w - 4) + 'px'; tip.style.top = (r.top - hh - 6 < 4 ? r.bottom + 6 : r.top - hh - 6) + 'px';
+            clearTimeout(_tipTimer); if (touch) _tipTimer = setTimeout(hideTip, 3000);
+        }
         function populateUnitButtons(ctx) {
             const box = ctx.hud.querySelector('.unit-selector-group'); box.innerHTML = '';
             SELECTABLE().forEach(k => {
-                const c = UNIT_TYPES[k]; const b = document.createElement('div'); b.className = 'btn'; b.dataset.unitType = k; b.title = c.desc || c.name;
+                const c = UNIT_TYPES[k]; const b = document.createElement('div'); b.className = 'btn'; b.dataset.unitType = k; b.dataset.unlock = c.sandbox ? '100 clear' : String(c.unlock); b.title = c.desc || c.name;
                 b.innerHTML = `${c.name}<span class="count">${c.structure ? '$' + c.cost + ' / piece' : '$' + c.cost}</span>`; box.appendChild(b);
             });
         }
@@ -2667,7 +2716,8 @@
                 h.querySelectorAll('[data-unit-type]').forEach(b => {
                     const k = b.dataset.unitType; b.classList.toggle('selected', ctx.selected === k);
                     if (UNIT_TYPES[k] && k !== 'DELETE' && k !== 'WAYPOINT' && k !== 'TARGET_MARK') {
-                        b.classList.toggle('locked', isLocked(k)); b.classList.toggle('disabled', !isLocked(k) && !godNoBudget && UNIT_TYPES[k].cost > ctx.budget);
+                        const lk = isLocked(k); b.classList.toggle('locked', lk); b.classList.toggle('disabled', !lk && !godNoBudget && UNIT_TYPES[k].cost > ctx.budget);
+                        
                     }
                 });
                 h.querySelector('.pbud').textContent = '$' + fmtBudget(ctx);
@@ -2681,8 +2731,8 @@
             if (appMode === 'versus' && players.length === 2) { el('vs-b1').innerText = '$' + fmtBudget(players[0]); el('vs-b2').innerText = '$' + fmtBudget(players[1]); }
             const showHud = gameState === GAME_STATES.PLACEMENT || appMode === 'campaign';
             players.forEach(c => { if (c.hud) c.hud.style.visibility = gameState === GAME_STATES.PLACEMENT ? 'visible' : (appMode === 'campaign' ? 'visible' : 'hidden'); });
-            if (appMode === 'campaign' && gameState !== GAME_STATES.PLACEMENT) players.forEach(c => c.hud && c.hud.querySelectorAll('.left-column,.history-group').forEach(x => x.style.display = 'none'));
-            else players.forEach(c => c.hud && c.hud.querySelectorAll('.left-column,.history-group').forEach(x => x.style.display = ''));
+            const hideTools = appMode === 'campaign' && gameState !== GAME_STATES.PLACEMENT;   // keep layout space so the system buttons stay on the right
+            players.forEach(c => c.hud && c.hud.querySelectorAll('.left-column,.history-group').forEach(x => { x.style.visibility = hideTools ? 'hidden' : 'visible'; x.style.pointerEvents = hideTools ? 'none' : ''; }));
         }
         function setStatus(txt, col) { const s = el('game-status'); s.innerText = txt; s.style.color = col || '#52b788'; }
 
@@ -2872,13 +2922,21 @@
             const pre = ["Skirmish at", "Siege of", "Ambush in", "Passage of", "Defiance at", "The Gates of"];
             const loc = ["Karakorum", "Bactria", "Dunhuang", "Khotan", "Tianshan", "The Hexi Corridor", "Samarkand", "Lhasa Ridge", "Kaifeng", "Yumen Pass", "Siberian Outpost", "Khwarazm"];
             const name = pre[idx % pre.length] + " " + loc[Math.floor(idx * 0.73) % loc.length] + ` (${Math.floor(idx / 5) + 1}-${(idx % 5) + 1})`;
-            const E = [{ type: idx % 2 === 0 ? 'SWORD' : 'SPEAR', count: Math.floor(6 + idx * 1.5), x: 14 + rng() * 4, zSpread: 18 + Math.min(idx, 20) }];
-            const add = (min, type, cnt, x, z) => { if (idx >= min) E.push({ type, count: Math.max(1, Math.floor(cnt)), x: x + rng() * 3, zSpread: z }); };
-            add(4, 'BOW', 2 + idx * 0.5, 20, 15 + Math.min(idx, 15)); add(7, 'CROSSBOW', 1 + (idx - 7) * 0.35, 22, 18); add(9, 'ASSASSIN', 2 + idx * 0.3, 10, 30);
-            add(11, 'SHIELD', 2 + (idx - 11) * 0.4, 12, 24); add(14, 'CANNON', 1 + idx * 0.1, 28, 12); add(19, 'SHAMAN', 2 + idx * 0.2, 18, 20); add(24, 'SHAOLIN', 2 + idx * 0.4, 8, 35);
-            add(29, 'THROATSINGER', 1 + (idx - 29) * 0.15, 20, 14); add(32, 'HORSE_ARCHER', 2 + (idx - 32) * 0.4, 16, 40); add(34, 'CAVALRY', 2 + (idx - 34) * 0.5, 12, 25); add(39, 'FIRELANCE', 2 + (idx - 39) * 0.3, 17, 20);
-            add(44, 'SIEGE_TOWER', 1 + (idx - 44) * 0.1, 26, 20); add(49, 'KESHIK', 2 + (idx - 49) * 0.35, 12, 28); add(54, 'BOMBER', 2 + (idx - 54) * 0.3, 18, 22); add(59, 'TREBUCHET', 1 + (idx - 59) * 0.08, 32, 14); add(74, 'WAR_ELEPHANT', 1 + (idx - 74) * 0.1, 11, 30);
+            const E = [];
             return { id: idx + 1, budget: baseBudget, name, biome: bKey, enemies: E, hasObjective: idx % 3 === 2 };
+        }
+        const ROLE_OF = { SWORD: 'F', SPEAR: 'F', SHIELD: 'F', SHAOLIN: 'F', ASSASSIN: 'F', WAR_ELEPHANT: 'F', BOW: 'R', CROSSBOW: 'R', FIRELANCE: 'R', BOMBER: 'R', HORSE_ARCHER: 'R', CAVALRY: 'C', KESHIK: 'C', CANNON: 'A', TREBUCHET: 'A', SHAMAN: 'S', THROATSINGER: 'S', SIEGE_TOWER: 'S', COMMANDER: 'S' };
+        const ROLE_W = { F: 0.42, R: 0.24, C: 0.13, A: 0.09, S: 0.08 }, ROLE_CAP = { F: 1, R: 0.5, C: 0.35, A: 0.2, S: 0.14 }, ROLE_X = { F: 13, R: 20, C: 10, A: 28, S: 22 };
+        function composeEnemyArmy(idx, budget, rng) {
+            const elig = Object.keys(ROLE_OF).filter(k => UNIT_TYPES[k].unlock <= idx + 1); const spent = { F: 0, R: 0, C: 0, A: 0, S: 0 }; const counts = {}; let rem = budget, n = 0, guard = 0; const MAXU = 220;
+            while (rem >= 5 && n < MAXU && guard++ < 5000) {
+                const minC = rem / (MAXU - n + 1); let cands = elig.filter(k => UNIT_TYPES[k].cost <= rem && UNIT_TYPES[k].cost >= minC * 0.6 && spent[ROLE_OF[k]] + UNIT_TYPES[k].cost <= ROLE_CAP[ROLE_OF[k]] * budget + 1);
+                if (!cands.length) cands = elig.filter(k => UNIT_TYPES[k].cost <= rem); if (!cands.length) break;
+                let tw = 0; const w = cands.map(k => { const x = ROLE_W[ROLE_OF[k]] * (1 + (UNIT_TYPES[k].unlock > idx - 12 ? 0.6 : 0)); tw += x; return x; });
+                let r = rng() * tw, pick = cands[cands.length - 1]; for (let i = 0; i < cands.length; i++) { r -= w[i]; if (r <= 0) { pick = cands[i]; break; } }
+                rem -= UNIT_TYPES[pick].cost; spent[ROLE_OF[pick]] += UNIT_TYPES[pick].cost; counts[pick] = (counts[pick] || 0) + 1; n++;
+            }
+            return Object.keys(counts).map(k => ({ type: k, count: counts[k], x: ROLE_X[ROLE_OF[k]] + rng() * 2, zSpread: clamp(14 + counts[k] * 1.2, 14, 62), depth: 5 + counts[k] * 0.2 }));
         }
         function saveProgress() { localStorage.setItem('gk_campaign_lvlIdx', String(currentLevelIdx)); if (currentLevelIdx > maxLevelReached) { maxLevelReached = currentLevelIdx; localStorage.setItem('gk_campaign_maxLvl', String(maxLevelReached)); } }
         function loadProgress() {
@@ -2911,8 +2969,10 @@
             if (!godCustomBattle) {
                 genghisRef = new Unit('GENGHIS', TEAMS.MONGOL, -35, 0); units.push(genghisRef);
                 const rng = mulberry32(idx * 977 + 3);
+                const wallCost = Math.min(walls.filter(w => w.isLevelWall).length * UNIT_TYPES.WALL.cost, L.budget * 0.35); const enemyBudget = Math.max(30, L.budget * DYNASTY_BUDGET_MULTIPLIER - wallCost);  // <- see DYNASTY_BUDGET_MULTIPLIER in the code header
+                L.enemies = composeEnemyArmy(idx, enemyBudget, rng); L.enemyBudget = enemyBudget;
                 L.enemies.forEach((g, gi) => { for (let i = 0; i < g.count; i++) {
-                    const p = layoutInfo.place ? layoutInfo.place(g, i, rng) : { x: g.x + (rng() - .5) * 6, z: (rng() - .5) * g.zSpread };
+                    const p = layoutInfo.place ? layoutInfo.place(g, i, rng) : { x: g.x + (rng() - .5) * g.depth, z: (rng() - .5) * g.zSpread };
                     p.x = clamp(p.x, 2, 50); p.z = clamp(p.z, -MAP_Z + 2, MAP_Z - 2); const cfg = UNIT_TYPES[g.type]; nudgeFree(p, (cfg.radius || .65) + 0.6);
                     units.push(new Unit(g.type, TEAMS.CHINESE, p.x, p.z)); } });
                 if (L.hasObjective) {
@@ -3075,7 +3135,9 @@
             const sc = sunLight.shadow.camera; sc.left = -66; sc.right = 66; sc.top = 46; sc.bottom = -46; sc.near = 5; sc.far = 160; sunLight.shadow.bias = -0.0006; scene.add(sunLight);
             projectilesPool = new ObjectPool(() => new PooledProjectile(), 120); particlesPool = new ObjectPool(() => new PooledParticle(), 300);
             healthCanvas = el('health-canvas'); healthCtx = healthCanvas.getContext('2d'); resize();
-            applyShadowSettings(); setupInput(); bindMenus(); loadProgress(); showMainMenu();
+            applyShadowSettings(); setupInput(); bindMenus();
+            window.addEventListener('pointerdown', e => { if (!(e.target.closest && e.target.closest('[data-unit-type]'))) hideTip(); }, true);
+            window.addEventListener('keydown', hideTip); window.addEventListener('blur', hideTip); loadProgress(); showMainMenu();
             window.addEventListener('resize', resize); animate();
         }
         function resize() {
@@ -3090,7 +3152,7 @@
             updateFXSystems();
             simTick++; if (simTick % 30 === 0) endBattleOutcome(); if (simTick % 240 === 0) units = units.filter(u => !u.removed);
         }
-        let simTick = 0, simAcc = 0, lastT = performance.now(), fpsN = 0, fpsT = 0, shadowFlip = 0, menuAng = 0;
+        let frameN = 0, hbDrawn = 0, simTick = 0, simAcc = 0, lastT = performance.now(), fpsN = 0, fpsT = 0, shadowFlip = 0, menuAng = 0;
         const _hp = new THREE.Vector3();
         function animate() {
             requestAnimationFrame(animate);
@@ -3100,17 +3162,18 @@
             if (appMode === 'menu' && players[0]) { menuAng += dt * 0.07; const c = players[0].cam; c.theta = Math.PI / 2 + Math.sin(menuAng) * 0.8; c.radius = 52; c.phi = 0.95; c.target.set(0, 0, 0); }
             viewFrustums.length = 0;
             players.forEach(p => { updateCam(p); p.camera.updateMatrixWorld(); _fm.multiplyMatrices(p.camera.projectionMatrix, p.camera.matrixWorldInverse); p.frustum.setFromProjectionMatrix(_fm); viewFrustums.push(p.frustum); });
-            for (let i = 0; i < units.length; i++) { const u = units[i]; if (u.removed) continue; const vis = inView(u.mesh.position, hpOffsetOf(u.type) + 3); if (u.mesh.visible !== vis) u.mesh.visible = vis; if (u.alive && vis && !paused) u.processAnimations(dt); }
+            frameN++; const bigView = players.length > 0 && Math.max(...players.map(p => p.cam.radius)) > 90;
+            for (let i = 0; i < units.length; i++) { const u = units[i]; if (u.removed) continue; const vis = inView(u.mesh.position, hpOffsetOf(u.type) + 3); if (u.mesh.visible !== vis) u.mesh.visible = vis; if (u.alive && vis && !paused) { if (bigView && !u.isMoving && !u.isAttackingAnim && ((frameN + u.id) & 1)) continue; u.processAnimations(dt * (bigView && !u.isMoving ? 2 : 1)); } }
             for (let i = 0; i < walls.length; i++) { const w = walls[i]; const vis = inView(w.mesh.position, 3); if (w.mesh.visible !== vis) w.mesh.visible = vis; }
             if (!(simTick % 15)) updateCounters();
             if (centerDivider) centerDivider.visible = appMode !== 'menu';
-            if (SETTINGS.shadows > 0 && (shadowFlip++ & 1) === 0) renderer.shadowMap.needsUpdate = true;
+            if (SETTINGS.shadows > 0 && (shadowFlip++ % (units.length > 250 ? 3 : 2)) === 0) renderer.shadowMap.needsUpdate = true;
             renderer.setScissorTest(true); const H = innerHeight;
             players.forEach(p => { renderer.setViewport(p.vp.x, H - p.vp.y - p.vp.h, p.vp.w, p.vp.h); renderer.setScissor(p.vp.x, H - p.vp.y - p.vp.h, p.vp.w, p.vp.h); renderer.render(scene, p.camera); });
             drawHealthBars();
         }
         function drawHealthBars() {
-            const d = window.devicePixelRatio || 1; healthCtx.setTransform(d, 0, 0, d, 0, 0); healthCtx.clearRect(0, 0, innerWidth, innerHeight);
+            const d = window.devicePixelRatio || 1; healthCtx.setTransform(d, 0, 0, d, 0, 0); if (hbDrawn > 0) healthCtx.clearRect(0, 0, innerWidth, innerHeight); hbDrawn = 0;
             for (const p of players) {
                 healthCtx.save(); healthCtx.beginPath(); healthCtx.rect(p.vp.x, p.vp.y, p.vp.w, p.vp.h); healthCtx.clip();
                 const bar = (pos, yoff, frac, col, wd) => {
@@ -3118,8 +3181,8 @@
                     const sx = (_hp.x * 0.5 + 0.5) * p.vp.w + p.vp.x, sy = (-_hp.y * 0.5 + 0.5) * p.vp.h + p.vp.y; const k = clamp(1.6 - p.cam.radius / 90, 0.7, 1.5); const w = wd * k, h = 5 * k;
                     healthCtx.fillStyle = '#300'; healthCtx.fillRect(sx - w / 2, sy - h / 2, w, h); healthCtx.fillStyle = col; healthCtx.fillRect(sx - w / 2, sy - h / 2, w * frac, h); healthCtx.strokeStyle = '#000'; healthCtx.lineWidth = 1; healthCtx.strokeRect(sx - w / 2, sy - h / 2, w, h);
                 };
-                for (const u of units) { if (!u.alive || !u.targetable || !u.mesh.visible) continue; if (u.hp >= u.maxHp && !SETTINGS.hpAlways) continue; const f = u.hp / u.maxHp; bar(u.mesh.position, hpOffsetOf(u.type) + 0.3, f, u.team === TEAMS.MONGOL ? (f > 0.4 ? '#4cc9f0' : '#f94144') : (f > 0.4 ? '#ff6b6b' : '#f9c74f'), u.radius > 1.5 ? 56 : 34); }
-                for (const w of walls) if (w.hp < w.maxHp && w.mesh.visible) bar(w.mesh.position, 2.9, w.hp / w.maxHp, '#c9a066', 30);
+                for (const u of units) { if (!u.alive || !u.targetable || !u.mesh.visible) continue; if (u.hp >= u.maxHp && !SETTINGS.hpAlways) continue; hbDrawn++; const f = u.hp / u.maxHp; bar(u.mesh.position, hpOffsetOf(u.type) + 0.3, f, u.team === TEAMS.MONGOL ? (f > 0.4 ? '#4cc9f0' : '#f94144') : (f > 0.4 ? '#ff6b6b' : '#f9c74f'), u.radius > 1.5 ? 56 : 34); }
+                for (const w of walls) if (w.hp < w.maxHp && w.mesh.visible) { hbDrawn++; bar(w.mesh.position, 2.9, w.hp / w.maxHp, '#c9a066', 30); }
                 healthCtx.restore();
             }
         }
