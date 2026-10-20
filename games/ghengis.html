@@ -2721,7 +2721,7 @@
                 h.querySelectorAll('[data-unit-type]').forEach(b => {
                     const k = b.dataset.unitType; b.classList.toggle('selected', ctx.selected === k);
                     if (UNIT_TYPES[k] && k !== 'DELETE' && k !== 'WAYPOINT' && k !== 'TARGET_MARK') {
-                        const lk = isLocked(k); b.classList.toggle('locked', lk); b.classList.toggle('disabled', !lk && !godNoBudget && UNIT_TYPES[k].cost > ctx.budget);
+                        const lk = isLocked(k) || (k === 'COMMANDER' && appMode === 'campaign' && ctx.team === TEAMS.CHINESE); b.classList.toggle('locked', lk); b.classList.toggle('disabled', !lk && !godNoBudget && UNIT_TYPES[k].cost > ctx.budget);
                         
                     }
                 });
@@ -2827,6 +2827,7 @@
                 const u = new Unit('TARGET_MARK', team, hit.x, hit.z); units.push(u); pushItem(ctx, 'place', { kind: 'unit', obj: u, cost: 0 }); return;
             }
             const cfg = UNIT_TYPES[sel]; if (!cfg || isLocked(sel)) return;
+            if (sel === 'COMMANDER' && appMode === 'campaign' && team === TEAMS.CHINESE) { if (first) flashStatus('The Dynasty cannot field Commanders in the campaign.'); return; }
             if (!inSide(team, hit.x, hit.z)) { if (first) flashStatus('Deploy on your own side of the field!'); return; }
             if (ctx.lastPlaced && ctx.lastPlaced.distanceTo(hit) < 1.7 + (cfg.radius > 1.5 ? cfg.radius : 0)) return;
             if (pointBlocked(hit.x, hit.z, cfg.radius + 0.4)) return;
@@ -2933,7 +2934,7 @@
         const ROLE_OF = { SWORD: 'F', SPEAR: 'F', SHIELD: 'F', SHAOLIN: 'F', ASSASSIN: 'F', WAR_ELEPHANT: 'F', BOW: 'R', CROSSBOW: 'R', FIRELANCE: 'R', BOMBER: 'R', HORSE_ARCHER: 'R', CAVALRY: 'C', KESHIK: 'C', CANNON: 'A', TREBUCHET: 'A', SHAMAN: 'S', THROATSINGER: 'S', SIEGE_TOWER: 'S', COMMANDER: 'S' };
         const ROLE_W = { F: 0.42, R: 0.24, C: 0.13, A: 0.09, S: 0.08 }, ROLE_CAP = { F: 1, R: 0.5, C: 0.35, A: 0.2, S: 0.14 }, ROLE_X = { F: 13, R: 20, C: 10, A: 28, S: 22 };
         function composeEnemyArmy(idx, budget, rng) {
-            const elig = Object.keys(ROLE_OF).filter(k => UNIT_TYPES[k].unlock <= idx + 1); const spent = { F: 0, R: 0, C: 0, A: 0, S: 0 }; const counts = {}; let rem = budget, n = 0, guard = 0; const MAXU = 220;
+            const elig = Object.keys(ROLE_OF).filter(k => k !== 'COMMANDER' && UNIT_TYPES[k].unlock <= idx + 1);  /* the Dynasty never fields Commanders in the campaign */ const spent = { F: 0, R: 0, C: 0, A: 0, S: 0 }; const counts = {}; let rem = budget, n = 0, guard = 0; const MAXU = 220;
             while (rem >= 5 && n < MAXU && guard++ < 5000) {
                 const minC = rem / (MAXU - n + 1); let cands = elig.filter(k => UNIT_TYPES[k].cost <= rem && UNIT_TYPES[k].cost >= minC * 0.6 && spent[ROLE_OF[k]] + UNIT_TYPES[k].cost <= ROLE_CAP[ROLE_OF[k]] * budget + 1);
                 if (!cands.length) cands = elig.filter(k => UNIT_TYPES[k].cost <= rem); if (!cands.length) break;
