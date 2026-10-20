@@ -1,4 +1,4 @@
-# Colton's Games Hub
+# Colton's Project Launcher
 
 **A Windows 95-inspired browser desktop, game launcher, utility suite, and social gaming hub.**
 
