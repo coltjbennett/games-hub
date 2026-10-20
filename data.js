@@ -43,19 +43,8 @@ const projects = [
     alt: 'Asphalt Rush',
     statusKey: 'new',
     type: 'Racing',
-    tags: ['Street Racing', 'Customization', 'Driving', 'Racing', 'City', 'Underground', 'Under Development'],
+    tags: ['Street Racing', 'Customization', 'Driving', 'Racing', 'City', 'Underground', 'Under development', 'Top Pick'],
     description: 'Race through the night city to earn your respect amongst the other racers, take down the corrupt police, and buy, customize, and upgrade your rides to stay competitive!',
-    featured: true
-  },
-  {
-    title: 'FPS beta',
-    url: 'games/fps.html',
-    image: 'images/missing.png',
-    alt: 'FPS beta',
-    statusKey: 'beta',
-    type: 'FPS',
-    tags: ['Shooter', 'Multiplayer', 'Under development'],
-    description: 'THIS IS NOT A COMPLETE GAME; THIS IS A TEST OF A NEW ENGINE I AM ROLLING OUT FOR MULTIPLAYER FPS GAMES',
     featured: false
   },
   {
@@ -65,7 +54,7 @@ const projects = [
     alt: 'Pixel Ops',
     statusKey: 'complete',
     type: 'FPS',
-    tags: ['Shooter', 'Military'],
+    tags: ['Shooter', 'Military', 'Top Pick'],
     description: 'A shoot-em-up FPS across conquered lands. Pick your deployment location and take out as many hostiles as possible using your vast arsenal!',
     featured: false
   },
@@ -74,11 +63,11 @@ const projects = [
     url: 'games/ghengis.html',
     image: 'images/IMG_1987.jpeg',
     alt: 'Ghengis Khan Simulator',
-    statusKey: 'complete',
+    statusKey: 'beta',
     type: 'Simulation',
-    tags: ['War', 'Historical'],
+    tags: ['War', 'Historical', 'Under development', 'Top Pick'],
     description: 'Become the legendary Mongol leader and lead the Mongol Horde to conquer China! Use strategic placements to ensure your victory!',
-    featured: false
+    featured: true
   },
   {
     title: 'MEGALITH',
@@ -199,6 +188,17 @@ const projects = [
     type: 'Driving',
     tags: ['Driving', 'Physics'],
     description: 'Not much to talk about here: It\'s extremely incomplete. If you want a playable racing game, play the legacy one.',
+    featured: false
+  },
+  {
+    title: 'FPS beta',
+    url: 'games/fps.html',
+    image: 'images/missing.png',
+    alt: 'FPS beta',
+    statusKey: 'beta',
+    type: 'FPS',
+    tags: ['Shooter', 'Multiplayer', 'Under development'],
+    description: 'THIS IS NOT A COMPLETE GAME; THIS IS A TEST OF A NEW ENGINE I AM ROLLING OUT FOR MULTIPLAYER FPS GAMES',
     featured: false
   }
 ];
