@@ -638,6 +638,21 @@
         #unit-tip { position: fixed; z-index: 400; max-width: 200px; background: rgba(15,11,7,.96); border: 1px solid #d4af37; border-radius: 6px; padding: 5px 8px; font: 11px/1.35 Georgia, serif; color: #f4f1de; pointer-events: none; display: none; box-shadow: 0 4px 14px rgba(0,0,0,.85); }
         #unit-tip b { color: #ffd700; } #unit-tip .tc { color: #52b788; } #unit-tip .tl { color: #ff9a9a; display: block; margin-top: 2px; }
         .btn.locked { pointer-events: auto !important; }
+        #bui-root { position: fixed; inset: 0; pointer-events: none; z-index: 12; }
+        .bui { position: fixed; top: 0; height: 100%; pointer-events: none; display: none; font-family: Georgia, serif; }
+        .bui-orders { position: absolute; top: 62px; left: 8px; width: 122px; background: rgba(15,11,7,.72); border: 1px solid #8b7355; border-radius: 8px; padding: 4px 6px 6px; pointer-events: auto; transform-origin: top left; }
+        body.split .bui-orders { transform: scale(.82); }
+        .bui-title { color: #ffd700; font-size: 11px; font-weight: bold; letter-spacing: 1px; margin: 2px 0 3px; }
+        .ob { display: block; width: 100%; margin: 3px 0; padding: 5px 7px; font: bold 11px Georgia, serif; color: #f4f1de; background: linear-gradient(135deg,#403225,#241c14); border: 2px solid #8b7355; border-radius: 6px; cursor: pointer; text-align: left; }
+        .ob.on { border-color: #ffd700; background: #7a5a10; }
+        .bui-hint { color: #a8dadc; font-size: 9px; margin-top: 3px; line-height: 1.25; }
+        .selbox { position: fixed; display: none; border: 2px dashed #66ffcc; background: rgba(102,255,204,.12); pointer-events: none; }
+        .joy { position: absolute; left: 24px; bottom: 140px; width: 120px; height: 120px; border-radius: 50%; background: rgba(255,255,255,.1); border: 2px solid rgba(255,215,0,.65); display: none; pointer-events: auto; touch-action: none; }
+        .joy .knob { position: absolute; left: 35px; top: 35px; width: 50px; height: 50px; border-radius: 50%; background: rgba(255,215,0,.6); box-shadow: 0 0 10px rgba(0,0,0,.6); }
+        .cbtns { position: absolute; right: 16px; bottom: 150px; display: none; pointer-events: auto; text-align: right; }
+        .cb { display: block; margin: 8px 0 0 auto; padding: 16px 20px; font: bold 15px Georgia, serif; color: #fff; background: rgba(60,40,20,.9); border: 2px solid #d4af37; border-radius: 12px; touch-action: none; }
+        .cb.atk { background: rgba(158,42,43,.92); width: 128px; padding: 22px 10px; font-size: 17px; }
+        body.split .joy, body.split .cbtns { transform: scale(.85); }
 
 </style>
 </head>
@@ -820,7 +835,8 @@
             <div class="opt-row"><div>Show FPS<span class="d">Frame counter in the corner</span></div><input type="checkbox" id="opt-fps" style="width:20px;height:20px;accent-color:#ffd700"></div>
             <div class="opt-row"><div>Always show health bars<span class="d">Otherwise only damaged units show them</span></div><input type="checkbox" id="opt-hp" style="width:20px;height:20px;accent-color:#ffd700"></div>
             <div class="opt-row"><div>Range circles<span class="d">Support unit ranges while placing</span></div><input type="checkbox" id="opt-rings" style="width:20px;height:20px;accent-color:#ffd700"></div>
-            <button class="menu-btn" id="opt-back" style="margin-top:16px;">Back</button>
+            <button class="menu-btn" id="opt-wipe" style="margin-top:14px; background:linear-gradient(135deg,#7a1f1f,#3d0b0b); border-color:#bf5f5f;">Wipe Campaign Progress</button>
+            <button class="menu-btn" id="opt-back" style="margin-top:6px;">Back</button>
         </div>
     </div>
 
@@ -838,7 +854,15 @@
                 </ul>
                 <b>Support:</b> Shamans heal, Throat Singers and Siege Towers rage-buff allies (faint circles show range while placing). Siege Towers also loose arrows at up to 7 targets at once.
                 <br><br><b>Versus:</b> split screen, two players can touch at once. Each player's units only follow their own paths and flags.
-                <br><br><b>Camera:</b> Space+drag rotate · Shift+drag pan · wheel zoom · two-finger drag/pinch on touch.
+                <br><br><b>In battle (real-time orders):</b>
+                <ul>
+                    <li><b>Select</b>: click or tap a unit, drag a box, double-tap for all of a type, Ctrl+A for everyone.</li>
+                    <li><b>Orders</b>: Move (M), Attack Area (T), Hold (H), Fall Back (F), Resume AI (R). Mouse: right-click the ground to move, an enemy to attack that group.</li>
+                    <li><b>Take control</b>: long-press (or hold the mouse on) one of your units. Move with WASD / arrows / the on-screen stick, attack with E / Enter / the ATTACK button, release with X or Esc.</li>
+                    <li>In split screen, Player 1 uses WASD + E and Player 2 uses the arrow keys + Enter.</li>
+                    <li><b>Ladder Carriers</b> plant a ladder on the first wall, barricade, rock or water in their way (not trees); your whole team can then climb across it.</li>
+                </ul>
+                <b>Camera:</b> Space+drag rotate · Shift+drag pan · wheel zoom · two-finger drag/pinch on touch.
             </div>
             <button class="menu-btn" id="howto-back" style="margin-top:12px;">Back</button>
         </div>
@@ -867,7 +891,7 @@
         // ########################################################################
         // ##  CAMPAIGN DIFFICULTY KNOB  —  EASY TO TUNE  ##
         // ##  The Dynasty (enemy) army budget = player's level budget × this number.
-        // ##  1.10 = Dynasty gets 10% MORE budget than the Mongols. 1.00 = equal. 0.90 = 10% less.
+        // ##  1.025 = Dynasty gets 2.5% MORE budget than the Mongols. 1.00 = equal. 0.90 = 10% less.
         // ##  (Campaign only; 2-player versus always gives both players the same budget.)
         // ########################################################################
         const DYNASTY_BUDGET_MULTIPLIER = 1.025;
@@ -900,12 +924,14 @@
 
         // ---------------------------------------------------------------- UNITS
         const UNIT_TYPES = {
-            SWORD:   { enabled: true, name: 'Swordsman', unlock: 1, cost: 10, hp: 130, range: 2.75, damage: 18, speed: 0.085, attackSpeed: 1000, color: 0x2e52b2, enemyColor: 0xb22e2e, radius: 0.65, desc: 'Reliable front-line melee fighter. Can detect stealthed Assassins.' },
+            SWORD:   { enabled: true, name: 'Swordsman', unlock: 1, cost: 10, hp: 130, range: 2.75, damage: 18, speed: 0.085, attackSpeed: 1000, color: 0x2e52b2, enemyColor: 0xb22e2e, radius: 0.65, desc: 'Reliable front-line melee fighter.' },
             SPEAR:   { enabled: true, name: 'Spearman', unlock: 2, cost: 11, hp: 110, range: 5, damage: 20, speed: 0.07, attackSpeed: 1100, color: 0x1b7337, enemyColor: 0x8f2323, radius: 0.65, desc: 'Long-reach melee unit. Deals bonus damage from distance.' },
             WALL:    { enabled: true, structure: true, name: 'Wooden Wall', unlock: 4, cost: 5, hp: 240, range: 0, damage: 0, speed: 0, attackSpeed: 9999, color: 0x8a5a36, enemyColor: 0x8a5a36, radius: 0, desc: 'Drag to build a palisade. Blocks movement and shots; only cannons, trebuchets and siege towers fire over it. Blocked units chop it down.' },
+            BARRICADE:{ enabled: true, structure: true, name: 'Hedgehog Barrier', unlock: 7, cost: 4, hp: 150, range: 0, damage: 0, speed: 0, attackSpeed: 9999, color: 0x8a5a36, enemyColor: 0x6a6a70, radius: 0, desc: 'Spiked obstacle: stake barricades for the Horde, caltrops for the Dynasty (same unit). Blocks movement but not shots; enemies shoving against it are wounded. Drag to lay a line.' },
+            LADDER:  { enabled: true, name: 'Ladder Carrier', unlock: 4, cost: 9, hp: 45, range: 2.2, damage: 4, speed: 0.07, attackSpeed: 1100, color: 0x9a7b4f, enemyColor: 0x8a6a5a, radius: 0.65, desc: 'Single use. Marches straight ahead (or along a drawn path) and plants a ladder on the first wall, barricade, rock or water in its way so its whole team can cross. Then fights feebly. Cannot cross trees.' },
             BOW:     { enabled: true, name: 'Archer', unlock: 5, cost: 13, hp: 100, range: 22.0, damage: 20, speed: 0.055, attackSpeed: 2000, color: 0xc69214, enemyColor: 0x932793, radius: 0.65, ranged: true, desc: 'Ranged attacker with high range. Kites away from close threats. Buffed by Siege Tower.' },
             CROSSBOW:{ enabled: true, name: 'Crossbowman', unlock: 8, cost: 20, hp: 105, range: 20, damage: 42, speed: 0.05, attackSpeed: 3000, color: 0x3d7a7a, enemyColor: 0x7a3d4d, radius: 0.65, ranged: true, desc: 'Slow-loading arbalest. Heavy bolts pierce through to a second enemy behind the target. Buffed by Siege Tower.' },
-            ASSASSIN:{ enabled: true, name: 'Assassin', unlock: 10, cost: 17, hp: 95, range: 1.5, damage: 34, speed: 0.15, attackSpeed: 500, color: 0x2b2b2b, enemyColor: 0x1c1c1c, radius: 0.6, desc: 'Extremely fast melee striker. Slips into stealth when not fighting. Dodges Shaolin attacks (28%).' },
+            ASSASSIN:{ enabled: true, name: 'Assassin', unlock: 10, cost: 17, hp: 95, range: 1.5, damage: 34, speed: 0.15, attackSpeed: 500, color: 0x2b2b2b, enemyColor: 0x1c1c1c, radius: 0.6, desc: 'Extremely fast melee striker. Slips into stealth when not fighting; nobody spots it until it is within a few steps.' },
             SHIELD:  { enabled: true, name: 'Shield Guard', unlock: 12, cost: 14, hp: 240, range: 2.6, damage: 11, speed: 0.062, attackSpeed: 900, color: 0x6b7b8c, enemyColor: 0x8c6b6b, radius: 0.75, desc: 'Dao-and-shield infantry. Takes 55% less damage from arrows and bolts that hit the shield, 20% less from melee strikes.' },
             COMMANDER:{ enabled: true, name: 'Commander', unlock: 15, cost: 50, hp: 250, range: 10.0, damage: 25, speed: 0.08, attackSpeed: 1200, color: 0x800000, enemyColor: 0x4a0000, radius: 0.7, desc: "Holds units in formation. Nearby allies won't advance until enemies enter the aura ring." },
             CANNON:  { enabled: true, name: 'Cannon', unlock: 15, cost: 100, hp: 200, range: 40.0, damage: 70, speed: 0.03, attackSpeed: 4600, color: 0x424242, enemyColor: 0x5c636e, radius: 0.95, ranged: true, artillery: true, desc: 'Long-range siege weapon. Massive AoE splash on impact. Fires over walls. Buffed by Siege Tower.' },
@@ -1072,6 +1098,7 @@
         let scene, renderer, terrainMesh, gridHelper, centerDivider, sunLight;
         let units = [];
         let walls = [];
+        let ladders = [];
         let corpses = [];
         let simTime = 0;                // ms of simulated time (pauses with the game)
         let gameState = GAME_STATES.PLACEMENT;
@@ -1506,14 +1533,38 @@
             p.x += (nx * b.cos - nz * b.sin) * pen; p.z += (nx * b.sin + nz * b.cos) * pen; return true;
         }
         // push a unit out of any blocker; returns the last wall that touched it (or null)
-        function resolveBlockers(pos, r) {
-            let hitWall = null;
+        let lastBlocker = null;
+        function inLadder(x, z, team, pad = 0.3) {
+            for (let i = 0; i < ladders.length; i++) { const l = ladders[i]; if (l.team !== team) continue; const dx = x - l.x, dz = z - l.z; const lx = dx * l.cos + dz * l.sin, lz = -dx * l.sin + dz * l.cos; if (Math.abs(lx) <= l.hl + pad && Math.abs(lz) <= l.hw + pad + 0.3) return true; }
+            return false;
+        }
+        function resolveBlockers(pos, r, team) {
+            let hitWall = null; lastBlocker = null;
+            if (team && ladders.length && inLadder(pos.x, pos.z, team)) return null;
             for (let pass = 0; pass < 2; pass++) {
                 const list = bGrid[navIdx(pos.x, pos.z)];
-                for (let i = 0; i < list.length; i++) { const b = list[i]; if (pushOutOfBlocker(b, pos, r) && b.wall) hitWall = b.wall; }
+                for (let i = 0; i < list.length; i++) { const b = list[i]; if (pushOutOfBlocker(b, pos, r)) { lastBlocker = b; if (b.wall) hitWall = b.wall; } }
             }
             return hitWall;
         }
+        function blockerAt(x, z, r) { const list = bGrid[navIdx(x, z)]; for (let i = 0; i < list.length; i++) if (distToBlocker(list[i], x, z) < r) return list[i]; return null; }
+        const ladderN = { MONGOL: new Uint8Array(NAV_N), CHINESE: new Uint8Array(NAV_N) };
+        function rebuildLadderNav() {
+            ladderN.MONGOL.fill(0); ladderN.CHINESE.fill(0);
+            for (const l of ladders) for (let i = 0; i < NAV_N; i++) { const dx = cellX(i) - l.x, dz = cellZ(i) - l.z; if (Math.abs(dx) > 14 || Math.abs(dz) > 14) continue; const lx = dx * l.cos + dz * l.sin, lz = -dx * l.sin + dz * l.cos; if (Math.abs(lx) <= l.hl + 1.0 && Math.abs(lz) <= l.hw + 1.3) ladderN[l.team][i] = 1; }
+            navVersion++;
+        }
+        class Ladder {
+            constructor(team, x, z, rot, len, h) {
+                this.team = team; this.x = x; this.z = z; this.rot = rot; this.cos = Math.cos(rot); this.sin = Math.sin(rot); this.hl = len / 2; this.hw = 0.85;
+                const g = new THREE.Group(); const m = plankMat(0x9a7b4f);
+                for (const zz of [-0.6, 0.6]) g.add(mk(G('Box', len, 0.11, 0.11), m, 0, 0, zz, true));
+                for (let s = -len / 2 + 0.4; s < len / 2; s += 0.6) g.add(mk(G('Box', 0.08, 0.08, 1.3), m, s, 0, 0));
+                g.add(mk(G('Box', 0.14, 0.14, 1.5), fabMat(team === TEAMS.MONGOL ? 0x2e52b2 : 0xb22e2e), len / 2 - 0.05, 0.05, 0));
+                g.position.set(x, getTerrainHeight(x, z) + h, z); g.rotation.y = -rot; this.mesh = g; scene.add(g);
+            }
+        }
+        function addLadder(team, x, z, rot, len, h) { const l = new Ladder(team, x, z, rot, len, h); ladders.push(l); rebuildLadderNav(); navActive = true; return l; }
         function pointBlocked(x, z, r) {
             const list = bGrid[navIdx(x, z)];
             for (let i = 0; i < list.length; i++) if (distToBlocker(list[i], x, z) < r) return true;
@@ -1530,7 +1581,7 @@
             for (let k = 1; k < steps; k++) {
                 const t = k / steps, x = ax + dx * t, z = az + dz * t; const list = bGrid[navIdx(x, z)];
                 for (let i = 0; i < list.length; i++) {
-                    const b = list[i]; if (!b.wall) continue;
+                    const b = list[i]; if (!b.wall || b.wall.low) continue;
                     const px = x - b.x, pz = z - b.z; const lx = px * b.cos + pz * b.sin, lz = -px * b.sin + pz * b.cos;
                     if (Math.abs(lx) <= b.hx + 0.1 && Math.abs(lz) <= b.hz + 0.1) return b.wall;
                 }
@@ -1547,9 +1598,9 @@
             if (N.length > 0) { N[0] = ln; F[0] = lf; let i = 0; for (;;) { let l = i * 2 + 1, r = l + 1, m = i; if (l < N.length && F[l] < F[m]) m = l; if (r < N.length && F[r] < F[m]) m = r; if (m === i) break; [N[m], N[i]] = [N[i], N[m]]; [F[m], F[i]] = [F[i], F[m]]; i = m; } }
             return top;
         }
-        function lineClear(x0, z0, x1, z1, big) {
+        function lineClear(x0, z0, x1, z1, big, team) {
             const arr = big ? navBig : navSmall; const dx = x1 - x0, dz = z1 - z0; const steps = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 1.0));
-            for (let k = 0; k <= steps; k++) { const i = navIdx(x0 + dx * k / steps, z0 + dz * k / steps); if (arr[i] || wallN.MONGOL[i] || wallN.CHINESE[i]) return false; }
+            for (let k = 0; k <= steps; k++) { const i = navIdx(x0 + dx * k / steps, z0 + dz * k / steps); if ((arr[i] || wallN.MONGOL[i] || wallN.CHINESE[i]) && !(team && ladderN[team][i])) return false; }
             return true;
         }
         function nearestFree(i, big) {
@@ -1579,9 +1630,9 @@
                 const c = n % NAV_COLS, r = Math.floor(n / NAV_COLS);
                 for (let k = 0; k < 8; k++) {
                     const nc = c + NB[k][0], nr = r + NB[k][1]; if (nc < 0 || nr < 0 || nc >= NAV_COLS || nr >= NAV_ROWS) continue;
-                    const ni = nr * NAV_COLS + nc; if (arr[ni] || AS.closed[ni] === cur) continue;
+                    const ni = nr * NAV_COLS + nc; if ((arr[ni] && !ladderN[team][ni]) || AS.closed[ni] === cur) continue;
                     if (NB[k][2] > 1.1 && (arr[r * NAV_COLS + nc] || arr[nr * NAV_COLS + c])) continue;
-                    const gn = AS.g[n] + NB[k][2] + (enemyW[ni] ? 22 : 0) + (ownW[ni] ? 70 : 0);
+                    const gn = AS.g[n] + NB[k][2] + ((enemyW[ni] && !ladderN[team][ni]) ? 22 : 0) + ((ownW[ni] && !ladderN[team][ni]) ? 70 : 0);
                     if (AS.seen[ni] !== cur || gn < AS.g[ni]) {
                         AS.seen[ni] = cur; AS.g[ni] = gn; AS.came[ni] = n;
                         const ddx = Math.abs(nc - tc), ddz = Math.abs(nr - tr); heapPush(ni, gn + (ddx + ddz) + (1.4142 - 2) * Math.min(ddx, ddz));
@@ -1594,7 +1645,7 @@
             // string-pull smoothing
             const out = []; let ax = sx, az = sz, idx = 0;
             while (idx < nodes.length) {
-                let far = idx; for (let j = nodes.length - 1; j > idx; j--) { if (lineClear(ax, az, nodes[j].x, nodes[j].z, big)) { far = j; break; } }
+                let far = idx; for (let j = nodes.length - 1; j > idx; j--) { if (lineClear(ax, az, nodes[j].x, nodes[j].z, big, team)) { far = j; break; } }
                 out.push({ x: nodes[far].x, z: nodes[far].z }); ax = nodes[far].x; az = nodes[far].z; idx = far + 1;
             }
             return out;
@@ -1620,13 +1671,34 @@
             return _wallGeo;
         }
         const WALL_LEN = 2.6, WALL_SPACING = 2.5;
+        const _spike = {};
+        function spikeParts(team) {
+            if (_spike[team]) return _spike[team]; const g = new THREE.Group();
+            if (team === TEAMS.MONGOL) {   // crossed, sharpened stakes (spiked barricade)
+                const wood = plankMat(0x7a5532);
+                for (let i = -1; i <= 1; i++) for (const s of [-1, 1]) {
+                    const log = new THREE.Group(); log.add(mk(G('Cylinder', 0.09, 0.09, 1.9, 5), wood)); log.add(mk(G('Cone', 0.09, 0.4, 5), wood, 0, 1.15, 0)); log.add(mk(G('Cone', 0.09, 0.4, 5), wood, 0, -1.15, 0));
+                    log.position.set(i * 0.85, 0.75, 0); log.rotation.x = s * 0.75; g.add(log);
+                }
+                g.add(mk(G('Box', 2.6, 0.09, 0.09), wood, 0, 0.7, 0));
+            } else {                       // scattered iron caltrops
+                const iron = solidMat(0x3a3b40, 0.5, 0.7, true), r = mulberry32(77);
+                for (let i = 0; i < 12; i++) { const t = mk(G('Tetrahedron', 0.34, 0), iron, (r() - .5) * 2.3, 0.22, (r() - .5) * 0.7); t.rotation.set(r() * 6, r() * 6, r() * 6); g.add(t); }
+                g.add(mk(G('Box', 2.6, 0.06, 0.8), solidMat(0x4a3b2a, 1.0), 0, 0.03, 0));
+            }
+            return (_spike[team] = mergeGroups([g], true).map(m => ({ geometry: m.geometry, material: m.material })));
+        }
         class Wall {
-            constructor(team, x, z, rot, isLevel = false, hpMul = 1) {
-                this.type = 'WALL'; this.team = team; this.alive = true; this.isLevelWall = isLevel; this.rot = rot;
-                this.maxHp = this.hp = Math.floor(UNIT_TYPES.WALL.hp * hpMul); this.config = UNIT_TYPES.WALL;
-                const geo = wallGeometries(); this.mesh = new THREE.Group();
-                const logs = new THREE.Mesh(geo.logs, geo.logMat); logs.castShadow = true; logs.receiveShadow = true; this.mesh.add(logs);
-                this.bandMesh = new THREE.Mesh(geo.band, fabMat(team === TEAMS.MONGOL ? 0x2e52b2 : 0xb22e2e)); this.mesh.add(this.bandMesh);
+            constructor(team, x, z, rot, isLevel = false, hpMul = 1, variant = null) {
+                this.type = 'WALL'; this.team = team; this.alive = true; this.isLevelWall = isLevel; this.rot = rot; this.variant = variant; this.low = variant === 'spike';
+                const cfg = this.low ? UNIT_TYPES.BARRICADE : UNIT_TYPES.WALL; this.cost = cfg.cost; this.maxHp = this.hp = Math.floor(cfg.hp * hpMul); this.config = cfg;
+                this.mesh = new THREE.Group();
+                if (this.low) { spikeParts(team).forEach(p => { const m = new THREE.Mesh(p.geometry, p.material); m.receiveShadow = true; this.mesh.add(m); }); }
+                else {
+                    const geo = wallGeometries();
+                    const logs = new THREE.Mesh(geo.logs, geo.logMat); logs.castShadow = true; logs.receiveShadow = true; this.mesh.add(logs);
+                    this.bandMesh = new THREE.Mesh(geo.band, fabMat(team === TEAMS.MONGOL ? 0x2e52b2 : 0xb22e2e)); this.mesh.add(this.bandMesh);
+                }
                 this.mesh.position.set(x, getTerrainHeight(x, z) - 0.1, z); this.mesh.rotation.y = -rot;
                 this.mesh.updateMatrix(); this.mesh.matrixAutoUpdate = false; this.mesh.children.forEach(c => { c.updateMatrix(); c.matrixAutoUpdate = false; });
                 this.blocker = mkBox(x, z, WALL_LEN / 2, 0.45, rot); this.blocker.wall = this;
@@ -1648,8 +1720,8 @@
                 scene.remove(this.mesh); const i = walls.indexOf(this); if (i >= 0) walls.splice(i, 1); refreshWallStructures();
             }
         }
-        function addWall(team, x, z, rot, isLevel = false, hpMul = 1, defer = false) {
-            const w = new Wall(team, x, z, rot, isLevel, hpMul); walls.push(w); if (!defer) refreshWallStructures(); return w;
+        function addWall(team, x, z, rot, isLevel = false, hpMul = 1, defer = false, variant = null) {
+            const w = new Wall(team, x, z, rot, isLevel, hpMul, variant); walls.push(w); if (!defer) refreshWallStructures(); return w;
         }
         function removeWallObject(w) { if (!w.alive) return; w.alive = false; scene.remove(w.mesh); const i = walls.indexOf(w); if (i >= 0) walls.splice(i, 1); refreshWallStructures(); }
         function restoreWallObject(w) { w.alive = true; w.hp = w.maxHp; scene.add(w.mesh); walls.push(w); refreshWallStructures(); }
@@ -1659,7 +1731,7 @@
             const C = { defs: [], blockers: [], bumps: [], walls: [], info: { objective: { x: 35, z: 0 }, place: null }, biomeKey, rng };
             C.rock = (x, z, r) => { C.defs.push({ t: 'rock', x, z, r }); C.blockers.push(mkCircle(x, z, r * 0.9)); };
             C.rocks = (x, z, n, spread, r = 1.2) => { for (let i = 0; i < n; i++) C.rock(x + (rng() - .5) * spread * 2, z + (rng() - .5) * spread * 2, r + rng() * 0.7); };
-            C.trees = (x, z, n, spread) => { for (let i = 0; i < n; i++) { const tx = x + (rng() - .5) * spread * 2, tz = z + (rng() - .5) * spread * 2; C.defs.push({ t: 'tree', x: tx, z: tz }); C.blockers.push(mkCircle(tx, tz, 0.95)); } };
+            C.trees = (x, z, n, spread) => { for (let i = 0; i < n; i++) { const tx = x + (rng() - .5) * spread * 2, tz = z + (rng() - .5) * spread * 2; C.defs.push({ t: 'tree', x: tx, z: tz }); const tb = mkCircle(tx, tz, 0.95); tb.tree = true; C.blockers.push(tb); } };
             C.ridge = (x1, z1, x2, z2, th = 3.2) => {
                 const len = Math.hypot(x2 - x1, z2 - z1), rot = Math.atan2(z2 - z1, x2 - x1);
                 C.defs.push({ t: 'ridge', x1, z1, x2, z2, th }); C.blockers.push(mkBox((x1 + x2) / 2, (z1 + z2) / 2, len / 2, th / 2, rot));
@@ -1739,6 +1811,7 @@
             environmentProps.forEach(p => { scene.remove(p); if (p.geometry) p.geometry.dispose(); }); environmentProps = [];
             levelObjects.forEach(p => { scene.remove(p); if (p.geometry && !p.userData.shared) p.geometry.dispose(); }); levelObjects = [];
             walls.slice().forEach(w => scene.remove(w.mesh)); walls = [];
+            ladders.forEach(l => scene.remove(l.mesh)); ladders = []; ladderN.MONGOL.fill(0); ladderN.CHINESE.fill(0);
             staticBlockers = []; levelBumps = [];
         }
         function setupBattlefield(biomeKey, layoutName, seed) {
@@ -1915,6 +1988,12 @@
                     const lance = W(G('Cylinder', 0.055, 0.055, 4.8, 6), wood, 1.5, 0, 0); lance.rotation.z = -Math.PI / 2;
                     lance.add(mk(G('Cone', 0.13, 0.7, 6), metal, 0, 2.7, 0)); const pen = mk(G('Plane', 0.9, 0.5), basicMat(0xcc2222, 1, THREE.DoubleSide), 0.3, 2.0, 0); pen.rotation.y = Math.PI / 2; lance.add(pen); rigOut.pennant = pen;
                     shield(); break;
+                }
+                case 'LADDER': {
+                    const car = new THREE.Group(); const lm = plankMat(0x9a7b4f);
+                    for (const zz of [-0.28, 0.28]) car.add(mk(G('Box', 3.4, 0.08, 0.08), lm, 0, 0, zz));
+                    for (let s = -1.5; s <= 1.5; s += 0.5) car.add(mk(G('Box', 0.06, 0.06, 0.6), lm, s, 0, 0));
+                    car.position.set(0.1, 1.75, 0.1); car.rotation.z = 0.55; torso.add(car); rigOut.carried = car; break;
                 }
                 case 'GENGHIS': {
                     const b = W(G('Box', 0.04, 1.8, 0.15), solidMat(0xffd700, 0.3, 0.9), 0, 0.7, 0); b.rotation.z = -Math.PI / 4;
@@ -2163,7 +2242,8 @@
                 this.animTime = Math.random() * 50; this.animPhase = Math.random() * 6;
                 this.isAttackingAnim = false; this.attackAnimProgress = 0; this.genghisHomeTarget = new THREE.Vector3(-35, 0, 0);
                 const ring = this.mesh.getObjectByName('rangeRing'); if (ring) ring.visible = (gameState === GAME_STATES.PLACEMENT) && SETTINGS.rings;
-                this.mesh.matrixAutoUpdate = true; this.id = Unit.nextId = (Unit.nextId || 0) + 1; this.px = x; this.pz = z; this.vx = 0; this.vz = 0; this.sepAt = 0; this.csx = 0; this.csz = 0; this.cn = 0; this.navCheckAt = 0; this.navDirect = true; this.losAt = 0; this.losTarget = null; this.losWall = null;
+                this.mesh.matrixAutoUpdate = true; this.id = Unit.nextId = (Unit.nextId || 0) + 1; this.px = x; this.pz = z; this.vx = 0; this.vz = 0; this.sepAt = 0; this.csx = 0; this.csz = 0; this.cn = 0; this.order = null; this.areaLimit = null; this.possessedBy = null; this.hasLadder = (type === 'LADDER'); this.lastDirX = (team === TEAMS.MONGOL ? 1 : -1); this.lastDirZ = 0; this.lastThornAt = 0; this.sideUntil = 0; this.sideDir = 1; this.sel = null;
+                this.navCheckAt = 0; this.navDirect = true; this.losAt = 0; this.losTarget = null; this.losWall = null;
             }
             setPlacementVisuals(on) { const r = this.mesh.getObjectByName('rangeRing'); if (r) r.visible = on && SETTINGS.rings; }
             applyBuff(ms = 4000) {
@@ -2197,7 +2277,7 @@
                 }
                 if (simTime < this.stunUntil) { this.isMoving = false; this.vx = this.vz = 0; if (this.isStunnedFx !== true) { this.isStunnedFx = true; spawnFloatingCombatText(this.mesh.position, 'STUN', 0xffee66); } return; }
                 this.isStunnedFx = false;
-                this.executeBehaviorAI();
+                if (this.possessedBy) this.possessedTick(); else this.executeBehaviorAI();
                 const pp = this.mesh.position; this.vx = this.vx * 0.55 + (pp.x - this.px) * 0.45; this.vz = this.vz * 0.55 + (pp.z - this.pz) * 0.45; this.px = pp.x; this.pz = pp.z;
                 if (((simTick + this.id) & 3) === 0) pp.y = getTerrainHeight(pp.x, pp.z);
             }
@@ -2206,7 +2286,7 @@
             navDir(tx, tz) {
                 const p = this.mesh.position; const dx = tx - p.x, dz = tz - p.z; const d = Math.hypot(dx, dz) || 1;
                 if (!navActive || d < 2.2) { this.path = null; return [dx / d, dz / d]; }
-                if (simTime >= this.navCheckAt || Math.hypot(tx - this.pathGX, tz - this.pathGZ) > 6) { this.navCheckAt = simTime + 110 + Math.random() * 90; this.navDirect = lineClear(p.x, p.z, tx, tz, this.big); if (this.navDirect) this.path = null; this.pathGX = this.navDirect ? tx : this.pathGX; this.pathGZ = this.navDirect ? tz : this.pathGZ; }
+                if (simTime >= this.navCheckAt || Math.hypot(tx - this.pathGX, tz - this.pathGZ) > 6) { this.navCheckAt = simTime + 110 + Math.random() * 90; this.navDirect = lineClear(p.x, p.z, tx, tz, this.big, this.team); if (this.navDirect) this.path = null; this.pathGX = this.navDirect ? tx : this.pathGX; this.pathGZ = this.navDirect ? tz : this.pathGZ; }
                 if (this.navDirect) return [dx / d, dz / d];
                 if (!this.path || this.pathVer !== navVersion || simTime > this.repathAt || Math.hypot(tx - this.pathGX, tz - this.pathGZ) > 5) {
                     if (pathBudget > 0) {
@@ -2242,10 +2322,13 @@
                 if (n > 0) { mx += (sx / n) * 1.3; mz += (sz / n) * 1.3; const l = Math.hypot(mx, mz) || 1; mx /= l; mz /= l; }
                 if (!noFace) this.faceDir(mx, mz);
                 let spd = this.speed * SPEED_K * mult; if (this.isBuffed && !NON_MELEE_BUFF.has(this.type) || (this.isBuffed && RANGED_BUFFABLE.has(this.type))) spd *= 1.2;
+                this.lastDirX = mx; this.lastDirZ = mz;
                 const ox = p.x, oz = p.z; p.x += mx * spd; p.z += mz * spd;
                 p.x = clamp(p.x, -MAP_X, MAP_X); p.z = clamp(p.z, -MAP_Z, MAP_Z);
                 if (navActive) {
-                    const w = resolveBlockers(p, this.radius);
+                    const w = resolveBlockers(p, this.radius, this.team); const hb = lastBlocker;
+                    if (hb && this.type === 'LADDER' && this.hasLadder) { if (hb.tree) { if (simTime > this.sideUntil + 1500) { this.sideUntil = simTime + 900; this.sideDir = Math.random() < 0.5 ? 1 : -1; } } else this.tryPlaceLadder(hb); }
+                    if (w && w.variant === 'spike' && w.team !== this.team && simTime - this.lastThornAt > 600) { this.lastThornAt = simTime; this.takeDamage(7, null, { ranged: true }); }
                     if (w) { this.bumpWall = w; this.bumpAt = simTime; if (!this.bumpSince) this.bumpSince = simTime; }
                     else if (simTime - this.bumpAt > 500) this.bumpSince = 0;
                 }
@@ -2277,12 +2360,13 @@
                     return best;
                 }
                 const list = teamLists[otherTeam(this.team)]; if (list.length === 0) return null;
-                const cfg = this.config; const isRanged = !!cfg.ranged && this.type !== 'SIEGE_TOWER'; const R = this.range; const minR = cfg.minRange || 0;
+                const al = this.areaLimit; const cfg = this.config; const isRanged = !!cfg.ranged && this.type !== 'SIEGE_TOWER'; const R = this.range; const minR = cfg.minRange || 0;
                 let nearest = null, nd = Infinity, close = null, cd = Infinity, marked = null, md = Infinity, inRange = null, id = Infinity;
                 for (let i = 0; i < list.length; i++) {
                     const u = list[i];
                     const d = Math.hypot(u.mesh.position.x - p.x, u.mesh.position.z - p.z);
-                    if (u.isInvisible && this.type !== 'SWORD' && d > 3.5) continue;
+                    if (u.isInvisible && d > 3.5) continue;
+                    if (al && Math.hypot(u.mesh.position.x - al.x, u.mesh.position.z - al.z) > al.r) continue;
                     if (minR && d < minR) continue;
                     if (d < nd) { nd = d; nearest = u; }
                     if (u.isTargetMarked && d < md) { md = d; marked = u; }
@@ -2298,11 +2382,12 @@
             // ---------------------------------------------------------- AI
             executeBehaviorAI() {
                 const t = this.type; let hold = this.holdCheck();
-                if (t === 'GENGHIS') return this.genghisAI();
                 if (t === 'COMMANDER') hold = true;
                 const support = (t === 'THROATSINGER' || t === 'SIEGE_TOWER');
                 if (t === 'THROATSINGER' && simTime - this.lastPulse > this.attackSpeed) { this.lastPulse = simTime; this.pulseAura(); }
                 if (t === 'SIEGE_TOWER') { if (simTime - this.lastPulse > this.attackSpeed * 0.7) { this.lastPulse = simTime; this.pulseAura(); } this.towerVolley(); }
+                if (this.order && this.handleOrder()) return;
+                if (t === 'GENGHIS') return this.genghisAI();
                 // waypoint path-following (fights while moving)
                 if (this.currentWaypoint) {
                     if (t !== 'SIEGE_TOWER') this.retarget(false);
@@ -2316,6 +2401,7 @@
                     }
                 }
                 if (support) { if (hold) { this.isMoving = false; return; } return this.supportPositioning(); }
+                if (t === 'LADDER' && this.hasLadder) { let dz = 0; if (simTime < this.sideUntil) dz = this.sideDir * 0.9; this.stepMove(this.team === TEAMS.MONGOL ? 1 : -1, dz, 1); return; }
                 this.retarget(hold);
                 if (this.shouldChopWall()) { this.chopWall(); return; }
                 const tg = this.target;
@@ -2499,6 +2585,44 @@
                 for (let i = 0; i < aura.length; i++) { const u = aura[i]; if (!u.alive || u.team !== this.team) continue; u.applyBuff(); if (u.hp < u.maxHp) u.hp = Math.min(u.maxHp, u.hp + 12); }
             }
 
+            tryPlaceLadder(hb) {
+                if (!this.hasLadder || hb.tree) return false; let dx = this.lastDirX, dz = this.lastDirZ; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l; const p = this.mesh.position;
+                let entered = false, exit = -1, isWall = !!hb.wall;
+                for (let s = 0.2; s <= 11.5; s += 0.35) {
+                    const x = p.x + dx * s, z = p.z + dz * s; if (Math.abs(x) > MAP_X - 1 || Math.abs(z) > MAP_Z - 1) return false;
+                    const b = blockerAt(x, z, 0.12);
+                    if (b) { if (b.tree) return false; entered = true; if (b.wall) isWall = true; } else if (entered) { exit = s; break; }
+                }
+                if (exit < 0) return false;
+                const s0 = -1.7, s1 = exit + 1.9, mid = (s0 + s1) / 2;
+                addLadder(this.team, p.x + dx * mid, p.z + dz * mid, Math.atan2(dz, dx), s1 - s0, isWall ? 2.7 : 1.3);
+                this.hasLadder = false; if (this.rig.carried) this.rig.carried.visible = false; spawnFloatingCombatText(p, 'LADDER PLACED', 0xffd34d); return true;
+            }
+            handleOrder() {
+                const od = this.order, p = this.mesh.position, t = this.type; this.currentWaypoint = null;
+                const goTo = (x, z) => { this.retarget(false); if (this.target && this.target.alive) this.attackIfPossible(false); const d = this.navDir(x, z); this.stepMove(d[0], d[1]); };
+                if (od.kind === 'hold') { this.areaLimit = null; this.isMoving = false; this.retarget(true); const tg = this.target; if (tg && tg.alive) { this.faceDir(tg.mesh.position.x - p.x, tg.mesh.position.z - p.z, 0.2); this.attackIfPossible(true); } return true; }
+                if (od.kind === 'move') { this.areaLimit = null; if (Math.hypot(od.x - p.x, od.z - p.z) < 2.4) { this.order = { kind: 'hold' }; return true; } if (t === 'SIEGE_TOWER') { this.stepMove(od.x - p.x, 0); return true; } goTo(od.x, od.z); return true; }
+                if (od.kind === 'attack') {
+                    const list = teamLists[otherTeam(this.team)]; let any = false;
+                    for (let i = 0; i < list.length; i++) { const u = list[i]; if (!u.isInvisible && Math.hypot(u.mesh.position.x - od.x, u.mesh.position.z - od.z) <= od.r) { any = true; break; } }
+                    if (any) { this.areaLimit = od; return false; }
+                    this.areaLimit = null; if (Math.hypot(od.x - p.x, od.z - p.z) > 3.5) { if (t === 'SIEGE_TOWER') this.stepMove(od.x - p.x, 0); else goTo(od.x, od.z); return true; }
+                    this.order = null; return false;
+                }
+                this.order = null; return false;
+            }
+            possessedTick() {
+                const ctx = this.possessedBy, t = this.type;
+                if (t === 'THROATSINGER' && simTime - this.lastPulse > this.attackSpeed) { this.lastPulse = simTime; this.pulseAura(); }
+                if (t === 'SIEGE_TOWER') { if (simTime - this.lastPulse > this.attackSpeed * 0.7) { this.lastPulse = simTime; this.pulseAura(); } this.towerVolley(); }
+                const vx = ctx.moveX, vz = ctx.moveZ, m = Math.hypot(vx, vz);
+                if (m > 0.12) this.stepMove(vx / m, vz / m, Math.min(1, m)); else this.isMoving = false;
+                if (ctx.attackHeld && t !== 'SIEGE_TOWER') {
+                    if (!this.target || !this.target.alive || simTime >= this.retargetAt) { this.target = this.locateOptimalEnemy(false); this.retargetAt = simTime + 150; }
+                    if (this.target) this.attackIfPossible(true);
+                }
+            }
             takeDamage(amount, attacker, opts) {
                 if (!this.alive) return; opts = opts || {}; let d = Math.floor(amount); const T = this.type;
                 if (T === 'SHAOLIN' && Math.random() < 0.28) { spawnFloatingCombatText(this.mesh.position, 'DODGE', 0xffaa00); return; }
@@ -2623,6 +2747,7 @@
                 this.cam = { target: new THREE.Vector3(), radius: 60, theta: Math.PI / 2, phi: 0.95 };
                 this.ptrs = new Map(); this.strokeId = null; this.curEntry = null; this.lastPlaced = null; this.pathLast = null; this.lastWall = null; this.wallFirst = null; this.lastMark = null; this.g = null;
                 this.hud = null; this.frustum = new THREE.Frustum();
+                this.sel = new Set(); this.orderMode = null; this.possessed = null; this.moveX = 0; this.moveZ = 0; this.joyX = 0; this.joyY = 0; this.attackHeld = false; this.mouseAtk = false; this.btnAtk = false; this.bui = null; this.lastTap = null;
             }
         }
         function updateCam(ctx) {
@@ -2637,7 +2762,7 @@
             const W = innerWidth, H = innerHeight;
             if (players.length === 2) { players[0].vp = { x: 0, y: 0, w: W / 2, h: H }; players[1].vp = { x: W / 2, y: 0, w: W / 2, h: H }; }
             else if (players.length === 1) players[0].vp = { x: 0, y: 0, w: W, h: H };
-            players.forEach(p => { p.camera.aspect = p.vp.w / p.vp.h; p.camera.updateProjectionMatrix(); });
+            players.forEach(p => { p.camera.aspect = p.vp.w / p.vp.h; p.camera.updateProjectionMatrix(); if (p.bui) { p.bui.style.left = p.vp.x + 'px'; p.bui.style.width = p.vp.w + 'px'; } });
         }
         const ctxAt = x => (players.length === 2 && x >= innerWidth / 2) ? players[1] : players[0];
         const isLocked = type => {
@@ -2671,7 +2796,7 @@
                             `<button class="btn btn-system btn-ready" data-act="ready">READY</button><button class="btn btn-system" data-act="clearside" style="background:#540b0e">Clear My Side</button>` :
                             `<button class="btn btn-system btn-start" data-act="start">Start Battle</button><button class="btn btn-system btn-next" data-act="next" style="display:none">Next Level</button>
                              <button class="btn btn-system" data-act="save" style="background:#204060;">Save Layout</button><button class="btn btn-system" data-act="load" style="background:#204060;">Load Layout</button>
-                             <button class="btn btn-system" data-act="clear">Reset Map</button><button class="btn btn-system" data-act="wipe" style="background:#540b0e; font-size:9px; padding:3px;">Wipe Progress</button>`}
+                             <button class="btn btn-system" data-act="clear">Reset Map</button>`}
                         </div>
                     </div></div></div>`;
                 root.appendChild(hud); ctx.hud = hud;
@@ -2681,7 +2806,7 @@
                 hud.addEventListener('pointerout', e => { if (e.pointerType !== 'touch' && e.target.closest('[data-unit-type]')) hideTip(); });
                 populateUnitButtons(ctx);
             });
-            refreshHUD();
+            buildBattleUI(); refreshHUD();
         }
         const TOOL_TIPS = { WAYPOINT: ['Draw Path', 'Drag to draw a route. Units placed near its start follow it, fighting as they go.'], TARGET_MARK: ['Target Flag', 'Enemies inside its ring become priority targets.'], DELETE: ['Delete Brush', 'Drag over your own units, walls, paths and flags to remove them for a refund.'] };
         let _tipTimer = 0;
@@ -2736,13 +2861,15 @@
             if (appMode === 'versus' && players.length === 2) { el('vs-b1').innerText = '$' + fmtBudget(players[0]); el('vs-b2').innerText = '$' + fmtBudget(players[1]); }
             const showHud = gameState === GAME_STATES.PLACEMENT || appMode === 'campaign';
             players.forEach(c => { if (c.hud) c.hud.style.visibility = gameState === GAME_STATES.PLACEMENT ? 'visible' : (appMode === 'campaign' ? 'visible' : 'hidden'); });
+            refreshBUIVisibility();
             const hideTools = appMode === 'campaign' && gameState !== GAME_STATES.PLACEMENT;   // keep layout space so the system buttons stay on the right
             players.forEach(c => c.hud && c.hud.querySelectorAll('.left-column,.history-group').forEach(x => { x.style.visibility = hideTools ? 'hidden' : 'visible'; x.style.pointerEvents = hideTools ? 'none' : ''; }));
         }
+        function refreshBUIVisibility() { players.forEach(c => { if (c.bui) { c.bui.style.display = (gameState === GAME_STATES.SIMULATION && appMode !== 'menu') ? 'block' : 'none'; updateBUI(c); } }); }
         function setStatus(txt, col) { const s = el('game-status'); s.innerText = txt; s.style.color = col || '#52b788'; }
 
         // ---------------------------------------------------------------- INPUT
-        const keys = { space: false, shift: false };
+        const keys = { space: false, shift: false, ctrl: false, down: new Set() };
         function ndcRay(ctx, px, py) {
             const v = ctx.vp; const x = ((px - v.x) / v.w) * 2 - 1, y = -((py - v.y) / v.h) * 2 + 1;
             const o = ctx.camera.position.clone(); const d = new THREE.Vector3(x, y, 0.5).unproject(ctx.camera).sub(o).normalize(); return [o, d];
@@ -2759,7 +2886,9 @@
                 if (appMode === 'menu' || paused || !players.length) return; e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch (_) {}
                 const ctx = ctxAt(e.clientX); ctx.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, mode: 'none', button: e.button, pt: e.pointerType });
                 const p = ctx.ptrs.get(e.pointerId);
+                if (gameState === GAME_STATES.SIMULATION && e.pointerType === 'mouse' && e.button === 2 && !keys.space && !keys.shift) { contextOrderAt(ctx, e); return; }
                 if (e.pointerType === 'mouse' && (keys.space || keys.shift || e.button === 1 || e.button === 2)) { p.mode = (keys.shift || e.button === 1) ? 'pan' : 'rot'; return; }
+                if (ctx.ptrs.size === 1 && gameState === GAME_STATES.SIMULATION) { battleDown(ctx, p, e); return; }
                 if (ctx.ptrs.size === 1) { p.mode = 'place'; ctx.strokeId = e.pointerId; beginStroke(ctx); const h = groundHit(ctx, e.clientX, e.clientY); if (h) placeAt(ctx, h, true); }
                 else { ctx.strokeId = null; endStroke(ctx); p.mode = 'cam'; startGesture(ctx); }
             });
@@ -2769,9 +2898,11 @@
                 if (p.mode === 'place') { if (gameState !== GAME_STATES.PLACEMENT) return; const h = groundHit(ctx, e.clientX, e.clientY); if (h) placeAt(ctx, h, false); }
                 else if (p.mode === 'pan') panCam(ctx, dx, dy); else if (p.mode === 'rot') { ctx.cam.theta -= dx * 0.006; ctx.cam.phi -= dy * 0.005; }
                 else if (p.mode === 'cam') updateGesture(ctx);
+                else if (p.mode === 'select') battleMove(ctx, p, e);
             });
+            window.addEventListener('pointermove', e => { mouseX = e.clientX; mouseY = e.clientY; });
             const up = e => {
-                const ctx = [...players].find(c => c.ptrs.has(e.pointerId)); if (!ctx) return; ctx.ptrs.delete(e.pointerId);
+                const ctx = [...players].find(c => c.ptrs.has(e.pointerId)); if (!ctx) return; const pp = ctx.ptrs.get(e.pointerId); if (pp) battleUp(ctx, pp, e); ctx.ptrs.delete(e.pointerId);
                 if (ctx.strokeId === e.pointerId) { ctx.strokeId = null; endStroke(ctx); }
                 if (ctx.ptrs.size < 2) ctx.g = null; else startGesture(ctx);
                 if (ctx.ptrs.size === 0) { ctx.strokeId = null; endStroke(ctx); }
@@ -2779,11 +2910,13 @@
             cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
             cv.addEventListener('wheel', e => { if (appMode === 'menu' || paused) return; e.preventDefault(); const ctx = ctxAt(e.clientX); ctx.cam.radius *= (1 + Math.sign(e.deltaY) * 0.1); }, { passive: false });
             window.addEventListener('keydown', e => {
-                if (e.code === 'Space') { keys.space = true; if (appMode !== 'menu') e.preventDefault(); } if (e.key === 'Shift') keys.shift = true;
-                if (e.key === 'Escape' && (appMode !== 'menu')) { if (el('options-menu').classList.contains('open')) closeOptions(); else if (paused) resumeGame(); else pauseGame(); }
+                if (e.code === 'Space') { keys.space = true; if (appMode !== 'menu') e.preventDefault(); } if (e.key === 'Shift') keys.shift = true; if (e.key === 'Control') keys.ctrl = true; keys.down.add(e.code);
+                if (e.code.startsWith('Arrow') && players.some(c => c.possessed)) e.preventDefault();
+                battleKey(e);
+                if (e.key === 'Escape' && (appMode !== 'menu') && !releaseAnyPossession()) { if (el('options-menu').classList.contains('open')) closeOptions(); else if (paused) resumeGame(); else pauseGame(); }
             });
-            window.addEventListener('keyup', e => { if (e.code === 'Space') keys.space = false; if (e.key === 'Shift') keys.shift = false; });
-            window.addEventListener('blur', () => { keys.space = keys.shift = false; });
+            window.addEventListener('keyup', e => { if (e.code === 'Space') keys.space = false; if (e.key === 'Shift') keys.shift = false; if (e.key === 'Control') keys.ctrl = false; keys.down.delete(e.code); });
+            window.addEventListener('blur', () => { keys.space = keys.shift = keys.ctrl = false; keys.down.clear(); });
         }
         function panCam(ctx, dx, dy) {
             const c = ctx.cam; const k = (2 * c.radius * Math.tan(THREE.MathUtils.degToRad(22.5))) / ctx.vp.h; const fx = -Math.cos(c.theta), fz = -Math.sin(c.theta);
@@ -2792,7 +2925,7 @@
         function gestureStats(ctx) {
             const a = [...ctx.ptrs.values()].slice(0, 2); return { cx: (a[0].x + a[1].x) / 2, cy: (a[0].y + a[1].y) / 2, d: Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y) || 1, ang: Math.atan2(a[1].y - a[0].y, a[1].x - a[0].x) };
         }
-        function startGesture(ctx) { if (ctx.ptrs.size >= 2) { ctx.ptrs.forEach(p => p.mode = 'cam'); ctx.g = gestureStats(ctx); } }
+        function startGesture(ctx) { if (ctx.ptrs.size >= 2) { ctx.ptrs.forEach(p => { clearTimeout(p.lp); p.mode = 'cam'; }); hideSelBox(ctx); ctx.g = gestureStats(ctx); } }
         function updateGesture(ctx) {
             if (!ctx.g || ctx.ptrs.size < 2) return; const n = gestureStats(ctx), o = ctx.g;
             panCam(ctx, n.cx - o.cx, n.cy - o.cy); ctx.cam.radius *= o.d / n.d; ctx.cam.theta -= angDiff(n.ang - o.ang) * 0.9; ctx.g = n;
@@ -2812,7 +2945,7 @@
         function placeAt(ctx, hit, first) {
             if (gameState !== GAME_STATES.PLACEMENT) return; const sel = ctx.selected; const team = ctx.team;
             if (sel === 'DELETE') { deleteAt(ctx, hit); return; }
-            if (sel === 'WALL') { placeWalls(ctx, hit, first); return; }
+            if (sel === 'WALL' || sel === 'BARRICADE') { if (isLocked(sel)) return; placeWalls(ctx, hit, first); return; }
             if (sel === 'WAYPOINT') {
                 if (Math.abs(hit.x) > MAP_X - 3 || Math.abs(hit.z) > MAP_Z - 2) return;
                 if (ctx.lastPlaced && ctx.lastPlaced.distanceTo(hit) < 4) return;
@@ -2837,12 +2970,12 @@
         }
         let _flashT = 0; function flashStatus(t) { setStatus(t, '#ffb703'); clearTimeout(_flashT); _flashT = setTimeout(() => { if (gameState === GAME_STATES.PLACEMENT) setStatus(appMode === 'versus' ? 'PHASE: PLACEMENT — both players press READY' : 'PHASE: PLACEMENT'); }, 1600); }
         function placeWalls(ctx, hit, first) {
-            const cost = UNIT_TYPES.WALL.cost; const team = ctx.team;
+            const spike = ctx.selected === 'BARRICADE'; const cost = UNIT_TYPES[ctx.selected].cost; const team = ctx.team;
             const tryPlace = (x, z, rot) => {
                 if (!inSide(team, x, z) || pointBlocked(x, z, 0.9)) return null;
                 for (const w of walls) if (Math.abs(w.blocker.x - x) < 1.6 && Math.abs(w.blocker.z - z) < 1.6) return null;
                 if (!canAfford(ctx, cost)) return null; spend(ctx, cost);
-                const w = addWall(team, x, z, rot); pushItem(ctx, 'place', { kind: 'wall', obj: w, cost }); return w;
+                const w = addWall(team, x, z, rot, false, 1, false, spike ? 'spike' : null); pushItem(ctx, 'place', { kind: 'wall', obj: w, cost }); return w;
             };
             if (!ctx.lastWall) {
                 const w = tryPlace(hit.x, hit.z, Math.PI / 2); if (w) { ctx.lastWall = { x: hit.x, z: hit.z }; ctx.wallFirst = w; } else if (first && !canAfford(ctx, cost)) flashStatus('Not enough budget!'); return;
@@ -2874,7 +3007,7 @@
             }
             for (let i = walls.length - 1; i >= 0; i--) {
                 const w = walls[i]; if (w.team !== ctx.team || w.isLevelWall) continue;
-                if (Math.hypot(w.mesh.position.x - hit.x, w.mesh.position.z - hit.z) <= 2.1) { const item = { kind: 'wall', obj: w, cost: UNIT_TYPES.WALL.cost }; removeWallObject(w); if (!godNoBudget) ctx.budget += item.cost; pushItem(ctx, 'delete', item); did = true; }
+                if (Math.hypot(w.mesh.position.x - hit.x, w.mesh.position.z - hit.z) <= 2.1) { const item = { kind: 'wall', obj: w, cost: w.cost }; removeWallObject(w); if (!godNoBudget) ctx.budget += item.cost; pushItem(ctx, 'delete', item); did = true; }
             }
             if (did) createExplosionEffect(new THREE.Vector3(hit.x, hit.y + 0.6, hit.z), 0xff6666, 4);
         }
@@ -2915,8 +3048,128 @@
         }
         function clearSide(ctx) {
             for (let i = units.length - 1; i >= 0; i--) { const u = units[i]; if (ownedBy(ctx, u)) { const cost = u.config.cost || 0; removeUnitFromWorld(u, {}); if (!godNoBudget) ctx.budget += cost; } }
-            for (let i = walls.length - 1; i >= 0; i--) { const w = walls[i]; if (w.team === ctx.team && !w.isLevelWall) { removeWallObject(w); if (!godNoBudget) ctx.budget += UNIT_TYPES.WALL.cost; } }
+            for (let i = walls.length - 1; i >= 0; i--) { const w = walls[i]; if (w.team === ctx.team && !w.isLevelWall) { removeWallObject(w); if (!godNoBudget) ctx.budget += w.cost; } }
             ctx.hist.length = 0; ctx.redo.length = 0; ctx.ready = false; refreshHUD();
+        }
+
+        // ================================================================
+        //  BATTLE CONTROLS: selection, real-time orders, possession
+        // ================================================================
+        let mouseX = 0, mouseY = 0;
+        const isFighter = u => u.alive && u.targetable && !FIGHTER_SKIP.has(u.type);
+        const ownUnits = ctx => units.filter(u => u.team === ctx.team && isFighter(u));
+        function nearestOwn(ctx, h, r) { let best = null, bd = r; for (const u of units) { if (u.team !== ctx.team || !isFighter(u)) continue; const d = Math.hypot(u.mesh.position.x - h.x, u.mesh.position.z - h.z) - u.radius * 0.6; if (d < bd) { bd = d; best = u; } } return best; }
+        function nearestEnemy(ctx, h, r) { let best = null, bd = r; const l = teamLists[otherTeam(ctx.team)]; for (const u of l) { const d = Math.hypot(u.mesh.position.x - h.x, u.mesh.position.z - h.z); if (d < bd) { bd = d; best = u; } } return best; }
+        function setSelRing(u, on) {
+            let r = u.mesh.getObjectByName('sel');
+            if (!r && on) { r = new THREE.Mesh(G('Ring', u.radius * 1.25 + 0.25, u.radius * 1.25 + 0.6, 24), basicMat(0x66ffcc, 0.95, THREE.DoubleSide)); r.rotation.x = -Math.PI / 2; r.position.y = 0.25; r.name = 'sel'; r.renderOrder = 6; u.mesh.add(r); }
+            if (r) r.visible = on;
+        }
+        function selectSet(ctx, arr, add) { if (!add) { ctx.sel.forEach(u => setSelRing(u, false)); ctx.sel.clear(); } arr.forEach(u => { ctx.sel.add(u); setSelRing(u, true); }); updateBUI(ctx); }
+        function toggleSel(ctx, u) { if (ctx.sel.has(u)) { ctx.sel.delete(u); setSelRing(u, false); } else { ctx.sel.add(u); setSelRing(u, true); } updateBUI(ctx); }
+        const clearSel = ctx => selectSet(ctx, [], false);
+        function battleToast(msg) { setStatus(msg, '#66ffcc'); setTimeout(() => { if (gameState === GAME_STATES.SIMULATION) setStatus('PHASE: BATTLE!', '#e63946'); }, 2800); }
+        function orderPoint(ctx, kind, h) {
+            const sel = [...ctx.sel].filter(u => isFighter(u) && u !== ctx.possessed); if (!sel.length) return;
+            let ox = h.x, oz = h.z; if (kind === 'attack') { const en = nearestEnemy(ctx, h, 3.5); if (en) { ox = en.mesh.position.x; oz = en.mesh.position.z; } }
+            for (const u of sel) { u.order = { kind, x: ox, z: oz, r: 9 }; u.target = null; u.retargetAt = 0; u.areaLimit = null; u.currentWaypoint = null; }
+            createExplosionEffect(new THREE.Vector3(ox, getTerrainHeight(ox, oz) + 0.4, oz), kind === 'attack' ? 0xff4444 : 0x44ccff, 10, true);
+        }
+        function orderSimple(ctx, kind) {
+            const sel = [...ctx.sel].filter(u => isFighter(u) && u !== ctx.possessed);
+            for (const u of sel) {
+                u.target = null; u.retargetAt = 0; u.areaLimit = null;
+                if (kind === 'resume') u.order = null; else { u.currentWaypoint = null; u.order = kind === 'hold' ? { kind: 'hold' } : { kind: 'move', x: clamp(u.mesh.position.x + (ctx.team === TEAMS.MONGOL ? -20 : 20), -MAP_X + 3, MAP_X - 3), z: u.mesh.position.z }; }
+            }
+            if (sel.length) battleToast({ hold: 'HOLD POSITION', fall: 'FALL BACK', resume: 'RESUME AI' }[kind] || '');
+        }
+        function contextOrderAt(ctx, e) { const h = groundHit(ctx, e.clientX, e.clientY); if (!h || !ctx.sel.size) return; orderPoint(ctx, nearestEnemy(ctx, h, 3.5) ? 'attack' : 'move', h); }
+        function battleDown(ctx, p, e) {
+            if (ctx.possessed) { if (e.pointerType === 'mouse' && e.button === 0) { ctx.mouseAtk = true; p.mode = 'atk'; } else p.mode = 'none'; return; }
+            p.mode = 'select'; p.sx = e.clientX; p.sy = e.clientY; p.moved = false;
+            p.lp = setTimeout(() => { if (p.mode === 'select' && !p.moved) { p.mode = 'none'; hideSelBox(ctx); const h = groundHit(ctx, p.x, p.y); const u = h && nearestOwn(ctx, h, 2.8); if (u) possess(ctx, u); } }, 450);
+        }
+        function battleMove(ctx, p, e) { if (!p.moved && Math.hypot(p.x - p.sx, p.y - p.sy) > 10) { p.moved = true; clearTimeout(p.lp); } if (p.moved && ctx.selbox) { const s = ctx.selbox.style; s.display = 'block'; s.left = Math.min(p.sx, p.x) + 'px'; s.top = Math.min(p.sy, p.y) + 'px'; s.width = Math.abs(p.x - p.sx) + 'px'; s.height = Math.abs(p.y - p.sy) + 'px'; } }
+        function hideSelBox(ctx) { if (ctx.selbox) ctx.selbox.style.display = 'none'; }
+        function battleUp(ctx, p, e) {
+            clearTimeout(p.lp); if (p.mode === 'atk') ctx.mouseAtk = false; if (p.mode !== 'select') return; hideSelBox(ctx);
+            if (p.moved) {
+                const x0 = Math.min(p.sx, p.x), x1 = Math.max(p.sx, p.x), y0 = Math.min(p.sy, p.y), y1 = Math.max(p.sy, p.y); const out = [];
+                for (const u of ownUnits(ctx)) { _hp.set(u.mesh.position.x, u.mesh.position.y + 1, u.mesh.position.z).project(ctx.camera); if (_hp.z > 1) continue; const sx = (_hp.x * 0.5 + 0.5) * ctx.vp.w + ctx.vp.x, sy = (-_hp.y * 0.5 + 0.5) * ctx.vp.h + ctx.vp.y; if (sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) out.push(u); }
+                selectSet(ctx, out, keys.shift || keys.ctrl); return;
+            }
+            const h = groundHit(ctx, p.x, p.y); if (!h) return;
+            if (ctx.orderMode) { const m = ctx.orderMode; ctx.orderMode = null; orderPoint(ctx, m, h); updateBUI(ctx); return; }
+            const u = nearestOwn(ctx, h, 2.6);
+            if (u) {
+                const now = performance.now();
+                if (ctx.lastTap && ctx.lastTap.u.type === u.type && now - ctx.lastTap.t < 380) { selectSet(ctx, ownUnits(ctx).filter(o => o.type === u.type), false); ctx.lastTap = null; }
+                else { if (keys.shift || keys.ctrl) toggleSel(ctx, u); else selectSet(ctx, [u], false); ctx.lastTap = { u, t: now }; }
+            } else if (!(keys.shift || keys.ctrl)) clearSel(ctx);
+        }
+        function possess(ctx, u) {
+            releaseUnit(ctx); ctx.possessed = u; u.possessedBy = ctx; u.order = null; u.currentWaypoint = null; u.areaLimit = null; ctx.orderMode = null; selectSet(ctx, [u], false);
+            battleToast('CONTROLLING ' + u.config.name.toUpperCase() + ' — move: WASD / arrows / stick · attack: E / Enter / ATTACK · release: X / Esc'); updateBUI(ctx);
+        }
+        function releaseUnit(ctx) { if (ctx.possessed) ctx.possessed.possessedBy = null; ctx.possessed = null; ctx.moveX = ctx.moveZ = 0; ctx.joyX = ctx.joyY = 0; ctx.mouseAtk = ctx.btnAtk = ctx.attackHeld = false; updateBUI(ctx); }
+        function releaseAnyPossession() { let any = false; players.forEach(c => { if (c.possessed) { releaseUnit(c); any = true; } }); return any; }
+        function battleKey(e) {
+            if (gameState !== GAME_STATES.SIMULATION || paused || !players.length) return; const ctx = ctxAt(mouseX); const k = e.code;
+            if ((e.ctrlKey || e.metaKey) && k === 'KeyA') { e.preventDefault(); selectSet(ctx, ownUnits(ctx), false); return; }
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
+            if (k === 'KeyH') orderSimple(ctx, 'hold'); else if (k === 'KeyF') orderSimple(ctx, 'fall'); else if (k === 'KeyR') orderSimple(ctx, 'resume');
+            else if (k === 'KeyM') { ctx.orderMode = 'move'; updateBUI(ctx); } else if (k === 'KeyT') { ctx.orderMode = 'attack'; updateBUI(ctx); }
+            else if (k === 'KeyX') { if (ctx.possessed) releaseUnit(ctx); else clearSel(ctx); }
+        }
+        let _ctlFrame = 0;
+        function updateControl(ctx) {
+            if (++_ctlFrame % 20 === 0) ctx.sel.forEach(u => { if (!u.alive) { ctx.sel.delete(u); setSelRing(u, false); } });
+            if (ctx.possessed && (!ctx.possessed.alive || gameState !== GAME_STATES.SIMULATION)) releaseUnit(ctx);
+            if (!ctx.possessed) return;
+            const kd = keys.down, single = players.length === 1; const useW = single || ctx.idx === 0, useA = single || ctx.idx === 1; let kx = 0, ky = 0;
+            if (useW) { if (kd.has('KeyD')) kx++; if (kd.has('KeyA')) kx--; if (kd.has('KeyW')) ky++; if (kd.has('KeyS')) ky--; }
+            if (useA) { if (kd.has('ArrowRight')) kx++; if (kd.has('ArrowLeft')) kx--; if (kd.has('ArrowUp')) ky++; if (kd.has('ArrowDown')) ky--; }
+            if (ctx.joyX || ctx.joyY) { kx = ctx.joyX; ky = ctx.joyY; }
+            const m = Math.hypot(kx, ky); if (m > 1) { kx /= m; ky /= m; }
+            const c = ctx.cam; const fx = -Math.cos(c.theta), fz = -Math.sin(c.theta);
+            ctx.moveX = (-fz) * kx + fx * ky; ctx.moveZ = fx * kx + fz * ky;
+            const atkKey = single ? (kd.has('KeyE') || kd.has('Enter')) : (ctx.idx === 0 ? kd.has('KeyE') : kd.has('Enter'));
+            ctx.attackHeld = atkKey || ctx.mouseAtk || ctx.btnAtk;
+            const pu = ctx.possessed.mesh.position; c.target.x += (pu.x - c.target.x) * 0.12; c.target.z += (pu.z - c.target.z) * 0.12;
+        }
+        function buildBattleUI() {
+            let root = document.getElementById('bui-root'); if (!root) { root = document.createElement('div'); root.id = 'bui-root'; document.body.appendChild(root); } root.innerHTML = '';
+            players.forEach(ctx => {
+                const d = document.createElement('div'); d.className = 'bui'; d.style.display = 'none';
+                d.innerHTML = `<div class="bui-orders"><div class="bui-title">ORDERS <span class="bui-count"></span></div>
+                    <button class="ob" data-ord="selall">Select All</button><button class="ob" data-ord="move">Move (M)</button><button class="ob" data-ord="attack">Attack Area (T)</button>
+                    <button class="ob" data-ord="hold">Hold (H)</button><button class="ob" data-ord="fall">Fall Back (F)</button><button class="ob" data-ord="resume">Resume AI (R)</button><button class="ob" data-ord="clear">Deselect (X)</button>
+                    <div class="bui-hint"></div></div><div class="selbox"></div>
+                    <div class="joy"><div class="knob"></div></div><div class="cbtns"><button class="cb atk" data-ctl="atk">⚔ ATTACK</button><button class="cb" data-ctl="rel">✕ RELEASE</button></div>`;
+                root.appendChild(d); ctx.bui = d; ctx.selbox = d.querySelector('.selbox');
+                d.querySelectorAll('[data-ord]').forEach(b => b.addEventListener('click', () => {
+                    const o = b.dataset.ord; if (gameState !== GAME_STATES.SIMULATION) return;
+                    if (o === 'selall') selectSet(ctx, ownUnits(ctx), false); else if (o === 'clear') clearSel(ctx);
+                    else if (o === 'move' || o === 'attack') { if (ctx.sel.size) ctx.orderMode = ctx.orderMode === o ? null : o; else battleToast('Select units first'); } else orderSimple(ctx, o);
+                    updateBUI(ctx);
+                }));
+                const atk = d.querySelector('[data-ctl="atk"]'), rel = d.querySelector('[data-ctl="rel"]');
+                atk.addEventListener('pointerdown', e => { e.preventDefault(); ctx.btnAtk = true; try { atk.setPointerCapture(e.pointerId); } catch (_) {} });
+                ['pointerup', 'pointercancel', 'pointerleave'].forEach(n => atk.addEventListener(n, () => ctx.btnAtk = false)); rel.addEventListener('click', () => releaseUnit(ctx));
+                const joy = d.querySelector('.joy'), knob = d.querySelector('.knob'); let jid = null;
+                const jm = e => { const r = joy.getBoundingClientRect(); let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2); const L = Math.hypot(dx, dy), M = r.width * 0.38; if (L > M) { dx = dx / L * M; dy = dy / L * M; } knob.style.transform = `translate(${dx}px,${dy}px)`; ctx.joyX = dx / M; ctx.joyY = -dy / M; };
+                joy.addEventListener('pointerdown', e => { e.preventDefault(); jid = e.pointerId; try { joy.setPointerCapture(jid); } catch (_) {} jm(e); });
+                joy.addEventListener('pointermove', e => { if (e.pointerId === jid) jm(e); });
+                const jend = e => { if (e.pointerId === jid) { jid = null; ctx.joyX = ctx.joyY = 0; knob.style.transform = ''; } }; joy.addEventListener('pointerup', jend); joy.addEventListener('pointercancel', jend);
+            });
+            layoutViewports();
+        }
+        function updateBUI(ctx) {
+            const d = ctx.bui; if (!d) return; ctx.sel.forEach(u => { if (!u.alive) ctx.sel.delete(u); });
+            d.querySelector('.bui-count').textContent = ctx.sel.size ? '(' + ctx.sel.size + ')' : '';
+            d.querySelectorAll('[data-ord]').forEach(b => b.classList.toggle('on', ctx.orderMode === b.dataset.ord));
+            d.querySelector('.joy').style.display = d.querySelector('.cbtns').style.display = ctx.possessed ? 'block' : 'none';
+            d.querySelector('.bui-hint').textContent = ctx.possessed ? 'Controlling ' + ctx.possessed.config.name : ctx.orderMode ? 'Tap the ground or an enemy' : 'Drag to box-select. Long-press a unit to control it.';
         }
 
         // =====================================================================
@@ -3002,12 +3255,12 @@
             const hasPrev = new Set(); heads.forEach(h => { if (h.nextWaypoint) hasPrev.add(h.nextWaypoint); });
             units.forEach(u => { if (u.team !== ctx.team || !u.alive) return; if (['GENGHIS', 'OBJECTIVE', 'WAYPOINT'].includes(u.type)) return; const p = u.mesh.position; if (u.type === 'TARGET_MARK') L.marks.push([p.x, p.z]); else L.units.push({ type: u.type, x: p.x, z: p.z }); });
             heads.filter(h => !hasPrev.has(h)).forEach(h => { const c = []; for (let w = h; w; w = w.nextWaypoint) c.push([w.mesh.position.x, w.mesh.position.z]); L.chains.push(c); });
-            walls.forEach(w => { if (w.team === ctx.team && !w.isLevelWall) L.walls.push({ x: w.blocker.x, z: w.blocker.z, rot: w.rot }); });
+            walls.forEach(w => { if (w.team === ctx.team && !w.isLevelWall) L.walls.push({ x: w.blocker.x, z: w.blocker.z, rot: w.rot, v: w.variant }); });
             return L;
         }
         function applyLayout(ctx, L) {
             if (Array.isArray(L)) L = { units: L, walls: [], chains: [], marks: [] };
-            (L.walls || []).forEach(w => { if (canAfford(ctx, UNIT_TYPES.WALL.cost)) { spend(ctx, UNIT_TYPES.WALL.cost); addWall(ctx.team, w.x, w.z, w.rot, false, 1, true); } }); refreshWallStructures();
+            (L.walls || []).forEach(w => { const cs = (w.v === 'spike' ? UNIT_TYPES.BARRICADE : UNIT_TYPES.WALL).cost; if (canAfford(ctx, cs)) { spend(ctx, cs); addWall(ctx.team, w.x, w.z, w.rot, false, 1, true, w.v || null); } }); refreshWallStructures();
             (L.units || []).forEach(d => { const c = UNIT_TYPES[d.type]; if (!c || isLocked(d.type) || !canAfford(ctx, c.cost)) return; spend(ctx, c.cost); units.push(new Unit(d.type, ctx.team, d.x, d.z)); });
             (L.chains || []).forEach(ch => { let prev = null; ch.forEach(([x, z]) => { const u = new Unit('WAYPOINT', ctx.team, x, z); units.push(u); if (prev) { prev.nextWaypoint = u; u.incomingLine = makePathLine(prev, u); } prev = u; }); });
             (L.marks || []).forEach(([x, z]) => units.push(new Unit('TARGET_MARK', ctx.team, x, z)));
@@ -3092,7 +3345,7 @@
             el('pm-restart').onclick = () => { if (appMode === 'versus') startVersus(versusCfg); else loadCampaignLevel(currentLevelIdx, gameState !== GAME_STATES.PLACEMENT); };
             el('pm-versus').onclick = () => openVersusSetup('pause'); el('pm-campaign').onclick = () => loadCampaignLevel(currentLevelIdx);
             el('pm-options').onclick = () => { closeAllScreens(); el('options-menu').classList.add('open'); syncOptionsUI(); }; el('pm-menu').onclick = showMainMenu;
-            el('opt-back').onclick = closeOptions;
+            el('opt-back').onclick = closeOptions; el('opt-wipe').onclick = wipeProgress;
             el('vs-back').onclick = () => { closeAllScreens(); el(versusFrom === 'menu' ? 'main-menu' : 'pause-menu').classList.add('open'); };
             const slider = el('vs-budget-slider'), num = el('vs-budget-num');
             const setB = v => { slider.value = v; num.innerText = v; document.querySelectorAll('#vs-budget-chips .chip').forEach(c => c.classList.toggle('sel', +c.dataset.b === +v)); };
@@ -3164,6 +3417,7 @@
             requestAnimationFrame(animate);
             const now = performance.now(); const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
             if (SETTINGS.fps) { fpsN++; fpsT += dt; if (fpsT > 0.5) { el('fps-counter').style.display = 'block'; el('fps-counter').innerText = Math.round(fpsN / fpsT) + ' FPS · ' + renderer.info.render.calls + ' draws'; fpsN = 0; fpsT = 0; } } else el('fps-counter').style.display = 'none';
+            players.forEach(updateControl);
             if (!paused) { simAcc += dt; let s = 0; while (simAcc >= SIM_DT && s < 4) { simStep(); simAcc -= SIM_DT; s++; } if (s === 4) simAcc = 0; }
             if (appMode === 'menu' && players[0]) { menuAng += dt * 0.07; const c = players[0].cam; c.theta = Math.PI / 2 + Math.sin(menuAng) * 0.8; c.radius = 52; c.phi = 0.95; c.target.set(0, 0, 0); }
             viewFrustums.length = 0;
