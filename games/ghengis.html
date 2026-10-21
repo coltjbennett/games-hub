@@ -1554,17 +1554,31 @@
             for (const l of ladders) for (let i = 0; i < NAV_N; i++) { const dx = cellX(i) - l.x, dz = cellZ(i) - l.z; if (Math.abs(dx) > 14 || Math.abs(dz) > 14) continue; const lx = dx * l.cos + dz * l.sin, lz = -dx * l.sin + dz * l.cos; if (Math.abs(lx) <= l.hl + 1.0 && Math.abs(lz) <= l.hw + 1.3) ladderN[l.team][i] = 1; }
             navVersion++;
         }
+        function obstacleHeight(b) { return b.wall ? (b.wall.low ? 1.2 : 2.7) : b.water ? 0.3 : b.kind === 'box' ? 2.2 : 1.6; }
+        // A-frame ladder: one ladder leans up the near face, a plank spans the top, and a second leans down the far face.
         class Ladder {
-            constructor(team, x, z, rot, len, h) {
-                this.team = team; this.x = x; this.z = z; this.rot = rot; this.cos = Math.cos(rot); this.sin = Math.sin(rot); this.hl = len / 2; this.hw = 0.85;
+            constructor(team, x, z, rot, run, T, h) {
+                this.team = team; this.x = x; this.z = z; this.rot = rot; this.cos = Math.cos(rot); this.sin = Math.sin(rot);
+                this.run = run; this.T = T; this.h = h; this.hl = (2 * run + T) / 2; this.hw = 0.85;
                 const g = new THREE.Group(); const m = plankMat(0x9a7b4f);
-                for (const zz of [-0.6, 0.6]) g.add(mk(G('Box', len, 0.11, 0.11), m, 0, 0, zz, true));
-                for (let s = -len / 2 + 0.4; s < len / 2; s += 0.6) g.add(mk(G('Box', 0.08, 0.08, 1.3), m, s, 0, 0));
-                g.add(mk(G('Box', 0.14, 0.14, 1.5), fabMat(team === TEAMS.MONGOL ? 0x2e52b2 : 0xb22e2e), len / 2 - 0.05, 0.05, 0));
-                g.position.set(x, getTerrainHeight(x, z) + h, z); g.rotation.y = -rot; this.mesh = g; scene.add(g);
+                const leg = sign => {
+                    const x0 = sign < 0 ? -this.hl : this.hl, x1 = sign < 0 ? -this.hl + run : this.hl - run; const dx = x1 - x0, dy = h; const dl = Math.hypot(dx, dy), ux = dx / dl, uy = dy / dl, L = dl + 0.55, ang = Math.atan2(dy, dx);
+                    for (const zz of [-0.6, 0.6]) { const r = mk(G('Box', L, 0.11, 0.11), m, x0 + ux * L / 2, uy * L / 2, zz, true); r.rotation.z = ang; g.add(r); }
+                    for (let t = 0.45; t < L - 0.2; t += 0.55) { const r = mk(G('Box', 0.08, 0.08, 1.3), m, x0 + ux * t, uy * t, 0); r.rotation.z = ang; g.add(r); }
+                };
+                leg(-1); leg(1);
+                g.add(mk(G('Box', T + 0.3, 0.1, 1.5), m, 0, h + 0.05, 0, true));
+                g.add(mk(G('Box', 0.14, 0.5, 0.14), fabMat(team === TEAMS.MONGOL ? 0x2e52b2 : 0xb22e2e), 0, h + 0.4, 0.7));
+                g.position.set(x, getTerrainHeight(x, z), z); g.rotation.y = -rot; this.mesh = g; scene.add(g);
             }
+            profile(s) { if (s < this.run) return this.h * (s / this.run); if (s <= this.run + this.T) return this.h; return this.h * Math.max(0, 1 - (s - this.run - this.T) / this.run); }
         }
-        function addLadder(team, x, z, rot, len, h) { const l = new Ladder(team, x, z, rot, len, h); ladders.push(l); rebuildLadderNav(); navActive = true; return l; }
+        // height a unit of `team` should be lifted to at (x,z) while crossing one of its ladders; -1 if not on a ladder
+        function ladderHeightAt(x, z, team) {
+            for (let i = 0; i < ladders.length; i++) { const l = ladders[i]; if (l.team !== team) continue; const dx = x - l.x, dz = z - l.z; const lx = dx * l.cos + dz * l.sin, lz = -dx * l.sin + dz * l.cos; if (Math.abs(lx) <= l.hl && Math.abs(lz) <= l.hw + 0.3) return l.profile(lx + l.hl); }
+            return -1;
+        }
+        function addLadder(team, x, z, rot, run, T, h) { const l = new Ladder(team, x, z, rot, run, T, h); ladders.push(l); rebuildLadderNav(); navActive = true; return l; }
         function pointBlocked(x, z, r) {
             const list = bGrid[navIdx(x, z)];
             for (let i = 0; i < list.length; i++) if (distToBlocker(list[i], x, z) < r) return true;
@@ -1736,7 +1750,7 @@
                 const len = Math.hypot(x2 - x1, z2 - z1), rot = Math.atan2(z2 - z1, x2 - x1);
                 C.defs.push({ t: 'ridge', x1, z1, x2, z2, th }); C.blockers.push(mkBox((x1 + x2) / 2, (z1 + z2) / 2, len / 2, th / 2, rot));
             };
-            C.water = (x, z, w, d) => { C.defs.push({ t: 'water', x, z, w, d }); C.blockers.push(mkBox(x, z, w / 2, d / 2, 0)); };
+            C.water = (x, z, w, d) => { C.defs.push({ t: 'water', x, z, w, d }); const wb = mkBox(x, z, w / 2, d / 2, 0); wb.water = true; C.blockers.push(wb); };
             C.bridge = (x, z, w, d) => C.defs.push({ t: 'bridge', x, z, w, d });
             C.tower = (x, z) => { C.defs.push({ t: 'tower', x, z }); C.blockers.push(mkCircle(x, z, 1.9)); };
             C.hill = (x, z, r, h) => C.bumps.push({ x, z, r, h });
@@ -2279,7 +2293,9 @@
                 this.isStunnedFx = false;
                 if (this.possessedBy) this.possessedTick(); else this.executeBehaviorAI();
                 const pp = this.mesh.position; this.vx = this.vx * 0.55 + (pp.x - this.px) * 0.45; this.vz = this.vz * 0.55 + (pp.z - this.pz) * 0.45; this.px = pp.x; this.pz = pp.z;
-                if (((simTick + this.id) & 3) === 0) pp.y = getTerrainHeight(pp.x, pp.z);
+                const lo = ladders.length ? ladderHeightAt(pp.x, pp.z, this.team) : -1;
+                if (lo >= 0) { pp.y = getTerrainHeight(pp.x, pp.z) + lo; this.climbMult = 0.5; this.wasClimb = true; }
+                else { this.climbMult = 1; if (this.wasClimb || ((simTick + this.id) & 3) === 0) { pp.y = getTerrainHeight(pp.x, pp.z); this.wasClimb = false; } }
             }
 
             // ---------------------------------------------------------- movement helpers
@@ -2321,7 +2337,7 @@
                 if (this.type === 'SIEGE_TOWER') { sz = 0; }
                 if (n > 0) { mx += (sx / n) * 1.3; mz += (sz / n) * 1.3; const l = Math.hypot(mx, mz) || 1; mx /= l; mz /= l; }
                 if (!noFace) this.faceDir(mx, mz);
-                let spd = this.speed * SPEED_K * mult; if (this.isBuffed && !NON_MELEE_BUFF.has(this.type) || (this.isBuffed && RANGED_BUFFABLE.has(this.type))) spd *= 1.2;
+                let spd = this.speed * SPEED_K * mult * (this.climbMult || 1); if (this.isBuffed && !NON_MELEE_BUFF.has(this.type) || (this.isBuffed && RANGED_BUFFABLE.has(this.type))) spd *= 1.2;
                 this.lastDirX = mx; this.lastDirZ = mz;
                 const ox = p.x, oz = p.z; p.x += mx * spd; p.z += mz * spd;
                 p.x = clamp(p.x, -MAP_X, MAP_X); p.z = clamp(p.z, -MAP_Z, MAP_Z);
@@ -2587,15 +2603,16 @@
 
             tryPlaceLadder(hb) {
                 if (!this.hasLadder || hb.tree) return false; let dx = this.lastDirX, dz = this.lastDirZ; const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l; const p = this.mesh.position;
-                let entered = false, exit = -1, isWall = !!hb.wall;
-                for (let s = 0.2; s <= 11.5; s += 0.35) {
+                let entry = -1, exit = -1, h = 0;
+                for (let s = 0.2; s <= 12; s += 0.3) {
                     const x = p.x + dx * s, z = p.z + dz * s; if (Math.abs(x) > MAP_X - 1 || Math.abs(z) > MAP_Z - 1) return false;
                     const b = blockerAt(x, z, 0.12);
-                    if (b) { if (b.tree) return false; entered = true; if (b.wall) isWall = true; } else if (entered) { exit = s; break; }
+                    if (b) { if (b.tree) return false; if (entry < 0) entry = s; h = Math.max(h, obstacleHeight(b)); } else if (entry >= 0) { exit = s; break; }
                 }
-                if (exit < 0) return false;
-                const s0 = -1.7, s1 = exit + 1.9, mid = (s0 + s1) / 2;
-                addLadder(this.team, p.x + dx * mid, p.z + dz * mid, Math.atan2(dz, dx), s1 - s0, isWall ? 2.7 : 1.3);
+                if (exit < 0 || entry < 0) return false;
+                const T = exit - entry + 0.3, run = Math.max(0.9, h * 0.46); if (2 * run + T > 15) return false;
+                const mid = (entry + exit) / 2;
+                addLadder(this.team, p.x + dx * mid, p.z + dz * mid, Math.atan2(dz, dx), run, T, h);
                 this.hasLadder = false; if (this.rig.carried) this.rig.carried.visible = false; spawnFloatingCombatText(p, 'LADDER PLACED', 0xffd34d); return true;
             }
             handleOrder() {
