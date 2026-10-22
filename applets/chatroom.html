@@ -1,13 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <!--YES, I AM AWARE THAT THIS HAS EXTREMELY LOOSE SECURITY PRACTICES, I AM AWARE THE MODERATION IS NOT STRICTLY ENFORCED, I AM AWARE THE OASSOWRD SYSTEM IS VERY VERY UNSECURE. THIS IS A NON-ISSUE GIVEN THE SUTE'S USER BASE.-->
+    <!--Monolithic code file because its easy to deploy, sorry to anyone maintaining this file-->
+    <!--YES, I AM AWARE THAT THIS HAS EXTREMELY LOOSE SECURITY PRACTICES, I AM AWARE THE MODERATION IS NOT STRICTLY ENFORCED, I AM AWARE THE PASSWORD SYSTEM IS VERY VERY UNSECURE. THIS IS A NON-ISSUE GIVEN THE SITE'S USER BASE.-->
     <base href="../">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Universal MQTT Chat</title>
     <style>
-        /* ===== CUSTOM FONTS (Crisp Win95 Style) ===== */
+        /* old windows font */
         @font-face {
             font-family: "W95FA";
             src: url('images/w95f.woff2') format('woff2'),
@@ -275,16 +276,28 @@
         }
 
         /* ===== MEDIA VIEWER (lightbox) ===== */
-        .chat-media { cursor: zoom-in; -webkit-touch-callout: none; }
+        .chat-media { cursor: pointer; -webkit-touch-callout: none; }
+        @media (hover: hover) { .chat-media { cursor: zoom-in; } }
         .chat-image { max-width: 250px; border: 2px inset var(--win-border-dark); display: block; margin-top: 4px; }
         .chat-video { position: relative; display: block; width: fit-content; margin-top: 4px; border: 2px inset var(--win-border-dark); background: #000; }
         .chat-video video { display: block; max-width: 250px; max-height: 250px; pointer-events: none; }
         .play-badge {
             position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
             width: 38px; height: 32px; background: var(--win-bg); color: #000; font-size: 14px;
-            display: flex; align-items: center; justify-content: center; pointer-events: none;
+            display: flex; align-items: center; justify-content: center; pointer-events: auto; cursor: pointer;
             box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px #808080, inset 2px 2px #dfdfdf;
         }
+
+        .play-badge:hover { filter: brightness(1.08); }
+        .chat-video.playing { cursor: default; }
+        .chat-video.playing video { pointer-events: auto; }
+        .video-expand {
+            position: absolute; top: 4px; right: 4px; width: 22px; height: 20px;
+            background: var(--win-bg); color: #000; font-size: 13px; line-height: 1; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; z-index: 2;
+            box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px #808080, inset 2px 2px #dfdfdf;
+        }
+        .video-expand:active { box-shadow: inset -1px -1px #fff, inset 1px 1px #0a0a0a, inset -2px -2px #dfdfdf, inset 2px 2px #808080; }
 
         .media-viewer {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
@@ -781,6 +794,14 @@
             if (del) { e.stopPropagation(); deleteAnyMessage(del.dataset.deleteId); return; }
             const react = e.target.closest('[data-react-id]');
             if (react) { toggleReaction(react.dataset.reactId, react.dataset.reactEmoji); return; }
+            const playBtn = e.target.closest('.play-badge');
+            if (playBtn) { e.stopPropagation(); playVideoInline(playBtn.closest('.chat-video')); return; }
+            const expandBtn = e.target.closest('.video-expand');
+            if (expandBtn) {
+                const v = expandBtn.closest('.chat-video').querySelector('video');
+                if (v) { v.pause(); openMediaViewer('video', v.getAttribute('src')); }
+                return;
+            }
             const media = e.target.closest('.chat-media');
             if (media) openMediaFromElement(media);
         });
@@ -789,6 +810,32 @@
             const media = e.target.closest && e.target.closest('.chat-media');
             if (media) { e.preventDefault(); openMediaFromElement(media); }
         });
+
+        // Play button -> play right in the chat bubble. Clicking the picture itself -> lightbox.
+        function playVideoInline(wrap) {
+            const v = wrap && wrap.querySelector('video');
+            if (!v) return;
+            wrap.classList.remove('chat-media');   // body clicks now belong to the native controls
+            wrap.classList.add('playing');
+            wrap.removeAttribute('title');
+            const badge = wrap.querySelector('.play-badge');
+            if (badge) badge.remove();
+            if (!wrap.querySelector('.video-expand')) {
+                const ex = document.createElement('span');
+                ex.className = 'video-expand'; ex.title = 'Enlarge'; ex.textContent = '\u2922';
+                wrap.appendChild(ex);
+            }
+            v.controls = true;
+            const pr = v.play(); if (pr && pr.catch) pr.catch(() => {});
+        }
+
+        // Some browsers leave a black box until a frame is decoded; nudge to the first frame for the preview.
+        ui.chatBox.addEventListener('loadedmetadata', (e) => {
+            const v = e.target;
+            if (v && v.tagName === 'VIDEO' && v.closest('.chat-video') && v.currentTime === 0) {
+                try { v.currentTime = 0.001; } catch (err) {}
+            }
+        }, true);
 
         function positionMenu(menu, x, y) {
             menu.style.left = x + 'px'; menu.style.top = y + 'px';
@@ -1860,7 +1907,7 @@
             }
             if (msg.isVideo) {
                 if (!isSafeMediaDataUrl(rawText, 'video')) return '<span>[Blocked video]</span>';
-                return `<span class="chat-media chat-video" role="button" tabindex="0" title="Click to enlarge"><video src="${escapeHTML(rawText)}" preload="metadata" muted playsinline></video><span class="play-badge">&#9654;</span></span>`;
+                return `<span class="chat-media chat-video" role="button" tabindex="0" title="Click to enlarge"><video src="${escapeHTML(rawText)}" preload="metadata" playsinline></video><span class="play-badge" title="Play here">&#9654;</span></span>`;
             }
             if (msg.isAudio) {
                 if (!isSafeMediaDataUrl(rawText, 'audio')) return '<span>[Blocked audio]</span>';
@@ -2040,11 +2087,29 @@
         }
 
         let renderScheduled = false;
+        let lastRenderSig = "";
+        // A cheap fingerprint of everything that affects how the visible tab looks. Used to skip full
+        // re-renders that wouldn't change anything (sync chunks that re-merge known messages, echoes, etc.).
+        // Every needless re-render replaced the whole DOM - including the thing you were mid-click on -
+        // and re-parsed multi-MB media URLs, which is what made the lightbox/expand buttons miss clicks.
+        function computeRenderSig() {
+            const list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
+            const parts = [currentTab, myUsername, isGhost ? 1 : 0, isAdmin ? 1 : 0, renderedMsgCount,
+                Array.from(blockedUsers).join(","),
+                currentTab.startsWith("dm:") ? (dmReadWatermarks[currentTab.slice(3)] || 0) : ""];
+            for (const m of list) {
+                if (!m || blockedUsers.has(m.author)) continue;
+                const r = m.reactions && Object.keys(m.reactions).length ? JSON.stringify(m.reactions) : "";
+                parts.push(`${m.id}:${m.author}:${typeof m.text === "string" ? m.text.length : 0}:${m.edited ? 1 : 0}:${m.backupPlaceholder || ""}:${r}`);
+            }
+            return parts.join("|");
+        }
         function scheduleRenderActiveTabMessages() {
             if (renderScheduled) return;
             renderScheduled = true;
             requestAnimationFrame(() => {
                 renderScheduled = false;
+                if (ui.chatBox.childElementCount && computeRenderSig() === lastRenderSig) return;
                 renderActiveTabMessages();
             });
         }
@@ -2068,6 +2133,7 @@
             
             ui.chatBox.innerHTML = "";
             ui.chatBox.appendChild(fragment);
+            lastRenderSig = computeRenderSig();
 
             if (wasAtBottom) { 
                 ui.chatBox.scrollTop = ui.chatBox.scrollHeight; 
@@ -2119,6 +2185,7 @@
             const existingTimeEl = el.querySelector(".msg-time");
             const existingTimeHtml = existingTimeEl ? existingTimeEl.outerHTML : "";
             el.innerHTML = buildMsgInnerHTML(msg, existingTimeHtml);
+            lastRenderSig = computeRenderSig();
             return true;
         }
 
@@ -2230,7 +2297,7 @@
             line.id = `msg-${msg.id}`; line.className = "clickable-msg"; line.style.margin = "2px 0"; line.style.fontSize = "15px";
             
             line.onclick = (e) => {
-                if (e.target.closest('button, a, audio, video, img, .chat-media, .close-tab-btn, .reaction-badge')) return;
+                if (e.target.closest('button, a, audio, video, img, .chat-media, .play-badge, .video-expand, .close-tab-btn, .reaction-badge')) return;
                 const sel = window.getSelection && window.getSelection();
                 if (sel && sel.toString().length > 0) return; // don't hijack text selection
                 setReplyTarget(msg);
@@ -2262,6 +2329,7 @@
             const wasAtBottom = isChatNearBottom();
             
             ui.chatBox.appendChild(line);
+            lastRenderSig = computeRenderSig();
             
             if (!isBatch) {
                 if (wasAtBottom || msg.author === myUsername) {
