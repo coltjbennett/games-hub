@@ -273,6 +273,51 @@
             margin-left: 6px;
             font-weight: bold;
         }
+
+        /* ===== MEDIA VIEWER (lightbox) ===== */
+        .chat-media { cursor: zoom-in; -webkit-touch-callout: none; }
+        .chat-image { max-width: 250px; border: 2px inset var(--win-border-dark); display: block; margin-top: 4px; }
+        .chat-video { position: relative; display: block; width: fit-content; margin-top: 4px; border: 2px inset var(--win-border-dark); background: #000; }
+        .chat-video video { display: block; max-width: 250px; max-height: 250px; pointer-events: none; }
+        .play-badge {
+            position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+            width: 38px; height: 32px; background: var(--win-bg); color: #000; font-size: 14px;
+            display: flex; align-items: center; justify-content: center; pointer-events: none;
+            box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff, inset -2px -2px #808080, inset 2px 2px #dfdfdf;
+        }
+
+        .media-viewer {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 10050; display: none; align-items: center; justify-content: center;
+            padding: 48px; background: rgba(0, 0, 0, 0.78);
+        }
+        .media-viewer.open { display: flex; }
+        .viewer-stage {
+            width: 100%; height: 100%;
+            display: flex; align-items: center; justify-content: center;
+            pointer-events: none; /* clicks on empty space fall through to the dimmed backdrop */
+        }
+        .viewer-stage img, .viewer-stage video {
+            width: 100%; height: 100%; object-fit: contain;
+            pointer-events: auto; background: transparent;
+            filter: drop-shadow(0 0 10px rgba(0, 0, 0, 0.6));
+        }
+        .viewer-stage video { background: #000; filter: none; }
+
+        /* Windows-95 style close button */
+        .viewer-close {
+            position: absolute; top: 10px; right: 10px;
+            width: 28px; height: 26px; padding: 0; border: 0;
+            background: var(--win-bg); cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #ffffff, inset -2px -2px #808080, inset 2px 2px #dfdfdf;
+        }
+        .viewer-close:active {
+            border: 0; padding: 1px 0 0 1px;
+            box-shadow: inset -1px -1px #ffffff, inset 1px 1px #0a0a0a, inset -2px -2px #dfdfdf, inset 2px 2px #808080;
+        }
+        .viewer-close:focus-visible { outline: 1px dotted #000; outline-offset: -5px; }
+        .viewer-close svg { display: block; shape-rendering: crispEdges; }
     </style>
 </head>
 <body>
@@ -291,6 +336,7 @@
     <div id="msg-context-menu" class="context-menu">
         <div id="ctx-edit-msg" class="context-item" onclick="executeMsgEdit()">Edit Message</div>
         <div id="ctx-react-msg" class="context-item" onclick="openReactionPicker(event)">React</div>
+        <div id="ctx-download-msg" class="context-item" style="display:none" onclick="executeMsgDownload()">Download</div>
     </div>
     
     <!-- Reaction Picker Menu -->
@@ -326,27 +372,12 @@
         </div>
     </div>
 
-    <!-- Image Viewer Modal -->
-    <div id="image-modal" class="modal-overlay" onclick="closeModal('image-modal')">
-        <div style="position: relative; max-width: 90vw; max-height: 90vh;">
-            <img id="enlarged-image" src="" style="max-width: 100%; max-height: 90vh; border: 3px outset var(--win-border-light); cursor: zoom-out;" />
-        </div>
-    </div>
-
-    <div id="penalty-screen">
-        <h2 id="penalty-title" style="margin-bottom: 10px; color: #8b0000;"></h2>
-        <p id="penalty-desc"></p>
-        <button id="ban-info-btn" onclick="openModal('ban-info-modal')" style="display: none; margin-top: 15px; font-weight: bold;">?</button>
-    </div>
-
-    <div id="ban-info-modal" class="modal-overlay">
-        <div class="w95-window">
-            <div class="w95-titlebar"><span>Ban Information</span><button onclick="closeModal('ban-info-modal')" style="height: 18px; line-height: 10px;">X</button></div>
-            <div class="w95-content">
-                <p style="margin-bottom: 15px;">You have been permanently banned by a chatroom administrator.</p>
-                <button onclick="openPasswordModal('unban')" style="position: absolute; bottom: 4px; right: 4px; padding: 0; font-size: 5px; width: 6px; height: 6px; border: 1px solid transparent; background: transparent; color: #a0a0a0; cursor: pointer;">.</button>
-            </div>
-        </div>
+    <!-- Image / Video Viewer -->
+    <div id="media-viewer" class="media-viewer" role="dialog" aria-modal="true" aria-label="Media viewer">
+        <button type="button" id="media-viewer-close" class="viewer-close" title="Close" aria-label="Close">
+            <svg width="16" height="14" viewBox="0 0 8 7" aria-hidden="true"><path fill="#000" d="M0 0h2v1H0zM6 0h2v1H6zM1 1h2v1H1zM5 1h2v1H5zM2 2h4v1H2zM3 3h2v1H3zM2 4h4v1H2zM1 5h2v1H1zM5 5h2v1H5zM0 6h2v1H0zM6 6h2v1H6z"/></svg>
+        </button>
+        <div id="media-viewer-stage" class="viewer-stage"></div>
     </div>
 
     <div id="password-modal" class="modal-overlay">
@@ -487,7 +518,7 @@
         const CHAT_ORIGIN = window.location.origin;
         const MAX_USERNAME_LENGTH = 32;
         const MAX_TEXT_LENGTH = 4000;
-        const MAX_MEDIA_DATA_LENGTH = 8 * 1024 * 1024;
+        const MAX_MEDIA_DATA_LENGTH = 30 * 1024 * 1024; // data-URL length; fits a 20MB file after base64
         const CHAT_RETENTION_KEY = "mqtt_chat_retention_days_v1";
         const CHAT_HISTORY_MODE_KEY = "mqtt_chat_history_mode_v1";
         const DEFAULT_CHAT_RETENTION_DAYS = 0;
@@ -506,6 +537,14 @@
             return String(value || '').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, MAX_USERNAME_LENGTH);
         }
 
+        const VIDEO_MIME_RE = /^video\/(mp4|webm|ogg|quicktime|x-m4v|3gpp2?|mpeg|x-matroska)$/i;
+        const EXT_MIME = { mov:'video/quicktime', mp4:'video/mp4', m4v:'video/x-m4v', webm:'video/webm', ogv:'video/ogg', mkv:'video/x-matroska', '3gp':'video/3gpp',
+                           jpg:'image/jpeg', jpeg:'image/jpeg', png:'image/png', gif:'image/gif', webp:'image/webp', bmp:'image/bmp', avif:'image/avif' };
+        function inferUploadMime(file) {
+            if (file.type && /^(image|video|audio)\//i.test(file.type)) return file.type;
+            const ext = (file.name || '').split('.').pop().toLowerCase();
+            return EXT_MIME[ext] || file.type || '';
+        }
         function isSafeMediaDataUrl(value, kind = '') {
             if (typeof value !== 'string' || value.length === 0 || value.length > MAX_MEDIA_DATA_LENGTH || !value.startsWith('data:')) return false;
             const comma = value.indexOf(',');
@@ -520,7 +559,7 @@
                 return mime.length > 0;
             }
             const allowed = kind === 'image' ? /^image\/(png|jpe?g|gif|webp|bmp|avif)$/i
-                : kind === 'video' ? /^video\/(mp4|webm|ogg)$/i
+                : kind === 'video' ? VIDEO_MIME_RE
                 : kind === 'audio' ? /^audio\/(mpeg|mp3|wav|ogg|webm|mp4|aac)$/i
                 : /^(image\/(png|jpe?g|gif|webp|bmp|avif)|video\/(mp4|webm|ogg)|audio\/(mpeg|mp3|wav|ogg|webm|mp4|aac)|application\/octet-stream)$/i;
             return allowed.test(mime);
@@ -570,6 +609,9 @@
         let activeReply = null;
         let activeContextMsgId = null;
         let typingTimeout = null;
+        let typingIndicatorTimer = null;
+        let lastTypingSentAt = 0;
+        let recordingAutoStopTimer = null;
 
         let isMuted = false;
         let mutedAttemptCount = 0;
@@ -664,9 +706,103 @@
         function closeModal(id) { document.getElementById(id).style.display = "none"; }
         function customAlert(text) { document.getElementById('alert-text').innerText = text; openModal('alert-modal'); }
         
-        function openImageModal(src) {
-            document.getElementById('enlarged-image').src = src;
-            openModal('image-modal');
+        const mediaViewer = {
+            el: document.getElementById('media-viewer'),
+            stage: document.getElementById('media-viewer-stage'),
+            closeBtn: document.getElementById('media-viewer-close'),
+            lastFocus: null
+        };
+
+        function openMediaViewer(kind, src) {
+            if (!src) return;
+            mediaViewer.stage.replaceChildren();
+            let node;
+            if (kind === 'video') {
+                node = document.createElement('video');
+                node.controls = true;
+                node.autoplay = true;
+                node.playsInline = true;
+                node.src = src;
+                node.addEventListener('error', () => {
+                    if (!node.isConnected || !mediaViewer.el.classList.contains('open')) return;
+                    const box = document.createElement('div');
+                    box.className = 'w95-window'; box.style.pointerEvents = 'auto';
+                    box.innerHTML = '<div class="w95-titlebar"><span>Cannot play video</span></div><div class="w95-content"><p style="margin-bottom:12px;">Your browser can\'t play this video format.</p></div>';
+                    const btn = document.createElement('button');
+                    btn.type = 'button'; btn.textContent = 'Download';
+                    btn.addEventListener('click', () => { try { const i = parseDataUrl(src); downloadDataUrl(src, 'video.' + extFromMime(i && i.mime)); } catch (e) {} });
+                    box.querySelector('.w95-content').appendChild(btn);
+                    mediaViewer.stage.replaceChildren(box);
+                });
+            } else {
+                node = document.createElement('img');
+                node.alt = 'Enlarged image';
+                node.src = src;
+            }
+            mediaViewer.stage.appendChild(node);
+            mediaViewer.lastFocus = document.activeElement;
+            mediaViewer.el.classList.add('open');
+            mediaViewer.closeBtn.focus();
+            if (kind === 'video') { const pr = node.play(); if (pr && pr.catch) pr.catch(() => {}); }
+        }
+
+        function closeMediaViewer() {
+            if (!mediaViewer.el.classList.contains('open')) return;
+            const v = mediaViewer.stage.querySelector('video');
+            if (v) { v.pause(); v.removeAttribute('src'); v.load(); }
+            mediaViewer.stage.replaceChildren();
+            mediaViewer.el.classList.remove('open');
+            if (mediaViewer.lastFocus && mediaViewer.lastFocus.focus) { try { mediaViewer.lastFocus.focus(); } catch (e) {} }
+            mediaViewer.lastFocus = null;
+        }
+
+        function openMediaFromElement(el) {
+            const video = el.querySelector && el.querySelector('video');
+            if (video) openMediaViewer('video', video.getAttribute('src'));
+            else if (el.tagName === 'IMG') openMediaViewer('image', el.getAttribute('src'));
+        }
+
+        // Kept for backwards compatibility with any older callers.
+        function openImageModal(src) { openMediaViewer('image', src); }
+
+        mediaViewer.closeBtn.addEventListener('click', closeMediaViewer);
+        mediaViewer.el.addEventListener('click', (e) => { if (e.target === mediaViewer.el) closeMediaViewer(); });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && mediaViewer.el.classList.contains('open')) {
+                e.preventDefault(); e.stopPropagation(); closeMediaViewer();
+            }
+        }, true);
+
+        // One delegated handler for message buttons/media. Message IDs and emoji
+        // now travel in data-* attributes instead of inline onclick="" strings,
+        // which closes an HTML/JS injection hole through crafted message IDs.
+        ui.chatBox.addEventListener('click', (e) => {
+            const del = e.target.closest('[data-delete-id]');
+            if (del) { e.stopPropagation(); deleteAnyMessage(del.dataset.deleteId); return; }
+            const react = e.target.closest('[data-react-id]');
+            if (react) { toggleReaction(react.dataset.reactId, react.dataset.reactEmoji); return; }
+            const media = e.target.closest('.chat-media');
+            if (media) openMediaFromElement(media);
+        });
+        ui.chatBox.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            const media = e.target.closest && e.target.closest('.chat-media');
+            if (media) { e.preventDefault(); openMediaFromElement(media); }
+        });
+
+        function positionMenu(menu, x, y) {
+            menu.style.left = x + 'px'; menu.style.top = y + 'px';
+            const r = menu.getBoundingClientRect();
+            const maxLeft = window.pageXOffset + document.documentElement.clientWidth - r.width - 4;
+            const maxTop = window.pageYOffset + document.documentElement.clientHeight - r.height - 4;
+            if (x > maxLeft) menu.style.left = Math.max(0, maxLeft) + 'px';
+            if (y > maxTop) menu.style.top = Math.max(0, maxTop) + 'px';
+        }
+
+        function textMentionsUser(text, name) {
+            if (typeof text !== 'string' || !name) return false;
+            const esc = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            return new RegExp(`(^|[^A-Za-z0-9_.-])@${esc}(?![A-Za-z0-9_-]|\\.[A-Za-z0-9_-])`, 'i').test(text);
         }
 
         function toggleMuteSounds() {
@@ -1094,7 +1230,7 @@
                         const blob = new Blob(audioChunks, { type: mimeType });
                         audioChunks = [];
                         if (blob.size > MAX_OTHER_UPLOAD_BYTES) {
-                            customAlert("Audio recording too large. The limit is 5MB.");
+                            customAlert("Audio recording too large. The limit is 20MB.");
                             msgInput.style.display = "block";
                             timerDiv.style.display = "none";
                             return;
@@ -1102,8 +1238,8 @@
                         const reader = new FileReader();
                         reader.onloadend = () => {
                             const raw = reader.result;
-                            const comp = LZString.compressToUTF16(raw);
-                            sendPayload(raw, { isAudio: true, preCompressed: comp });
+                            
+                            sendPayload(raw, { isAudio: true });
                         };
                         reader.readAsDataURL(blob);
                         
@@ -1111,16 +1247,19 @@
                         timerDiv.style.display = "none";
                     };
                     audioChunks = []; mediaRecorder.start(); ui.btnRecord.style.background = "#ff9999";
-                    setTimeout(() => { if(mediaRecorder && mediaRecorder.state !== "inactive") toggleRecording(); }, 300000);
+                    clearTimeout(recordingAutoStopTimer);
+                    recordingAutoStopTimer = setTimeout(() => { if(mediaRecorder && mediaRecorder.state !== "inactive") toggleRecording(); }, 300000);
                 } catch(e) { customAlert("Microphone access denied."); }
             } else {
+                clearTimeout(recordingAutoStopTimer);
                 mediaRecorder.stop();
                 mediaRecorder.stream.getTracks().forEach(t => t.stop()); ui.btnRecord.style.background = "var(--win-bg)";
             }
         }
 
-        const MAX_IMAGE_BYTES = 1 * 1024 * 1024;
-        const MAX_OTHER_UPLOAD_BYTES = 5 * 1024 * 1024;
+        const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+        const MAX_IMAGE_BYTES = MAX_UPLOAD_BYTES;
+        const MAX_OTHER_UPLOAD_BYTES = MAX_UPLOAD_BYTES;
 
         function blobToDataURL(blob) {
             return new Promise((resolve, reject) => {
@@ -1129,6 +1268,77 @@
                 reader.onerror = reject;
                 reader.readAsDataURL(blob);
             });
+        }
+
+        // ---- Lossless transport compression (native gzip) ----
+        // Raw bytes are gzipped, then base64'd. Already-compressed media (JPEG/MP4/etc.) barely shrinks,
+        // so if gzip doesn't save at least 3% we send the plain data URL instead.
+        // (The old LZString UTF-16 path actually made media *bigger* on the wire.)
+        const GZ_MIN_GAIN = 0.97;
+        function b64ToBlob(b64, type) {
+            const bin = atob(b64), len = bin.length, bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+            return new Blob([bytes], { type: type || '' });
+        }
+        function parseDataUrl(u) {
+            const m = /^data:([^,]*?);base64,/.exec(u);
+            return m ? { mime: m[1], b64: u.slice(m[0].length) } : null;
+        }
+        function dataUrlToBlob(u) { const i = parseDataUrl(u); if (!i) throw new Error('not a base64 data URL'); return b64ToBlob(i.b64, i.mime); }
+        async function packForNetwork(dataUrl) {
+            const plain = { text: dataUrl, compressed: false };
+            if (typeof dataUrl !== 'string' || !('CompressionStream' in window)) return plain;
+            const info = parseDataUrl(dataUrl);
+            if (!info) return plain;
+            try {
+                const blob = b64ToBlob(info.b64, info.mime);
+                const gz = await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();
+                if (gz.size >= blob.size * GZ_MIN_GAIN) return plain;
+                const gzUrl = await blobToDataURL(gz);
+                return { text: gzUrl.slice(gzUrl.indexOf(',') + 1), compressed: 'gz', mime: info.mime };
+            } catch (e) { return plain; }
+        }
+        async function unpackFromNetwork(b64, mime) {
+            if (!('DecompressionStream' in window)) throw new Error('gzip not supported');
+            const gzBlob = b64ToBlob(b64, 'application/octet-stream');
+            const reader = gzBlob.stream().pipeThrough(new DecompressionStream('gzip')).getReader();
+            const chunks = []; let total = 0;
+            for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                total += value.length;
+                if (total > MAX_UPLOAD_BYTES + 4096) { reader.cancel(); throw new Error('decompressed payload too large'); } // zip-bomb guard
+                chunks.push(value);
+            }
+            return blobToDataURL(new Blob(chunks, { type: typeof mime === 'string' ? mime.slice(0, 100) : '' }));
+        }
+        const packCache = new Map();
+        function packForNetworkCached(id, dataUrl) {
+            if (id && packCache.has(id)) return packCache.get(id);
+            const pr = packForNetwork(dataUrl);
+            if (id) { packCache.set(id, pr); if (packCache.size > 4) packCache.delete(packCache.keys().next().value); }
+            return pr;
+        }
+        async function packMessageForSync(m) {
+            const isMedia = m.isImage || m.isVideo || m.isAudio || m.isFile;
+            if (!isMedia || m.compressed || m.backupPlaceholder || typeof m.text !== 'string' || !m.text.startsWith('data:')) return m;
+            const p = await packForNetworkCached(m.id, m.text);
+            return { ...m, text: p.text, compressed: p.compressed, ...(p.mime ? { mime: p.mime } : {}) };
+        }
+
+        function extFromMime(mime) {
+            const t = String(mime || '').split(';')[0].toLowerCase();
+            const map = { 'image/jpeg':'jpg', 'image/png':'png', 'image/gif':'gif', 'image/webp':'webp', 'image/bmp':'bmp', 'image/avif':'avif',
+                          'video/mp4':'mp4', 'video/webm':'webm', 'video/ogg':'ogv', 'video/quicktime':'mov', 'video/x-m4v':'m4v', 'video/3gpp':'3gp', 'video/mpeg':'mpg', 'video/x-matroska':'mkv' };
+            return map[t] || 'bin';
+        }
+        function downloadDataUrl(dataUrl, filename) {
+            const blob = dataUrlToBlob(dataUrl);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename || 'download';
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 15000);
         }
 
         function canvasToJpegBlob(canvas, quality) {
@@ -1142,7 +1352,7 @@
             // decode/encode work. This avoids making ordinary uploads feel heavier.
             if (file.size <= maxBytes) {
                 const raw = await blobToDataURL(file);
-                return { raw, preCompressed: LZString.compressToUTF16(raw) };
+                return { raw };
             }
 
             const rawUrl = await blobToDataURL(file);
@@ -1184,19 +1394,19 @@
             }
 
             if (!bestBlob || bestBlob.size > maxBytes) {
-                throw new Error("Image could not be compressed below the 1MB limit");
+                throw new Error("Image could not be compressed below the 20MB limit");
             }
 
             const raw = await blobToDataURL(bestBlob);
-            return { raw, preCompressed: LZString.compressToUTF16(raw) };
+            return { raw };
         }
 
-        const MAX_VIDEO_BYTES = 2 * 1024 * 1024;
+        const MAX_VIDEO_BYTES = MAX_UPLOAD_BYTES;
 
         async function compressVideoToFit(file, maxBytes = MAX_VIDEO_BYTES) {
             if (file.size <= maxBytes) {
                 const raw = await blobToDataURL(file);
-                return { raw, preCompressed: LZString.compressToUTF16(raw) };
+                return { raw };
             }
             if (!window.MediaRecorder || !HTMLVideoElement.prototype.play) {
                 throw new Error("Video compression is not supported by this browser.");
@@ -1213,7 +1423,7 @@
             });
 
             const duration = Math.max(0.5, video.duration || 1);
-            const maxDimension = 960;
+            const maxDimension = 1280;
             const scale = Math.min(1, maxDimension / Math.max(video.videoWidth || 960, video.videoHeight || 540));
             const canvas = document.createElement("canvas");
             canvas.width = Math.max(2, Math.floor((video.videoWidth || 640) * scale));
@@ -1229,7 +1439,7 @@
             const preferredMime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
                 ? "video/webm;codecs=vp9,opus"
                 : (MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus") ? "video/webm;codecs=vp8,opus" : "video/webm");
-            const targetVideoBits = Math.max(220000, Math.min(650000, Math.floor((maxBytes * 8 * 0.82 / duration) - 32000)));
+            const targetVideoBits = Math.max(220000, Math.min(8000000, Math.floor((maxBytes * 8 * 0.82 / duration) - 32000)));
             const recorder = new MediaRecorder(combined, { mimeType: preferredMime, videoBitsPerSecond: targetVideoBits, audioBitsPerSecond: 32000 });
             const chunks = [];
             const done = new Promise((resolve, reject) => {
@@ -1253,9 +1463,9 @@
                 drawing = false;
                 recorder.stop();
                 const blob = await done;
-                if (blob.size > maxBytes) throw new Error("Video could not be compressed below the 2MB limit.");
+                if (blob.size > maxBytes) throw new Error("Video could not be compressed below the 20MB limit.");
                 const raw = await blobToDataURL(blob);
-                return { raw, preCompressed: LZString.compressToUTF16(raw) };
+                return { raw };
             } finally {
                 drawing = false;
                 combined.getTracks().forEach(track => track.stop());
@@ -1265,10 +1475,15 @@
         }
 
         document.getElementById("universal-upload").addEventListener("change", async function(e) {
-            const file = e.target.files[0];
+            let file = e.target.files[0];
             if (!file) return;
-            const isVideo = file.type.startsWith("video/");
-            const isImage = file.type.startsWith("image/");
+            // Only formats the viewer/validator accept are sent inline; anything else (SVG, HEIC, MOV...) goes as a file.
+            const pickedName = file.name;
+            const inferredType = inferUploadMime(file);
+            // iPad/iPhone clips are video/quicktime (.mov); some browsers give no type at all, so also go by extension.
+            if (inferredType && inferredType !== file.type) file = file.slice(0, file.size, inferredType);
+            const isVideo = VIDEO_MIME_RE.test(inferredType);
+            const isImage = /^image\/(png|jpe?g|gif|webp|bmp|avif)$/i.test(inferredType);
             const isFile = !isImage && !isVideo;
             // Non-image/video attachments are intentionally treated as generic files;
             // their MIME type is preserved and they are offered as downloads.
@@ -1276,9 +1491,9 @@
             if (isImage) {
                 try {
                     const { raw, preCompressed } = await compressImageToFit(file, MAX_IMAGE_BYTES);
-                    sendPayload(raw, { isImage: true, isVideo: false, isFile: false, fileName: file.name, preCompressed });
+                    sendPayload(raw, { isImage: true, isVideo: false, isFile: false, fileName: pickedName, preCompressed });
                 } catch(err) {
-                    customAlert("Failed to compress that image below the 1MB limit.");
+                    customAlert("Failed to compress that image below the 20MB limit.");
                 }
                 e.target.value = "";
                 return;
@@ -1287,16 +1502,16 @@
             if (isVideo) {
                 try {
                     const { raw, preCompressed } = await compressVideoToFit(file, MAX_VIDEO_BYTES);
-                    sendPayload(raw, { isImage: false, isVideo: true, isFile: false, fileName: file.name, preCompressed });
+                    sendPayload(raw, { isImage: false, isVideo: true, isFile: false, fileName: pickedName, preCompressed });
                 } catch (err) {
-                    customAlert(err?.message || "Failed to compress that video below the 2MB limit.");
+                    customAlert(err?.message || "Failed to compress that video below the 20MB limit.");
                 }
                 e.target.value = "";
                 return;
             }
 
             if (file.size > MAX_OTHER_UPLOAD_BYTES) {
-                customAlert("File too large. Videos and other files have a 5MB limit.");
+                customAlert("File too large. The limit is 20MB.");
                 e.target.value = "";
                 return;
             }
@@ -1304,8 +1519,8 @@
             const reader = new FileReader();
             reader.onload = function(event) {
                 const raw = event.target.result;
-                const comp = LZString.compressToUTF16(raw);
-                sendPayload(raw, { isImage, isVideo, isFile, fileName: file.name, preCompressed: comp });
+                
+                sendPayload(raw, { isImage, isVideo, isFile, fileName: pickedName });
             };
             reader.onerror = () => customAlert("Failed to read that file.");
             reader.readAsDataURL(file);
@@ -1404,18 +1619,21 @@
         }
 
         async function saveToStorageWithCompression(key, value) {
+            let signature = "";
+            let compacted;
             try {
                 // Only message-history arrays receive retention/media compaction.
                 // Pending DMs, tombstones, and other structured state must remain intact.
-                const compacted = Array.isArray(value) ? compactHistoryForStorage(value) : value;
-                const signature = getStorageSignature(compacted);
+                compacted = Array.isArray(value) ? compactHistoryForStorage(value) : value;
+                signature = getStorageSignature(compacted);
                 if (signature && lastStorageSignatures.get(key) === signature) return;
-                if (signature) lastStorageSignatures.set(key, signature);
                 await localforage.setItem(key, await gzipJson(compacted));
+                // Remember the signature only after a successful write so failures get retried.
+                if (signature) lastStorageSignatures.set(key, signature);
             } catch (e) {
                 try {
-                    const compacted = Array.isArray(value) ? compactHistoryForStorage(value) : value;
                     await localforage.setItem(key, LZString.compressToUTF16(JSON.stringify(compacted)));
+                    if (signature) lastStorageSignatures.set(key, signature);
                 } catch (e2) {
                     console.error("Failed to save structured chat state to IndexedDB:", e2);
                 }
@@ -1424,12 +1642,24 @@
 
         function saveToStorageDebounced(key, getValue) {
             const existing = pendingStorageWrites.get(key);
-            if (existing) clearTimeout(existing);
-            pendingStorageWrites.set(key, setTimeout(() => {
+            if (existing) clearTimeout(existing.timer);
+            const timer = setTimeout(() => {
                 pendingStorageWrites.delete(key);
                 saveToStorageWithCompression(key, getValue());
-            }, STORAGE_WRITE_DEBOUNCE_MS));
+            }, STORAGE_WRITE_DEBOUNCE_MS);
+            pendingStorageWrites.set(key, { timer, getValue });
         }
+
+        // Don't lose the last ~second of messages when the tab is closed or hidden.
+        function flushPendingStorageWrites() {
+            pendingStorageWrites.forEach(({ timer, getValue }, key) => {
+                clearTimeout(timer);
+                saveToStorageWithCompression(key, getValue());
+            });
+            pendingStorageWrites.clear();
+        }
+        document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushPendingStorageWrites(); });
+        window.addEventListener("pagehide", flushPendingStorageWrites);
 
         async function loadFromStorageWithCompression(key) {
             try {
@@ -1481,6 +1711,12 @@
                 if (m.author !== undefined && !isValidUsername(m.author)) return;
                 if (m.id !== undefined && (typeof m.id !== 'string' || m.id.length > 80)) return;
                 if (m.timestamp !== undefined && (!Number.isFinite(m.timestamp) || m.timestamp < 0)) return;
+                if (m.storageMediaOmitted && (m.isImage || m.isVideo || m.isAudio || m.isFile)) {
+                    if (!m.backupPlaceholder) m.backupPlaceholder = m.isImage ? "Image" : m.isVideo ? "Video" : m.isAudio ? "Voice Memo" : `File: ${m.fileName || "file"}`;
+                    m.text = `[${m.backupPlaceholder}]`;
+                    sanitized.push(m);
+                    return;
+                }
                 if (!validateMessagePayloadAfterDecompression(m)) return;
                 sanitized.push(m);
             });
@@ -1523,7 +1759,7 @@
             renderBlockedUI();
             if (myUsername && !isGhost) {
                 const keys = new Set();
-                for (let i = 0; i < localStorage.length; i++) keys.add(localStorage.key(i));
+                try { for (let i = 0; i < localStorage.length; i++) keys.add(localStorage.key(i)); } catch (e) {}
                 const lfKeys = await localforage.keys();
                 lfKeys.forEach(k => keys.add(k));
 
@@ -1599,6 +1835,7 @@
                 status: currentStatus,
                 activity: { ...currentActivity }
             });
+            Object.keys(dmHistories).forEach(u => saveDmHistory(u)); // DM storage keys include our username
             publishMessage({ type: "RENAME", oldAuthor: oldName, author: myUsername, joinTime: selfData.joinTime, id: generateId() });
             renderUserList(); evaluateAdminRole(); updateStatusText(); updateAndBroadcastPresence();
             ui.newUsernameIp.value = ""; toggleSettings();
@@ -1619,11 +1856,11 @@
             if (msg.backupPlaceholder) return `<span style="display:inline-block; margin-top:4px; padding:2px 4px; border:2px inset var(--win-border-dark); background:#f5f5f5;">[${escapeHTML(msg.backupPlaceholder)}]</span>`;
             if (msg.isImage) {
                 if (!isSafeMediaDataUrl(rawText, 'image')) return '<span>[Blocked image]</span>';
-                return `<img src="${escapeHTML(rawText)}" style="max-width: 250px; border: 2px inset var(--win-border-dark); display: block; margin-top: 4px; cursor: pointer;" alt="User Image"/>`;
+                return `<img class="chat-media chat-image" src="${escapeHTML(rawText)}" alt="User Image" title="Click to enlarge" tabindex="0"/>`;
             }
             if (msg.isVideo) {
                 if (!isSafeMediaDataUrl(rawText, 'video')) return '<span>[Blocked video]</span>';
-                return `<br><video controls src="${escapeHTML(rawText)}" style="max-width: 250px; border: 2px inset var(--win-border-dark); display: block; margin-top: 4px;"></video>`;
+                return `<span class="chat-media chat-video" role="button" tabindex="0" title="Click to enlarge"><video src="${escapeHTML(rawText)}" preload="metadata" muted playsinline></video><span class="play-badge">&#9654;</span></span>`;
             }
             if (msg.isAudio) {
                 if (!isSafeMediaDataUrl(rawText, 'audio')) return '<span>[Blocked audio]</span>';
@@ -1641,12 +1878,16 @@
             txt = txt.replace(/\*(.*?)\*/g, '<i>$1</i>');
             txt = txt.replace(/`(.*?)`/g, '<code style="background:#e0e0e0; padding:2px; font-family:monospace; color:#000;">$1</code>');
             
-            txt = txt.replace(/(https?:\/\/[^\s]+)/g, url => {
+            txt = txt.replace(/(https?:\/\/[^\s<]+)/g, raw => {
+                let url = raw, trail = '';
+                const tail = url.match(/(?:[.,!?;:)]|&quot;|&#39;|&gt;)+$/);
+                if (tail) { trail = tail[0]; url = url.slice(0, url.length - trail.length); }
+                if (!url) return raw;
                 const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
                 if (ytMatch) {
-                    return `<br><iframe width="250" height="140" src="https://www.youtube.com/embed/${ytMatch[1]}" frameborder="0" allowfullscreen style="border: 2px inset var(--win-border-dark); margin-top: 4px;"></iframe><br><a href="${url}" target="_blank" style="font-size:10px;">${url}</a>`;
+                    return `<br><iframe width="250" height="140" src="https://www.youtube.com/embed/${ytMatch[1]}" frameborder="0" allowfullscreen style="border: 2px inset var(--win-border-dark); margin-top: 4px;"></iframe><br><a href="${url}" target="_blank" rel="noopener noreferrer" style="font-size:10px;">${url}</a>${trail}`;
                 }
-                return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: blue;">${url}</a>`;
+                return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: blue;">${url}</a>${trail}`;
             });
 
             return txt;
@@ -1839,7 +2080,7 @@
 
         function buildMsgInnerHTML(msg, existingTimeHtml) {
             const color = getUsernameColor(msg.author);
-            let deleteBtn = (!isGhost && (msg.author === myUsername || isAdmin)) ? `<button onclick="deleteAnyMessage('${escapeHTML(msg.id)}')" style="font-size: 10px; padding: 0 3px; margin-right: 4px;">x</button>` : "";
+            let deleteBtn = (!isGhost && (msg.author === myUsername || isAdmin)) ? `<button type="button" data-delete-id="${escapeHTML(msg.id)}" style="font-size: 10px; padding: 0 3px; margin-right: 4px;">x</button>` : "";
             let replyHtml = msg.replyTo ? `<div class="reply-quote"><b>@${escapeHTML(msg.replyTo.author)}:</b> ${msg.replyTo.isImage ? "[Image]" : msg.replyTo.isVideo ? "[Video]" : msg.replyTo.isAudio ? "[Voice Memo]" : msg.replyTo.isFile ? "[File]" : escapeHTML(msg.replyTo.text)}</div>` : "";
             const formattedContent = formatMessageContent(msg.text, msg);
 
@@ -1863,7 +2104,7 @@
                 for (const [emoji, users] of Object.entries(msg.reactions)) {
                     if (users.length > 0) {
                         const selfReacted = users.includes(myUsername) ? 'reacted-self' : '';
-                        reactionsHtml += `<span class="reaction-badge ${selfReacted}" onclick="toggleReaction('${escapeHTML(msg.id)}', '${escapeHTML(emoji)}')">${escapeHTML(emoji)} ${users.length}</span>`;
+                        reactionsHtml += `<span class="reaction-badge ${selfReacted}" data-react-id="${escapeHTML(msg.id)}" data-react-emoji="${escapeHTML(emoji)}">${escapeHTML(emoji)} ${users.length}</span>`;
                     }
                 }
                 reactionsHtml += `</div>`;
@@ -1884,7 +2125,7 @@
         function createSystemDOMNode(sysObj) {
             let line = document.createElement("div");
             line.id = `msg-${sysObj.id}`; line.style.color = "#8b0000"; line.style.fontWeight = "bold"; line.style.margin = "2px 0"; line.style.fontSize = "15px";
-            let deleteBtn = isAdmin ? `<button onclick="deleteAnyMessage('${escapeHTML(sysObj.id)}')" style="font-size: 10px; padding: 0 3px; margin-right: 4px;">x</button>` : "";
+            let deleteBtn = isAdmin ? `<button type="button" data-delete-id="${escapeHTML(sysObj.id)}" style="font-size: 10px; padding: 0 3px; margin-right: 4px;">x</button>` : "";
             const formattedTime = formatTimestamp(sysObj.timestamp);
             
             let timeHtml = "";
@@ -1915,8 +2156,10 @@
             if (e.preventDefault) e.preventDefault();
             if (isGhost) return;
             activeContextMsgId = msg.id;
+            document.getElementById('ctx-download-msg').style.display =
+                (!msg.backupPlaceholder && (msg.isImage || msg.isVideo) && typeof msg.text === 'string' && msg.text.startsWith('data:')) ? 'block' : 'none';
             
-            if (msg.author === myUsername) {
+            if (msg.author === myUsername && !(msg.isImage || msg.isVideo || msg.isAudio || msg.isFile)) {
                 document.getElementById('ctx-edit-msg').style.display = "block";
             } else {
                 document.getElementById('ctx-edit-msg').style.display = "none";
@@ -1924,16 +2167,28 @@
 
             ui.reactionPickerMenu.style.display = "none";
             ui.msgContextMenu.style.display = "block";
-            ui.msgContextMenu.style.left = (e.pageX || e.touches[0].pageX) + "px";
-            ui.msgContextMenu.style.top = (e.pageY || e.touches[0].pageY) + "px";
+            const px = e.pageX !== undefined ? e.pageX : e.touches[0].pageX;
+            const py = e.pageY !== undefined ? e.pageY : e.touches[0].pageY;
+            positionMenu(ui.msgContextMenu, px, py);
         }
 
         function openReactionPicker(e) {
             if (e.stopPropagation) e.stopPropagation();
             ui.msgContextMenu.style.display = "none";
             ui.reactionPickerMenu.style.display = "block";
-            ui.reactionPickerMenu.style.left = e.pageX + "px";
-            ui.reactionPickerMenu.style.top = e.pageY + "px";
+            positionMenu(ui.reactionPickerMenu, e.pageX, e.pageY);
+        }
+
+        function executeMsgDownload() {
+            ui.msgContextMenu.style.display = "none";
+            const msg = messageHistory.find(m => m.id === activeContextMsgId) || Object.values(dmHistories).flat().find(m => m.id === activeContextMsgId);
+            activeContextMsgId = null;
+            if (!msg || !(msg.isImage || msg.isVideo) || msg.backupPlaceholder || typeof msg.text !== 'string' || !msg.text.startsWith('data:')) return;
+            try {
+                const info = parseDataUrl(msg.text);
+                const name = msg.fileName || `${msg.isVideo ? 'video' : 'image'}-${msg.timestamp || Date.now()}.${extFromMime(info && info.mime)}`;
+                downloadDataUrl(msg.text, name);
+            } catch (e) { customAlert("Could not download that file."); }
         }
 
         function executeMsgEdit() {
@@ -1942,6 +2197,7 @@
             let msg = messageHistory.find(m => m.id === activeContextMsgId) || Object.values(dmHistories).flat().find(m => m.id === activeContextMsgId);
             if (!msg || msg.author !== myUsername) return;
             
+            if (msg.isImage || msg.isVideo || msg.isAudio || msg.isFile) { activeContextMsgId = null; return; }
             let newText = prompt("Edit your message:", msg.text);
             if (newText !== null && newText.trim() !== "" && newText !== msg.text) {
                 publishMessage({ type: "EDIT_MSG", id: msg.id, text: newText.trim(), author: myUsername });
@@ -1973,9 +2229,11 @@
             let line = document.createElement("div");
             line.id = `msg-${msg.id}`; line.className = "clickable-msg"; line.style.margin = "2px 0"; line.style.fontSize = "15px";
             
-            line.onclick = (e) => { 
-                if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A' && e.target.tagName !== 'AUDIO' && e.target.tagName !== 'VIDEO' && e.target.tagName !== 'IMG' && !e.target.classList.contains('close-tab-btn') && !e.target.classList.contains('reaction-badge')) 
-                    setReplyTarget(msg); 
+            line.onclick = (e) => {
+                if (e.target.closest('button, a, audio, video, img, .chat-media, .close-tab-btn, .reaction-badge')) return;
+                const sel = window.getSelection && window.getSelection();
+                if (sel && sel.toString().length > 0) return; // don't hijack text selection
+                setReplyTarget(msg);
             };
 
             if (!msg.isSystem) {
@@ -2308,10 +2566,16 @@
             client.on("message", async (topic, payload) => {
                 try {
                     const data = JSON.parse(payload.toString());
+                    if (!validateChatPayload(data)) return;
                     if (data.compressed && data.text) {
-                        data.text = LZString.decompressFromUTF16(data.text) || data.text;
-                        data.compressed = false;
+                        if (data.compressed === 'gz') {
+                            try { data.text = await unpackFromNetwork(data.text, data.mime); } catch (e) { return; }
+                        } else {
+                            data.text = LZString.decompressFromUTF16(data.text) || data.text; // legacy senders
+                        }
+                        data.compressed = false; delete data.mime;
                     }
+                    if ((data.type === "MSG" || data.type === "DM") && !validateMessagePayloadAfterDecompression(data)) return;
                     
                     if (data.author && !blockedUsers.has(data.author)) {
                         const existing = activeUsers.get(data.author);
@@ -2338,8 +2602,9 @@
 
                     if (data.author !== myUsername && !blockedUsers.has(data.author)) {
                         const isDM = (!isGhost && data.type === "DM" && data.target === myUsername);
-                        const isEveryone = (data.type === "MSG" && data.text && data.text.includes("@everyone"));
-                        const isMention = (data.type === "MSG" && data.text && (isEveryone || (!isGhost && data.text.includes(`@${myUsername}`))));
+                        const isMediaMsg = !!(data.isImage || data.isVideo || data.isAudio || data.isFile);
+                        const isEveryone = (data.type === "MSG" && !isMediaMsg && data.text && data.text.includes("@everyone"));
+                        const isMention = (data.type === "MSG" && !isMediaMsg && data.text && (isEveryone || (!isGhost && textMentionsUser(data.text, myUsername))));
                         
                         if (isDM || isMention) {
                             const now = Date.now();
@@ -2443,14 +2708,20 @@
                         if (blockedUsers.has(data.author) && data.author !== myUsername) return;
                         const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), isSystem: false, edited: false, reactions: data.reactions || {} };
                         const isNew = !messageHistoryIdSet.has(msgObj.id);
+                        const prevLen = messageHistory.length;
                         messageHistory = mergeHistory(messageHistory, [msgObj], true); saveLocalHistory();
-                        if (currentTab === "global") { if (isNew) appendMsgDOM(msgObj); else scheduleRenderActiveTabMessages(); }
+                        if (currentTab === "global" && isNew) {
+                            // Only append when the message really was inserted. If it was merged into an
+                            // existing placeholder or rejected by a tombstone, re-render instead of
+                            // appending a duplicate/deleted message. Echoes of known messages need no re-render.
+                            if (messageHistory.length > prevLen) appendMsgDOM(msgObj); else scheduleRenderActiveTabMessages();
+                        }
                         if (data.author !== myUsername && !isChatWindowOpen) { window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, CHAT_ORIGIN); }
                     }
                     else if (data.type === "EDIT_MSG") {
                         const updateMsgList = (list) => {
                             let m = list.find(x => x.id === data.id);
-                            if (m && m.author === data.author) { m.text = data.text; m.edited = true; return true; }
+                            if (m && m.author === data.author && !(m.isImage || m.isVideo || m.isAudio || m.isFile) && typeof data.text === 'string' && data.text.length <= MAX_TEXT_LENGTH) { m.text = data.text; m.edited = true; return true; }
                             return false;
                         };
                         let updated = updateMsgList(messageHistory);
@@ -2556,6 +2827,7 @@
                         if (removedGlobal || ephemeralDelete) scheduleRenderActiveTabMessages();
                     }
                     else if (data.type === "CLEAR_RECENT") {
+                        if (!ADMINS.includes(data.author) || !Number.isFinite(data.hours) || data.hours <= 0) return;
                         const anchor = data.timestamp || Date.now();
                         const cutoff = anchor - (data.hours * 3600000);
                         addRangeTombstone(cutoff, anchor, data.targetType === "system" ? "system" : "all");
@@ -2575,6 +2847,7 @@
                         scheduleRenderActiveTabMessages();
                     }
                     else if (data.type === "CLEAR_ALL") {
+                        if (!ADMINS.includes(data.author)) return;
                         const anchor = data.timestamp || Date.now();
                         raiseNukeMarker(anchor);
                         // Never physically erase historical records.  CLEAR_ALL remains a
@@ -2588,7 +2861,7 @@
                     else if (data.type === "TYPING") {
                         if (!isGhost && data.author !== myUsername && !blockedUsers.has(data.author)) {
                             ui.typing.innerText = `${data.author} is typing...`;
-                            clearTimeout(data.typingTimer); data.typingTimer = setTimeout(() => { ui.typing.innerText = ""; }, 3000);
+                            clearTimeout(typingIndicatorTimer); typingIndicatorTimer = setTimeout(() => { ui.typing.innerText = ""; }, 3000);
                         }
                     }
                     else if (data.type === "RENAME") {
@@ -2986,7 +3259,7 @@
                         rangeTombstones.some(r => msg.timestamp >= r.from && msg.timestamp <= r.to && (r.scope === "all" || (r.scope === "system") === !!msg.isSystem));
                     if (!isTombstoned) {
                         if (msg.author !== myUsername && !blockedUsers.has(msg.author)) {
-                            const isSpecificMention = msg.text && (!isGhost && msg.text.includes(`@${myUsername}`));
+                            const isSpecificMention = !(msg.isImage || msg.isVideo || msg.isAudio || msg.isFile) && msg.text && (!isGhost && textMentionsUser(msg.text, myUsername));
                             if (isSpecificMention && !isRealtimeLive) {
                                 let storedPings = getStoredPings();
                                 if (!storedPings[msg.id]) {
@@ -3034,7 +3307,7 @@
                     uniqueMessages.set(key, msg);
                     
                     if (!localIds.has(msg.id) && msg.author !== myUsername && !blockedUsers.has(msg.author)) {
-                        const isSpecificMention = msg.text && (!isGhost && msg.text.includes(`@${myUsername}`));
+                        const isSpecificMention = !(msg.isImage || msg.isVideo || msg.isAudio || msg.isFile) && msg.text && (!isGhost && textMentionsUser(msg.text, myUsername));
                         if (isSpecificMention && !isRealtimeLive) {
                             let storedPings = getStoredPings();
                             if (!storedPings[msg.id]) {
@@ -3250,10 +3523,14 @@
                 const to = from + span;
                 if (to > now - SYNC_SETTLE_MS) return;
                 let b = buckets.get(`${from}:${span}`);
-                if (!b) { b = { from, to, span, count: 0, hash: 2166136261 >>> 0 }; buckets.set(`${from}:${span}`, b); }
+                if (!b) { b = { from, to, span, count: 0, hash: 0 }; buckets.set(`${from}:${span}`, b); }
                 b.count++;
                 const id = String(m.id);
-                for (let i = 0; i < id.length; i++) b.hash = Math.imul((b.hash ^ id.charCodeAt(i)) >>> 0, 16777619) >>> 0;
+                // Order-independent: peers can hold the same set in a different order (timestamp ties),
+                // which previously made identical buckets look different and re-sync forever.
+                let h = 2166136261 >>> 0;
+                for (let i = 0; i < id.length; i++) h = Math.imul((h ^ id.charCodeAt(i)) >>> 0, 16777619) >>> 0;
+                b.hash = (b.hash + h) >>> 0;
             });
             return Array.from(buckets.values())
                 .sort((a,b) => a.from - b.from)
@@ -3350,7 +3627,12 @@
             const peerIds = new Set(peerManifestEntries.map(e => e.id).filter(Boolean));
             const localIds = new Set(localList.map(m => m.id).filter(Boolean));
 
-            const toGive = localList.filter(m => m.id && !peerIds.has(m.id) && !isMessageTombstoned(m));
+            // A peer's manifest only lists its newest N ids. Without this window, everything older than
+            // that slice looked "missing" and the whole history (media included) was re-sent each manifest.
+            // Older gaps are handled by the bucket hashes below.
+            let peerWindowStart = 0;
+            if (peerManifestEntries.length >= 75) peerWindowStart = Math.min(...peerManifestEntries.map(e => e.ts || 0));
+            const toGive = localList.filter(m => m.id && !peerIds.has(m.id) && !isMessageTombstoned(m) && (m.timestamp || 0) >= peerWindowStart);
             if (toGive.length) queueOutbound(peer, channel, toGive);
 
             const toRequestIds = peerManifestEntries
@@ -3416,60 +3698,65 @@
             drainOutboxFor(peer, channel);
         }
 
+        const SYNC_MAX_CHUNK_BYTES = 1.5 * 1024 * 1024; // soft cap per SYNC_CHUNK; a single bigger file is sent alone
         function drainOutboxFor(peer, channel) {
             const drainKey = `${peer}::${channel}`;
             if (syncDraining.has(drainKey)) return;
             syncDraining.add(drainKey);
 
-            const step = () => {
-                const perPeer = syncOutbox.get(peer);
-                const queue = perPeer && perPeer[channel];
-                if (!queue || !queue.length) { syncDraining.delete(drainKey); return; }
+            const step = async () => {
+                let sentBytes = 0;
+                try {
+                    const perPeer = syncOutbox.get(peer);
+                    const queue = perPeer && perPeer[channel];
+                    if (!queue || !queue.length) { syncDraining.delete(drainKey); return; }
 
-                const batch = queue.splice(0, getSyncBatchSize());
-                
-                // Re-compress the batch before sending it out so MQTT bounds aren't exceeded
-                const compressedBatch = batch.map(m => {
-                    if ((m.isImage || m.isVideo || m.isAudio || m.isFile) && !m.compressed) {
-                        return { ...m, text: LZString.compressToUTF16(m.text), compressed: true };
+                    // Batch by size as well as count: 50 messages used to be 50 whole attachments in one packet.
+                    const maxCount = getSyncBatchSize();
+                    const batch = [];
+                    while (queue.length && batch.length < maxCount) {
+                        const size = (typeof queue[0].text === 'string' ? queue[0].text.length : 0) + 400;
+                        if (batch.length && sentBytes + size > SYNC_MAX_CHUNK_BYTES) break;
+                        batch.push(queue.shift()); sentBytes += size;
                     }
-                    return m;
-                });
-
-                publishMessage({
-                    type: "SYNC_CHUNK",
-                    author: myUsername,
-                    target: peer,
-                    channel: channel,
-                    messages: compressedBatch,
-                    remaining: queue.length
-                });
-
-                if (queue.length) {
-                    setTimeout(step, getSyncBatchIntervalMs());
-                } else {
-                    syncDraining.delete(drainKey);
-                }
+                    const packed = await Promise.all(batch.map(packMessageForSync));
+                    publishMessage({ type: "SYNC_CHUNK", author: myUsername, target: peer, channel: channel, messages: packed, remaining: queue.length });
+                } catch (e) {}
+                const q = syncOutbox.get(peer) && syncOutbox.get(peer)[channel];
+                // Back off in proportion to how much we just pushed through the shared topic.
+                if (q && q.length) setTimeout(step, getSyncBatchIntervalMs() + Math.floor(sentBytes / 1048576) * 500);
+                else syncDraining.delete(drainKey);
             };
             step();
         }
 
-        function handleSyncChunk(data) {
+        
+
+        async function handleSyncChunk(data) {
             if (data.target !== myUsername) return;
             if (!data.messages || !data.messages.length) return;
 
-            data.messages.forEach(m => { 
-                if (m.compressed && m.text) { 
-                    try { 
-                        m.text = LZString.decompressFromUTF16(m.text) || m.text; 
-                        m.compressed = false; 
-                    } catch (e) {} 
-                } 
-            });
+            if (!Array.isArray(data.messages)) return;
+            await Promise.all(data.messages.map(async m => {
+                if (!m || typeof m !== 'object' || !m.compressed || typeof m.text !== 'string') return;
+                try {
+                    if (m.compressed === 'gz') m.text = await unpackFromNetwork(m.text, m.mime);
+                    else m.text = LZString.decompressFromUTF16(m.text) || m.text; // legacy senders
+                    m.compressed = false; delete m.mime;
+                } catch (e) { m.__bad = true; }
+            }));
+            data.messages = data.messages.filter(m => !(m && m.__bad));
 
             // Queue chunks briefly and merge them in one operation.  The previous code
             // rebuilt a Map over the entire history once per 50-message chunk, which made
             // large history recovery increasingly expensive (effectively O(n^2) over a sync).
+            if (typeof data.channel !== "string") return;
+            data.messages = data.messages.filter(m => m && typeof m === "object" &&
+                (m.author === undefined || isValidUsername(m.author)) &&
+                (m.id === undefined || (typeof m.id === "string" && m.id.length <= 80)) &&
+                (m.timestamp === undefined || (Number.isFinite(m.timestamp) && m.timestamp >= 0)) &&
+                (m.backupPlaceholder ? typeof m.text === "string" : validateMessagePayloadAfterDecompression(m)));
+            if (!data.messages.length) return;
             const bufferKey = data.channel;
             if (!syncInboundBuffers.has(bufferKey)) syncInboundBuffers.set(bufferKey, []);
             syncInboundBuffers.get(bufferKey).push(...data.messages);
@@ -3938,9 +4225,14 @@
             if (e.preventDefault) e.preventDefault();
             if (e.stopPropagation) e.stopPropagation();
             if (username === myUsername || isGhost) return; userContextMenuTarget = username;
-            ui.userContextMenu.style.display = "block"; ui.userContextMenu.style.left = e.pageX + "px";
-            ui.userContextMenu.style.top = e.pageY + "px";
+            ui.userContextMenu.style.display = "block";
             document.querySelectorAll(".admin-only").forEach(el => { el.style.display = isAdmin ? "block" : "none"; });
+            let mx = e.pageX, my = e.pageY;
+            if (mx === undefined && e.currentTarget) { // keyboard activation has no pointer coordinates
+                const r = e.currentTarget.getBoundingClientRect();
+                mx = r.left + window.pageXOffset; my = r.bottom + window.pageYOffset;
+            }
+            positionMenu(ui.userContextMenu, mx || 0, my || 0);
         }
 
         function contextAction(action) {
@@ -3949,7 +4241,14 @@
             if (!target || target === myUsername || isGhost) return;
             
             if (action === 'DM') { startDmWith(target); } 
-            else if (action === 'PING') { const prevTab = currentTab; switchTab('global'); ui.msgIp.value = `@${target} `; processInput(); if (prevTab !== 'global') switchTab(prevTab); } 
+            else if (action === 'PING') {
+                const prevTab = currentTab, draft = ui.msgIp.value, prevReply = activeReply;
+                switchTab('global'); activeReply = null;
+                ui.msgIp.value = `@${target} `; processInput();
+                if (prevTab !== 'global') switchTab(prevTab);
+                ui.msgIp.value = draft; // don't wipe whatever the user was typing
+                if (prevReply) setReplyTarget(prevReply);
+            } 
             else if (['KICK', 'BAN'].includes(action)) { publishMessage({ type: "CMD", cmd: action, target: target, author: myUsername }); appendSystemDOM(`Command ${action} dispatched to ${target}.`); } 
             else if (['MUTE', 'TIMEOUT'].includes(action)) { publishMessage({ type: "CMD", cmd: action, target: target, author: myUsername, duration: 300000 }); appendSystemDOM(`Command ${action} (5m) dispatched to ${target}.`); }
         }
@@ -3963,7 +4262,14 @@
         }
 
         function startDmWith(username) { if (isValidUsername(username) && username !== myUsername && !isGhost) { if (closedDMs.has(username)) { closedDMs.delete(username); saveClosedDMs(); } switchTab(ensureDmTab(username)); } }
-        function handleTyping() { if (!isConnected || isMuted || isGhost) return; clearTimeout(typingTimeout); publishMessage({ type: "TYPING", author: myUsername }); typingTimeout = setTimeout(() => {}, 3000); }
+        function handleTyping() {
+            if (!isConnected || isMuted || isGhost) return;
+            if (!ui.msgIp.value.trim() || ui.msgIp.value.startsWith("/")) return;
+            const now = Date.now();
+            if (now - lastTypingSentAt < 2000) return; // throttle instead of one packet per keystroke
+            lastTypingSentAt = now;
+            publishMessage({ type: "TYPING", author: myUsername });
+        }
 
         function validateChatPayload(data) {
             if (!data || typeof data !== 'object' || !ALLOWED_INCOMING_TYPES.has(data.type)) return false;
@@ -3972,7 +4278,9 @@
             if (data.id !== undefined && (typeof data.id !== 'string' || data.id.length > 80)) return false;
             if (data.timestamp !== undefined && (!Number.isFinite(data.timestamp) || data.timestamp < 0 || data.timestamp > Date.now() + 86400000)) return false;
             if (data.text !== undefined && typeof data.text !== 'string') return false;
-            if (!data.compressed && typeof data.text === 'string' && data.text.length > MAX_MEDIA_DATA_LENGTH) return false;
+            if (typeof data.text === 'string' && data.text.length > MAX_MEDIA_DATA_LENGTH) return false;
+            if (data.compressed !== undefined && data.compressed !== false && data.compressed !== true && data.compressed !== 'gz') return false;
+            if (data.mime !== undefined && (typeof data.mime !== 'string' || data.mime.length > 100)) return false;
             if (data.type === 'CMD' && !['KICK','BAN','MUTE','TIMEOUT','UNMUTE'].includes(data.cmd)) return false;
             if (data.type === 'REACT_MSG' && (typeof data.emoji !== 'string' || data.emoji.length > 16)) return false;
             return true;
@@ -4023,13 +4331,10 @@
                 return;
             }
             const msgId = Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
-            const cleanReply = activeReply ? { author: activeReply.author, text: activeReply.text, isImage: activeReply.isImage, isVideo: activeReply.isVideo, isAudio: activeReply.isAudio, isFile: activeReply.isFile } : null;
+            const cleanReply = activeReply ? { author: activeReply.author, text: (activeReply.isImage || activeReply.isVideo || activeReply.isAudio || activeReply.isFile) ? "" : String(activeReply.text || "").slice(0, 200), isImage: activeReply.isImage, isVideo: activeReply.isVideo, isAudio: activeReply.isAudio, isFile: activeReply.isFile } : null;
             
-            let finalText = content; let compressedFlag = false;
-            if (opts.isFile || opts.isImage || opts.isAudio || opts.isVideo) { 
-                finalText = opts.preCompressed || LZString.compressToUTF16(content); 
-                compressedFlag = true; 
-            }
+            const isMediaSend = !!(opts.isFile || opts.isImage || opts.isAudio || opts.isVideo);
+            const finalText = content; const compressedFlag = false; // media is gzipped just before publishing (below)
             
             // localPayload gets UNCOMPRESSED content so it renders correctly locally
             const sentAloneEpoch = currentTab === "global" && activeUsers.size === 1 ? roomPresenceEpoch : null;
@@ -4056,7 +4361,13 @@
                 scheduleRenderActiveTabMessages();
             }
 
-            publishMessage(publishPayload);
+            if (isMediaSend) {
+                packForNetwork(content).then(p => {
+                    publishPayload.text = p.text; publishPayload.compressed = p.compressed;
+                    if (p.mime) publishPayload.mime = p.mime;
+                    publishMessage(publishPayload);
+                });
+            } else publishMessage(publishPayload);
             ui.msgIp.value = "";
             cancelReply();
         }
