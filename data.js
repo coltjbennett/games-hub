@@ -1,7 +1,7 @@
 // data.js
 
 const siteData = {
-  version: "v4.1.5",
+  version: "v4.1.6",
   author: "COLTON BENNETT",
   location: "Waukesha, WI",
   heroTitle: "Project Launcher",
@@ -9,13 +9,13 @@ const siteData = {
   heroNote: "These are all made by me over the last year, and I do hope you enjoy!<br>Please excuse any bugs you find; I am still ironing things out.",
   marqueeText: "★★★ WELCOME TO COLTON'S PROJECT LAUNCHER ★★★ &nbsp;|&nbsp; BEST VIEWED IN 1024x768 &nbsp;|&nbsp; NETSCAPE NAVIGATOR 4.0 RECOMMENDED &nbsp;|&nbsp; ★★★ SIGN MY GUESTBOOK ★★★",
   footerCopyright: "© 2026 Colton Bennett",
-  footerLastUpdated: "October 20, 2026, 12:57:00"
+  footerLastUpdated: "October 23, 2026, 20:16:42"
 };
 
 const announcements = [
   {
     title: "v4.1.x — Storage & performance upgrade",
-    content: "Persistent cache writes are bounded, chat history is compacted and compressed, media uploads are size-limited, the System Monitor includes Storage Manager diagnostics, and Low Power Mode pauses nonessential work while preserving features."
+    content: "Persistent cache writes are bounded, chat history is compacted and compressed, media uploads are size-limited, the System Monitor includes Storage Manager diagnostics, and Low Power Mode pauses nonessential work while preserving features. A massive improvement has made the chatroom cause next to no performance draw, compared to previous versions that ran so slow they impacted playing games even if chat was closed."
   },
   {
     title: "v4.0.x — Desktop upgrade",
@@ -23,15 +23,15 @@ const announcements = [
   },
   {
     title: "New releases",
-    content: " - <b>NEW GAME:</b> <i>Asphalt Rush</i>. A <i>Need For Speed</i>-inspired street racing game with corrupt police, buying and upgrading and customizing your cars, and racing through the city at night to earn your respect amongst the other racers and become the best.<br> - A Universal Chatroom has been fully implemented, press the 'chat' button in the bottom right to open it! It connects all users that are currently on the site. Private messages to individual users, audio messages, file sharing, and replying to messages have all been added.<br> - New beta out for a multiplayer PvP FPS game"
+    content: " - <b>NEW GAME:</b> <i>Asphalt Rush</i>. A <i>Need For Speed</i>-inspired street racing game with corrupt police, buying and upgrading and customizing your cars, and racing through the city at night to earn your respect amongst the other racers and become the best.<br> - A Universal Chatroom has been fully implemented, press the 'chat' button in the bottom right to open it! It connects all users that are currently on the site. Private messages to individual users, audio messages, file sharing, and replying to messages have all been added.<br> - A new beta is now out for a super advanced 3D engine and physics system that I plan to use in many of my games. A demo that runs using it is available as <i>FIELDKIT 3D ENGINE</i>.<br> - New beta out for a multiplayer PvP FPS game"
   },
   {
     title: "Game updates",
-    content: " - Working on overhauls for many of the top games."
+    content: " - Ghengis Khan Simulator has recieved a major expansion, adding unit animations, significantly improving unit model detailing, adding new units, and implementing dynamic campaing level layouts, as well as a split-screen 2-player versus mode!"
   },
   {
     title: "Site updates",
-    content: " - <b>IMPORTANT FOR ALL USERS!!!</b> THE WEB GAMES SECTION HAS BEEN READDED BECAUSE I FOUND A WAY TO GET AROUND IT EXCEEDING GITHUB RATE LIMITS. THIS IS STILL BEING TESTED AND SET UP SO PLEASE EXCUSE ANY GITHUB ERRORS FOR THE TIME BEING!"
+    content: " - The Chatroom has been made significantly more performant, efficient, and smooth, and now syncs messages seamlessly without slowing down the rest of the site."
   }
 ];
 
