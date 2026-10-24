@@ -1,14 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <!--Monolithic code file because its easy to deploy, sorry to anyone maintaining this file-->
-    <!--YES, I AM AWARE THAT THIS HAS EXTREMELY LOOSE SECURITY PRACTICES, I AM AWARE THE MODERATION IS NOT STRICTLY ENFORCED, I AM AWARE THE PASSWORD SYSTEM IS VERY VERY UNSECURE. THIS IS A NON-ISSUE GIVEN THE SITE'S USER BASE.-->
+    <!--YES, I AM AWARE THAT THIS HAS EXTREMELY LOOSE SECURITY PRACTICES, I AM AWARE THE MODERATION IS NOT STRICTLY ENFORCED, I AM AWARE THE OASSOWRD SYSTEM IS VERY VERY UNSECURE. THIS IS A NON-ISSUE GIVEN THE SUTE'S USER BASE.-->
     <base href="../">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Universal MQTT Chat</title>
     <style>
-        /* old windows font */
+        /* ===== CUSTOM FONTS (Crisp Win95 Style) ===== */
         @font-face {
             font-family: "W95FA";
             src: url('images/w95f.woff2') format('woff2'),
@@ -299,6 +298,13 @@
         }
         .video-expand:active { box-shadow: inset -1px -1px #fff, inset 1px 1px #0a0a0a, inset -2px -2px #dfdfdf, inset 2px 2px #808080; }
 
+        .att-label { font-size: 11px; color: #555; margin-left: 6px; }
+        .att-box { display: inline-block; margin-top: 4px; padding: 2px 4px; border: 2px inset var(--win-border-dark); background: #f5f5f5; font-size: 12px; }
+        .att-pending { opacity: 0.6; }
+        .chat-image[data-lazy="1"] { min-height: 48px; min-width: 48px; background: #ddd; }
+        .out-pending { font-size: 12px; margin-left: 4px; }
+        .out-failed { font-size: 11px; padding: 0 4px; margin-left: 4px; color: #8b0000; }
+
         .media-viewer {
             position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
             z-index: 10050; display: none; align-items: center; justify-content: center;
@@ -378,6 +384,7 @@
                 <button onclick="doClearAllRecent()" style="color: #8b0000;">Clear All Msgs (Last <span id="all-hr-count">1</span>h)</button>
                 <hr>
                 <button onclick="document.getElementById('admin-backup-input').click()">Restore Chat from Export File...</button>
+                <button onclick="showAdminSigningKey()">Signing Key...</button>
                 <input id="admin-backup-input" type="file" accept=".txt,text/plain" style="display:none" onchange="restoreSelectedChatExport(event)">
                 <hr>
                 <button onclick="confirmClearAll()" style="background: #8b0000; color: white;">Purge Entire Chat (Nuke)</button>
@@ -409,9 +416,22 @@
     </div>
 
     <div id="alert-modal" class="modal-overlay">
-        <div class="w95-window">
-            <div class="w95-titlebar"><span>System Message</span><button onclick="closeModal('alert-modal')" style="height: 18px; line-height: 10px;">X</button></div>
-            <div class="w95-content"><p id="alert-text" style="margin-bottom: 12px;"></p><button onclick="closeModal('alert-modal')">OK</button></div>
+        <div class="w95-window" style="max-width: min(520px, 92vw);">
+            <div class="w95-titlebar"><span id="dlg-title">System Message</span><button onclick="dlgClose(dlgState ? dlgState.cancelValue : false)" style="height: 18px; line-height: 10px;">X</button></div>
+            <div class="w95-content"><p id="alert-text" style="margin-bottom: 12px; white-space: pre-wrap; word-break: break-word; text-align: left;"></p><div id="dlg-buttons" style="display:flex; gap:8px; justify-content:center;"></div></div>
+        </div>
+    </div>
+
+    <div id="edit-modal" class="modal-overlay">
+        <div class="w95-window" style="width: min(620px, 92vw);">
+            <div class="w95-titlebar"><span>Edit Message</span><button onclick="editClose(null)" style="height: 18px; line-height: 10px;">X</button></div>
+            <div class="w95-content" style="text-align:left;">
+                <textarea id="edit-textarea" spellcheck="true" style="width: 100%; height: min(320px, 50vh); resize: vertical; overflow: auto; box-sizing: border-box; padding: 6px; font-size: 14px;"></textarea>
+                <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px;">
+                    <button id="edit-apply-btn" style="min-width:80px;">Apply</button>
+                    <button id="edit-cancel-btn" style="min-width:80px;">Cancel</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -444,6 +464,8 @@
             
             <div style="font-size: 12px; margin-bottom: 8px;">
                 <label style="cursor: pointer;"><input type="checkbox" id="mute-sounds-chk" onchange="toggleMuteSounds()"> Mute Mentions & DM Sounds</label>
+                <label style="cursor: pointer; display:block;"><input type="checkbox" id="hide-presence-chk" onchange="toggleHidePresence()"> Hide join/leave messages</label>
+                <label style="cursor: pointer; display:block;"><input type="checkbox" id="notify-chk" onchange="toggleDesktopNotifications()"> Desktop notifications</label>
             </div>
 
             <div style="font-size: 12px; margin-bottom: 8px; display: grid; gap: 5px;">
@@ -458,6 +480,7 @@
 
             <button onclick="exportChat()" style="width: 100%; margin-bottom: 6px;">Export Chat History (Current Tab)</button>
             <button onclick="document.getElementById('settings-merge-input').click()" style="width: 100%; margin-bottom: 8px;">Merge from Export...</button>
+            <button onclick="manualGithubRestore()" style="width: 100%; margin-bottom: 8px;">Restore from GitHub Backup</button>
             <input id="settings-merge-input" type="file" accept=".txt,text/plain" style="display:none" onchange="mergeExportFromSettings(event)">
 
             <div style="display: flex; gap: 4px; align-items: center; margin-bottom: 6px;">
@@ -536,7 +559,7 @@
         const CHAT_HISTORY_MODE_KEY = "mqtt_chat_history_mode_v1";
         const DEFAULT_CHAT_RETENTION_DAYS = 0;
         const DEFAULT_CHAT_HISTORY_MODE = "full-media";
-        const ALLOWED_INCOMING_TYPES = new Set([
+        const ALLOWED_INCOMING_TYPES = new Set(['ATT_PULL', 
             'MSG', 'DM', 'EDIT_MSG', 'DELETE_MSG', 'REACT_MSG', 'CLEAR_ALL', 'CLEAR_RECENT',
             'CMD', 'PRESENCE', 'PING', 'RENAME', 'TYPING', 'MUTE_ATTEMPT', 'DM_READ',
             'JOIN', 'LEAVE', 'CLEAR_SYSTEM_ALL', 'SYNC_MANIFEST_REQ', 'SYNC_MANIFEST', 'SYNC_PULL', 'SYNC_PULL_RANGE', 'SYNC_CHUNK'
@@ -557,6 +580,20 @@
             if (file.type && /^(image|video|audio)\//i.test(file.type)) return file.type;
             const ext = (file.name || '').split('.').pop().toLowerCase();
             return EXT_MIME[ext] || file.type || '';
+        }
+        function mediaPayloadOk(msg, kind) {
+            const t = msg.text;
+            if (isAttRef(t)) {
+                const mime = msg.attMime;
+                if (typeof mime !== 'string' || !mime || mime.length > 100) return false;
+                if (kind === 'image' && !/^image\/(png|jpe?g|gif|webp|bmp|avif)$/i.test(mime)) return false;
+                if (kind === 'video' && !VIDEO_MIME_RE.test(mime)) return false;
+                if (kind === 'audio' && !/^audio\//i.test(mime)) return false;
+                if (!Number.isFinite(msg.attSize) || msg.attSize < 0 || msg.attSize > MAX_UPLOAD_BYTES + 4096) return false;
+                if (msg.thumb !== undefined && !(typeof msg.thumb === 'string' && msg.thumb.length <= 70000 && THUMB_RE.test(msg.thumb))) return false;
+                return true;
+            }
+            return isSafeMediaDataUrl(t, kind);
         }
         function isSafeMediaDataUrl(value, kind = '') {
             if (typeof value !== 'string' || value.length === 0 || value.length > MAX_MEDIA_DATA_LENGTH || !value.startsWith('data:')) return false;
@@ -613,7 +650,6 @@
         
         let blockedUsers = new Set();
         let closedDMs = new Set();
-        let pendingDMs = {};
         let lastPingFrom = {};
         let dmReadWatermarks = {};
 
@@ -621,8 +657,6 @@
         let unreadTabs = new Set();
         let activeReply = null;
         let activeContextMsgId = null;
-        let typingTimeout = null;
-        let typingIndicatorTimer = null;
         let lastTypingSentAt = 0;
         let recordingAutoStopTimer = null;
 
@@ -717,8 +751,1020 @@
 
         function openModal(id) { document.getElementById(id).style.display = "flex"; }
         function closeModal(id) { document.getElementById(id).style.display = "none"; }
-        function customAlert(text) { document.getElementById('alert-text').innerText = text; openModal('alert-modal'); }
         
+        // =====================================================================
+        //  v3 BACKEND LAYER  (everything below is invisible to the user UI)
+        // =====================================================================
+        const TOPIC_ROOT = ROOM_TOPIC.replace(/\/messages$/, '');
+        const TOPIC_ATT = TOPIC_ROOT + '/att';
+        const TOPIC_USER = (u) => `${TOPIC_ROOT}/u/${u}`;
+        const BASE_TITLE = document.title;
+        const ATT_ID_RE = /^[0-9a-f]{32}$/;
+        const THUMB_RE = /^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/;
+        const BLANK_GIF = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+        let myCid = '';
+
+        function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+        function isAttRef(t) { return typeof t === 'string' && t.length === 36 && t.startsWith('att:') && ATT_ID_RE.test(t.slice(4)); }
+        function isMediaMsg(m) { return !!(m && (m.isImage || m.isVideo || m.isAudio || m.isFile)); }
+        function findMessageById(id) {
+            if (!id) return null;
+            return messageHistory.find(m => m.id === id) || Object.values(dmHistories).flat().find(m => m.id === id) || null;
+        }
+        function humanSize(n) {
+            if (!Number.isFinite(n) || n <= 0) return '';
+            if (n < 1024) return `${n} B`;
+            if (n < 1048576) return `${(n / 1024).toFixed(0)} KB`;
+            return `${(n / 1048576).toFixed(1)} MB`;
+        }
+        function triggerDownload(url, name) {
+            const a = document.createElement('a');
+            a.href = url; a.download = name || 'download';
+            document.body.appendChild(a); a.click(); a.remove();
+        }
+        function downloadDataUrl(url, name) { triggerDownload(url, name); } // works for blob: and data: URLs
+
+        // ---------------------------------------------------------------------
+        //  Custom dialogs (replace alert / confirm / prompt)
+        // ---------------------------------------------------------------------
+        let dlgState = null;
+        function dlgClose(result) {
+            closeModal('alert-modal');
+            const s = dlgState; dlgState = null;
+            if (s) s.resolve(result);
+        }
+        function showDialog({ title = 'System Message', message = '', buttons = [{ label: 'OK', value: true, primary: true }], cancelValue = false, mono = false }) {
+            return new Promise(resolve => {
+                if (dlgState) { const old = dlgState; dlgState = null; old.resolve(old.cancelValue); }
+                dlgState = { resolve, cancelValue };
+                document.getElementById('dlg-title').textContent = title;
+                const body = document.getElementById('alert-text');
+                body.textContent = String(message);
+                body.style.fontFamily = mono ? 'monospace' : '';
+                body.style.fontSize = mono ? '11px' : '';
+                const row = document.getElementById('dlg-buttons');
+                row.replaceChildren();
+                buttons.forEach(b => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button'; btn.textContent = b.label; btn.style.minWidth = '70px';
+                    btn.addEventListener('click', () => dlgClose(b.value));
+                    row.appendChild(btn);
+                    if (b.primary) setTimeout(() => btn.focus(), 0);
+                });
+                openModal('alert-modal');
+            });
+        }
+        function customAlert(text) { return showDialog({ message: text }); }
+        function customConfirm(text, okLabel = 'OK', cancelLabel = 'Cancel') {
+            return showDialog({ title: 'Confirm', message: text, cancelValue: false,
+                buttons: [{ label: okLabel, value: true, primary: true }, { label: cancelLabel, value: false }] });
+        }
+
+        let editState = null;
+        function editClose(result) {
+            closeModal('edit-modal');
+            const s = editState; editState = null;
+            if (s) s.resolve(result);
+        }
+        function openEditModal(initial) {
+            return new Promise(resolve => {
+                if (editState) { const old = editState; editState = null; old.resolve(null); }
+                editState = { resolve };
+                const ta = document.getElementById('edit-textarea');
+                ta.value = initial;
+                openModal('edit-modal');
+                setTimeout(() => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); ta.scrollTop = ta.scrollHeight; }, 0);
+            });
+        }
+        document.getElementById('edit-apply-btn').addEventListener('click', () => editClose(document.getElementById('edit-textarea').value));
+        document.getElementById('edit-cancel-btn').addEventListener('click', () => editClose(null));
+        document.getElementById('edit-textarea').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); editClose(document.getElementById('edit-textarea').value); }
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            if (editState) { e.preventDefault(); editClose(null); }
+            else if (dlgState) { e.preventDefault(); dlgClose(dlgState.cancelValue); }
+        });
+
+        // ---------------------------------------------------------------------
+        //  IndexedDB: one record per message, attachments as Blobs, small kv store
+        // ---------------------------------------------------------------------
+        const DB_NAME = 'chatroom_v3';
+        let dbPromise = null;
+        let dbBroken = false;
+        function dbOpen() {
+            if (dbPromise) return dbPromise;
+            dbPromise = new Promise((resolve, reject) => {
+                if (!window.indexedDB) { dbBroken = true; reject(new Error('IndexedDB unavailable')); return; }
+                const req = indexedDB.open(DB_NAME, 1);
+                req.onupgradeneeded = () => {
+                    const db = req.result;
+                    if (!db.objectStoreNames.contains('msgs')) db.createObjectStore('msgs', { keyPath: 'k' }).createIndex('ch_ts', ['ch', 'ts']);
+                    if (!db.objectStoreNames.contains('atts')) db.createObjectStore('atts', { keyPath: 'id' });
+                    if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv', { keyPath: 'key' });
+                };
+                req.onsuccess = () => { req.result.onversionchange = () => req.result.close(); resolve(req.result); };
+                req.onerror = () => { dbBroken = true; reject(req.error); };
+            });
+            dbPromise.catch(() => {});
+            return dbPromise;
+        }
+        const idbReq = (req) => new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
+        async function dbWrite(stores, fn) {
+            const db = await dbOpen();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction(stores, 'readwrite');
+                tx.oncomplete = () => resolve();
+                tx.onerror = () => reject(tx.error);
+                tx.onabort = () => reject(tx.error || new Error('transaction aborted'));
+                try { fn(tx); } catch (e) { try { tx.abort(); } catch (e2) {} reject(e); }
+            });
+        }
+        async function kvGet(key) {
+            try { const db = await dbOpen(); const r = await idbReq(db.transaction('kv').objectStore('kv').get(key)); return r ? r.value : undefined; }
+            catch (e) { return undefined; }
+        }
+        async function kvSet(key, value) {
+            try { await dbWrite(['kv'], tx => tx.objectStore('kv').put({ key, value })); return true; } catch (e) { return false; }
+        }
+
+        const TS_MAX = Number.MAX_SAFE_INTEGER;
+        const clampTs = (t) => (Number.isFinite(t) && t >= 0 ? Math.min(t, TS_MAX - 1) : 0);
+        async function dbLoadChannel(ch) {
+            const db = await dbOpen();
+            return idbReq(db.transaction('msgs').objectStore('msgs').index('ch_ts').getAll(IDBKeyRange.bound([ch, 0], [ch, TS_MAX])));
+        }
+        async function dbListChannels(prefix) {
+            const db = await dbOpen();
+            return new Promise((resolve, reject) => {
+                const out = [];
+                const req = db.transaction('msgs').objectStore('msgs').index('ch_ts')
+                    .openKeyCursor(IDBKeyRange.bound([prefix, 0], [prefix + '\uffff', TS_MAX]));
+                req.onsuccess = () => {
+                    const c = req.result;
+                    if (!c) { resolve(out); return; }
+                    const ch = c.key[0]; out.push(ch);
+                    c.continue([ch, TS_MAX + 1]); // jump straight to the next channel
+                };
+                req.onerror = () => reject(req.error);
+            });
+        }
+        async function dbDeleteChannel(ch) {
+            try {
+                const db = await dbOpen();
+                const keys = await idbReq(db.transaction('msgs').objectStore('msgs').index('ch_ts').getAllKeys(IDBKeyRange.bound([ch, 0], [ch, TS_MAX])));
+                if (keys.length) await dbWrite(['msgs'], tx => { const st = tx.objectStore('msgs'); keys.forEach(k => st.delete(k)); });
+            } catch (e) {}
+            persistedSigs.delete(ch);
+        }
+
+        // ---- incremental persistence: only changed / removed messages are written ----
+        const persistedSigs = new Map();   // channel -> Map(id -> signature)
+        const persistTimers = new Map();
+        const persistChain = new Map();
+        function msgPersistSig(m) {
+            const t = typeof m.text === 'string' ? m.text : '';
+            const r = m.reactions && Object.keys(m.reactions).length ? JSON.stringify(m.reactions) : '';
+            return `${m.id}|${t.length}:${hashStr(t)}|${m.author}|${m.timestamp}|${m.edited ? 1 : 0}|${m.backupPlaceholder || ''}|${r}|${m.replyTo ? m.replyTo.author : ''}|${m.storageMediaOmitted ? 1 : 0}`;
+        }
+        function storableMessage(m, cutoff, mode) {
+            if (!m || typeof m !== 'object' || !m.id) return null;
+            if (cutoff && Number.isFinite(m.timestamp) && m.timestamp < cutoff) return null;
+            if (isMediaMsg(m) && mode !== 'full-media' && !m.backupPlaceholder) {
+                const c = { ...m, text: '', storageMediaOmitted: true };
+                delete c.thumb;
+                return c;
+            }
+            return m;
+        }
+        async function persistChannel(channel, list) {
+            if (dbBroken) return;
+            const retention = getChatRetentionDays();
+            const cutoff = retention ? Date.now() - retention * 86400000 : 0;
+            const mode = getChatHistoryMode();
+            const prev = persistedSigs.get(channel) || new Map();
+            const next = new Map();
+            const puts = [];
+            for (const m of list) {
+                const s = storableMessage(m, cutoff, mode);
+                if (!s) continue;
+                const sig = msgPersistSig(s);
+                next.set(s.id, sig);
+                if (prev.get(s.id) !== sig) puts.push(s);
+            }
+            const dels = [];
+            prev.forEach((_, id) => { if (!next.has(id)) dels.push(id); });
+            if (!puts.length && !dels.length) return;
+            await dbWrite(['msgs'], tx => {
+                const st = tx.objectStore('msgs');
+                puts.forEach(s => st.put({ k: `${channel}|${s.id}`, ch: channel, ts: clampTs(s.timestamp), m: s }));
+                dels.forEach(id => st.delete(`${channel}|${id}`));
+            });
+            persistedSigs.set(channel, next);
+        }
+        function runPersist(channel, getList) {
+            const prev = persistChain.get(channel) || Promise.resolve();
+            const next = prev.then(() => persistChannel(channel, getList() || [])).catch(e => console.warn('persist failed', channel, e));
+            persistChain.set(channel, next);
+            return next;
+        }
+        function schedulePersist(channel, getList) {
+            const old = persistTimers.get(channel);
+            if (old) clearTimeout(old.t);
+            persistTimers.set(channel, { getList, t: setTimeout(() => { persistTimers.delete(channel); runPersist(channel, getList); }, 700) });
+        }
+        function flushPersist() {
+            persistTimers.forEach(({ t, getList }, ch) => { clearTimeout(t); runPersist(ch, getList); });
+            persistTimers.clear();
+        }
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushPersist(); });
+        window.addEventListener('pagehide', flushPersist);
+
+        // ---- one-time import of the pre-v3 storage format ----
+        let maintenanceNeeded = false;
+        async function migrateLegacyChannel(channel, legacyKey) {
+            const flagKey = 'migrated:' + channel;
+            if (dbBroken || await kvGet(flagKey)) return false;
+            let legacy = [];
+            try { legacy = sanitizeHistoryLoaded(await loadFromStorageWithCompression(legacyKey)); } catch (e) {}
+            if (legacy.length) {
+                for (const m of legacy) { if (isMediaMsg(m) && typeof m.text === 'string' && m.text.startsWith('data:')) await convertLegacyMedia(m); }
+                const existing = await dbLoadChannel(channel);
+                const have = new Set(existing.map(r => r.m && r.m.id));
+                const extra = legacy.filter(m => m.id && !have.has(m.id));
+                if (extra.length) {
+                    await dbWrite(['msgs'], tx => { const st = tx.objectStore('msgs'); extra.forEach(m => st.put({ k: `${channel}|${m.id}`, ch: channel, ts: clampTs(m.timestamp), m })); });
+                    const back = await dbLoadChannel(channel);
+                    if (back.length < existing.length + extra.length) return false; // verify before touching the old copy
+                }
+            }
+            await kvSet(flagKey, true);
+            if (legacy.length) { try { await localforage.removeItem(legacyKey); } catch (e) {} }
+            return legacy.length > 0;
+        }
+        async function maintenanceOnce() {
+            const done = await kvGet('maintenance_v3');
+            if (done && !maintenanceNeeded) return;
+            try {
+                messageHistory = dedupeHistoryList(messageHistory).list;
+                messageHistory = dedupeConsecutivePresenceEvents(messageHistory);
+                rebuildMessageHistoryIdSet();
+                repairMalformedSavedReplies();
+                dedupeAllHistories();
+                saveLocalHistory();
+                Object.keys(dmHistories).forEach(u => saveDmHistory(u));
+            } catch (e) {}
+            await kvSet('maintenance_v3', true);
+            maintenanceNeeded = false;
+        }
+
+        // ---------------------------------------------------------------------
+        //  Attachments: content-addressed Blobs (id = first 128 bits of SHA-256)
+        // ---------------------------------------------------------------------
+        const attHave = new Set();
+        const attMem = new Map();          // fallback if IndexedDB is unavailable
+        const attUrlCache = new Map();
+        const attMsgRefs = new Map();      // attId -> Set(msgId), used to patch the DOM when a file lands
+        const attWanted = new Map();       // attId -> { tries, nextAt, asked:Set, hint }
+        let persistRequested = false;
+
+        function registerAttRef(attId, msgId) {
+            let s = attMsgRefs.get(attId);
+            if (!s) { s = new Set(); attMsgRefs.set(attId, s); }
+            s.add(msgId);
+        }
+        async function attLoadIndex() {
+            try {
+                const db = await dbOpen();
+                const keys = await idbReq(db.transaction('atts').objectStore('atts').getAllKeys());
+                keys.forEach(k => attHave.add(k));
+            } catch (e) {}
+        }
+        async function attPut(id, blob, meta = {}) {
+            const rec = { id, blob, mime: blob.type || meta.mime || '', size: blob.size, name: meta.name || '', ts: Date.now() };
+            if (!persistRequested) { persistRequested = true; try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {} }
+            try { await dbWrite(['atts'], tx => tx.objectStore('atts').put(rec)); }
+            catch (e) { attMem.set(id, rec); }
+            attHave.add(id);
+            onAttStored(id);
+        }
+        async function attGet(id) {
+            if (attMem.has(id)) return attMem.get(id);
+            try { const db = await dbOpen(); return (await idbReq(db.transaction('atts').objectStore('atts').get(id))) || null; }
+            catch (e) { return null; }
+        }
+        async function getAttObjectUrl(id) {
+            if (attUrlCache.has(id)) return attUrlCache.get(id);
+            const rec = await attGet(id);
+            if (!rec || !rec.blob) return null;
+            const url = URL.createObjectURL(rec.blob);
+            attUrlCache.set(id, url);
+            return url;
+        }
+        function onAttStored(id) {
+            attWanted.delete(id);
+            const refs = attMsgRefs.get(id);
+            if (!refs) return;
+            refs.forEach(mid => { const m = findMessageById(mid); if (m) patchMsgDOM(m); });
+        }
+        async function convertLegacyMedia(m) {
+            try {
+                const blob = dataUrlToBlob(m.text);
+                const id = await sha256Id(await blob.arrayBuffer());
+                await attPut(id, blob, { name: m.fileName });
+                m.text = 'att:' + id; m.attMime = blob.type; m.attSize = blob.size; m.compressed = false;
+                return true;
+            } catch (e) { return false; }
+        }
+        async function gcAttachments() {
+            try {
+                if (dbBroken) return;
+                const db = await dbOpen();
+                const refs = new Set();
+                await new Promise((res, rej) => {
+                    const req = db.transaction('msgs').objectStore('msgs').openCursor();
+                    req.onsuccess = () => {
+                        const c = req.result; if (!c) { res(); return; }
+                        const m = c.value.m;
+                        if (m && typeof m.text === 'string' && m.text.startsWith('att:') && !m.storageMediaOmitted) refs.add(m.text.slice(4));
+                        c.continue();
+                    };
+                    req.onerror = () => rej(req.error);
+                });
+                const stale = [];
+                const cutoff = Date.now() - 6 * 3600 * 1000;
+                await new Promise((res, rej) => {
+                    const req = db.transaction('atts').objectStore('atts').openCursor();
+                    req.onsuccess = () => {
+                        const c = req.result; if (!c) { res(); return; }
+                        const v = c.value;
+                        if (!refs.has(v.id) && !attMsgRefs.has(v.id) && (v.ts || 0) < cutoff) stale.push(v.id);
+                        c.continue();
+                    };
+                    req.onerror = () => rej(req.error);
+                });
+                if (stale.length) {
+                    await dbWrite(['atts'], tx => { const st = tx.objectStore('atts'); stale.forEach(id => st.delete(id)); });
+                    stale.forEach(id => { attHave.delete(id); const u = attUrlCache.get(id); if (u) { URL.revokeObjectURL(u); attUrlCache.delete(id); } });
+                }
+            } catch (e) {}
+        }
+
+        // ---------------------------------------------------------------------
+        //  Byte helpers + binary attachment frames
+        // ---------------------------------------------------------------------
+        function bytesToB64(u8) {
+            let s = ''; const CH = 0x8000;
+            for (let i = 0; i < u8.length; i += CH) s += String.fromCharCode.apply(null, u8.subarray(i, i + CH));
+            return btoa(s);
+        }
+        function b64ToBytes(b64) {
+            const bin = atob(b64), out = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+            return out;
+        }
+        // Frame: 'A' 'T' 0x01 flags(bit0=gzip) hdrLen(u16) hdrJSON body...
+        function encodeFrame(header, body, gz) {
+            const h = new TextEncoder().encode(JSON.stringify(header));
+            const out = new Uint8Array(6 + h.length + body.length);
+            out[0] = 0x41; out[1] = 0x54; out[2] = 1; out[3] = gz ? 1 : 0;
+            out[4] = (h.length >> 8) & 255; out[5] = h.length & 255;
+            out.set(h, 6); out.set(body, 6 + h.length);
+            return out;
+        }
+        function decodeFrame(buf) {
+            if (buf.length < 6 || buf[0] !== 0x41 || buf[1] !== 0x54 || buf[2] !== 1) return null;
+            const hl = (buf[4] << 8) | buf[5];
+            if (6 + hl > buf.length) return null;
+            let header;
+            try { header = JSON.parse(new TextDecoder().decode(buf.subarray(6, 6 + hl))); } catch (e) { return null; }
+            return { header, gz: !!(buf[3] & 1), body: buf.subarray(6 + hl) };
+        }
+        function isFramePayload(p) { return p && p.length > 5 && p[0] === 0x41 && p[1] === 0x54 && (p[2] === 1 || p[2] === 0x36); }
+        async function gunzipBounded(u8, max) {
+            if (!('DecompressionStream' in window)) throw new Error('gzip unsupported');
+            const reader = new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip')).getReader();
+            const chunks = []; let total = 0;
+            for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                total += value.length;
+                if (total > max) { reader.cancel(); throw new Error('payload too large'); } // zip-bomb guard
+                chunks.push(value);
+            }
+            const out = new Uint8Array(total); let o = 0;
+            chunks.forEach(c => { out.set(c, o); o += c.length; });
+            return out;
+        }
+        const COMPRESSIBLE_MIME = /^(text\/|application\/(json|xml|pdf|javascript|x-ndjson|rtf)|image\/(bmp|svg\+xml)|audio\/(wav|x-wav))/i;
+        let capturedBufferCtor = null;
+        function toWireBuffer(u8) {
+            const B = (typeof Buffer !== 'undefined' && Buffer) || (window.mqtt && window.mqtt.Buffer) || capturedBufferCtor;
+            return B && B.from ? B.from(u8.buffer, u8.byteOffset, u8.byteLength) : null;
+        }
+        async function sendAttachmentFrame(id, { to = null } = {}) {
+            if (!client || !isConnected || isGhost) return false;
+            const rec = await attGet(id);
+            if (!rec || !rec.blob) return false;
+            let body = new Uint8Array(await rec.blob.arrayBuffer());
+            let gz = false;
+            if (COMPRESSIBLE_MIME.test(rec.mime || '') && 'CompressionStream' in window) {
+                try {
+                    const c = new Uint8Array(await new Response(new Blob([body]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+                    if (c.length < body.length * 0.97) { body = c; gz = true; }
+                } catch (e) {}
+            }
+            const frame = encodeFrame({ id, mime: rec.mime || '', size: rec.size, name: rec.name || '', from: myUsername, cid: myCid, to: to || undefined }, body, gz);
+            const topic = to ? TOPIC_USER(to) : TOPIC_ATT;
+            const wire = toWireBuffer(frame);
+            return new Promise(resolve => {
+                try {
+                    if (wire) client.publish(topic, wire, { qos: 0 }, (err) => resolve(!err));
+                    else client.publish(topic, 'AT64:' + bytesToB64(frame), { qos: 0 }, (err) => resolve(!err));
+                } catch (e) { resolve(false); }
+            });
+        }
+        async function handleAttachmentFrame(payload) {
+            let buf;
+            if (payload[2] === 0x36) buf = b64ToBytes(payload.toString().slice(5));
+            else buf = new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength);
+            const f = decodeFrame(buf);
+            if (!f) return;
+            const h = f.header;
+            if (!h || !ATT_ID_RE.test(h.id) || !isValidUsername(h.from) || typeof h.mime !== 'string' || h.mime.length > 100) return;
+            if (h.cid === myCid || attHave.has(h.id) || blockedUsers.has(h.from)) return;
+            if (h.to && h.to !== myUsername) return;
+            if (!Number.isFinite(h.size) || h.size < 0 || h.size > MAX_UPLOAD_BYTES + 4096) return;
+            let bytes = f.body;
+            if (f.gz) { try { bytes = await gunzipBounded(bytes, MAX_UPLOAD_BYTES + 4096); } catch (e) { return; } }
+            if (bytes.length > MAX_UPLOAD_BYTES + 4096) return;
+            if ((await sha256Id(bytes)) !== h.id) return; // content-addressed: reject anything that doesn't hash to its id
+            await attPut(h.id, new Blob([bytes], { type: h.mime }), { name: typeof h.name === 'string' ? h.name.slice(0, 200) : '' });
+        }
+        const attBroadcastBacklog = [];
+        function queueAttBroadcast(id, to) {
+            if (client && isConnected) sendAttachmentFrame(id, { to });
+            else attBroadcastBacklog.push({ id, to });
+        }
+        function flushAttBackfill() {
+            while (attBroadcastBacklog.length) { const j = attBroadcastBacklog.shift(); sendAttachmentFrame(j.id, { to: j.to }); }
+        }
+
+        // ---- retroactive attachment sync: pull whatever we're missing from whoever is online ----
+        let attPumpTimer = null;
+        const attPeerLast = new Map();
+        function noteAttachmentRefs(list, { live = false } = {}) {
+            if (!Array.isArray(list) || isGhost) return;
+            const wantRemote = getChatHistoryMode() === 'full-media';
+            for (let i = list.length - 1; i >= 0; i--) {
+                const m = list[i];
+                if (!isMediaMsg(m) || m.backupPlaceholder || m.storageMediaOmitted || !isAttRef(m.text)) continue;
+                const id = m.text.slice(4);
+                registerAttRef(id, m.id);
+                if (wantRemote && !attHave.has(id) && !attWanted.has(id)) {
+                    attWanted.set(id, { tries: 0, nextAt: Date.now() + (live ? 4000 : 0), asked: new Set(), hint: m.author === myUsername ? null : m.author });
+                }
+            }
+            if (attWanted.size) scheduleAttPump(live ? 4500 : 1500);
+        }
+        function noteAllAttachmentRefs() {
+            noteAttachmentRefs(messageHistory);
+            Object.values(dmHistories).forEach(l => noteAttachmentRefs(l));
+        }
+        function scheduleAttPump(delay = 4000) {
+            if (attPumpTimer) return;
+            attPumpTimer = setTimeout(() => { attPumpTimer = null; pumpAttachmentPulls(); }, delay);
+        }
+        function pumpAttachmentPulls() {
+            if (!client || !isConnected || isGhost || !attWanted.size) return;
+            const now = Date.now();
+            const peers = [];
+            activeUsers.forEach((u, name) => { if (name !== myUsername && !u.isGhost && !name.startsWith('ghost-') && !blockedUsers.has(name)) peers.push(name); });
+            if (!peers.length) { scheduleAttPump(10000); return; }
+            const perPeer = new Map();
+            let picked = 0;
+            for (const [id, w] of attWanted) {
+                if (picked >= 8) break;
+                if (w.nextAt > now) continue;
+                let peer = null;
+                const free = (p) => !w.asked.has(p) && now - (attPeerLast.get(p) || 0) > 8000;
+                if (w.hint && peers.includes(w.hint) && free(w.hint)) peer = w.hint;
+                if (!peer) peer = peers.find(free) || null;
+                if (!peer) {
+                    if (peers.every(p => w.asked.has(p))) { w.asked.clear(); w.tries++; w.nextAt = now + Math.min(600000, 30000 * w.tries); }
+                    continue;
+                }
+                if (!perPeer.has(peer)) perPeer.set(peer, []);
+                const ids = perPeer.get(peer);
+                if (ids.length >= 4) continue;
+                ids.push(id); picked++;
+                w.asked.add(peer); w.nextAt = now + 20000;
+            }
+            perPeer.forEach((ids, peer) => { attPeerLast.set(peer, now); publishMessage({ type: 'ATT_PULL', author: myUsername, target: peer, ids }); });
+            scheduleAttPump(attWanted.size ? 5000 : 30000);
+        }
+        const attSendQueue = [];
+        let attSending = false;
+        function handleAttPull(data) {
+            if (data.target !== myUsername || isGhost || blockedUsers.has(data.author)) return;
+            (Array.isArray(data.ids) ? data.ids.slice(0, 8) : []).forEach(id => {
+                if (ATT_ID_RE.test(id) && attHave.has(id) && attSendQueue.length < 32 && !attSendQueue.some(q => q.to === data.author && q.id === id)) attSendQueue.push({ to: data.author, id });
+            });
+            pumpAttSendQueue();
+        }
+        async function pumpAttSendQueue() {
+            if (attSending) return;
+            attSending = true;
+            try {
+                while (attSendQueue.length && isConnected) {
+                    const job = attSendQueue.shift();
+                    const rec = await attGet(job.id);
+                    await sendAttachmentFrame(job.id, { to: job.to });
+                    await new Promise(r => setTimeout(r, Math.max(200, ((rec && rec.size) || 0) / 1048576 * 500)));
+                }
+            } finally { attSending = false; }
+        }
+
+        // ---------------------------------------------------------------------
+        //  Media processing (runs in a Web Worker when possible, else inline)
+        // ---------------------------------------------------------------------
+        async function sha256Id(data) {
+            const d = await crypto.subtle.digest('SHA-256', data);
+            const b = new Uint8Array(d); let s = '';
+            for (let i = 0; i < 16; i++) s += b[i].toString(16).padStart(2, '0');
+            return s;
+        }
+        function concatU8(parts) {
+            let n = 0; for (const p of parts) n += p.length;
+            const out = new Uint8Array(n); let o = 0;
+            for (const p of parts) { out.set(p, o); o += p.length; }
+            return out;
+        }
+        function readExifOrientation(t) {
+            if (t.length < 8) return 1;
+            const le = t[0] === 0x49;
+            const u16 = (o) => le ? (t[o] | (t[o + 1] << 8)) : ((t[o] << 8) | t[o + 1]);
+            const u32 = (o) => le ? ((t[o] | (t[o + 1] << 8) | (t[o + 2] << 16) | (t[o + 3] << 24)) >>> 0) : (((t[o] << 24) | (t[o + 1] << 16) | (t[o + 2] << 8) | t[o + 3]) >>> 0);
+            const ifd = u32(4);
+            if (ifd + 2 > t.length) return 1;
+            const n = u16(ifd);
+            for (let k = 0; k < n; k++) {
+                const e = ifd + 2 + k * 12;
+                if (e + 12 > t.length) break;
+                if (u16(e) === 0x0112) { const v = u16(e + 8); return v >= 1 && v <= 8 ? v : 1; }
+            }
+            return 1;
+        }
+        // Lossless: drops Exif/XMP/IPTC/comments (GPS location, camera serial...) but keeps JFIF, ICC colour profile and Adobe markers.
+        function stripJpegMeta(u8) {
+            if (u8.length < 4 || u8[0] !== 0xFF || u8[1] !== 0xD8) return { out: u8, orientation: 1 };
+            const parts = [u8.subarray(0, 2)];
+            let orientation = 1, i = 2;
+            while (i + 4 <= u8.length) {
+                if (u8[i] !== 0xFF) break;
+                const marker = u8[i + 1];
+                if (marker === 0xFF) { i++; continue; }
+                if (marker === 0xD9) { parts.push(u8.subarray(i, i + 2)); i += 2; break; }
+                if (marker === 0xDA) { parts.push(u8.subarray(i)); i = u8.length; break; }
+                if ((marker >= 0xD0 && marker <= 0xD7) || marker === 0x01) { parts.push(u8.subarray(i, i + 2)); i += 2; continue; }
+                const len = (u8[i + 2] << 8) | u8[i + 3];
+                if (len < 2 || i + 2 + len > u8.length) return { out: u8, orientation: 1 }; // malformed: leave untouched
+                const seg = u8.subarray(i, i + 2 + len);
+                if (marker === 0xE1 && seg.length > 14 && seg[4] === 0x45 && seg[5] === 0x78 && seg[6] === 0x69 && seg[7] === 0x66) orientation = readExifOrientation(seg.subarray(10));
+                const isApp = marker >= 0xE0 && marker <= 0xEF;
+                const keep = !(isApp && marker !== 0xE0 && marker !== 0xE2 && marker !== 0xEE) && marker !== 0xFE;
+                if (keep) parts.push(seg);
+                i += 2 + len;
+            }
+            return { out: concatU8(parts), orientation };
+        }
+        function stripPngMeta(u8) {
+            const sig = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+            for (let k = 0; k < 8; k++) if (u8[k] !== sig[k]) return u8;
+            const parts = [u8.subarray(0, 8)];
+            let i = 8;
+            while (i + 12 <= u8.length) {
+                const len = ((u8[i] << 24) | (u8[i + 1] << 16) | (u8[i + 2] << 8) | u8[i + 3]) >>> 0;
+                const type = String.fromCharCode(u8[i + 4], u8[i + 5], u8[i + 6], u8[i + 7]);
+                const end = i + 12 + len;
+                if (end > u8.length) return u8;
+                if (!(type === 'eXIf' || type === 'tEXt' || type === 'zTXt' || type === 'iTXt' || type === 'tIME')) parts.push(u8.subarray(i, end));
+                i = end;
+                if (type === 'IEND') break;
+            }
+            return concatU8(parts);
+        }
+        async function bitmapToThumbDataUrl(src, srcW, srcH, maxDim, quality) {
+            const scale = Math.min(1, maxDim / Math.max(srcW, srcH));
+            const w = Math.max(1, Math.round(srcW * scale)), h = Math.max(1, Math.round(srcH * scale));
+            let blob;
+            if (typeof OffscreenCanvas !== 'undefined') {
+                const c = new OffscreenCanvas(w, h); const g = c.getContext('2d');
+                g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(src, 0, 0, w, h);
+                blob = await c.convertToBlob({ type: 'image/jpeg', quality });
+            } else {
+                const c = document.createElement('canvas'); c.width = w; c.height = h;
+                const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(src, 0, 0, w, h);
+                blob = await new Promise(r => c.toBlob(r, 'image/jpeg', quality));
+            }
+            const u8 = new Uint8Array(await blob.arrayBuffer());
+            let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+            return { dataUrl: 'data:image/jpeg;base64,' + btoa(s), bytes: u8.length };
+        }
+        async function processImageCore(buffer, mime) {
+            let u8 = new Uint8Array(buffer);
+            let orientation = 1;
+            if (mime === 'image/jpeg') { const r = stripJpegMeta(u8); u8 = r.out; orientation = r.orientation; }
+            else if (mime === 'image/png') { u8 = stripPngMeta(u8); }
+            if (orientation !== 1) return { needsMain: true }; // rotated photos get re-drawn by the browser so they stay upright
+            let thumb = null;
+            try {
+                if (typeof createImageBitmap === 'function') {
+                    const bmp = await createImageBitmap(new Blob([u8], { type: mime }));
+                    for (const [dim, q] of [[256, 0.6], [192, 0.5], [128, 0.45]]) {
+                        const t = await bitmapToThumbDataUrl(bmp, bmp.width, bmp.height, dim, q);
+                        if (t.bytes <= 30000) { thumb = t.dataUrl; break; }
+                    }
+                    if (bmp.close) bmp.close();
+                }
+            } catch (e) { thumb = null; }
+            return { bytes: u8, id: await sha256Id(u8), mime, thumb, needsMain: false };
+        }
+        const WORKER_FUNCS = [sha256Id, concatU8, readExifOrientation, stripJpegMeta, stripPngMeta, bitmapToThumbDataUrl, processImageCore];
+        const WORKER_TAIL = `
+            self.onmessage = async (e) => {
+                const { rid, buffer, mime } = e.data;
+                try {
+                    const res = await processImageCore(buffer, mime);
+                    self.postMessage({ rid, ok: true, res }, res.bytes ? [res.bytes.buffer] : []);
+                } catch (err) { self.postMessage({ rid, ok: false, error: String((err && err.message) || err) }); }
+            };`;
+        let mediaWorker = null, mediaWorkerFailed = false, mediaRid = 0;
+        const mediaJobs = new Map();
+        function getMediaWorker() {
+            if (mediaWorker || mediaWorkerFailed) return mediaWorker;
+            try {
+                const src = WORKER_FUNCS.map(f => f.toString()).join('\n') + WORKER_TAIL;
+                const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+                mediaWorker = new Worker(url);
+                mediaWorker.onmessage = (e) => {
+                    const job = mediaJobs.get(e.data.rid); if (!job) return;
+                    mediaJobs.delete(e.data.rid);
+                    if (e.data.ok) job.resolve(e.data.res); else job.reject(new Error(e.data.error));
+                };
+                mediaWorker.onerror = () => {
+                    mediaWorkerFailed = true; mediaWorker = null;
+                    mediaJobs.forEach(j => j.reject(new Error('worker failed'))); mediaJobs.clear();
+                };
+            } catch (e) { mediaWorkerFailed = true; mediaWorker = null; }
+            return mediaWorker;
+        }
+        function runImageJob(buffer, mime) {
+            const w = getMediaWorker();
+            if (!w) return Promise.reject(new Error('no worker'));
+            return new Promise((resolve, reject) => { const rid = ++mediaRid; mediaJobs.set(rid, { resolve, reject }); w.postMessage({ rid, buffer, mime }); });
+        }
+        async function reencodeViaImgElement(blob) {
+            const url = URL.createObjectURL(blob);
+            try {
+                const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+                const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+                const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0);
+                return await canvasToJpegBlob(c, 0.92);
+            } finally { URL.revokeObjectURL(url); }
+        }
+        async function prepareImageBlob(file, mime) {
+            const buffer = await file.arrayBuffer();
+            let res = null;
+            try { res = await runImageJob(buffer, mime); } catch (e) { res = null; }
+            try {
+                if (!res) res = await processImageCore(buffer, mime);
+                if (res.needsMain) {
+                    const upright = await reencodeViaImgElement(file);
+                    res = await processImageCore(await upright.arrayBuffer(), 'image/jpeg');
+                }
+            } catch (e) {
+                res = { bytes: new Uint8Array(buffer), id: await sha256Id(buffer), mime, thumb: null };
+            }
+            return { blob: new Blob([res.bytes], { type: res.mime }), id: res.id, mime: res.mime, thumb: res.thumb || null };
+        }
+        function videoThumbDataUrl(blob) {
+            return new Promise(resolve => {
+                const url = URL.createObjectURL(blob);
+                const v = document.createElement('video');
+                v.muted = true; v.playsInline = true; v.preload = 'metadata';
+                let done = false, tm = null;
+                const finish = (val) => { if (done) return; done = true; clearTimeout(tm); URL.revokeObjectURL(url); v.removeAttribute('src'); v.load(); resolve(val); };
+                tm = setTimeout(() => finish(null), 6000);
+                v.onerror = () => finish(null);
+                v.onloadeddata = () => { try { v.currentTime = Math.min(0.1, (v.duration || 1) / 2); } catch (e) { finish(null); } };
+                v.onseeked = async () => {
+                    try {
+                        for (const [dim, q] of [[256, 0.6], [192, 0.5], [128, 0.45]]) {
+                            const t = await bitmapToThumbDataUrl(v, v.videoWidth, v.videoHeight, dim, q);
+                            if (t.bytes <= 30000) { finish(t.dataUrl); return; }
+                        }
+                        finish(null);
+                    } catch (e) { finish(null); }
+                };
+                v.src = url;
+            });
+        }
+
+        // Single entry point for every outgoing attachment (picker, paste, drop, voice memo)
+        async function sendMedia(file, kind, fileName) {
+            if (isGhost) return;
+            const limited = rateLimitMessage(true);
+            if (limited) { appendSystemDOM(limited); return; }
+            if (!window.crypto || !crypto.subtle) { customAlert('Attachments need a secure (HTTPS) connection.'); return; }
+            let blob = file, id, thumb = null, mime = file.type || 'application/octet-stream';
+            if (kind === 'image') {
+                const p = await prepareImageBlob(file, mime);
+                blob = p.blob; id = p.id; thumb = p.thumb; mime = p.mime;
+            } else {
+                id = await sha256Id(await file.arrayBuffer());
+                if (kind === 'video') thumb = await videoThumbDataUrl(file);
+            }
+            if (blob.size > MAX_UPLOAD_BYTES) { customAlert('File too large. The limit is 20MB.'); return; }
+            await attPut(id, blob, { name: fileName });
+            const target = currentTab === 'global' ? null : currentTab.replace('dm:', '');
+            const sent = sendPayload('att:' + id, {
+                isImage: kind === 'image', isVideo: kind === 'video', isAudio: kind === 'audio', isFile: kind === 'file',
+                fileName, attMime: mime, attSize: blob.size, thumb: thumb || undefined
+            });
+            if (sent !== false) queueAttBroadcast(id, target);
+        }
+
+        // ---- lazy media: object URLs are only created for attachments that scroll into view ----
+        let mediaObserver = null;
+        function getMediaObserver() {
+            if (mediaObserver || !('IntersectionObserver' in window)) return mediaObserver;
+            mediaObserver = new IntersectionObserver((entries) => {
+                for (const en of entries) { if (!en.isIntersecting) continue; mediaObserver.unobserve(en.target); loadMediaElement(en.target); }
+            }, { root: ui.chatBox, rootMargin: '600px 0px' });
+            return mediaObserver;
+        }
+        async function loadMediaElement(el) {
+            const url = await getAttObjectUrl(el.dataset.att);
+            if (!url || !el.isConnected) return;
+            el.removeAttribute('data-lazy');
+            if (el.tagName === 'VIDEO' || el.tagName === 'AUDIO') el.preload = 'metadata';
+            el.src = url;
+            el.classList.remove('att-pending');
+        }
+        function hydrateMedia(root) {
+            if (!root || !root.querySelectorAll) return;
+            const obs = getMediaObserver();
+            root.querySelectorAll('[data-att][data-lazy="1"]').forEach(el => { if (obs) obs.observe(el); else loadMediaElement(el); });
+        }
+        async function downloadAttachment(id, name) {
+            const rec = await attGet(id);
+            if (!rec || !rec.blob) { customAlert('That file has not finished downloading yet.'); return; }
+            const url = URL.createObjectURL(rec.blob);
+            triggerDownload(url, name || rec.name || 'download.bin');
+            setTimeout(() => URL.revokeObjectURL(url), 30000);
+        }
+
+        // ---------------------------------------------------------------------
+        //  Transport: routing, QoS, outbox with retry
+        // ---------------------------------------------------------------------
+        const DIRECT_TYPES = new Set(['DM', 'SYNC_MANIFEST', 'SYNC_PULL', 'SYNC_PULL_RANGE', 'SYNC_CHUNK', 'DM_READ', 'ATT_PULL']);
+        const QOS1_TYPES = new Set(['MSG', 'DM', 'EDIT_MSG', 'DELETE_MSG', 'REACT_MSG', 'CLEAR_ALL', 'CLEAR_RECENT', 'CLEAR_SYSTEM_ALL', 'RENAME']);
+        function topicsFor(data) {
+            if (DIRECT_TYPES.has(data.type) && data.target) {
+                const t = [TOPIC_USER(data.target)];
+                if (data.type === 'DM' && data.author && data.author !== data.target) t.push(TOPIC_USER(data.author)); // other devices + delivery echo
+                return t;
+            }
+            if (data.type === 'TYPING' && data.tab === 'dm' && data.target) return [TOPIC_USER(data.target)];
+            return [ROOM_TOPIC];
+        }
+        const outbox = new Map();
+        let outboxTimer = null, outboxSaveTimer = null;
+        function outboxState(msgId) {
+            for (const e of outbox.values()) {
+                if ((e.data.type === 'MSG' || e.data.type === 'DM') && e.data.id === msgId) {
+                    if (e.tries >= 3) return 'failed';
+                    return Date.now() - e.queuedAt > 1500 ? 'pending' : null; // don't flash a spinner for normal sub-second sends
+                }
+            }
+            return null;
+        }
+        function outboxChanged(data) {
+            if ((data.type === 'MSG' || data.type === 'DM') && data.id) { const m = findMessageById(data.id); if (m) patchMsgDOM(m); }
+        }
+        function scheduleOutboxSave() {
+            clearTimeout(outboxSaveTimer);
+            outboxSaveTimer = setTimeout(() => {
+                if (!myUsername || isGhost) return;
+                const items = [];
+                outbox.forEach(e => { try { if (JSON.stringify(e.data).length < 300000) items.push({ data: e.data, topics: e.topics }); } catch (x) {} });
+                kvSet('outbox:' + myUsername, items);
+            }, 600);
+        }
+        async function restoreOutbox() {
+            if (!myUsername || isGhost) return;
+            const items = await kvGet('outbox:' + myUsername);
+            if (!Array.isArray(items)) return;
+            items.forEach(it => {
+                if (it && it.data && it.data.author === myUsername && validateChatPayload(it.data)) {
+                    outbox.set(`${it.data.type}:${it.data.id || Math.random()}`, { data: it.data, topics: it.topics || topicsFor(it.data), tries: 0, queuedAt: Date.now() - 2000, sentAt: 0, inflight: false });
+                }
+            });
+        }
+        function publishMessage(data) {
+            if (!data || !validateChatPayload(data)) return false;
+            const qos = QOS1_TYPES.has(data.type) ? 1 : 0;
+            const topics = topicsFor(data);
+            if (qos === 0) {
+                if (!client || !isConnected) return false;
+                try { const s = JSON.stringify(data); topics.forEach(t => client.publish(t, s, { qos: 0 })); return true; }
+                catch (error) { console.error('Failed to publish chat payload:', error); return false; }
+            }
+            // Durable messages go through the outbox: queued while offline, retried until the broker acknowledges.
+            outbox.set(`${data.type}:${data.id || Math.random().toString(36).slice(2)}`, { data, topics, tries: 0, queuedAt: Date.now(), sentAt: 0, inflight: false });
+            scheduleOutboxSave();
+            if (data.type === 'MSG' || data.type === 'DM') setTimeout(() => { if (outboxState(data.id)) outboxChanged(data); }, 1600);
+            pumpOutbox();
+            return true;
+        }
+        function pumpOutbox() {
+            if (!client || !isConnected) return;
+            const now = Date.now();
+            outbox.forEach((e, key) => {
+                if (e.inflight && now - e.sentAt < 12000) return;
+                e.inflight = true; e.sentAt = now; e.tries++;
+                if (e.tries === 3) outboxChanged(e.data);
+                let remaining = e.topics.length, failed = false;
+                const json = JSON.stringify(e.data);
+                const done = () => {
+                    if (--remaining > 0) return;
+                    if (failed) { e.inflight = false; return; }
+                    outbox.delete(key); scheduleOutboxSave(); outboxChanged(e.data);
+                };
+                e.topics.forEach(t => {
+                    try { client.publish(t, json, { qos: 1 }, (err) => { if (err) failed = true; done(); }); }
+                    catch (er) { failed = true; done(); }
+                });
+            });
+        }
+        function retryOutbox(msgId) {
+            outbox.forEach(e => { if (e.data.id === msgId) { e.tries = 0; e.inflight = false; e.queuedAt = Date.now(); } });
+            pumpOutbox();
+        }
+        setInterval(pumpOutbox, 5000);
+
+        // MQTT session identity: one persistent session per device, ephemeral for extra tabs
+        function getDeviceId() {
+            let id = safeGet('mqtt_device_id');
+            if (!id) { id = generateId() + Math.random().toString(36).slice(2, 10); safeSet('mqtt_device_id', id); }
+            return id;
+        }
+        function acquireSessionLock() {
+            return new Promise(resolve => {
+                try {
+                    if (!navigator.locks || !navigator.locks.request) { resolve(false); return; }
+                    navigator.locks.request('chatroom-mqtt-session', { ifAvailable: true }, (lock) => {
+                        if (!lock) { resolve(false); return null; }
+                        resolve(true);
+                        return new Promise(() => {}); // held for the life of the page
+                    }).catch(() => resolve(false));
+                } catch (e) { resolve(false); }
+            });
+        }
+        let inboxTopicSubscribed = null, attSubscribed = false;
+        function ensureSubscriptions() {
+            if (!client || !isConnected || isGhost) return;
+            const t = TOPIC_USER(myUsername);
+            if (inboxTopicSubscribed !== t) {
+                if (inboxTopicSubscribed) client.unsubscribe(inboxTopicSubscribed);
+                client.subscribe(t, { qos: 1 });
+                inboxTopicSubscribed = t;
+            }
+            if (!attSubscribed) { client.subscribe(TOPIC_ATT, { qos: 0 }); attSubscribed = true; }
+        }
+        function findUserByCid(cid) {
+            if (!cid) return null;
+            for (const [name, u] of activeUsers) if (name !== myUsername && u.cid === cid) return name;
+            return null;
+        }
+
+        // ---- rate limits ----
+        let lastTextSendAt = 0, lastAttSendAt = 0;
+        function rateLimitMessage(isAtt) {
+            if (isAdmin) return null;
+            const now = Date.now();
+            if (isAtt) return now - lastAttSendAt < 5000 ? 'Please wait a few seconds between attachments.' : null;
+            return now - lastTextSendAt < 800 ? 'You are sending messages too fast.' : null;
+        }
+        const incomingRate = new Map();
+        function incomingFlood(author) {
+            const now = Date.now();
+            let a = incomingRate.get(author);
+            if (!a) { a = []; incomingRate.set(author, a); }
+            while (a.length && now - a[0] > 10000) a.shift();
+            a.push(now);
+            return a.length > 40;
+        }
+
+        // ---- typing indicator (multi-user, per tab) ----
+        const typingUsers = new Map();
+        let typingTick = null, lastTypingTab = '';
+        function noteTyping(author, tab) { typingUsers.set(author, { tab, expires: Date.now() + 3500 }); renderTypingIndicator(); }
+        function renderTypingIndicator() {
+            const now = Date.now(), names = [];
+            typingUsers.forEach((v, name) => {
+                if (v.expires <= now) { typingUsers.delete(name); return; }
+                if (blockedUsers.has(name)) return;
+                if ((currentTab === 'global' && v.tab === 'global') || (currentTab === `dm:${name}` && v.tab === 'dm')) names.push(name);
+            });
+            let text = '';
+            if (names.length === 1) text = `${names[0]} is typing...`;
+            else if (names.length === 2) text = `${names[0]} and ${names[1]} are typing...`;
+            else if (names.length === 3) text = `${names[0]}, ${names[1]} and ${names[2]} are typing...`;
+            else if (names.length > 3) text = 'Several people are typing...';
+            ui.typing.innerText = text;
+            clearTimeout(typingTick);
+            if (typingUsers.size) typingTick = setTimeout(renderTypingIndicator, 1000);
+        }
+
+        // ---- desktop notifications + tab title ----
+        let unreadWhileHidden = 0;
+        function updateDocTitle() { document.title = unreadWhileHidden ? `(${unreadWhileHidden}) ${BASE_TITLE}` : BASE_TITLE; }
+        function notifyDesktop(title, body) {
+            if (!document.hidden) return;
+            unreadWhileHidden++; updateDocTitle();
+            if (safeGet('mqtt_notify') !== 'true' || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+            try { const n = new Notification(title, { body, tag: 'chatroom' }); n.onclick = () => { window.focus(); n.close(); }; } catch (e) {}
+        }
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) { unreadWhileHidden = 0; updateDocTitle(); } });
+        async function toggleDesktopNotifications() {
+            const chk = document.getElementById('notify-chk');
+            if (chk.checked) {
+                try {
+                    const p = await Notification.requestPermission();
+                    if (p !== 'granted') { chk.checked = false; customAlert('Notifications were not allowed by the browser.'); }
+                } catch (e) { chk.checked = false; }
+            }
+            safeSet('mqtt_notify', chk.checked ? 'true' : 'false');
+        }
+        function presenceHidden() { return safeGet('mqtt_hide_presence') === 'true'; }
+        function toggleHidePresence() {
+            safeSet('mqtt_hide_presence', document.getElementById('hide-presence-chk').checked ? 'true' : 'false');
+            renderActiveTabMessages(true);
+        }
+
+        // ---------------------------------------------------------------------
+        //  Admin command signing (WebCrypto ECDSA P-256).  Public keys live in ADMIN_PUBKEYS;
+        //  an admin with no key registered keeps the legacy name-only trust so nothing breaks.
+        // ---------------------------------------------------------------------
+        const ADMIN_PUBKEYS = {
+            // "AdminName": { kty: "EC", crv: "P-256", x: "...", y: "..." },   <- paste from Admin Tools > Signing Key
+        };
+        const seenAdminIds = new Set();
+        function adminSigString(d) {
+            return [d.type, d.author || '', d.id || '', d.timestamp || 0, d.target || '', d.cmd || '', d.hours || '', d.targetType || '', d.duration || ''].join('|');
+        }
+        async function verifyAdminMessage(data) {
+            const who = data.author;
+            if (!ADMINS.includes(who)) return false;
+            const jwk = ADMIN_PUBKEYS[who];
+            if (!jwk) return true; // legacy trust until a key is registered for this admin
+            if (!data.sig || !data.id || !Number.isFinite(data.timestamp) || Math.abs(Date.now() - data.timestamp) > 600000 || seenAdminIds.has(data.id)) return false;
+            try {
+                const key = await crypto.subtle.importKey('jwk', jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+                const ok = await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, b64ToBytes(data.sig), new TextEncoder().encode(adminSigString(data)));
+                if (ok) { seenAdminIds.add(data.id); if (seenAdminIds.size > 2000) seenAdminIds.clear(); }
+                return ok;
+            } catch (e) { return false; }
+        }
+        async function adminPublish(data) {
+            data.id = data.id || generateId();
+            data.timestamp = data.timestamp || Date.now();
+            try {
+                const rec = await kvGet('admin_signing_key');
+                if (rec && rec.privateKey && ADMIN_PUBKEYS[myUsername]) {
+                    const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, rec.privateKey, new TextEncoder().encode(adminSigString(data)));
+                    data.sig = bytesToB64(new Uint8Array(sig));
+                }
+            } catch (e) {}
+            return publishMessage(data);
+        }
+        async function showAdminSigningKey() {
+            try {
+                let rec = await kvGet('admin_signing_key');
+                if (!rec) {
+                    const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify']);
+                    rec = { privateKey: pair.privateKey, publicJwk: await crypto.subtle.exportKey('jwk', pair.publicKey) };
+                    await kvSet('admin_signing_key', rec);
+                }
+                const j = rec.publicJwk;
+                const line = `"${myUsername}": { kty: "${j.kty}", crv: "${j.crv}", x: "${j.x}", y: "${j.y}" },`;
+                await showDialog({ title: 'Admin Signing Key', mono: true, message: `Paste this line into ADMIN_PUBKEYS in the page source (every admin does this once for their own key). Until then admin commands keep working unsigned.\n\n${line}` });
+            } catch (e) { customAlert('Could not create a signing key in this browser.'); }
+        }
+
         const mediaViewer = {
             el: document.getElementById('media-viewer'),
             stage: document.getElementById('media-viewer-stage'),
@@ -769,7 +1815,14 @@
             mediaViewer.lastFocus = null;
         }
 
-        function openMediaFromElement(el) {
+        async function openMediaFromElement(el) {
+            const attId = el.dataset && el.dataset.att;
+            if (attId) {
+                if (!attHave.has(attId)) return;
+                const url = await getAttObjectUrl(attId);
+                if (url) openMediaViewer(el.dataset.kind === 'video' ? 'video' : 'image', url);
+                return;
+            }
             const video = el.querySelector && el.querySelector('video');
             if (video) openMediaViewer('video', video.getAttribute('src'));
             else if (el.tagName === 'IMG') openMediaViewer('image', el.getAttribute('src'));
@@ -798,8 +1851,22 @@
             if (playBtn) { e.stopPropagation(); playVideoInline(playBtn.closest('.chat-video')); return; }
             const expandBtn = e.target.closest('.video-expand');
             if (expandBtn) {
-                const v = expandBtn.closest('.chat-video').querySelector('video');
-                if (v) { v.pause(); openMediaViewer('video', v.getAttribute('src')); }
+                const wrap = expandBtn.closest('.chat-video');
+                const v = wrap && wrap.querySelector('video');
+                if (v) { v.pause(); openMediaFromElement(wrap); }
+                return;
+            }
+            const retryBtn = e.target.closest('[data-retry-id]');
+            if (retryBtn) { retryOutbox(retryBtn.dataset.retryId); return; }
+            const dlBtn = e.target.closest('[data-att-download]');
+            if (dlBtn) { e.preventDefault(); downloadAttachment(dlBtn.dataset.attDownload, dlBtn.dataset.name); return; }
+            const ytBtn = e.target.closest('.yt-embed');
+            if (ytBtn && /^[A-Za-z0-9_-]{11}$/.test(ytBtn.dataset.yt || '')) {
+                const f = document.createElement('iframe');
+                f.width = '250'; f.height = '140'; f.allowFullscreen = true; f.setAttribute('frameborder', '0');
+                f.style.cssText = 'border: 2px inset var(--win-border-dark); margin-top: 4px;';
+                f.src = `https://www.youtube-nocookie.com/embed/${ytBtn.dataset.yt}`;
+                ytBtn.replaceWith(f);
                 return;
             }
             const media = e.target.closest('.chat-media');
@@ -812,9 +1879,14 @@
         });
 
         // Play button -> play right in the chat bubble. Clicking the picture itself -> lightbox.
-        function playVideoInline(wrap) {
+        async function playVideoInline(wrap) {
             const v = wrap && wrap.querySelector('video');
             if (!v) return;
+            if (!v.getAttribute('src') && v.dataset.att) {
+                const url = await getAttObjectUrl(v.dataset.att);
+                if (!url) return;
+                v.removeAttribute('data-lazy'); v.preload = 'auto'; v.src = url;
+            }
             wrap.classList.remove('chat-media');   // body clicks now belong to the native controls
             wrap.classList.add('playing');
             wrap.removeAttribute('title');
@@ -1087,14 +2159,6 @@
 
         // A disconnect is valid once per join session. This guards both duplicate
         // broker delivery and repeated timeout checks from flooding the room history.
-        function hasDisconnectAfterLatestJoin(list, username) {
-            const events = (Array.isArray(list) ? list : []).map((m, index) => ({ m, index, e: presenceEventKind(m) }))
-                .filter(x => x.e && x.e.user === username)
-                .sort((a, b) => (Number(a.m.timestamp) || 0) - (Number(b.m.timestamp) || 0) || a.index - b.index);
-            if (!events.length) return false;
-            return events[events.length - 1].e.kind === "leave";
-        }
-
         // Each join starts an independent per-user session. Keep that join/leave pair
         // only when that same user sent at least one real message before leaving.
         function filterSystemSessionsWithActivity(list) {
@@ -1256,7 +2320,8 @@
             if (!mediaRecorder || mediaRecorder.state === "inactive") {
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    mediaRecorder = new MediaRecorder(stream);
+                    const memoMime = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/ogg;codecs=opus'].find(t => window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t));
+                    mediaRecorder = new MediaRecorder(stream, memoMime ? { mimeType: memoMime, audioBitsPerSecond: 32000 } : { audioBitsPerSecond: 32000 }); // speech needs far less than the default
                     
                     msgInput.style.display = "none";
                     timerDiv.style.display = "block";
@@ -1282,13 +2347,7 @@
                             timerDiv.style.display = "none";
                             return;
                         }
-                        const reader = new FileReader();
-                        reader.onloadend = () => {
-                            const raw = reader.result;
-                            
-                            sendPayload(raw, { isAudio: true });
-                        };
-                        reader.readAsDataURL(blob);
+                        sendMedia(blob, "audio", "voice-memo").catch(() => customAlert("Could not send that voice memo."));
                         
                         msgInput.style.display = "block";
                         timerDiv.style.display = "none";
@@ -1321,7 +2380,6 @@
         // Raw bytes are gzipped, then base64'd. Already-compressed media (JPEG/MP4/etc.) barely shrinks,
         // so if gzip doesn't save at least 3% we send the plain data URL instead.
         // (The old LZString UTF-16 path actually made media *bigger* on the wire.)
-        const GZ_MIN_GAIN = 0.97;
         function b64ToBlob(b64, type) {
             const bin = atob(b64), len = bin.length, bytes = new Uint8Array(len);
             for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
@@ -1332,19 +2390,6 @@
             return m ? { mime: m[1], b64: u.slice(m[0].length) } : null;
         }
         function dataUrlToBlob(u) { const i = parseDataUrl(u); if (!i) throw new Error('not a base64 data URL'); return b64ToBlob(i.b64, i.mime); }
-        async function packForNetwork(dataUrl) {
-            const plain = { text: dataUrl, compressed: false };
-            if (typeof dataUrl !== 'string' || !('CompressionStream' in window)) return plain;
-            const info = parseDataUrl(dataUrl);
-            if (!info) return plain;
-            try {
-                const blob = b64ToBlob(info.b64, info.mime);
-                const gz = await new Response(blob.stream().pipeThrough(new CompressionStream('gzip'))).blob();
-                if (gz.size >= blob.size * GZ_MIN_GAIN) return plain;
-                const gzUrl = await blobToDataURL(gz);
-                return { text: gzUrl.slice(gzUrl.indexOf(',') + 1), compressed: 'gz', mime: info.mime };
-            } catch (e) { return plain; }
-        }
         async function unpackFromNetwork(b64, mime) {
             if (!('DecompressionStream' in window)) throw new Error('gzip not supported');
             const gzBlob = b64ToBlob(b64, 'application/octet-stream');
@@ -1359,33 +2404,12 @@
             }
             return blobToDataURL(new Blob(chunks, { type: typeof mime === 'string' ? mime.slice(0, 100) : '' }));
         }
-        const packCache = new Map();
-        function packForNetworkCached(id, dataUrl) {
-            if (id && packCache.has(id)) return packCache.get(id);
-            const pr = packForNetwork(dataUrl);
-            if (id) { packCache.set(id, pr); if (packCache.size > 4) packCache.delete(packCache.keys().next().value); }
-            return pr;
-        }
-        async function packMessageForSync(m) {
-            const isMedia = m.isImage || m.isVideo || m.isAudio || m.isFile;
-            if (!isMedia || m.compressed || m.backupPlaceholder || typeof m.text !== 'string' || !m.text.startsWith('data:')) return m;
-            const p = await packForNetworkCached(m.id, m.text);
-            return { ...m, text: p.text, compressed: p.compressed, ...(p.mime ? { mime: p.mime } : {}) };
-        }
 
         function extFromMime(mime) {
             const t = String(mime || '').split(';')[0].toLowerCase();
             const map = { 'image/jpeg':'jpg', 'image/png':'png', 'image/gif':'gif', 'image/webp':'webp', 'image/bmp':'bmp', 'image/avif':'avif',
                           'video/mp4':'mp4', 'video/webm':'webm', 'video/ogg':'ogv', 'video/quicktime':'mov', 'video/x-m4v':'m4v', 'video/3gpp':'3gp', 'video/mpeg':'mpg', 'video/x-matroska':'mkv' };
             return map[t] || 'bin';
-        }
-        function downloadDataUrl(dataUrl, filename) {
-            const blob = dataUrlToBlob(dataUrl);
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = filename || 'download';
-            document.body.appendChild(a); a.click(); a.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 15000);
         }
 
         function canvasToJpegBlob(canvas, quality) {
@@ -1398,11 +2422,10 @@
             // Normal small images are kept byte-for-byte; only oversized images incur
             // decode/encode work. This avoids making ordinary uploads feel heavier.
             if (file.size <= maxBytes) {
-                const raw = await blobToDataURL(file);
-                return { raw };
+                return { blob: file };
             }
 
-            const rawUrl = await blobToDataURL(file);
+            const rawUrl = URL.createObjectURL(file);
             const img = await new Promise((resolve, reject) => {
                 const image = new Image();
                 image.onload = () => resolve(image);
@@ -1410,6 +2433,7 @@
                 image.src = rawUrl;
             });
 
+            URL.revokeObjectURL(rawUrl);
             const canvas = document.createElement("canvas");
             const ctx = canvas.getContext("2d", { alpha: false });
             if (!ctx) throw new Error("Canvas unavailable");
@@ -1444,16 +2468,14 @@
                 throw new Error("Image could not be compressed below the 20MB limit");
             }
 
-            const raw = await blobToDataURL(bestBlob);
-            return { raw };
+            return { blob: bestBlob };
         }
 
         const MAX_VIDEO_BYTES = MAX_UPLOAD_BYTES;
 
         async function compressVideoToFit(file, maxBytes = MAX_VIDEO_BYTES) {
             if (file.size <= maxBytes) {
-                const raw = await blobToDataURL(file);
-                return { raw };
+                return { blob: file };
             }
             if (!window.MediaRecorder || !HTMLVideoElement.prototype.play) {
                 throw new Error("Video compression is not supported by this browser.");
@@ -1511,8 +2533,7 @@
                 recorder.stop();
                 const blob = await done;
                 if (blob.size > maxBytes) throw new Error("Video could not be compressed below the 20MB limit.");
-                const raw = await blobToDataURL(blob);
-                return { raw };
+                return { blob };
             } finally {
                 drawing = false;
                 combined.getTracks().forEach(track => track.stop());
@@ -1521,57 +2542,42 @@
             }
         }
 
-        document.getElementById("universal-upload").addEventListener("change", async function(e) {
-            let file = e.target.files[0];
-            if (!file) return;
-            // Only formats the viewer/validator accept are sent inline; anything else (SVG, HEIC, MOV...) goes as a file.
-            const pickedName = file.name;
+        async function uploadFile(file) {
+            if (!file || isGhost) return;
+            const pickedName = file.name || (file.type && file.type.startsWith('image/') ? 'pasted-image.png' : 'attachment');
             const inferredType = inferUploadMime(file);
             // iPad/iPhone clips are video/quicktime (.mov); some browsers give no type at all, so also go by extension.
             if (inferredType && inferredType !== file.type) file = file.slice(0, file.size, inferredType);
             const isVideo = VIDEO_MIME_RE.test(inferredType);
             const isImage = /^image\/(png|jpe?g|gif|webp|bmp|avif)$/i.test(inferredType);
-            const isFile = !isImage && !isVideo;
-            // Non-image/video attachments are intentionally treated as generic files;
-            // their MIME type is preserved and they are offered as downloads.
-
-            if (isImage) {
-                try {
-                    const { raw, preCompressed } = await compressImageToFit(file, MAX_IMAGE_BYTES);
-                    sendPayload(raw, { isImage: true, isVideo: false, isFile: false, fileName: pickedName, preCompressed });
-                } catch(err) {
-                    customAlert("Failed to compress that image below the 20MB limit.");
+            try {
+                if (isImage) {
+                    const { blob } = await compressImageToFit(file, MAX_IMAGE_BYTES);
+                    await sendMedia(blob, 'image', pickedName);
+                } else if (isVideo) {
+                    const { blob } = await compressVideoToFit(file, MAX_VIDEO_BYTES);
+                    await sendMedia(blob, 'video', pickedName);
+                } else {
+                    if (file.size > MAX_OTHER_UPLOAD_BYTES) { customAlert("File too large. The limit is 20MB."); return; }
+                    await sendMedia(file, 'file', pickedName);
                 }
-                e.target.value = "";
-                return;
+            } catch (err) {
+                customAlert(isVideo ? ((err && err.message) || "Failed to compress that video below the 20MB limit.") : isImage ? "Failed to compress that image below the 20MB limit." : "Failed to read that file.");
             }
-
-            if (isVideo) {
-                try {
-                    const { raw, preCompressed } = await compressVideoToFit(file, MAX_VIDEO_BYTES);
-                    sendPayload(raw, { isImage: false, isVideo: true, isFile: false, fileName: pickedName, preCompressed });
-                } catch (err) {
-                    customAlert(err?.message || "Failed to compress that video below the 20MB limit.");
-                }
-                e.target.value = "";
-                return;
-            }
-
-            if (file.size > MAX_OTHER_UPLOAD_BYTES) {
-                customAlert("File too large. The limit is 20MB.");
-                e.target.value = "";
-                return;
-            }
-
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                const raw = event.target.result;
-                
-                sendPayload(raw, { isImage, isVideo, isFile, fileName: pickedName });
-            };
-            reader.onerror = () => customAlert("Failed to read that file.");
-            reader.readAsDataURL(file);
+        }
+        document.getElementById("universal-upload").addEventListener("change", function(e) {
+            const f = e.target.files[0];
             e.target.value = "";
+            uploadFile(f);
+        });
+        // Paste an image/file straight into the message box, or drop files onto the chat
+        ui.msgIp.addEventListener("paste", (e) => {
+            const files = e.clipboardData && e.clipboardData.files;
+            if (files && files.length) { e.preventDefault(); uploadFile(files[0]); }
+        });
+        ui.chatScreen.addEventListener("dragover", (e) => { if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) e.preventDefault(); });
+        ui.chatScreen.addEventListener("drop", (e) => {
+            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { e.preventDefault(); uploadFile(e.dataTransfer.files[0]); }
         });
 
         // Durable history remains backward-compatible with the working version.
@@ -1770,19 +2776,24 @@
             return sanitized;
         }
 
-        async function loadLocalHistory() { 
-            let loaded = await loadFromStorageWithCompression(STORAGE_KEY);
-            messageHistory = sanitizeHistoryLoaded(loaded);
-            messageHistory = dedupeHistoryList(messageHistory).list;
-            const beforePresenceDedupe = messageHistory.length;
-            messageHistory = dedupeConsecutivePresenceEvents(messageHistory);
-            if (messageHistory.length !== beforePresenceDedupe) saveLocalHistory();
+        async function loadLocalHistory() {
+            let list = [];
+            try {
+                if (await migrateLegacyChannel('global', STORAGE_KEY)) maintenanceNeeded = true;
+                const recs = await dbLoadChannel('global');
+                const sigs = new Map();
+                recs.forEach(r => { if (r && r.m && r.m.id) { list.push(r.m); sigs.set(r.m.id, msgPersistSig(r.m)); } });
+                persistedSigs.set('global', sigs);
+            } catch (e) {
+                console.warn('History load failed, trying legacy store', e);
+                try { list = await loadFromStorageWithCompression(STORAGE_KEY) || []; } catch (e2) {}
+            }
+            messageHistory = sanitizeHistoryLoaded(list);
             rebuildMessageHistoryIdSet();
-            if(currentTab === "global") renderActiveTabMessages(); 
+            if (currentTab === "global") renderActiveTabMessages();
         }
-        function saveLocalHistory() { saveToStorageDebounced(STORAGE_KEY, () => messageHistory); }
-        async function loadDmHistory(otherUser) { return await loadFromStorageWithCompression(`mqtt_dm_${myUsername}_${otherUser}`); }
-        function saveDmHistory(otherUser) { saveToStorageDebounced(`mqtt_dm_${myUsername}_${otherUser}`, () => dmHistories[otherUser] || []); }
+        function saveLocalHistory() { schedulePersist('global', () => messageHistory); }
+        function saveDmHistory(otherUser) { schedulePersist(`dm:${myUsername}:${otherUser}`, () => dmHistories[otherUser] || []); }
 
         async function loadSettingsAndDMs() {
             try { const s = safeGet(BLOCKED_KEY);
@@ -1800,28 +2811,36 @@
             if (retentionEl) retentionEl.value = String(getChatRetentionDays());
             if (modeEl) modeEl.value = getChatHistoryMode();
             
-            pendingDMs = await loadFromStorageWithCompression('mqtt_pending_dms') || {};
-            if (Array.isArray(pendingDMs)) pendingDMs = {};
+            document.getElementById('hide-presence-chk').checked = presenceHidden();
+            document.getElementById('notify-chk').checked = safeGet('mqtt_notify') === 'true' && typeof Notification !== 'undefined' && Notification.permission === 'granted';
             
             renderBlockedUI();
             if (myUsername && !isGhost) {
-                const keys = new Set();
-                try { for (let i = 0; i < localStorage.length; i++) keys.add(localStorage.key(i)); } catch (e) {}
-                const lfKeys = await localforage.keys();
-                lfKeys.forEach(k => keys.add(k));
-
-                for (let key of keys) {
-                    if (key.startsWith(`mqtt_dm_${myUsername}_`)) {
-                        let target = key.slice((`mqtt_dm_${myUsername}_`).length);
-                        let hist = await loadFromStorageWithCompression(key);
-                        hist = sanitizeHistoryLoaded(hist);
-                        const dmDedupe = dedupeHistoryList(hist);
-                        hist = dmDedupe.list;
-                        if (hist.length > 0) {
-                            dmHistories[target] = hist;
-                            if (dmDedupe.changed) saveDmHistory(target);
-                            if (!closedDMs.has(target)) ensureDmTab(target);
-                        }
+                const prefix = `dm:${myUsername}:`;
+                // One-time import of pre-v3 DM stores
+                const legacyKeys = new Set();
+                try { for (let i = 0; i < localStorage.length; i++) legacyKeys.add(localStorage.key(i)); } catch (e) {}
+                try { (await localforage.keys()).forEach(k => legacyKeys.add(k)); } catch (e) {}
+                for (const key of legacyKeys) {
+                    if (typeof key === 'string' && key.startsWith(`mqtt_dm_${myUsername}_`)) {
+                        const t = key.slice((`mqtt_dm_${myUsername}_`).length);
+                        if (isValidUsername(t) && await migrateLegacyChannel(prefix + t, key)) maintenanceNeeded = true;
+                    }
+                }
+                let channels = [];
+                try { channels = await dbListChannels(prefix); } catch (e) {}
+                for (const ch of channels) {
+                    const target = ch.slice(prefix.length);
+                    if (!isValidUsername(target)) continue;
+                    let recs = [];
+                    try { recs = await dbLoadChannel(ch); } catch (e) { continue; }
+                    const sigs = new Map(), hist = [];
+                    recs.forEach(r => { if (r && r.m && r.m.id) { hist.push(r.m); sigs.set(r.m.id, msgPersistSig(r.m)); } });
+                    persistedSigs.set(ch, sigs);
+                    const clean = sanitizeHistoryLoaded(hist);
+                    if (clean.length > 0) {
+                        dmHistories[target] = clean;
+                        if (!closedDMs.has(target)) ensureDmTab(target);
                     }
                 }
                 // Restore saved tabs even when their message history is currently empty.
@@ -1883,6 +2902,7 @@
                 activity: { ...currentActivity }
             });
             Object.keys(dmHistories).forEach(u => saveDmHistory(u)); // DM storage keys include our username
+            ensureSubscriptions();
             publishMessage({ type: "RENAME", oldAuthor: oldName, author: myUsername, joinTime: selfData.joinTime, id: generateId() });
             renderUserList(); evaluateAdminRole(); updateStatusText(); updateAndBroadcastPresence();
             ui.newUsernameIp.value = ""; toggleSettings();
@@ -1901,6 +2921,29 @@
 
         function formatMessageContent(rawText, msg) {
             if (msg.backupPlaceholder) return `<span style="display:inline-block; margin-top:4px; padding:2px 4px; border:2px inset var(--win-border-dark); background:#f5f5f5;">[${escapeHTML(msg.backupPlaceholder)}]</span>`;
+            if (isMediaMsg(msg) && isAttRef(rawText)) {
+                const attId = rawText.slice(4);
+                registerAttRef(attId, msg.id);
+                const have = attHave.has(attId);
+                const thumb = (typeof msg.thumb === 'string' && THUMB_RE.test(msg.thumb)) ? msg.thumb : '';
+                const label = have ? '' : `<span class="att-label">${attWanted.has(attId) ? '&#8681; downloading...' : 'not available yet'}</span>`;
+                const lazy = have ? 'data-lazy="1"' : '';
+                if (msg.isImage) {
+                    if (!thumb && !have) return `<span class="att-box" data-att="${attId}">[Image] ${label}</span>`;
+                    return `<img class="chat-media chat-image${have ? '' : ' att-pending'}" data-att="${attId}" data-kind="image" ${lazy} src="${thumb || BLANK_GIF}" alt="User Image" title="Click to enlarge" tabindex="0"/>${label}`;
+                }
+                if (msg.isVideo) {
+                    return `<span class="${have ? 'chat-media ' : ''}chat-video${have ? '' : ' att-pending'}" data-att="${attId}" data-kind="video" role="button" tabindex="0" title="Click to enlarge"><video data-att="${attId}" ${lazy} ${thumb ? `poster="${thumb}"` : ''} preload="none" playsinline></video>${have ? '<span class="play-badge" title="Play here">&#9654;</span>' : ''}</span>${label}`;
+                }
+                if (msg.isAudio) {
+                    return have ? `<br><audio controls preload="none" data-att="${attId}" ${lazy}></audio>` : `<span class="att-box" data-att="${attId}">[Voice Memo] ${label}</span>`;
+                }
+                if (msg.isFile) {
+                    const name = escapeHTML(msg.fileName || 'download.bin');
+                    const size = msg.attSize ? ` (${humanSize(msg.attSize)})` : '';
+                    return `<br><a href="#" data-att-download="${attId}" data-name="${name}" class="btn-w95" style="text-decoration:none; margin-top:4px; padding:4px;">Download ${name}${size}</a>${label}`;
+                }
+            }
             if (msg.isImage) {
                 if (!isSafeMediaDataUrl(rawText, 'image')) return '<span>[Blocked image]</span>';
                 return `<img class="chat-media chat-image" src="${escapeHTML(rawText)}" alt="User Image" title="Click to enlarge" tabindex="0"/>`;
@@ -1932,7 +2975,7 @@
                 if (!url) return raw;
                 const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
                 if (ytMatch) {
-                    return `<br><iframe width="250" height="140" src="https://www.youtube.com/embed/${ytMatch[1]}" frameborder="0" allowfullscreen style="border: 2px inset var(--win-border-dark); margin-top: 4px;"></iframe><br><a href="${url}" target="_blank" rel="noopener noreferrer" style="font-size:10px;">${url}</a>${trail}`;
+                    return `<br><button type="button" class="yt-embed btn-w95" data-yt="${ytMatch[1]}" style="margin-top:4px; padding:4px;">&#9654; Load YouTube video</button><br><a href="${url}" target="_blank" rel="noopener noreferrer" style="font-size:10px;">${url}</a>${trail}`;
                 }
                 return `<a href="${url}" target="_blank" rel="noopener noreferrer" style="color: blue;">${url}</a>${trail}`;
             });
@@ -1980,6 +3023,7 @@
             document.getElementById("search-input").value = "";
             hideNewMsgPopup();
             renderActiveTabMessages();
+            renderTypingIndicator();
 
             if (tabId.startsWith("dm:")) {
                 const targetUser = tabId.replace("dm:", "");
@@ -2046,25 +3090,8 @@
         }
         function cancelReply() { activeReply = null; ui.replyPreview.style.display = "none"; }
 
-        function filterMessages() {
-            const term = document.getElementById("search-input").value.toLowerCase();
-            const msgs = ui.chatBox.children;
-            if (!term) {
-                for (let i = 0; i < msgs.length; i++) {
-                    if (msgs[i].id === 'typing-indicator') continue;
-                    if (msgs[i].style.display === "none") msgs[i].style.display = "";
-                }
-                return;
-            }
-            for (let i = 0; i < msgs.length; i++) {
-                if (msgs[i].id === 'typing-indicator') continue;
-                if (msgs[i].innerText.toLowerCase().includes(term)) {
-                    msgs[i].style.display = "";
-                } else {
-                    msgs[i].style.display = "none";
-                }
-            }
-        }
+        let searchTimer = null;
+        function filterMessages() { clearTimeout(searchTimer); searchTimer = setTimeout(() => renderActiveTabMessages(true), 120); }
 
         function isChatNearBottom() {
             return ui.chatBox.scrollHeight - ui.chatBox.clientHeight <= ui.chatBox.scrollTop + NEAR_BOTTOM_PX;
@@ -2088,20 +3115,34 @@
 
         let renderScheduled = false;
         let lastRenderSig = "";
-        // A cheap fingerprint of everything that affects how the visible tab looks. Used to skip full
-        // re-renders that wouldn't change anything (sync chunks that re-merge known messages, echoes, etc.).
-        // Every needless re-render replaced the whole DOM - including the thing you were mid-click on -
-        // and re-parsed multi-MB media URLs, which is what made the lightbox/expand buttons miss clicks.
-        function computeRenderSig() {
+        function getSearchTerm() { const el = document.getElementById("search-input"); return el ? el.value.trim().toLowerCase() : ""; }
+        function matchesSearch(m, term) {
+            if (!term) return true;
+            if (m.author && String(m.author).toLowerCase().includes(term)) return true;
+            if (m.backupPlaceholder && String(m.backupPlaceholder).toLowerCase().includes(term)) return true;
+            if (isMediaMsg(m)) return !!(m.fileName && String(m.fileName).toLowerCase().includes(term));
+            return typeof m.text === "string" && m.text.toLowerCase().includes(term);
+        }
+        // Everything the current tab would show (search runs over the full stored history, not just rendered nodes)
+        function getVisibleSource() {
             const list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
-            const parts = [currentTab, myUsername, isGhost ? 1 : 0, isAdmin ? 1 : 0, renderedMsgCount,
-                Array.from(blockedUsers).join(","),
-                currentTab.startsWith("dm:") ? (dmReadWatermarks[currentTab.slice(3)] || 0) : ""];
-            for (const m of list) {
-                if (!m || blockedUsers.has(m.author)) continue;
-                const r = m.reactions && Object.keys(m.reactions).length ? JSON.stringify(m.reactions) : "";
-                parts.push(`${m.id}:${m.author}:${typeof m.text === "string" ? m.text.length : 0}:${m.edited ? 1 : 0}:${m.backupPlaceholder || ""}:${r}`);
-            }
+            const term = getSearchTerm();
+            const hidePresence = presenceHidden();
+            return list.filter(m => m && !blockedUsers.has(m.author) && !(hidePresence && isJoinLeaveSystemEvent(m)) && (!term || matchesSearch(m, term)));
+        }
+        function msgRenderSig(m, showTime) {
+            const r = m.reactions && Object.keys(m.reactions).length ? JSON.stringify(m.reactions) : "";
+            const st = (m.author === myUsername && !m.isSystem) ? (outboxState(m.id) || "") : "";
+            const ref = isAttRef(m.text) ? m.text.slice(4) : null;
+            const att = ref ? (attHave.has(ref) ? "A" : (attWanted.has(ref) ? "W" : "N")) : "";
+            let rr = "";
+            if (currentTab.startsWith("dm:") && m.author === myUsername) rr = (m.timestamp || 0) <= (dmReadWatermarks[currentTab.slice(3)] || 0) ? "R" : "U";
+            const t = typeof m.text === "string" ? m.text : "";
+            return `${m.id}|${m.author}|${t.length}:${hashStr(t)}|${m.edited ? 1 : 0}|${m.backupPlaceholder || ""}|${r}|${st}|${att}|${rr}|${showTime ? 1 : 0}|${isAdmin ? 1 : 0}|${isGhost ? 1 : 0}|${myUsername}|${m.replyTo ? m.replyTo.author + ":" + String(m.replyTo.text || "").length : ""}`;
+        }
+        function computeRenderSig() {
+            const parts = [currentTab, myUsername, isGhost ? 1 : 0, isAdmin ? 1 : 0, renderedMsgCount, getSearchTerm(), presenceHidden() ? 1 : 0, Array.from(blockedUsers).join(",")];
+            for (const m of getVisibleSource()) parts.push(msgRenderSig(m, false));
             return parts.join("|");
         }
         function scheduleRenderActiveTabMessages() {
@@ -2113,35 +3154,53 @@
                 renderActiveTabMessages();
             });
         }
+        function takeTimeHeader(ts) {
+            if (ts - lastDisplayedTimestamp > 15 * 60 * 1000) { lastDisplayedTimestamp = ts; return true; }
+            return false;
+        }
 
+        // Keyed reconcile: existing message nodes (and the images/videos inside them) are reused when nothing
+        // about them changed, so a re-render no longer rebuilds the whole chat or resets playing media.
         function renderActiveTabMessages(resetCount = true) {
             if (resetCount) renderedMsgCount = 250;
             const oldDistanceFromBottom = ui.chatBox.scrollHeight - ui.chatBox.scrollTop;
             const wasAtBottom = isChatNearBottom();
 
-            let list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
-            let filteredList = list.filter(m => !blockedUsers.has(m.author));
-            let visibleList = filteredList.slice(Math.max(0, filteredList.length - renderedMsgCount));
+            const term = getSearchTerm();
+            const filteredList = getVisibleSource();
+            const visibleList = term ? filteredList.slice(-500) : filteredList.slice(Math.max(0, filteredList.length - renderedMsgCount));
 
-            const fragment = document.createDocumentFragment();
+            const existing = new Map();
+            Array.from(ui.chatBox.children).forEach(el => { if (el.dataset && el.dataset.mid) existing.set(el.dataset.mid, el); });
+
             lastDisplayedTimestamp = 0;
-            
-            visibleList.forEach(msg => { 
-                const line = msg.isSystem ? createSystemDOMNode(msg) : createMsgDOMNode(msg);
-                if (line) fragment.appendChild(line);
-            });
-            
-            ui.chatBox.innerHTML = "";
-            ui.chatBox.appendChild(fragment);
+            const nodes = [];
+            for (const msg of visibleList) {
+                const showTime = takeTimeHeader(msg.timestamp || Date.now());
+                const sig = msgRenderSig(msg, showTime);
+                let el = existing.get(msg.id);
+                if (!el || el._rsig !== sig) {
+                    el = msg.isSystem ? createSystemDOMNode(msg, showTime) : createMsgDOMNode(msg, showTime);
+                    el._rsig = sig;
+                }
+                nodes.push(el);
+            }
+            let ref = ui.chatBox.firstChild;
+            for (const node of nodes) {
+                if (node === ref) { ref = ref.nextSibling; continue; }
+                ui.chatBox.insertBefore(node, ref);
+            }
+            while (ref) { const next = ref.nextSibling; ref.remove(); ref = next; } // stale nodes
             lastRenderSig = computeRenderSig();
 
-            if (wasAtBottom) { 
-                ui.chatBox.scrollTop = ui.chatBox.scrollHeight; 
+            if (wasAtBottom) {
+                ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
                 hideNewMsgPopup();
-            } else { 
-                ui.chatBox.scrollTop = ui.chatBox.scrollHeight - oldDistanceFromBottom; 
+            } else {
+                ui.chatBox.scrollTop = ui.chatBox.scrollHeight - oldDistanceFromBottom;
             }
-            filterMessages();
+            hydrateMedia(ui.chatBox);
+            renderTypingIndicator();
         }
 
         function buildMsgInnerHTML(msg, existingTimeHtml) {
@@ -2151,6 +3210,13 @@
             const formattedContent = formatMessageContent(msg.text, msg);
 
             let editTag = msg.edited ? `<span style="font-size: 10px; color: #888; font-style: italic;"> (edited)</span>` : "";
+
+            let pendingTag = "";
+            if (msg.author === myUsername && !msg.isSystem) {
+                const st = outboxState(msg.id);
+                if (st === "pending") pendingTag = `<span class="out-pending" title="Sending...">&#8987;</span>`;
+                else if (st === "failed") pendingTag = `<button type="button" class="out-failed" data-retry-id="${escapeHTML(msg.id)}" title="Tap to retry">&#9888; Not sent - retry</button>`;
+            }
 
             let readReceiptTag = "";
             if (currentTab.startsWith("dm:") && msg.author === myUsername) {
@@ -2176,31 +3242,29 @@
                 reactionsHtml += `</div>`;
             }
 
-            return `${existingTimeHtml}${replyHtml}${deleteBtn}<b style="color: ${color};">${escapeHTML(msg.author)}:</b> ${formattedContent}${editTag}${readReceiptTag}${reactionsHtml}`;
+            return `${existingTimeHtml}${replyHtml}${deleteBtn}<b style="color: ${color};">${escapeHTML(msg.author)}:</b> ${formattedContent}${editTag}${pendingTag}${readReceiptTag}${reactionsHtml}`;
         }
 
         function patchMsgDOM(msg) {
+            if (!msg || msg.isSystem) return false;
             const el = document.getElementById(`msg-${msg.id}`);
             if (!el) return false;
             const existingTimeEl = el.querySelector(".msg-time");
             const existingTimeHtml = existingTimeEl ? existingTimeEl.outerHTML : "";
             el.innerHTML = buildMsgInnerHTML(msg, existingTimeHtml);
+            el._rsig = msgRenderSig(msg, !!existingTimeEl);
+            hydrateMedia(el);
             lastRenderSig = computeRenderSig();
             return true;
         }
 
-        function createSystemDOMNode(sysObj) {
+        function createSystemDOMNode(sysObj, showTime) {
             let line = document.createElement("div");
-            line.id = `msg-${sysObj.id}`; line.style.color = "#8b0000"; line.style.fontWeight = "bold"; line.style.margin = "2px 0"; line.style.fontSize = "15px";
+            line.id = `msg-${sysObj.id}`; line.dataset.mid = sysObj.id;
+            line.style.color = "#8b0000"; line.style.fontWeight = "bold"; line.style.margin = "2px 0"; line.style.fontSize = "15px";
             let deleteBtn = isAdmin ? `<button type="button" data-delete-id="${escapeHTML(sysObj.id)}" style="font-size: 10px; padding: 0 3px; margin-right: 4px;">x</button>` : "";
-            const formattedTime = formatTimestamp(sysObj.timestamp);
-            
-            let timeHtml = "";
-            if (sysObj.timestamp - lastDisplayedTimestamp > 15 * 60 * 1000) {
-                lastDisplayedTimestamp = sysObj.timestamp;
-                timeHtml = `<div class="msg-time" data-ts="${sysObj.timestamp}">${formattedTime}</div>`;
-            }
-
+            const ts = sysObj.timestamp || Date.now();
+            const timeHtml = showTime ? `<div class="msg-time" data-ts="${ts}">${formatTimestamp(ts)}</div>` : "";
             line.innerHTML = `${timeHtml}${deleteBtn}[SYSTEM] ${escapeHTML(sysObj.text)}`;
             return line;
         }
@@ -2208,11 +3272,10 @@
         function appendSystemDOM(arg, isBatch = false) {
             let sysObj = typeof arg === "string" ? { id: generateId(), text: arg, isSystem: true, localOnly: true, timestamp: Date.now() } : arg;
             if (!sysObj.timestamp) sysObj.timestamp = Date.now();
-            const line = createSystemDOMNode(sysObj);
-            
+            const line = createSystemDOMNode(sysObj, takeTimeHeader(sysObj.timestamp));
             const wasAtBottom = isChatNearBottom();
-            ui.chatBox.appendChild(line); 
-            
+            ui.chatBox.appendChild(line);
+
             if (!isBatch) {
                 if (wasAtBottom) { ui.chatBox.scrollTop = ui.chatBox.scrollHeight; hideNewMsgPopup(); }
                 else { newMessageCount++; showNewMsgPopup(); }
@@ -2223,10 +3286,12 @@
             if (e.preventDefault) e.preventDefault();
             if (isGhost) return;
             activeContextMsgId = msg.id;
-            document.getElementById('ctx-download-msg').style.display =
-                (!msg.backupPlaceholder && (msg.isImage || msg.isVideo) && typeof msg.text === 'string' && msg.text.startsWith('data:')) ? 'block' : 'none';
-            
-            if (msg.author === myUsername && !(msg.isImage || msg.isVideo || msg.isAudio || msg.isFile)) {
+            const dl = document.getElementById('ctx-download-msg');
+            const canDownload = !msg.backupPlaceholder && (msg.isImage || msg.isVideo) && typeof msg.text === 'string' &&
+                ((isAttRef(msg.text) && attHave.has(msg.text.slice(4))) || msg.text.startsWith('data:'));
+            dl.style.display = canDownload ? 'block' : 'none';
+
+            if (msg.author === myUsername && !isMediaMsg(msg)) {
                 document.getElementById('ctx-edit-msg').style.display = "block";
             } else {
                 document.getElementById('ctx-edit-msg').style.display = "none";
@@ -2246,43 +3311,50 @@
             positionMenu(ui.reactionPickerMenu, e.pageX, e.pageY);
         }
 
-        function executeMsgDownload() {
+        async function executeMsgDownload() {
             ui.msgContextMenu.style.display = "none";
-            const msg = messageHistory.find(m => m.id === activeContextMsgId) || Object.values(dmHistories).flat().find(m => m.id === activeContextMsgId);
+            const msg = findMessageById(activeContextMsgId);
             activeContextMsgId = null;
-            if (!msg || !(msg.isImage || msg.isVideo) || msg.backupPlaceholder || typeof msg.text !== 'string' || !msg.text.startsWith('data:')) return;
+            if (!msg || !(msg.isImage || msg.isVideo) || msg.backupPlaceholder || typeof msg.text !== 'string') return;
             try {
-                const info = parseDataUrl(msg.text);
-                const name = msg.fileName || `${msg.isVideo ? 'video' : 'image'}-${msg.timestamp || Date.now()}.${extFromMime(info && info.mime)}`;
-                downloadDataUrl(msg.text, name);
+                let url, mime;
+                if (isAttRef(msg.text)) {
+                    const rec = await attGet(msg.text.slice(4));
+                    if (!rec || !rec.blob) { customAlert('That file has not finished downloading yet.'); return; }
+                    url = URL.createObjectURL(rec.blob); mime = rec.mime;
+                    setTimeout(() => URL.revokeObjectURL(url), 30000);
+                } else if (msg.text.startsWith('data:')) {
+                    url = msg.text; const info = parseDataUrl(msg.text); mime = info && info.mime;
+                } else return;
+                triggerDownload(url, msg.fileName || `${msg.isVideo ? 'video' : 'image'}-${msg.timestamp || Date.now()}.${extFromMime(mime)}`);
             } catch (e) { customAlert("Could not download that file."); }
         }
 
-        function executeMsgEdit() {
+        async function executeMsgEdit() {
             ui.msgContextMenu.style.display = "none";
             if (!activeContextMsgId) return;
-            let msg = messageHistory.find(m => m.id === activeContextMsgId) || Object.values(dmHistories).flat().find(m => m.id === activeContextMsgId);
-            if (!msg || msg.author !== myUsername) return;
-            
-            if (msg.isImage || msg.isVideo || msg.isAudio || msg.isFile) { activeContextMsgId = null; return; }
-            let newText = prompt("Edit your message:", msg.text);
-            if (newText !== null && newText.trim() !== "" && newText !== msg.text) {
-                publishMessage({ type: "EDIT_MSG", id: msg.id, text: newText.trim(), author: myUsername });
-            }
+            const msg = findMessageById(activeContextMsgId);
             activeContextMsgId = null;
+            if (!msg || msg.author !== myUsername || isMediaMsg(msg)) return;
+            const edited = await openEditModal(msg.text);
+            if (edited === null) return;
+            const newText = edited.trim();
+            if (!newText || newText === msg.text) return;
+            if (newText.length > MAX_TEXT_LENGTH) { customAlert(`Message too long. Limit: ${MAX_TEXT_LENGTH.toLocaleString()} characters.`); return; }
+            publishMessage({ type: "EDIT_MSG", id: msg.id, text: newText, author: myUsername });
         }
 
         function sendReaction(emoji) {
             ui.reactionPickerMenu.style.display = "none";
             if (!activeContextMsgId || isGhost) return;
-            let msg = messageHistory.find(m => m.id === activeContextMsgId) || Object.values(dmHistories).flat().find(m => m.id === activeContextMsgId);
+            let msg = findMessageById(activeContextMsgId);
             if (!msg) return;
 
             let action = "add";
             if (msg.reactions && msg.reactions[emoji] && msg.reactions[emoji].includes(myUsername)) {
                 action = "remove";
             }
-            
+
             publishMessage({ type: "REACT_MSG", id: msg.id, emoji: emoji, author: myUsername, action: action });
             activeContextMsgId = null;
         }
@@ -2292,10 +3364,11 @@
             sendReaction(emoji);
         }
 
-        function createMsgDOMNode(msg) {
+        function createMsgDOMNode(msg, showTime) {
             let line = document.createElement("div");
-            line.id = `msg-${msg.id}`; line.className = "clickable-msg"; line.style.margin = "2px 0"; line.style.fontSize = "15px";
-            
+            line.id = `msg-${msg.id}`; line.dataset.mid = msg.id;
+            line.className = "clickable-msg"; line.style.margin = "2px 0"; line.style.fontSize = "15px";
+
             line.onclick = (e) => {
                 if (e.target.closest('button, a, audio, video, img, .chat-media, .play-badge, .video-expand, .close-tab-btn, .reaction-badge')) return;
                 const sel = window.getSelection && window.getSelection();
@@ -2311,26 +3384,23 @@
                 line.ontouchmove = () => clearTimeout(longPressTimer);
             }
 
-            let msgTimestamp = msg.timestamp || Date.now();
-            const formattedTime = formatTimestamp(msgTimestamp);
-            
-            let timeHtml = "";
-            if (msgTimestamp - lastDisplayedTimestamp > 15 * 60 * 1000) {
-                lastDisplayedTimestamp = msgTimestamp;
-                timeHtml = `<div class="msg-time" data-ts="${msgTimestamp}">${formattedTime}</div>`;
-            }
-
+            const msgTimestamp = msg.timestamp || Date.now();
+            const timeHtml = showTime ? `<div class="msg-time" data-ts="${msgTimestamp}">${formatTimestamp(msgTimestamp)}</div>` : "";
             line.innerHTML = buildMsgInnerHTML(msg, timeHtml);
             return line;
         }
 
         function appendMsgDOM(msg, isBatch = false) {
-            const line = createMsgDOMNode(msg);
+            const term = getSearchTerm();
+            if (term && !matchesSearch(msg, term)) return;
             const wasAtBottom = isChatNearBottom();
-            
+            const showTime = takeTimeHeader(msg.timestamp || Date.now());
+            const line = createMsgDOMNode(msg, showTime);
+            line._rsig = msgRenderSig(msg, showTime);
             ui.chatBox.appendChild(line);
+            hydrateMedia(line);
             lastRenderSig = computeRenderSig();
-            
+
             if (!isBatch) {
                 if (wasAtBottom || msg.author === myUsername) {
                     ui.chatBox.scrollTop = ui.chatBox.scrollHeight;
@@ -2355,7 +3425,7 @@
 
             const uData = activeUsers.get(myUsername) || { joinTime: Date.now() };
             const published = publishMessage({
-                type: "PING",
+                type: "PING", cid: myCid,
                 author: myUsername,
                 isGhost: isGhost,
                 isOnHomepage: isOnHomepage,
@@ -2407,7 +3477,7 @@
                     hasJoinedRoomWindow = true;
                     const now = Date.now();
                     publishMessage({
-                        type: "JOIN",
+                        type: "JOIN", cid: myCid,
                         author: myUsername,
                         joinTime: activeUsers.get(myUsername)?.joinTime || now,
                         id: generateId(),
@@ -2469,6 +3539,7 @@
                 if (st) lastSeenTime = parseInt(st, 10) || 0;
             } catch(e){}
 
+            await attLoadIndex();
             let saved = safeGet(USERNAME_KEY);
             let remAdmin = safeGet('mqtt_admin_rem');
 
@@ -2496,10 +3567,9 @@
                 await loadTombstones();
                 messageHistory = applyTombstonesToList(messageHistory);
                 rebuildMessageHistoryIdSet();
-                repairMalformedSavedReplies();
-                dedupeAllHistories();
+                await maintenanceOnce(); await restoreOutbox(); noteAllAttachmentRefs();
                 historyReadyForSync = false;
-                backupRestorePromise = autoRestoreGitHubBackup().catch(() => null).finally(() => { historyReadyForSync = true; if (isConnected) requestManifestBroadcast(); });
+                backupRestorePromise = maybeFirstVisitBackupRestore().finally(() => { historyReadyForSync = true; if (isConnected) requestManifestBroadcast(); });
             } else {
                 let storedGhost = safeGet("mqtt_ghost_id");
                 if (!storedGhost) { storedGhost = "ghost-" + generateId(); safeSet("mqtt_ghost_id", storedGhost); }
@@ -2510,10 +3580,9 @@
                 await loadTombstones();
                 messageHistory = applyTombstonesToList(messageHistory);
                 rebuildMessageHistoryIdSet();
-                repairMalformedSavedReplies();
-                dedupeAllHistories();
+                await maintenanceOnce(); await restoreOutbox(); noteAllAttachmentRefs();
                 historyReadyForSync = false;
-                backupRestorePromise = autoRestoreGitHubBackup().catch(() => null).finally(() => { historyReadyForSync = true; if (isConnected) requestManifestBroadcast(); });
+                backupRestorePromise = maybeFirstVisitBackupRestore().finally(() => { historyReadyForSync = true; if (isConnected) requestManifestBroadcast(); });
             }
 
             activeUsers.set(myUsername, {
@@ -2525,18 +3594,27 @@
                 activity: { ...currentActivity }
             });
 
-            client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
+            const persistentSession = await acquireSessionLock();
+            const deviceId = getDeviceId();
+            myCid = persistentSession ? `uc_${deviceId}` : `uc_${deviceId}_${Math.random().toString(36).slice(2, 8)}`;
+            // Persistent session (clean:false): the broker queues QoS1 chat messages while this device is offline.
+            client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt", {
+                clientId: myCid, clean: !persistentSession, keepalive: 30, reconnectPeriod: 2000, connectTimeout: 15000,
+                will: { topic: ROOM_TOPIC, qos: 0, retain: false, payload: JSON.stringify({ type: "LEAVE", author: "_will", will: true, cid: myCid, id: "will" }) }
+            });
             updateConnectionStatus("CONNECTING", "normal");
             client.on("connect", () => {
                 isConnected = true;
                 updateConnectionStatus("CONNECTED", "good");
-                client.subscribe(ROOM_TOPIC, (err) => {
+                client.subscribe(ROOM_TOPIC, { qos: 1 }, (err) => {
                     if (!err) {
+                        ensureSubscriptions();
                         backupRestorePromise.finally(() => {
                             if (isConnected && historyReadyForSync) requestManifestBroadcast();
                         });
                         publishPing();
-                        startPingInterval()
+                        startPingInterval();
+                        pumpOutbox(); flushAttBackfill(); scheduleAttPump(2500);
                     }
                 });
             });
@@ -2545,7 +3623,8 @@
                 updateConnectionStatus("RECONNECTING", "normal");
             });
             client.on("close", () => {
-                isConnected = false;
+                isConnected = false; inboxTopicSubscribed = null; attSubscribed = false;
+                outbox.forEach(e => { e.inflight = false; });
                 updateConnectionStatus("DISCONNECTED", "bad");
             });
             client.on("offline", () => {
@@ -2559,12 +3638,13 @@
             setupMqttListeners();
             requestParentActivityState();
             setInterval(checkPresence, 5000);
+            setTimeout(gcAttachments, 20000); setInterval(gcAttachments, 6 * 3600 * 1000);
             scheduleManifestTick();
         })();
 
         async function joinChat() {
             let val = sanitizeUsername(ui.userIp.value.trim());
-            if (!isValidUsername(val)) return alert("Username must use only letters, numbers, underscores, hyphens, or periods (max 32 characters).");
+            if (!isValidUsername(val)) return customAlert("Username must use only letters, numbers, underscores, hyphens, or periods (max 32 characters).");
             if (ADMINS.includes(val)) openPasswordModal('join_admin', val); else executeJoin(val);
         }
 
@@ -2589,8 +3669,7 @@
             await loadTombstones();
             messageHistory = applyTombstonesToList(messageHistory);
             rebuildMessageHistoryIdSet();
-            repairMalformedSavedReplies();
-            dedupeAllHistories();
+            await maintenanceOnce(); await restoreOutbox(); noteAllAttachmentRefs();
 
             const now = Date.now();
             activeUsers.set(myUsername, {
@@ -2604,9 +3683,10 @@
             evaluateAdminRole(); renderUserList(); updateAndBroadcastPresence();
 
             hasJoinedRoomWindow = true;
+            ensureSubscriptions();
             if (isConnected) {
                 publishMessage({
-                    type: "JOIN",
+                    type: "JOIN", cid: myCid,
                     author: myUsername,
                     joinTime: now,
                     id: generateId(),
@@ -2621,20 +3701,19 @@
             startPingInterval()
         }
 
-        function processPendingOutbox(targetUser) {
-            if (pendingDMs[targetUser]) {
-                pendingDMs[targetUser].forEach(msg => publishMessage(msg));
-                delete pendingDMs[targetUser];
-                saveToStorageWithCompression('mqtt_pending_dms', pendingDMs);
-            }
-        }
-
         function setupMqttListeners() {
             window.addEventListener("beforeunload", () => { if (isConnected && !isGhost) publishMessage({ type: "LEAVE", author: myUsername, id: generateId() }); });
             client.on("message", async (topic, payload) => {
                 try {
-                    const data = JSON.parse(payload.toString());
+                    if (!capturedBufferCtor && payload && payload.constructor && payload.constructor !== Uint8Array && payload.constructor.from) capturedBufferCtor = payload.constructor;
+                    if (isFramePayload(payload)) { await handleAttachmentFrame(payload); return; }
+                    let data = JSON.parse(payload.toString());
                     if (!validateChatPayload(data)) return;
+                    if (data.type === "LEAVE" && data.will) { // Last Will: the broker tells us a client vanished
+                        const gone = findUserByCid(data.cid);
+                        if (!gone) return;
+                        data = { type: "LEAVE", author: gone, id: generateId(), timestamp: Date.now() };
+                    }
                     if (data.compressed && data.text) {
                         if (data.compressed === 'gz') {
                             try { data.text = await unpackFromNetwork(data.text, data.mime); } catch (e) { return; }
@@ -2645,6 +3724,7 @@
                     }
                     if ((data.type === "MSG" || data.type === "DM") && !validateMessagePayloadAfterDecompression(data)) return;
                     
+                    if ((data.type === "MSG" || data.type === "DM") && data.author !== myUsername && incomingFlood(data.author)) return;
                     if (data.author && !blockedUsers.has(data.author)) {
                         const existing = activeUsers.get(data.author);
                         const incomingActivity = data.activity
@@ -2663,21 +3743,24 @@
                                 : (existing ? existing.isOnHomepage : false),
                             isGhost: data.isGhost !== undefined ? data.isGhost : (data.author.startsWith("ghost-")),
                             status: data.status || (existing ? existing.status : "Online"),
-                            activity: incomingActivity
+                            activity: incomingActivity,
+                            cid: data.cid || (existing ? existing.cid : undefined)
                         });
                         renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
                     }
 
                     if (data.author !== myUsername && !blockedUsers.has(data.author)) {
+                        const isFresh = !data.timestamp || (Date.now() - data.timestamp) < 90000; // replays from the broker queue are not live pings
                         const isDM = (!isGhost && data.type === "DM" && data.target === myUsername);
                         const isMediaMsg = !!(data.isImage || data.isVideo || data.isAudio || data.isFile);
                         const isEveryone = (data.type === "MSG" && !isMediaMsg && data.text && data.text.includes("@everyone"));
                         const isMention = (data.type === "MSG" && !isMediaMsg && data.text && (isEveryone || (!isGhost && textMentionsUser(data.text, myUsername))));
                         
-                        if (isDM || isMention) {
+                        if ((isDM || isMention) && isFresh) {
                             const now = Date.now();
                             if (now - (lastPingFrom[data.author] || 0) >= 3000) {
                                 lastPingFrom[data.author] = now;
+                                notifyDesktop(isDM ? `DM from ${data.author}` : `${data.author} mentioned you`, isMediaMsg ? 'sent an attachment' : String(data.text || '').slice(0, 100));
                                 let notifText = isDM
                                     ? `You received a DM from ${data.author}`
                                     : buildPingNotificationText(data.author, data.text, isEveryone, false);
@@ -2702,10 +3785,10 @@
                     }
 
                     if (data.type === "SYNC_MANIFEST_REQ") {
-                        setTimeout(() => {
-                            if (isConnected) handleManifestRequest(data);
-                        }, Math.floor(Math.random() * 350));
-                        if (!isGhost && data.author) processPendingOutbox(data.author);
+                        if (data.cid && data.cid === myCid) return; // our own request echoing back
+                        if (shouldAnswerManifest(data.attempt)) {
+                            setTimeout(() => { if (isConnected) handleManifestRequest(data); }, Math.floor(Math.random() * 350));
+                        }
                     }
                     else if (data.type === "SYNC_MANIFEST") {
                         setTimeout(() => handleManifest(data), 0);
@@ -2719,10 +3802,12 @@
                     else if (data.type === "SYNC_CHUNK") {
                         handleSyncChunk(data);
                     }
+                    else if (data.type === "ATT_PULL") {
+                        handleAttPull(data);
+                    }
                     else if (data.type === "JOIN") {
                         if (blockedUsers.has(data.author)) return;
                         if (data.author !== myUsername) roomPresenceEpoch++;
-                        if (!isGhost) processPendingOutbox(data.author);
                         const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} joined the room.`, timestamp: data.timestamp || Date.now() };
                         const latestPresence = messageHistory
                             .map((m, index) => ({ m, index, e: presenceEventKind(m) }))
@@ -2737,15 +3822,11 @@
                             rebuildMessageHistoryIdSet(); saveLocalHistory(); if (currentTab === "global") { scheduleRenderActiveTabMessages(); }
                         }
                         
-                        if (data.author !== myUsername) {
-                            setTimeout(() => {
-                                if (isConnected) publishMessage(buildManifest(data.author));
-                            }, Math.floor(Math.random() * 400));
+                        if (data.author !== myUsername && shouldAnswerManifest(0)) {
+                            setTimeout(() => { if (isConnected) handleManifestRequest({ author: data.author }); }, Math.floor(Math.random() * 400));
                         }
                     }
-                    else if (data.type === "PING") {
-                        if (!isGhost && data.author) processPendingOutbox(data.author);
-                    }
+                    else if (data.type === "PING") { /* presence is updated above */ }
                     else if (data.type === "LEAVE") {
                         const uData = activeUsers.get(data.author);
                         if (data.author) activeUsers.delete(data.author);
@@ -2774,10 +3855,13 @@
                     }
                     else if (data.type === "MSG") {
                         if (blockedUsers.has(data.author) && data.author !== myUsername) return;
-                        const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), isSystem: false, edited: false, reactions: data.reactions || {} };
+                        const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, attMime: data.attMime, attSize: data.attSize, thumb: data.thumb, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), isSystem: false, edited: false, reactions: data.reactions || {} };
+                        if (isMediaMsg(msgObj) && typeof msgObj.text === 'string' && msgObj.text.startsWith('data:')) await convertLegacyMedia(msgObj); // old-format peer
                         const isNew = !messageHistoryIdSet.has(msgObj.id);
                         const prevLen = messageHistory.length;
-                        messageHistory = mergeHistory(messageHistory, [msgObj], true); saveLocalHistory();
+                        const liveMsg = (Date.now() - (msgObj.timestamp || Date.now())) < 90000;
+                        messageHistory = mergeHistory(messageHistory, [msgObj], liveMsg); saveLocalHistory();
+                        noteAttachmentRefs([msgObj], { live: true });
                         if (currentTab === "global" && isNew) {
                             // Only append when the message really was inserted. If it was merged into an
                             // existing placeholder or rejected by a tombstone, re-render instead of
@@ -2842,13 +3926,15 @@
                             const otherUser = data.target === myUsername ? data.author : data.target;
                             if (closedDMs.has(otherUser)) { closedDMs.delete(otherUser); saveClosedDMs(); }
                             const tabId = ensureDmTab(otherUser); bumpDmTab(otherUser);
-                            const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), edited: false, reactions: data.reactions || {} };
+                            const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, attMime: data.attMime, attSize: data.attSize, thumb: data.thumb, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), edited: false, reactions: data.reactions || {} };
+                            if (isMediaMsg(msgObj) && typeof msgObj.text === 'string' && msgObj.text.startsWith('data:')) await convertLegacyMedia(msgObj);
                             dmHistories[otherUser] = mergeHistory(dmHistories[otherUser] || [], [msgObj], true); saveDmHistory(otherUser);
+                            noteAttachmentRefs([msgObj], { live: true });
                             if (currentTab === tabId) scheduleRenderActiveTabMessages(); else markUnread(tabId);
                             if (!isChatWindowOpen && data.author !== myUsername) window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, CHAT_ORIGIN);
                         }
                     }
-                    else if (data.type === "CMD" && data.target === myUsername && ADMINS.includes(data.author)) {
+                    else if (data.type === "CMD" && data.target === myUsername && ADMINS.includes(data.author) && await verifyAdminMessage(data)) {
                         if (data.cmd === "KICK") { if (client) client.end(); isConnected = false; ui.chatScreen.style.display = "none"; ui.userScreen.style.display = "block"; customAlert("You have been kicked by an administrator."); }
                         else if (data.cmd === "TIMEOUT") { safeSet("mqtt_timeout", Date.now() + (data.duration || 120000)); checkPenalties(); }
                         else if (data.cmd === "BAN") { safeSet("mqtt_banned", "true"); checkPenalties(); }
@@ -2863,16 +3949,6 @@
                     else if (data.type === "MUTE_ATTEMPT" && isAdmin) { appendSystemDOM({ id: data.id || generateId(), isSystem: true, text: `${data.author} tried to send a message while muted (Attempt #${data.count})`, timestamp: data.timestamp || Date.now() }); }
                     else if (data.type === "DELETE_MSG") {
                         const ephemeralDelete = data.ephemeral === true;
-                        const removeFromList = (list, allowAdmin = true) => {
-                            if (!Array.isArray(list)) return false;
-                            const idx = list.findIndex(m => m.id === data.id);
-                            if (idx === -1) return false;
-                            const msg = list[idx];
-                            if (!(msg.author === data.deleter || (allowAdmin && ADMINS.includes(data.deleter)))) return false;
-                            list.splice(idx, 1);
-                            return true;
-                        };
-
                         let removedGlobal = false;
                         const idxG = messageHistory.findIndex(m => m.id === data.id);
                         if (idxG !== -1) {
@@ -2895,7 +3971,7 @@
                         if (removedGlobal || ephemeralDelete) scheduleRenderActiveTabMessages();
                     }
                     else if (data.type === "CLEAR_RECENT") {
-                        if (!ADMINS.includes(data.author) || !Number.isFinite(data.hours) || data.hours <= 0) return;
+                        if (!(await verifyAdminMessage(data)) || !Number.isFinite(data.hours) || data.hours <= 0) return;
                         const anchor = data.timestamp || Date.now();
                         const cutoff = anchor - (data.hours * 3600000);
                         addRangeTombstone(cutoff, anchor, data.targetType === "system" ? "system" : "all");
@@ -2907,7 +3983,7 @@
                         messageHistory.push(sysObj); messageHistoryIdSet.add(sysObj.id); saveLocalHistory(); scheduleRenderActiveTabMessages();
                     }
                     else if (data.type === "CLEAR_SYSTEM_ALL") {
-                        if (!ADMINS.includes(data.author)) return;
+                        if (!(await verifyAdminMessage(data))) return;
                         addRangeTombstone(0, Date.now(), "system");
                         messageHistory = messageHistory.filter(m => !m.isSystem);
                         rebuildMessageHistoryIdSet(); saveLocalHistory();
@@ -2915,7 +3991,7 @@
                         scheduleRenderActiveTabMessages();
                     }
                     else if (data.type === "CLEAR_ALL") {
-                        if (!ADMINS.includes(data.author)) return;
+                        if (!(await verifyAdminMessage(data))) return;
                         const anchor = data.timestamp || Date.now();
                         raiseNukeMarker(anchor);
                         // Never physically erase historical records.  CLEAR_ALL remains a
@@ -2927,10 +4003,7 @@
                         messageHistory.push(sysObj); messageHistoryIdSet.add(sysObj.id); saveLocalHistory(); scheduleRenderActiveTabMessages(); 
                     }
                     else if (data.type === "TYPING") {
-                        if (!isGhost && data.author !== myUsername && !blockedUsers.has(data.author)) {
-                            ui.typing.innerText = `${data.author} is typing...`;
-                            clearTimeout(typingIndicatorTimer); typingIndicatorTimer = setTimeout(() => { ui.typing.innerText = ""; }, 3000);
-                        }
+                        if (!isGhost && data.author !== myUsername && !blockedUsers.has(data.author)) noteTyping(data.author, data.tab === "dm" ? "dm" : "global");
                     }
                     else if (data.type === "RENAME") {
                         const oldName = data.oldAuthor; const newName = data.author;
@@ -2948,8 +4021,9 @@
                         if (dmHistories[oldName]) {
                             dmHistories[newName] = dmHistories[oldName]; delete dmHistories[oldName];
                             dmHistories[newName].forEach(m => { if (m.author === oldName) m.author = newName; if (m.replyTo && m.replyTo.author === oldName) m.replyTo.author = newName; });
-                            saveDmHistory(newName); try { await localforage.removeItem(`mqtt_dm_${myUsername}_${oldName}`); } catch(e){}
+                            saveDmHistory(newName);
                             if (closedDMs.has(oldName)) { closedDMs.delete(oldName); closedDMs.add(newName); saveClosedDMs(); }
+                            dbDeleteChannel(`dm:${myUsername}:${oldName}`);
                             const oldTab = document.getElementById(`tab-dm-${oldName}`);
                             if (oldTab) { const wasActive = (currentTab === `dm:${oldName}`); oldTab.remove(); ensureDmTab(newName); if (wasActive) switchTab(`dm:${newName}`); }
                         }
@@ -3000,6 +4074,8 @@
 
             if (secondaryIsRealMedia && (!hasRealMediaPayload(primary) || primaryIsPlaceholder)) {
                 primary.text = secondary.text;
+                primary.attMime = secondary.attMime; primary.attSize = secondary.attSize;
+                if (secondary.thumb) primary.thumb = secondary.thumb;
                 primary.compressed = !!secondary.compressed;
                 primary.isImage = !!secondary.isImage;
                 primary.isVideo = !!secondary.isVideo;
@@ -3541,15 +4617,26 @@
         }
 
         let manifestTickTimer = null;
+        // Anti-entropy only: ask for manifests every few minutes instead of broadcasting our own every minute.
         function scheduleManifestTick() {
             clearTimeout(manifestTickTimer);
-            const interval = syncUsesClosedLowPowerRate()
-                ? 600000
-                : (syncUsesHalfRate() ? 120000 : 60000);
+            const interval = syncUsesClosedLowPowerRate() ? 3600000 : (syncUsesHalfRate() ? 1200000 : 600000);
             manifestTickTimer = setTimeout(() => {
-                if (isConnected && historyReadyForSync && !document.hidden) publishMessage(buildManifest());
+                if (isConnected && historyReadyForSync && !document.hidden) sendManifestRequest(0);
                 scheduleManifestTick();
             }, interval);
+        }
+        let manifestsSinceRequest = 0;
+        function sendManifestRequest(attempt) {
+            manifestsSinceRequest = 0;
+            publishMessage({ type: "SYNC_MANIFEST_REQ", author: myUsername, cid: myCid, attempt });
+            // Responders are sampled to keep traffic low; if nobody answered, ask again and have everyone reply.
+            if (attempt < 2) setTimeout(() => { if (isConnected && manifestsSinceRequest === 0 && activeUsers.size > 1) sendManifestRequest(attempt + 1); }, 4500);
+        }
+        function shouldAnswerManifest(attempt) {
+            if (attempt > 0) return true;
+            const peers = Math.max(1, activeUsers.size - 1);
+            return Math.random() <= Math.min(1, 3 / peers);
         }
         const SYNC_BUCKET_MS = 2 * 60 * 60 * 1000; // 2-hour buckets for recent history
         const SYNC_OLD_BUCKET_MS = 24 * 60 * 60 * 1000; // 1-day buckets for older history
@@ -3576,7 +4663,6 @@
 
         function channelKey(kind, name) { return kind === "global" ? "global" : `dm:${name}`; }
 
-        const MANIFEST_MAX_ENTRIES = SYNC_MANIFEST_MAX_ENTRIES; // recent exact IDs stay tiny; bucket hashes cover older history without shipping every ID
 
         function buildHistoryBucketManifest(list) {
             const now = Date.now();
@@ -3616,7 +4702,7 @@
                 globalBuckets: buildHistoryBucketManifest(messageHistory),
                 dms: {},
                 tomb: {
-                    ids: Array.from(msgTombstones),
+                    ids: Array.from(msgTombstones).slice(-500),
                     ranges: rangeTombstones,
                     nuke: nukeMarker
                 }
@@ -3644,21 +4730,20 @@
                 const now = Date.now();
                 if (now - lastManifestBroadcastTime > getSyncManifestMinIntervalMs()) {
                     lastManifestBroadcastTime = now;
-                    publishMessage({ type: "SYNC_MANIFEST_REQ", author: myUsername });
+                    sendManifestRequest(0);
                 }
             }, getSyncManifestDebounceMs() + Math.floor(Math.random() * jitter));
         }
 
         function handleManifestRequest(data) {
-            if (data.author === myUsername) {
-                publishMessage(buildManifest(myUsername));
-            } else {
-                publishMessage(buildManifest(data.author));
-            }
+            if (!data.author) return;
+            publishMessage({ ...buildManifest(data.author), target: data.author }); // unicast to the requester's inbox
         }
 
         function handleManifest(data) {
             if (!data.author) return;
+            if (data.target !== myUsername) return; // manifests are unicast now; ignore stray/legacy broadcasts
+            manifestsSinceRequest++;
             if (blockedUsers.has(data.author) && data.author !== myUsername) return;
 
             let tombChanged = false;
@@ -3783,11 +4868,11 @@
                     const maxCount = getSyncBatchSize();
                     const batch = [];
                     while (queue.length && batch.length < maxCount) {
-                        const size = (typeof queue[0].text === 'string' ? queue[0].text.length : 0) + 400;
+                        const size = (typeof queue[0].text === 'string' ? queue[0].text.length : 0) + (typeof queue[0].thumb === 'string' ? queue[0].thumb.length : 0) + 400;
                         if (batch.length && sentBytes + size > SYNC_MAX_CHUNK_BYTES) break;
                         batch.push(queue.shift()); sentBytes += size;
                     }
-                    const packed = await Promise.all(batch.map(packMessageForSync));
+                    const packed = batch;
                     publishMessage({ type: "SYNC_CHUNK", author: myUsername, target: peer, channel: channel, messages: packed, remaining: queue.length });
                 } catch (e) {}
                 const q = syncOutbox.get(peer) && syncOutbox.get(peer)[channel];
@@ -3814,6 +4899,7 @@
                 } catch (e) { m.__bad = true; }
             }));
             data.messages = data.messages.filter(m => !(m && m.__bad));
+            for (const m of data.messages) { if (m && isMediaMsg(m) && typeof m.text === 'string' && m.text.startsWith('data:')) await convertLegacyMedia(m); } // old-format peers
 
             // Queue chunks briefly and merge them in one operation.  The previous code
             // rebuilt a Map over the entire history once per 50-message chunk, which made
@@ -3836,6 +4922,7 @@
                 syncInboundBuffers.delete(bufferKey);
                 if (!buffered.length) return;
 
+                noteAttachmentRefs(buffered);
                 if (bufferKey === "global") {
                     messageHistory = mergeHistory(messageHistory, buffered, false);
                     saveLocalHistory();
@@ -4130,7 +5217,7 @@
             return result;
         }
 
-        async function autoRestoreGitHubBackup() {
+        async function autoRestoreGitHubBackup(force = false) {
             let rawState = null;
             try { rawState = JSON.parse(localStorage.getItem(BACKUP_STATE_KEY) || "null"); } catch(e) {}
             const needsRepair = backupStateNeedsRepair(rawState);
@@ -4145,8 +5232,8 @@
             const discoveredExportDate = candidate.modifiedAt || 0;
             const previousExportDate = Number(rawState?.exportModifiedAt || 0);
             const exportIsNewer = discoveredExportDate > previousExportDate;
-            if (rawState && rawState.url === candidate.url && !needsRepair && rawState.signature && currentSignature === rawState.signature && !exportIsNewer) return;
-            if (rawState && rawState.url === candidate.url && !needsRepair && !currentSignature && !exportIsNewer) return;
+            if (!force && rawState && rawState.url === candidate.url && !needsRepair && rawState.signature && currentSignature === rawState.signature && !exportIsNewer) return;
+            if (!force && rawState && rawState.url === candidate.url && !needsRepair && !currentSignature && !exportIsNewer) return;
 
             if (ui.activityStatus) ui.activityStatus.innerText = "Restoring chat backup...";
             const fetched = await fetchBackupText(candidate.url);
@@ -4172,6 +5259,25 @@
             return result;
         }
 
+        async function maybeFirstVisitBackupRestore() {
+            if (safeGet('mqtt_backup_first_visit_done') === '1') return null;
+            try {
+                const result = await autoRestoreGitHubBackup();
+                safeSet('mqtt_backup_first_visit_done', '1'); // only retried on later visits if the check itself failed
+                return result;
+            } catch (e) { return null; }
+        }
+        async function manualGithubRestore() {
+            try {
+                const result = await autoRestoreGitHubBackup(true);
+                rebuildMessageHistoryIdSet();
+                scheduleRenderActiveTabMessages();
+                await customAlert(result ? `GitHub backup checked: ${result.added} new message${result.added === 1 ? "" : "s"} restored, ${result.matched} already present.` : "No GitHub backup was found.");
+            } catch (e) {
+                await customAlert("Could not reach the GitHub backup right now.");
+            }
+        }
+
         async function restoreSelectedChatExport(event) {
             if (!isAdmin) return;
             const file = event.target.files && event.target.files[0];
@@ -4187,9 +5293,9 @@
         }
 
         function openAdminTools() { document.getElementById('sys-hr-count').innerText = sysClearHours; document.getElementById('all-hr-count').innerText = allClearHours; openModal('admin-tools-modal'); }
-        function doClearSystem() { if (!isAdmin) return; publishMessage({ type: "CLEAR_RECENT", targetType: "system", hours: sysClearHours, author: myUsername, id: generateId(), timestamp: Date.now() }); sysClearHours++; document.getElementById('sys-hr-count').innerText = sysClearHours; }
-        function doClearAllSystem() { if (!isAdmin || !confirm("Clear all system messages from history? This does not delete real user messages.")) return; publishMessage({ type: "CLEAR_SYSTEM_ALL", author: myUsername, id: generateId(), timestamp: Date.now() }); }
-        function doClearAllRecent() { if (!isAdmin) return; if (confirm(`Are you sure you want to delete ALL messages (system and user) from the last ${allClearHours} hour(s)?`)) { publishMessage({ type: "CLEAR_RECENT", targetType: "all", hours: allClearHours, author: myUsername, id: generateId(), timestamp: Date.now() }); allClearHours++; document.getElementById('all-hr-count').innerText = allClearHours; } }
+        function doClearSystem() { if (!isAdmin) return; adminPublish({ type: "CLEAR_RECENT", targetType: "system", hours: sysClearHours, author: myUsername }); sysClearHours++; document.getElementById('sys-hr-count').innerText = sysClearHours; }
+        async function doClearAllSystem() { if (!isAdmin || !(await customConfirm("Clear all system messages from history? This does not delete real user messages."))) return; adminPublish({ type: "CLEAR_SYSTEM_ALL", author: myUsername }); }
+        async function doClearAllRecent() { if (!isAdmin) return; if (await customConfirm(`Are you sure you want to delete ALL messages (system and user) from the last ${allClearHours} hour(s)?`)) { adminPublish({ type: "CLEAR_RECENT", targetType: "all", hours: allClearHours, author: myUsername }); allClearHours++; document.getElementById('all-hr-count').innerText = allClearHours; } }
         function deleteAnyMessage(id) {
             const msg = messageHistory.find(m => m.id === id) || Object.values(dmHistories).flat().find(m => m.id === id);
             const canEphemerallyDelete = !!msg && currentTab === "global" && msg.author === myUsername &&
@@ -4207,7 +5313,7 @@
             }
             publishMessage({ type: "DELETE_MSG", id: id, deleter: myUsername, ephemeral: canEphemerallyDelete });
         }
-        function confirmClearAll() { if (isAdmin && confirm("Are you sure you want to completely NUKE all messages forever?")) publishMessage({ type: "CLEAR_ALL", author: myUsername, id: generateId(), timestamp: Date.now() }); }
+        async function confirmClearAll() { if (isAdmin && await customConfirm("Are you sure you want to completely NUKE all messages forever?")) adminPublish({ type: "CLEAR_ALL", author: myUsername }); }
         function evaluateAdminRole() { const wasAdmin = isAdmin; isAdmin = ADMINS.includes(myUsername); updateStatusText(); if (wasAdmin !== isAdmin) scheduleRenderActiveTabMessages(); }
         function updateStatusText() { ui.status.innerText = `${isAdmin ? "[ADMIN]" : "[USER]"} Connected as "${myUsername}"`; ui.adminClearBtn.style.display = isAdmin ? "block" : "none"; }
         function updateConnectionStatus(label, tone = "normal") {
@@ -4317,8 +5423,8 @@
                 ui.msgIp.value = draft; // don't wipe whatever the user was typing
                 if (prevReply) setReplyTarget(prevReply);
             } 
-            else if (['KICK', 'BAN'].includes(action)) { publishMessage({ type: "CMD", cmd: action, target: target, author: myUsername }); appendSystemDOM(`Command ${action} dispatched to ${target}.`); } 
-            else if (['MUTE', 'TIMEOUT'].includes(action)) { publishMessage({ type: "CMD", cmd: action, target: target, author: myUsername, duration: 300000 }); appendSystemDOM(`Command ${action} (5m) dispatched to ${target}.`); }
+            else if (['KICK', 'BAN'].includes(action)) { adminPublish({ type: "CMD", cmd: action, target: target, author: myUsername }); appendSystemDOM(`Command ${action} dispatched to ${target}.`); } 
+            else if (['MUTE', 'TIMEOUT'].includes(action)) { adminPublish({ type: "CMD", cmd: action, target: target, author: myUsername, duration: 300000 }); appendSystemDOM(`Command ${action} (5m) dispatched to ${target}.`); }
         }
 
         function parseDuration(str) {
@@ -4334,9 +5440,11 @@
             if (!isConnected || isMuted || isGhost) return;
             if (!ui.msgIp.value.trim() || ui.msgIp.value.startsWith("/")) return;
             const now = Date.now();
-            if (now - lastTypingSentAt < 2000) return; // throttle instead of one packet per keystroke
-            lastTypingSentAt = now;
-            publishMessage({ type: "TYPING", author: myUsername });
+            if (now - lastTypingSentAt < 2000 && lastTypingTab === currentTab) return; // throttle instead of one packet per keystroke
+            lastTypingSentAt = now; lastTypingTab = currentTab;
+            // DM typing goes only to the other person's inbox; room typing goes to the room.
+            if (currentTab.startsWith("dm:")) publishMessage({ type: "TYPING", author: myUsername, tab: "dm", target: currentTab.slice(3) });
+            else publishMessage({ type: "TYPING", author: myUsername, tab: "global" });
         }
 
         function validateChatPayload(data) {
@@ -4349,6 +5457,13 @@
             if (typeof data.text === 'string' && data.text.length > MAX_MEDIA_DATA_LENGTH) return false;
             if (data.compressed !== undefined && data.compressed !== false && data.compressed !== true && data.compressed !== 'gz') return false;
             if (data.mime !== undefined && (typeof data.mime !== 'string' || data.mime.length > 100)) return false;
+            if (data.attMime !== undefined && (typeof data.attMime !== 'string' || data.attMime.length > 100)) return false;
+            if (data.attSize !== undefined && !Number.isFinite(data.attSize)) return false;
+            if (data.thumb !== undefined && (typeof data.thumb !== 'string' || data.thumb.length > 70000)) return false;
+            if (data.cid !== undefined && (typeof data.cid !== 'string' || data.cid.length > 80)) return false;
+            if (data.sig !== undefined && (typeof data.sig !== 'string' || data.sig.length > 200)) return false;
+            if (data.tab !== undefined && data.tab !== 'global' && data.tab !== 'dm') return false;
+            if (data.ids !== undefined && (!Array.isArray(data.ids) || data.ids.length > 400 || data.ids.some(x => typeof x !== 'string' || x.length > 80))) return false;
             if (data.type === 'CMD' && !['KICK','BAN','MUTE','TIMEOUT','UNMUTE'].includes(data.cmd)) return false;
             if (data.type === 'REACT_MSG' && (typeof data.emoji !== 'string' || data.emoji.length > 16)) return false;
             return true;
@@ -4357,17 +5472,11 @@
         function validateMessagePayloadAfterDecompression(data) {
             if (!data || typeof data !== 'object') return false;
             if (typeof data.text === 'string' && !data.isImage && !data.isVideo && !data.isAudio && !data.isFile && data.text.length > MAX_TEXT_LENGTH) return false;
-            if (data.isImage && !isSafeMediaDataUrl(data.text, 'image')) return false;
-            if (data.isVideo && !isSafeMediaDataUrl(data.text, 'video')) return false;
-            if (data.isAudio && !isSafeMediaDataUrl(data.text, 'audio')) return false;
-            if (data.isFile && !isSafeMediaDataUrl(data.text, 'file')) return false;
+            if (data.isImage && !mediaPayloadOk(data, 'image')) return false;
+            if (data.isVideo && !mediaPayloadOk(data, 'video')) return false;
+            if (data.isAudio && !mediaPayloadOk(data, 'audio')) return false;
+            if (data.isFile && !mediaPayloadOk(data, 'file')) return false;
             return true;
-        }
-
-        function publishMessage(data) {
-            if (!client || !isConnected || !data || !validateChatPayload(data)) return false;
-            try { client.publish(ROOM_TOPIC, JSON.stringify(data)); return true; }
-            catch (error) { console.error('Failed to publish chat payload:', error); return false; }
         }
 
         function processInput() {
@@ -4380,7 +5489,7 @@
                 const cmd = parts[0].toUpperCase().substring(1); const target = parts[1]; const dur = parseDuration(parts[2]);
                 if (!target) { appendSystemDOM("Usage: /kick User, /timeout User 5m, /mute User 10m, /unmute User, /ban User"); return; }
                 if (target === myUsername) { appendSystemDOM("You cannot use admin commands on yourself."); ui.msgIp.value = ""; return; }
-                if (["KICK", "TIMEOUT", "MUTE", "UNMUTE", "BAN"].includes(cmd)) { publishMessage({ type: "CMD", cmd: cmd, target: target, author: myUsername, duration: dur }); appendSystemDOM(`Command ${cmd} dispatched to ${target}.`); } 
+                if (["KICK", "TIMEOUT", "MUTE", "UNMUTE", "BAN"].includes(cmd)) { adminPublish({ type: "CMD", cmd: cmd, target: target, author: myUsername, duration: dur }); appendSystemDOM(`Command ${cmd} dispatched to ${target}.`); } 
                 else { appendSystemDOM("Unknown command."); }
                 ui.msgIp.value = ""; return;
             }
@@ -4388,36 +5497,35 @@
         }
 
         function sendPayload(content, opts = {}) {
-            if (isGhost) return;
+            if (isGhost) return false;
             if (isMuted) {
                 mutedAttemptCount++;
                 appendSystemDOM("You cannot send messages while muted.");
-                publishMessage({ type: "MUTE_ATTEMPT", author: myUsername, count: mutedAttemptCount, id: generateId() }); ui.msgIp.value = ""; return;
+                publishMessage({ type: "MUTE_ATTEMPT", author: myUsername, count: mutedAttemptCount, id: generateId() }); ui.msgIp.value = ""; return false;
             }
-            if (!opts.isFile && !opts.isImage && !opts.isAudio && !opts.isVideo && content.length > MAX_TEXT_LENGTH) {
+            const isAtt = !!(opts.isFile || opts.isImage || opts.isAudio || opts.isVideo);
+            if (!isAtt && content.length > MAX_TEXT_LENGTH) {
                 appendSystemDOM(`Message too long. Limit: ${MAX_TEXT_LENGTH.toLocaleString()} characters.`);
-                return;
+                return false;
             }
+            const limited = rateLimitMessage(isAtt);
+            if (limited) { appendSystemDOM(limited); return false; }
+            if (isAtt) lastAttSendAt = Date.now(); else lastTextSendAt = Date.now();
+
             const msgId = Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
             const cleanReply = activeReply ? { author: activeReply.author, text: (activeReply.isImage || activeReply.isVideo || activeReply.isAudio || activeReply.isFile) ? "" : String(activeReply.text || "").slice(0, 200), isImage: activeReply.isImage, isVideo: activeReply.isVideo, isAudio: activeReply.isAudio, isFile: activeReply.isFile } : null;
-            
-            const isMediaSend = !!(opts.isFile || opts.isImage || opts.isAudio || opts.isVideo);
-            const finalText = content; const compressedFlag = false; // media is gzipped just before publishing (below)
-            
-            // localPayload gets UNCOMPRESSED content so it renders correctly locally
+
             const sentAloneEpoch = currentTab === "global" && activeUsers.size === 1 ? roomPresenceEpoch : null;
-            const localPayload = { type: currentTab === "global" ? "MSG" : "DM", id: msgId, author: myUsername, text: content, compressed: false, isImage: opts.isImage, isVideo: opts.isVideo, isAudio: opts.isAudio, isFile: opts.isFile, fileName: opts.fileName, timestamp: Date.now(), replyTo: cleanReply, edited: false, reactions: {}, soloPresenceEpoch: sentAloneEpoch };
-            
-            // publishPayload gets the COMPRESSED content to send over MQTT
-            const publishPayload = { ...localPayload, text: finalText, compressed: compressedFlag };
-            
+            const localPayload = { type: currentTab === "global" ? "MSG" : "DM", id: msgId, author: myUsername, text: content, compressed: false, isImage: opts.isImage, isVideo: opts.isVideo, isAudio: opts.isAudio, isFile: opts.isFile, fileName: opts.fileName, attMime: opts.attMime, attSize: opts.attSize, thumb: opts.thumb, timestamp: Date.now(), replyTo: cleanReply, edited: false, reactions: {}, soloPresenceEpoch: sentAloneEpoch };
+            const publishPayload = { ...localPayload };
+
             if (currentTab !== "global") {
                 const target = currentTab.replace("dm:", "");
                 publishPayload.target = target;
                 localPayload.target = target;
-                if (closedDMs.has(target)) { 
-                    closedDMs.delete(target); 
-                    saveClosedDMs(); 
+                if (closedDMs.has(target)) {
+                    closedDMs.delete(target);
+                    saveClosedDMs();
                 }
                 ensureDmTab(target);
                 dmHistories[target] = mergeHistory(dmHistories[target] || [], [localPayload], true);
@@ -4429,15 +5537,10 @@
                 scheduleRenderActiveTabMessages();
             }
 
-            if (isMediaSend) {
-                packForNetwork(content).then(p => {
-                    publishPayload.text = p.text; publishPayload.compressed = p.compressed;
-                    if (p.mime) publishPayload.mime = p.mime;
-                    publishMessage(publishPayload);
-                });
-            } else publishMessage(publishPayload);
+            publishMessage(publishPayload);
             ui.msgIp.value = "";
             cancelReply();
+            return true;
         }
         window.addEventListener('pageshow', requestParentActivityState);
 
