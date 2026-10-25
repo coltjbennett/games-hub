@@ -1739,11 +1739,10 @@ function setupCRTToggle() {
   if (!crtToggleBtn) return;
 
   const savedCrtPreference = safeGet('project-launcher-no-crt');
-  // First visit: default CRT effects to OFF. Once the user changes the setting,
-  // preserve that preference on subsequent visits.
+  // First visit: CRT effects default to ON (no 'no-crt' class). Once the user changes
+  // the setting, preserve that preference on subsequent visits.
   if (savedCrtPreference === null) {
-    safeSet('project-launcher-no-crt', 'true');
-    document.documentElement.classList.add('no-crt');
+    safeSet('project-launcher-no-crt', 'false');
   } else if (savedCrtPreference === 'true') {
     document.documentElement.classList.add('no-crt');
   }
@@ -1920,9 +1919,21 @@ function setupToSModal() {
 
   if (!tosOverlay || !acceptBtn) return;
 
-  if (!safeGet("tosAccepted")) {
-    tosOverlay.style.display = "flex";
-    document.body.style.overflow = "hidden";
+  function showTermsIfNeeded() {
+    if (!safeGet("tosAccepted")) {
+      tosOverlay.style.display = "flex";
+      document.body.style.overflow = "hidden";
+      try { acceptBtn.focus(); } catch (e) {}
+    }
+  }
+
+  // boot.js sets window.__ghBooting while the startup sequence is playing. The Terms
+  // modal must not appear until it has COMPLETELY finished (even on a first-ever visit),
+  // so wait for its 'gh-boot-complete' event. If no boot is running, show it right away.
+  if (window.__ghBooting) {
+    window.addEventListener('gh-boot-complete', showTermsIfNeeded, { once: true });
+  } else {
+    showTermsIfNeeded();
   }
 
   acceptBtn.addEventListener("click", () => {
