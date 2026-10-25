@@ -16,8 +16,9 @@
  *  - The sound is NEVER cut short: while the track is really playing, only the
  *    user can end the boot. Timers for a silent boot only start after the
  *    power button is pressed (or immediately when no power screen is needed).
- *  - A spinning loader (bottom-right) and a thin progress line (bottom edge) show
- *    that the boot is alive. The progress line follows the audio when it plays.
+ *  - A thin progress line (bottom edge) shows the boot is alive. It follows the audio
+ *    when it plays and hitches very slightly for realism, but always takes the same
+ *    total time.
  *  - On the BIOS screen Esc skips the boot with no sound; once the boot picture
  *    is showing, click / Enter / Space / Esc skips it.
  *
@@ -97,6 +98,10 @@
     'opacity:1;transition:opacity ' + FADE_MS + 'ms ease;cursor:default;',
     '-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}',
     '#gh-boot-overlay.gh-boot-out{opacity:0;pointer-events:none}',
+    /* The site's styles.css has a universal `* { font-family: "Times New Roman" }`, which
+       beats inheritance for every child of the overlay. #id + * out-ranks it. */
+    "#gh-boot-overlay,#gh-boot-overlay *{font-family:'GHBoot','MS Sans Serif',Tahoma,Geneva,sans-serif!important;",
+    '-webkit-font-smoothing:none;font-smooth:never}',
 
     /* boot picture + CRT turn-on */
     '#gh-boot-img{display:none;width:100%;height:100%;object-fit:contain;background:transparent}',
@@ -143,33 +148,20 @@
     '@keyframes gh-boot-blink{50%{opacity:0}}',
     '#gh-bios-clock{position:absolute;top:22px;right:28px;z-index:1;color:#d9ffd9;text-align:right}',
 
-    '#gh-boot-hint{position:absolute;right:calc(74px + env(safe-area-inset-right,0px));',
-    'bottom:calc(30px + env(safe-area-inset-bottom,0px));z-index:3;font-size:12px;letter-spacing:.08em;',
+    '#gh-boot-hint{position:absolute;right:calc(20px + env(safe-area-inset-right,0px));',
+    'bottom:calc(22px + env(safe-area-inset-bottom,0px));z-index:3;font-size:12px;letter-spacing:.08em;',
     'color:#7a7a7a;opacity:0;transition:opacity .6s ease;pointer-events:none}',
     '#gh-boot-hint.gh-show{opacity:1}',
-
-    /* spinning loader, bottom-right: visible while loading and while the boot picture plays */
-    '#gh-boot-spin{position:absolute;right:calc(26px + env(safe-area-inset-right,0px));',
-    'bottom:calc(22px + env(safe-area-inset-bottom,0px));width:32px;height:32px;z-index:3;',
-    'pointer-events:none;opacity:0;transition:opacity .4s ease}',
-    '#gh-boot-overlay:not(.gh-boot-waiting) #gh-boot-spin{opacity:1}',
-    '#gh-boot-spin::before,#gh-boot-spin::after{content:"";position:absolute;border-radius:50%;border:3px solid transparent}',
-    '#gh-boot-spin::before{inset:0;border-color:rgba(255,255,255,.12);border-top-color:#fff;',
-    'border-right-color:rgba(255,255,255,.5);filter:drop-shadow(0 0 5px rgba(130,200,255,.7));',
-    'animation:gh-spin .9s linear infinite}',
-    '#gh-boot-spin::after{inset:8px;border-width:2px;border-top-color:#5ab4ff;border-left-color:rgba(90,180,255,.45);',
-    'animation:gh-spin 1.4s linear infinite reverse}',
-    '@keyframes gh-spin{to{transform:rotate(360deg)}}',
 
     /* progress line along the bottom edge */
     '#gh-boot-bar{position:absolute;left:0;bottom:0;height:3px;width:0;z-index:3;pointer-events:none;opacity:0;',
     'background:linear-gradient(90deg,#1e6bff,#7fd0ff 80%,#fff);box-shadow:0 0 10px rgba(127,208,255,.85);',
-    'transition:width .25s linear,opacity .5s ease}',
+    'transition:opacity .5s ease}',
     '#gh-boot-overlay.gh-boot-running #gh-boot-bar{opacity:1}',
 
     /* corporate copyright footer */
     '#gh-boot-copy{position:absolute;left:calc(20px + env(safe-area-inset-left,0px));',
-    'bottom:calc(26px + env(safe-area-inset-bottom,0px));z-index:3;font-size:12px;letter-spacing:.06em;',
+    'bottom:calc(22px + env(safe-area-inset-bottom,0px));z-index:3;font-size:12px;letter-spacing:.06em;',
     'color:#8d8d8d;opacity:0;pointer-events:none;transition:opacity .9s ease .6s}',
     '#gh-boot-overlay.gh-boot-running #gh-boot-copy{opacity:1}',
 
@@ -177,10 +169,9 @@
     '#gh-boot-overlay.gh-boot-running #gh-boot-img{animation:none}',
     '#gh-boot-overlay.gh-boot-waiting #gh-boot-power,#gh-bios-cur{animation:none}',
     '#gh-boot-overlay.gh-boot-waiting::after,#gh-boot-overlay.gh-boot-running::before{animation:none}',
-    '#gh-boot-spin::before{animation-duration:2.6s}#gh-boot-spin::after{animation-duration:4s}',
     '#gh-boot-overlay{transition-duration:1ms}}',
     '@media (max-width:560px){#gh-boot-power{padding:14px 14px}.gh-bl .k{min-width:120px}',
-    '#gh-boot-copy{display:none}#gh-boot-hint{right:calc(68px + env(safe-area-inset-right,0px))}',
+    '#gh-boot-copy{display:none}',
     '#gh-bios-clock{display:none}}',
     '@media (min-width:1500px){#gh-boot-power{font-size:20px;line-height:24px;padding:34px 44px}',
     '.gh-bl{min-height:24px}.gh-bl .k{min-width:240px}#gh-bios-cur{width:11px;height:19px}',
@@ -220,10 +211,6 @@
   hint.id = 'gh-boot-hint';
   hint.textContent = 'Click or press Esc to skip';
 
-  var spin = document.createElement('div');
-  spin.id = 'gh-boot-spin';
-  spin.setAttribute('aria-hidden', 'true');
-
   var bar = document.createElement('div');
   bar.id = 'gh-boot-bar';
   bar.setAttribute('aria-hidden', 'true');
@@ -238,7 +225,6 @@
   overlay.appendChild(copy);
   overlay.appendChild(hint);
   overlay.appendChild(bar);
-  overlay.appendChild(spin);
   root.appendChild(overlay); // on <html>, outside <body>, so it exists before <body> parses
 
   // Lock the page while booting: `inert` blocks focus (so a modal can't steal it or trap
@@ -255,6 +241,7 @@
     (document.head || root).appendChild(el);
     return el;
   }
+  try { if (document.fonts && document.fonts.load) document.fonts.load("16px 'GHBoot'"); } catch (e) {}
   var lockEl = makeStyle('gh-boot-lock',
     'body,body *{visibility:hidden!important;pointer-events:none!important}' +
     'html>:not(#gh-boot-overlay):not(head):not(body):not(script):not(style):not(link):not(meta){' +
@@ -319,21 +306,65 @@
     }
   }
 
-  function startBar(soundIsPlaying) {
-    clearInterval(barTimer);
-    function update() {
-      var p, elapsed = Date.now() - bootStartedAt;
-      if (soundIsPlaying && isFinite(audio.duration) && audio.duration > 0) {
-        p = audio.currentTime / audio.duration;
-      } else if (soundIsPlaying) {
-        p = Math.min(0.95, elapsed / 15000); // duration unknown: creep, never claim to be done
-      } else {
-        p = elapsed / SILENT_BOOT_MS;
+  // Progress mapping with a few tiny hitches. The curve f(t) runs from f(0)=0 to f(1)=1,
+  // so the bar always starts and ends exactly with the real boot (same total time); in
+  // between it drifts a little slower/faster and stalls very briefly a couple of times.
+  function makeStutterCurve() {
+    var segs = [], w = 0, hitches = 0, i;
+    while (w < 0.98) {
+      var cw = 0.07 + Math.random() * 0.10;
+      segs.push({ w: cw, s: 0.8 + Math.random() * 0.4 });         // slightly slower/faster
+      w += cw;
+      if (hitches < 2 && w > 0.2 && w < 0.85 && Math.random() < 0.45) {
+        var hw = 0.02 + Math.random() * 0.012;
+        segs.push({ w: hw, s: 0.05 });                              // tiny near-pause
+        w += hw; hitches++;
       }
-      bar.style.width = Math.max(0, Math.min(1, p)) * 100 + '%';
     }
-    update();
-    barTimer = setInterval(update, 120);
+    if (!hitches) segs.splice(Math.floor(segs.length / 2), 0, { w: 0.025, s: 0.05 });
+    var W = 0, D = 0;
+    for (i = 0; i < segs.length; i++) W += segs[i].w;
+    for (i = 0; i < segs.length; i++) { segs[i].w /= W; D += segs[i].w * segs[i].s; }
+    var t0 = 0, p0 = 0;
+    for (i = 0; i < segs.length; i++) {
+      segs[i].t0 = t0; segs[i].p0 = p0;
+      segs[i].dp = segs[i].w * segs[i].s / D;
+      t0 += segs[i].w; p0 += segs[i].dp;
+    }
+    return function (t) {
+      if (t <= 0) return 0;
+      if (t >= 1) return 1;
+      for (var j = segs.length - 1; j >= 0; j--) {
+        if (t >= segs[j].t0) return segs[j].p0 + (t - segs[j].t0) / segs[j].w * segs[j].dp;
+      }
+      return 0;
+    };
+  }
+
+  function startBar(soundIsPlaying) {
+    stopBar();
+    var curve = makeStutterCurve();
+    function frame() {
+      barTimer = 0;
+      if (phase !== 'running') return;
+      var t, elapsed = Date.now() - bootStartedAt;
+      if (soundIsPlaying && isFinite(audio.duration) && audio.duration > 0) {
+        t = audio.currentTime / audio.duration;
+      } else if (soundIsPlaying) {
+        t = Math.min(0.95, elapsed / 15000); // duration unknown: creep, never claim to be done
+      } else {
+        t = elapsed / SILENT_BOOT_MS;
+      }
+      bar.style.width = (curve(Math.max(0, Math.min(1, t))) * 100).toFixed(2) + '%';
+      barTimer = (window.requestAnimationFrame || function (f) { return setTimeout(f, 33); })(frame);
+    }
+    frame();
+  }
+
+  function stopBar() {
+    if (!barTimer) return;
+    try { (window.cancelAnimationFrame || clearTimeout)(barTimer); } catch (e) {}
+    barTimer = 0;
   }
 
   function audioIsPlaying() {
@@ -348,7 +379,7 @@
     clearTimeout(hintTimer);
     clearTimeout(assetsTimer);
     clearInterval(watchdog);
-    clearInterval(barTimer);
+    stopBar();
     bar.style.width = '100%';
     stopPost();
     try { audio.pause(); } catch (e) {}
