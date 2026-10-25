@@ -67,6 +67,9 @@
     window.sessionStorage.setItem(SESSION_KEY, '1'); // a refresh mid-boot won't re-boot
   } catch (e) {}
 
+  // Tell main.js a boot is in progress so it holds back the Terms modal until 'gh-boot-complete'.
+  window.__ghBooting = true;
+
   // ---------- Asset URLs (resolved against this script so subpaths work) ----------
   var base = (document.currentScript && document.currentScript.src) || location.href;
   function assetUrl(path) {
@@ -241,10 +244,42 @@
   // Lock the page while booting: `inert` blocks focus (so a modal can't steal it or trap
   // keys), clicks and screen readers. Released in finish(). Our listener registers first,
   // so this runs before main.js's own DOMContentLoaded code can open the ToS modal.
+  // Unconditional lock rules (NOT tied to the html.gh-booting class, which main.js could
+  // wipe when it toggles its own html classes like no-crt / low-power). Two stylesheets:
+  //   lockEl: hides the whole page; removed when the overlay starts fading out.
+  //   tosEl : keeps the Terms of Service modal hidden until the overlay is GONE.
+  function makeStyle(id, text) {
+    var el = document.createElement('style');
+    el.id = id;
+    el.textContent = text;
+    (document.head || root).appendChild(el);
+    return el;
+  }
+  var lockEl = makeStyle('gh-boot-lock',
+    'body,body *{visibility:hidden!important;pointer-events:none!important}' +
+    'html>:not(#gh-boot-overlay):not(head):not(body):not(script):not(style):not(link):not(meta){' +
+    'visibility:hidden!important;pointer-events:none!important}');
+  var tosEl = makeStyle('gh-boot-tos',
+    '#tos-modal-overlay,.tos-overlay,.tos-modal-box{display:none!important;visibility:hidden!important;' +
+    'opacity:0!important;pointer-events:none!important}');
+
   function lockPage(locked) {
     try { if (document.body) document.body.inert = locked; } catch (e) {}
   }
   lockPage(true);
+
+  // If anything strips our html class or detaches the overlay mid-boot, put it back.
+  var guardObs = null;
+  try {
+    guardObs = new MutationObserver(function () {
+      if (phase === 'done') return;
+      if (!root.classList.contains('gh-booting')) root.classList.add('gh-booting');
+      if (overlay.parentNode !== root) root.appendChild(overlay);
+      lockPage(true);
+    });
+    guardObs.observe(root, { attributes: true, attributeFilter: ['class'], childList: true });
+  } catch (e) {}
+
   document.addEventListener('DOMContentLoaded', function () { if (phase !== 'done') lockPage(true); });
   document.addEventListener('readystatechange', function () { if (phase !== 'done') lockPage(true); });
 
@@ -322,7 +357,11 @@
     overlay.removeEventListener('click', onOverlayClick);
 
     // Reveal the page now so it shows beneath the fading overlay.
+    // Reveal the page now (under the fading overlay), but the ToS modal stays hidden
+    // until the overlay is completely gone: see the timeout below.
+    if (guardObs) { try { guardObs.disconnect(); } catch (e) {} }
     lockPage(false);
+    if (lockEl.parentNode) lockEl.parentNode.removeChild(lockEl);
     root.classList.remove('gh-booting');
     overlay.classList.add('gh-boot-out');
 
@@ -331,6 +370,14 @@
       if (styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
       if (blobUrl) { try { URL.revokeObjectURL(blobUrl); } catch (e) {} }
       try { audio.removeAttribute('src'); audio.load(); } catch (e) {}
+      // Boot is completely over: now (and only now) the Terms modal may appear.
+      window.__ghBooting = false;
+      if (tosEl.parentNode) tosEl.parentNode.removeChild(tosEl);
+      try {
+        var tosOverlay = document.getElementById('tos-modal-overlay');
+        var accept = document.getElementById('tos-accept-btn');
+        if (tosOverlay && accept && getComputedStyle(tosOverlay).display !== 'none') accept.focus();
+      } catch (e) {}
       try { window.dispatchEvent(new CustomEvent('gh-boot-complete')); } catch (e) {}
     }, FADE_MS + 50);
   }
