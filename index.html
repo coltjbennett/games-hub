@@ -575,10 +575,23 @@
         // A service-worker update is checked independently of Cache Storage.
         // This is what lets users stuck on an older cache migrate without
         // opening System Monitor or manually clearing browser storage.
+        // Was this page already controlled by a worker when it loaded?
+        var hadController = !!navigator.serviceWorker.controller;
+
         navigator.serviceWorker.addEventListener('controllerchange', function () {
           if (reloadAfterUpdate) return;
+          // First-ever visit: the worker just took control of a page that already loaded
+          // the latest files from the network, so there is nothing to reload for. A reload
+          // here is what used to tear down the boot sequence halfway and pop up the ToS.
+          if (!hadController) return;
           reloadAfterUpdate = true;
-          window.location.reload();
+          // Real update: never reload in the middle of the boot sequence. Wait until it
+          // has completely finished (boot.js fires 'gh-boot-complete').
+          if (window.__ghBooting) {
+            window.addEventListener('gh-boot-complete', function () { window.location.reload(); }, { once: true });
+          } else {
+            window.location.reload();
+          }
         });
 
         window.addEventListener('load', function () {
