@@ -10,7 +10,7 @@
  *  - Plays only on a fresh launch (new tab / new browser session). Skipped on
  *    refresh, back/forward navigation, and service-worker update reloads.
  *  - Tries to start audio automatically. If the browser blocks that (normal for
- *    first-time visitors and Safari/iOS), a green-phosphor BIOS POST screen is
+ *    first-time visitors and Safari/iOS), a green-phosphor POST (power-on self test) screen is
  *    shown instead. Clicking anywhere, or pressing Enter / any key, boots into
  *    the site and is the user gesture that unlocks audio.
  *  - The sound is NEVER cut short: while the track is really playing, only the
@@ -19,7 +19,7 @@
  *  - A thin progress line (bottom edge) shows the boot is alive. It follows the audio
  *    when it plays and hitches very slightly for realism, but always takes the same
  *    total time.
- *  - On the BIOS screen Esc skips the boot with no sound; once the boot picture
+ *  - On the POST screen Esc skips the boot with no sound; once the boot picture
  *    is showing, click / Enter / Space / Esc skips it.
  *
  * Opt-outs
@@ -29,7 +29,7 @@
  * Assets (case-sensitive on GitHub Pages):
  *    images/bootscreen.PNG
  *    images/win95.mp3
- *    images/w95f.woff2 / w95f.woff   (already in the repo; used for the BIOS screen)
+ *    images/w95f.woff2 / w95f.woff   (already in the repo; used for the POST screen)
  */
 (function () {
   'use strict';
@@ -47,7 +47,7 @@
   var SKIP_GUARD_MS = 800;           // ignore skip input right after starting
   var FADE_MS = 450;
 
-  var BIOS_VERSION = '4.1.7';        // shown on the BIOS screen
+  var siteVersion = '';              // read live from data.js (siteData.version); nothing to edit here
   var OS_NAME = 'ColtonOS';
   var CORP_NAME = 'Macrohard Corporation';
   var CORP_SHORT = 'Macrohard';
@@ -109,8 +109,8 @@
     '#gh-boot-overlay.gh-boot-running{background:radial-gradient(ellipse at center,#0b1c3a 0,#04080f 55%,#000 100%)}',
     /* faint scanlines + vignette over the boot picture */
     '#gh-boot-overlay.gh-boot-running::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;',
-    'background:repeating-linear-gradient(0deg,rgba(0,0,0,.14) 0,rgba(0,0,0,.14) 1px,transparent 1px,transparent 3px),',
-    'radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.55) 100%);animation:gh-fade-in 1.2s ease .3s both}',
+    'background:repeating-linear-gradient(0deg,rgba(0,0,0,.125) 0,rgba(0,0,0,.125) 1px,transparent 1px,transparent 3px),',
+    'radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.5) 100%);animation:gh-fade-in 1.2s ease .3s both}',
     '@keyframes gh-fade-in{from{opacity:0}to{opacity:1}}',
     '#gh-boot-overlay.gh-boot-running #gh-boot-img{display:block;',
     'animation:gh-crt-on .65s cubic-bezier(.2,.8,.2,1) both}',
@@ -121,32 +121,32 @@
     '70%{transform:scale(1,1.03);filter:brightness(2.4)}',
     '100%{transform:scale(1,1);filter:brightness(1)}}',
 
-    /* BIOS / POST screen */
+    /* POST screen */
     '#gh-boot-power{display:none;position:absolute;inset:0;box-sizing:border-box;padding:22px 28px;',
     'z-index:1;color:#33ff33;font-size:16px;line-height:19px;',
-    'text-shadow:0 0 5px rgba(51,255,51,.5),1px 0 0 rgba(255,60,120,.12),-1px 0 0 rgba(60,255,255,.1);',
+    'text-shadow:0 0 5px rgba(51,255,51,.45),1px 0 0 rgba(255,60,120,.10),-1px 0 0 rgba(60,255,255,.085);',
     '-webkit-font-smoothing:none;font-smooth:never;text-rendering:optimizeSpeed}',
     '#gh-boot-overlay.gh-boot-waiting #gh-boot-power{display:block;animation:gh-bios-on .6s ease-out,gh-flicker .18s infinite}',
-    '@keyframes gh-flicker{0%,100%{opacity:1}50%{opacity:.965}}',
+    '@keyframes gh-flicker{0%,100%{opacity:1}50%{opacity:.972}}',
     '@keyframes gh-bios-on{0%{filter:brightness(3.2) blur(3px)}35%{filter:brightness(1.8) blur(1px)}100%{filter:none}}',
     /* slow CRT refresh band rolling down the screen */
     '#gh-boot-overlay.gh-boot-waiting::after{content:"";position:absolute;left:0;right:0;top:0;height:90px;z-index:2;',
-    'pointer-events:none;background:linear-gradient(180deg,transparent,rgba(51,255,51,.07),transparent);',
+    'pointer-events:none;background:linear-gradient(180deg,transparent,rgba(51,255,51,.06),transparent);',
     'animation:gh-roll 7s linear infinite}',
     '@keyframes gh-roll{from{transform:translateY(-100px)}to{transform:translateY(100vh)}}',
     /* scanlines + vignette */
     '#gh-boot-overlay.gh-boot-waiting::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;',
-    'background:repeating-linear-gradient(0deg,rgba(0,0,0,.28) 0,rgba(0,0,0,.28) 1px,transparent 1px,transparent 3px),',
-    'radial-gradient(ellipse at center,transparent 50%,rgba(0,0,0,.6) 100%)}',
+    'background:repeating-linear-gradient(0deg,rgba(0,0,0,.26) 0,rgba(0,0,0,.26) 1px,transparent 1px,transparent 3px),',
+    'radial-gradient(ellipse at center,transparent 50%,rgba(0,0,0,.56) 100%)}',
     '#gh-bios-term{height:100%;overflow:hidden}',
     '.gh-bl{white-space:pre-wrap;min-height:19px;word-break:break-word}',
     '.gh-bl .k{display:inline-block;min-width:190px}',
-    '.gh-bl .hi,.gh-bl.hi{color:#d9ffd9;text-shadow:0 0 5px rgba(217,255,217,.6)}',
+    '.gh-bl .hi,.gh-bl.hi{color:#d9ffd9;text-shadow:0 0 5px rgba(217,255,217,.55)}',
     '.gh-bl .dim,.gh-bl.dim{color:#1fa81f;text-shadow:none}',
     '#gh-bios-cur{display:inline-block;width:9px;height:15px;margin-left:3px;vertical-align:-2px;',
     'background:#33ff33;box-shadow:0 0 6px rgba(51,255,51,.7);animation:gh-boot-blink 1s steps(1) infinite}',
     '@keyframes gh-boot-blink{50%{opacity:0}}',
-    '#gh-bios-clock{position:absolute;top:22px;right:28px;z-index:1;color:#d9ffd9;text-align:right}',
+    '#gh-bios-clock{display:none}', /* a POST screen has no live clock */
 
     '#gh-boot-hint{position:absolute;right:calc(20px + env(safe-area-inset-right,0px));',
     'bottom:calc(22px + env(safe-area-inset-bottom,0px));z-index:3;font-size:12px;letter-spacing:.08em;',
@@ -218,7 +218,35 @@
   var copy = document.createElement('div');
   copy.id = 'gh-boot-copy';
   copy.setAttribute('aria-hidden', 'true');
-  copy.textContent = 'Copyright \u00A9 ' + COPY_FROM + '-' + new Date().getFullYear() + ' ' + CORP_NAME;
+  function updateFooter() {
+    copy.textContent = 'Copyright \u00A9 ' + COPY_FROM + '-' + new Date().getFullYear() + ' ' + CORP_NAME +
+      (siteVersion ? '   |   ' + OS_NAME + ' v' + siteVersion : '');
+  }
+  updateFooter();
+
+  // The version shown on the POST screen and footer comes straight from data.js, so it
+  // never has to be edited here. data.js loads after this script, so it is fetched and
+  // parsed as text. If the POST header is already on screen when it arrives, it updates.
+  var postHeaderVal = null;
+  function postHeaderText() {
+    return CORP_SHORT.toUpperCase() + ' ' + OS_NAME + ' Power-On Self Test' + (siteVersion ? '  v' + siteVersion : '');
+  }
+  (function loadSiteVersion() {
+    try {
+      fetch(assetUrl('data.js'), { cache: 'no-cache' })
+        .then(function (r) { return r.ok ? r.text() : ''; })
+        .then(function (text) {
+          var m = /siteData\s*=\s*\{[^}]*?\bversion\s*:\s*(["'])([^"']{1,24})\1/.exec(text);
+          if (!m) return;
+          var v = m[2].replace(/^\s*v/i, '').trim();
+          if (!v) return;
+          siteVersion = v;
+          updateFooter();
+          if (postHeaderVal) postHeaderVal.textContent = postHeaderText();
+        })
+        .catch(function () {});
+    } catch (e) {}
+  })();
 
   overlay.appendChild(img);
   overlay.appendChild(power);
@@ -474,7 +502,7 @@
     startPost();
   }
 
-  // ---------- BIOS POST screen ----------
+  // ---------- POST screen ----------
   var reduceMotion = false;
   try { reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
 
@@ -667,7 +695,7 @@
 
     items.push({ blank: true });
     items.push({ k: 'Date / Time', v: timeString(now) + (tz ? '  [' + tz + ']' : '') });
-    items.push({ k: 'BIOS Date', v: mdy + '   ID: ' + (now.getFullYear()) + '-MHRD-' + OS_NAME.toUpperCase() + '-00' });
+    items.push({ k: 'System ID', v: now.getFullYear() + '-MHRD-' + OS_NAME.toUpperCase() + '-00' });
     items.push({ blank: true });
     items.push({ k: 'Main Processor', v: (cores ? cores + ' logical core' + (cores === 1 ? '' : 's') : 'unknown core count') + arch, s: 'OK' });
     items.push({ mem: memTotalK, label: 'Memory Test', note: '(' + memLabel + ')' });
@@ -692,10 +720,11 @@
     items.push({ blank: true });
     items.push({ text: 'Verifying DMI Pool Data ........', s: 'OK' });
     items.push({ text: 'Checking NVRAM ..................', s: 'Update OK!' });
-    items.push({ text: 'Plug and Play BIOS Extension v1.0A', cls: 'dim' });
+    items.push({ text: 'Plug and Play device scan complete', cls: 'dim' });
     items.push({ k: 'Boot Count', v: String(bc.count) + (bc.last ? '   (last boot: ' + timeString(new Date(bc.last)) + ')' : '   (first boot)') });
     items.push({ pause: 180 });
     items.push({ blank: true });
+    items.push({ text: 'Power-on self test complete: 0 errors found', cls: 'hi' });
     items.push({ text: 'Boot device: ' + CORP_SHORT + ' ' + OS_NAME + ' (Hard Disk C:)', cls: 'hi' });
     items.push({ blank: true });
     items.push({ prompt: true });
@@ -706,7 +735,7 @@
     postStopped = false;
 
     // Header appears instantly; live clock ticks in the corner.
-    addLine('', CORP_SHORT.toUpperCase() + ' (R) ' + OS_NAME + ' BIOS v' + BIOS_VERSION, '', 'hi');
+    postHeaderVal = addLine('', postHeaderText(), '', 'hi').val;
     addLine('', 'Copyright (C) ' + COPY_FROM + '-' + new Date().getFullYear() + ' ' + CORP_NAME + '. All Rights Reserved.', '', '');
     addLine('', CORP_SHORT + ': hard by name, hard by nature.', '', 'dim');
     function tick() { clockEl.textContent = timeString(new Date()); }
