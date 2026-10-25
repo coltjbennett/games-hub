@@ -80,9 +80,15 @@
 
     'html.gh-booting{background:#000!important;overflow:hidden!important}',
     /* visibility:hidden also removes the page (and the ToS modal) from clicks and tab order */
-    'html.gh-booting body{visibility:hidden!important}',
+    /* Hide EVERYTHING in the page, children included, so a modal that sets its own
+       visibility:visible (the ToS dialog) still can't show through. Body also becomes a
+       stacking context so nothing inside it can out-rank the boot overlay's z-index. */
+    'html.gh-booting body{position:relative!important;z-index:0!important}',
+    'html.gh-booting body,html.gh-booting body *{visibility:hidden!important;pointer-events:none!important}',
+    'html.gh-booting>:not(#gh-boot-overlay):not(head):not(body):not(script):not(style):not(link):not(meta){',
+    'visibility:hidden!important;pointer-events:none!important}',
 
-    '#gh-boot-overlay{position:fixed;inset:0;z-index:2147483647;background:#000;color:#c0c0c0;',
+    '#gh-boot-overlay{position:fixed;inset:0;z-index:2147483647;visibility:visible!important;background:#000;color:#c0c0c0;',
     'display:flex;align-items:center;justify-content:center;overflow:hidden;',
     "font-family:'GHBoot','MS Sans Serif',Tahoma,Geneva,sans-serif;",
     'opacity:1;transition:opacity ' + FADE_MS + 'ms ease;cursor:default;',
@@ -232,6 +238,16 @@
   overlay.appendChild(spin);
   root.appendChild(overlay); // on <html>, outside <body>, so it exists before <body> parses
 
+  // Lock the page while booting: `inert` blocks focus (so a modal can't steal it or trap
+  // keys), clicks and screen readers. Released in finish(). Our listener registers first,
+  // so this runs before main.js's own DOMContentLoaded code can open the ToS modal.
+  function lockPage(locked) {
+    try { if (document.body) document.body.inert = locked; } catch (e) {}
+  }
+  lockPage(true);
+  document.addEventListener('DOMContentLoaded', function () { if (phase !== 'done') lockPage(true); });
+  document.addEventListener('readystatechange', function () { if (phase !== 'done') lockPage(true); });
+
   // ---------- Audio ----------
   var audio = new Audio();
   audio.preload = 'auto';
@@ -306,6 +322,7 @@
     overlay.removeEventListener('click', onOverlayClick);
 
     // Reveal the page now so it shows beneath the fading overlay.
+    lockPage(false);
     root.classList.remove('gh-booting');
     overlay.classList.add('gh-boot-out');
 
