@@ -67,7 +67,8 @@ const CORE = [
   "./robots.txt",
   "./service-worker.js",
   "./sitemap.xml",
-  "./styles.css"
+  "./styles.css",
+  "./boot.js"
 ];
 
 const IMAGES = [
@@ -107,7 +108,9 @@ const IMAGES = [
   "./images/tile.GIF",
   "./images/w95f.woff",
   "./images/w95f.woff2",
-  "./images/windows.png"
+  "./images/windows.png",
+  "./images/bootscreen.PNG",
+  "./images/win95.mp3"
 ];
 
 const PRECACHE = CORE.concat(IMAGES);
