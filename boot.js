@@ -1,5 +1,6 @@
 /*
  * boot.js — Windows 95-style boot sequence for the Project Launcher.
+ * ColtonOS by Macrohard Corporation (the exact opposite of Microsoft).
  *
  * Loaded synchronously as the FIRST script in index.html's <head>, so the boot
  * screen covers the page before the stylesheet, main.js, or the Terms of Service
@@ -15,6 +16,8 @@
  *  - The sound is NEVER cut short: while the track is really playing, only the
  *    user can end the boot. Timers for a silent boot only start after the
  *    power button is pressed (or immediately when no power screen is needed).
+ *  - A spinning loader (bottom-right) and a thin progress line (bottom edge) show
+ *    that the boot is alive. The progress line follows the audio when it plays.
  *  - On the BIOS screen Esc skips the boot with no sound; once the boot picture
  *    is showing, click / Enter / Space / Esc skips it.
  *
@@ -45,6 +48,9 @@
 
   var BIOS_VERSION = '4.1.7';        // shown on the BIOS screen
   var OS_NAME = 'ColtonOS';
+  var CORP_NAME = 'Macrohard Corporation';
+  var CORP_SHORT = 'Macrohard';
+  var COPY_FROM = 1995;              // fictional founding year, for the copyright line
   var COUNT_KEY = 'gh-boot-count';
   var LAST_KEY = 'gh-last-boot';
 
@@ -84,7 +90,14 @@
     '#gh-boot-overlay.gh-boot-out{opacity:0;pointer-events:none}',
 
     /* boot picture + CRT turn-on */
-    '#gh-boot-img{display:none;width:100%;height:100%;object-fit:contain;background:#000}',
+    '#gh-boot-img{display:none;width:100%;height:100%;object-fit:contain;background:transparent}',
+    /* soft blue glow behind the picture (shows in the letterbox bars) */
+    '#gh-boot-overlay.gh-boot-running{background:radial-gradient(ellipse at center,#0b1c3a 0,#04080f 55%,#000 100%)}',
+    /* faint scanlines + vignette over the boot picture */
+    '#gh-boot-overlay.gh-boot-running::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;',
+    'background:repeating-linear-gradient(0deg,rgba(0,0,0,.14) 0,rgba(0,0,0,.14) 1px,transparent 1px,transparent 3px),',
+    'radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.55) 100%);animation:gh-fade-in 1.2s ease .3s both}',
+    '@keyframes gh-fade-in{from{opacity:0}to{opacity:1}}',
     '#gh-boot-overlay.gh-boot-running #gh-boot-img{display:block;',
     'animation:gh-crt-on .65s cubic-bezier(.2,.8,.2,1) both}',
     '@keyframes gh-crt-on{',
@@ -97,10 +110,16 @@
     /* BIOS / POST screen */
     '#gh-boot-power{display:none;position:absolute;inset:0;box-sizing:border-box;padding:22px 28px;',
     'z-index:1;color:#33ff33;font-size:16px;line-height:19px;',
-    'text-shadow:0 0 4px rgba(51,255,51,.45);',
+    'text-shadow:0 0 5px rgba(51,255,51,.5),1px 0 0 rgba(255,60,120,.12),-1px 0 0 rgba(60,255,255,.1);',
     '-webkit-font-smoothing:none;font-smooth:never;text-rendering:optimizeSpeed}',
-    '#gh-boot-overlay.gh-boot-waiting #gh-boot-power{display:block;animation:gh-flicker .18s infinite}',
+    '#gh-boot-overlay.gh-boot-waiting #gh-boot-power{display:block;animation:gh-bios-on .6s ease-out,gh-flicker .18s infinite}',
     '@keyframes gh-flicker{0%,100%{opacity:1}50%{opacity:.965}}',
+    '@keyframes gh-bios-on{0%{filter:brightness(3.2) blur(3px)}35%{filter:brightness(1.8) blur(1px)}100%{filter:none}}',
+    /* slow CRT refresh band rolling down the screen */
+    '#gh-boot-overlay.gh-boot-waiting::after{content:"";position:absolute;left:0;right:0;top:0;height:90px;z-index:2;',
+    'pointer-events:none;background:linear-gradient(180deg,transparent,rgba(51,255,51,.07),transparent);',
+    'animation:gh-roll 7s linear infinite}',
+    '@keyframes gh-roll{from{transform:translateY(-100px)}to{transform:translateY(100vh)}}',
     /* scanlines + vignette */
     '#gh-boot-overlay.gh-boot-waiting::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;',
     'background:repeating-linear-gradient(0deg,rgba(0,0,0,.28) 0,rgba(0,0,0,.28) 1px,transparent 1px,transparent 3px),',
@@ -115,15 +134,44 @@
     '@keyframes gh-boot-blink{50%{opacity:0}}',
     '#gh-bios-clock{position:absolute;top:22px;right:28px;z-index:1;color:#d9ffd9;text-align:right}',
 
-    '#gh-boot-hint{position:absolute;right:14px;bottom:10px;font-size:12px;letter-spacing:.08em;',
-    'color:#6a6a6a;opacity:0;transition:opacity .6s ease;pointer-events:none}',
+    '#gh-boot-hint{position:absolute;right:calc(74px + env(safe-area-inset-right,0px));',
+    'bottom:calc(30px + env(safe-area-inset-bottom,0px));z-index:3;font-size:12px;letter-spacing:.08em;',
+    'color:#7a7a7a;opacity:0;transition:opacity .6s ease;pointer-events:none}',
     '#gh-boot-hint.gh-show{opacity:1}',
+
+    /* spinning loader, bottom-right: visible while loading and while the boot picture plays */
+    '#gh-boot-spin{position:absolute;right:calc(26px + env(safe-area-inset-right,0px));',
+    'bottom:calc(22px + env(safe-area-inset-bottom,0px));width:32px;height:32px;z-index:3;',
+    'pointer-events:none;opacity:0;transition:opacity .4s ease}',
+    '#gh-boot-overlay:not(.gh-boot-waiting) #gh-boot-spin{opacity:1}',
+    '#gh-boot-spin::before,#gh-boot-spin::after{content:"";position:absolute;border-radius:50%;border:3px solid transparent}',
+    '#gh-boot-spin::before{inset:0;border-color:rgba(255,255,255,.12);border-top-color:#fff;',
+    'border-right-color:rgba(255,255,255,.5);filter:drop-shadow(0 0 5px rgba(130,200,255,.7));',
+    'animation:gh-spin .9s linear infinite}',
+    '#gh-boot-spin::after{inset:8px;border-width:2px;border-top-color:#5ab4ff;border-left-color:rgba(90,180,255,.45);',
+    'animation:gh-spin 1.4s linear infinite reverse}',
+    '@keyframes gh-spin{to{transform:rotate(360deg)}}',
+
+    /* progress line along the bottom edge */
+    '#gh-boot-bar{position:absolute;left:0;bottom:0;height:3px;width:0;z-index:3;pointer-events:none;opacity:0;',
+    'background:linear-gradient(90deg,#1e6bff,#7fd0ff 80%,#fff);box-shadow:0 0 10px rgba(127,208,255,.85);',
+    'transition:width .25s linear,opacity .5s ease}',
+    '#gh-boot-overlay.gh-boot-running #gh-boot-bar{opacity:1}',
+
+    /* corporate copyright footer */
+    '#gh-boot-copy{position:absolute;left:calc(20px + env(safe-area-inset-left,0px));',
+    'bottom:calc(26px + env(safe-area-inset-bottom,0px));z-index:3;font-size:12px;letter-spacing:.06em;',
+    'color:#8d8d8d;opacity:0;pointer-events:none;transition:opacity .9s ease .6s}',
+    '#gh-boot-overlay.gh-boot-running #gh-boot-copy{opacity:1}',
 
     '@media (prefers-reduced-motion:reduce){',
     '#gh-boot-overlay.gh-boot-running #gh-boot-img{animation:none}',
     '#gh-boot-overlay.gh-boot-waiting #gh-boot-power,#gh-bios-cur{animation:none}',
+    '#gh-boot-overlay.gh-boot-waiting::after,#gh-boot-overlay.gh-boot-running::before{animation:none}',
+    '#gh-boot-spin::before{animation-duration:2.6s}#gh-boot-spin::after{animation-duration:4s}',
     '#gh-boot-overlay{transition-duration:1ms}}',
     '@media (max-width:560px){#gh-boot-power{padding:14px 14px}.gh-bl .k{min-width:120px}',
+    '#gh-boot-copy{display:none}#gh-boot-hint{right:calc(68px + env(safe-area-inset-right,0px))}',
     '#gh-bios-clock{display:none}}',
     '@media (min-width:1500px){#gh-boot-power{font-size:20px;line-height:24px;padding:34px 44px}',
     '.gh-bl{min-height:24px}.gh-bl .k{min-width:240px}#gh-bios-cur{width:11px;height:19px}',
@@ -142,7 +190,7 @@
   var overlay = document.createElement('div');
   overlay.id = 'gh-boot-overlay';
   overlay.setAttribute('role', 'dialog');
-  overlay.setAttribute('aria-label', OS_NAME + ' startup screen. Press Enter or click to continue.');
+  overlay.setAttribute('aria-label', CORP_SHORT + ' ' + OS_NAME + ' startup screen. Press Enter or click to continue.');
 
   var img = new Image();
   img.id = 'gh-boot-img';
@@ -163,9 +211,25 @@
   hint.id = 'gh-boot-hint';
   hint.textContent = 'Click or press Esc to skip';
 
+  var spin = document.createElement('div');
+  spin.id = 'gh-boot-spin';
+  spin.setAttribute('aria-hidden', 'true');
+
+  var bar = document.createElement('div');
+  bar.id = 'gh-boot-bar';
+  bar.setAttribute('aria-hidden', 'true');
+
+  var copy = document.createElement('div');
+  copy.id = 'gh-boot-copy';
+  copy.setAttribute('aria-hidden', 'true');
+  copy.textContent = 'Copyright \u00A9 ' + COPY_FROM + '-' + new Date().getFullYear() + ' ' + CORP_NAME;
+
   overlay.appendChild(img);
   overlay.appendChild(power);
+  overlay.appendChild(copy);
   overlay.appendChild(hint);
+  overlay.appendChild(bar);
+  overlay.appendChild(spin);
   root.appendChild(overlay); // on <html>, outside <body>, so it exists before <body> parses
 
   // ---------- Audio ----------
@@ -186,6 +250,7 @@
   var clockTimer = null;
   var postStopped = false;
   var cursorEl = null;
+  var barTimer = null;
 
   function playAttempt() {
     // Resolves 'ok' | 'blocked' (needs a user gesture) | 'fail' (missing/unsupported file).
@@ -203,6 +268,23 @@
     }
   }
 
+  function startBar(soundIsPlaying) {
+    clearInterval(barTimer);
+    function update() {
+      var p, elapsed = Date.now() - bootStartedAt;
+      if (soundIsPlaying && isFinite(audio.duration) && audio.duration > 0) {
+        p = audio.currentTime / audio.duration;
+      } else if (soundIsPlaying) {
+        p = Math.min(0.95, elapsed / 15000); // duration unknown: creep, never claim to be done
+      } else {
+        p = elapsed / SILENT_BOOT_MS;
+      }
+      bar.style.width = Math.max(0, Math.min(1, p)) * 100 + '%';
+    }
+    update();
+    barTimer = setInterval(update, 120);
+  }
+
   function audioIsPlaying() {
     return !audio.paused && !audio.ended && audio.readyState > 2;
   }
@@ -215,6 +297,8 @@
     clearTimeout(hintTimer);
     clearTimeout(assetsTimer);
     clearInterval(watchdog);
+    clearInterval(barTimer);
+    bar.style.width = '100%';
     stopPost();
     try { audio.pause(); } catch (e) {}
 
@@ -243,6 +327,7 @@
     overlay.classList.remove('gh-boot-waiting');
     overlay.classList.add('gh-boot-running');
     hintTimer = setTimeout(function () { hint.classList.add('gh-show'); }, 1500);
+    startBar(soundIsPlaying);
 
     if (soundIsPlaying) {
       // Finish only when the track actually ends (or the user skips).
@@ -475,7 +560,7 @@
       powerStr = 'AC power';
     }
 
-    var disk = 'ColtonOS origin storage';
+    var disk = OS_NAME + ' origin storage';
     if (info.storage && info.storage.quota) {
       disk += ', ' + fmtBytes(info.storage.usage || 0) + ' used of ' + fmtBytes(info.storage.quota);
     }
@@ -487,7 +572,7 @@
 
     items.push({ blank: true });
     items.push({ k: 'Date / Time', v: timeString(now) + (tz ? '  [' + tz + ']' : '') });
-    items.push({ k: 'BIOS Date', v: mdy + '   ID: ' + (now.getFullYear()) + '-GHUB-' + OS_NAME.toUpperCase() + '-00' });
+    items.push({ k: 'BIOS Date', v: mdy + '   ID: ' + (now.getFullYear()) + '-MHRD-' + OS_NAME.toUpperCase() + '-00' });
     items.push({ blank: true });
     items.push({ k: 'Main Processor', v: (cores ? cores + ' logical core' + (cores === 1 ? '' : 's') : 'unknown core count') + arch, s: 'OK' });
     items.push({ mem: memTotalK, label: 'Memory Test', note: '(' + memLabel + ')' });
@@ -516,7 +601,7 @@
     items.push({ k: 'Boot Count', v: String(bc.count) + (bc.last ? '   (last boot: ' + timeString(new Date(bc.last)) + ')' : '   (first boot)') });
     items.push({ pause: 180 });
     items.push({ blank: true });
-    items.push({ text: 'Boot device: ' + OS_NAME + ' (Hard Disk C:)', cls: 'hi' });
+    items.push({ text: 'Boot device: ' + CORP_SHORT + ' ' + OS_NAME + ' (Hard Disk C:)', cls: 'hi' });
     items.push({ blank: true });
     items.push({ prompt: true });
     return items;
@@ -526,8 +611,9 @@
     postStopped = false;
 
     // Header appears instantly; live clock ticks in the corner.
-    addLine('', OS_NAME + ' BIOS v' + BIOS_VERSION, '', 'hi');
-    addLine('', 'Copyright (C) ' + new Date().getFullYear() + ' Colton Systems, Inc. All Rights Reserved.', '', '');
+    addLine('', CORP_SHORT.toUpperCase() + ' (R) ' + OS_NAME + ' BIOS v' + BIOS_VERSION, '', 'hi');
+    addLine('', 'Copyright (C) ' + COPY_FROM + '-' + new Date().getFullYear() + ' ' + CORP_NAME + '. All Rights Reserved.', '', '');
+    addLine('', CORP_SHORT + ': hard by name, hard by nature.', '', 'dim');
     function tick() { clockEl.textContent = timeString(new Date()); }
     tick();
     clockTimer = setInterval(tick, 1000);
