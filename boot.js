@@ -9,12 +9,14 @@
  *  - Plays only on a fresh launch (new tab / new browser session). Skipped on
  *    refresh, back/forward navigation, and service-worker update reloads.
  *  - Tries to start audio automatically. If the browser blocks that (normal for
- *    first-time visitors and Safari/iOS), a retro PC power button is shown;
- *    pressing it is the user gesture that unlocks audio.
+ *    first-time visitors and Safari/iOS), a green-phosphor BIOS POST screen is
+ *    shown instead. Clicking anywhere, or pressing Enter / any key, boots into
+ *    the site and is the user gesture that unlocks audio.
  *  - The sound is NEVER cut short: while the track is really playing, only the
  *    user can end the boot. Timers for a silent boot only start after the
  *    power button is pressed (or immediately when no power screen is needed).
- *  - Click / Enter / Space / Escape skips once the boot has started.
+ *  - On the BIOS screen Esc skips the boot with no sound; once the boot picture
+ *    is showing, click / Enter / Space / Esc skips it.
  *
  * Opt-outs
  *  - ?noboot in the URL for a single visit.
@@ -23,7 +25,7 @@
  * Assets (case-sensitive on GitHub Pages):
  *    images/bootscreen.PNG
  *    images/win95.mp3
- *    images/w95f.woff2 / w95f.woff   (already in the repo; used for the power screen)
+ *    images/w95f.woff2 / w95f.woff   (already in the repo; used for the BIOS screen)
  */
 (function () {
   'use strict';
@@ -40,6 +42,11 @@
   var TAIL_MS = 400;                 // short pause after the sound ends
   var SKIP_GUARD_MS = 800;           // ignore skip input right after starting
   var FADE_MS = 450;
+
+  var BIOS_VERSION = '4.1.7';        // shown on the BIOS screen
+  var OS_NAME = 'ColtonOS';
+  var COUNT_KEY = 'gh-boot-count';
+  var LAST_KEY = 'gh-last-boot';
 
   // ---------- Should we boot at all? ----------
   try { if (/[?&]noboot(?:=|&|$)/.test(location.search)) return; } catch (e) {}
@@ -87,57 +94,26 @@
     '70%{transform:scale(1,1.03);filter:brightness(2.4)}',
     '100%{transform:scale(1,1);filter:brightness(1)}}',
 
-    /* power screen */
-    '#gh-boot-power{display:none;flex-direction:column;align-items:center;gap:26px;',
-    'padding:24px;text-align:center;position:relative;z-index:1}',
-    '#gh-boot-overlay.gh-boot-waiting #gh-boot-power{display:flex}',
-    /* faint scanlines + vignette over the whole power screen */
-    '#gh-boot-overlay.gh-boot-waiting::before{content:"";position:absolute;inset:0;pointer-events:none;',
-    'background:repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0,rgba(255,255,255,.035) 1px,transparent 1px,transparent 3px),',
-    'radial-gradient(ellipse at center,transparent 45%,rgba(0,0,0,.65) 100%)}',
-
-    /* the beige PC case front */
-    '#gh-boot-case{width:min(440px,88vw);box-sizing:border-box;padding:14px 16px 18px;',
-    'background:linear-gradient(180deg,#d9d6cc,#c4c1b6);',
-    'border-top:3px solid #fff;border-left:3px solid #fff;border-right:3px solid #4a4a4a;border-bottom:3px solid #4a4a4a;',
-    'box-shadow:0 0 0 2px #000,0 18px 40px rgba(0,0,0,.85),inset 1px 1px 0 #efede6,inset -1px -1px 0 #8f8c82}',
-    '#gh-boot-badge{display:flex;justify-content:space-between;align-items:baseline;',
-    'font-size:12px;letter-spacing:.12em;color:#3d3d3d;text-transform:uppercase;',
-    'padding:0 2px 10px;border-bottom:2px groove #aaa79c;margin-bottom:14px}',
-    '#gh-boot-badge b{color:#000080;font-weight:normal}',
-    '#gh-boot-row{display:flex;align-items:center;justify-content:space-between;gap:16px}',
-
-    '#gh-boot-vents{display:flex;flex-direction:column;gap:5px;width:84px}',
-    '#gh-boot-vents i{display:block;height:4px;background:#555;border-radius:2px;',
-    'box-shadow:inset 0 1px 1px #000,0 1px 0 #efede6}',
-
-    '#gh-boot-btnwrap{padding:10px;border-radius:16px;background:#9d9a90;',
-    'box-shadow:inset 2px 2px 4px rgba(0,0,0,.45),0 1px 0 #efede6}',
-    '#gh-boot-btn{display:flex;align-items:center;justify-content:center;width:96px;height:96px;padding:0;',
-    'border:0;border-radius:12px;cursor:pointer;color:#2b2b2b;',
-    'background:linear-gradient(180deg,#e9e7e0 0%,#cfccc2 55%,#b9b6ab 100%);',
-    'box-shadow:inset 2px 2px 0 #fff,inset -2px -2px 0 #7d7a70,0 0 0 2px #1a1a1a,0 7px 0 2px #55524a,0 10px 12px rgba(0,0,0,.55);',
-    'transform:translateY(0);transition:transform .06s,box-shadow .06s,color .15s}',
-    '#gh-boot-btn:hover{color:#0b7a2b}',
-    '#gh-boot-btn:focus-visible{outline:2px dotted #000;outline-offset:6px}',
-    '#gh-boot-btn:active,#gh-boot-btn.gh-down{transform:translateY(6px);',
-    'box-shadow:inset 2px 2px 0 #7d7a70,inset -2px -2px 0 #fff,0 0 0 2px #1a1a1a,0 1px 0 2px #55524a,0 2px 4px rgba(0,0,0,.5)}',
-    '#gh-boot-btn svg{width:46px;height:46px;filter:drop-shadow(0 1px 0 rgba(255,255,255,.7))}',
-
-    '#gh-boot-leds{display:flex;flex-direction:column;gap:12px;width:84px;align-items:flex-start}',
-    '.gh-led{display:flex;align-items:center;gap:8px;font-size:11px;letter-spacing:.1em;color:#3d3d3d}',
-    '.gh-led i{display:block;width:10px;height:10px;border-radius:50%;border:1px solid #1a1a1a;',
-    'box-shadow:inset 1px 1px 1px rgba(255,255,255,.55)}',
-    '.gh-led.pwr i{background:#16c53f;box-shadow:0 0 9px #2cff5e,inset 1px 1px 1px rgba(255,255,255,.6);',
-    'animation:gh-boot-pulse 1.5s ease-in-out infinite}',
-    '.gh-led.hdd i{background:#6a4a00}',
-    '@keyframes gh-boot-pulse{0%,100%{opacity:.35}50%{opacity:1}}',
-
-    '#gh-boot-label{font-size:18px;letter-spacing:.2em;text-transform:uppercase;color:#d8d8d8;',
-    'text-shadow:0 0 6px rgba(160,255,190,.35)}',
-    '#gh-boot-label u{text-decoration:none;animation:gh-boot-blink 1s steps(1) infinite}',
+    /* BIOS / POST screen */
+    '#gh-boot-power{display:none;position:absolute;inset:0;box-sizing:border-box;padding:22px 28px;',
+    'z-index:1;color:#33ff33;font-size:16px;line-height:19px;',
+    'text-shadow:0 0 4px rgba(51,255,51,.45);',
+    '-webkit-font-smoothing:none;font-smooth:never;text-rendering:optimizeSpeed}',
+    '#gh-boot-overlay.gh-boot-waiting #gh-boot-power{display:block;animation:gh-flicker .18s infinite}',
+    '@keyframes gh-flicker{0%,100%{opacity:1}50%{opacity:.965}}',
+    /* scanlines + vignette */
+    '#gh-boot-overlay.gh-boot-waiting::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;',
+    'background:repeating-linear-gradient(0deg,rgba(0,0,0,.28) 0,rgba(0,0,0,.28) 1px,transparent 1px,transparent 3px),',
+    'radial-gradient(ellipse at center,transparent 50%,rgba(0,0,0,.6) 100%)}',
+    '#gh-bios-term{height:100%;overflow:hidden}',
+    '.gh-bl{white-space:pre-wrap;min-height:19px;word-break:break-word}',
+    '.gh-bl .k{display:inline-block;min-width:190px}',
+    '.gh-bl .hi,.gh-bl.hi{color:#d9ffd9;text-shadow:0 0 5px rgba(217,255,217,.6)}',
+    '.gh-bl .dim,.gh-bl.dim{color:#1fa81f;text-shadow:none}',
+    '#gh-bios-cur{display:inline-block;width:9px;height:15px;margin-left:3px;vertical-align:-2px;',
+    'background:#33ff33;box-shadow:0 0 6px rgba(51,255,51,.7);animation:gh-boot-blink 1s steps(1) infinite}',
     '@keyframes gh-boot-blink{50%{opacity:0}}',
-    '#gh-boot-sub{font-size:12px;letter-spacing:.12em;color:#6f6f6f;margin-top:-10px}',
+    '#gh-bios-clock{position:absolute;top:22px;right:28px;z-index:1;color:#d9ffd9;text-align:right}',
 
     '#gh-boot-hint{position:absolute;right:14px;bottom:10px;font-size:12px;letter-spacing:.08em;',
     'color:#6a6a6a;opacity:0;transition:opacity .6s ease;pointer-events:none}',
@@ -145,10 +121,13 @@
 
     '@media (prefers-reduced-motion:reduce){',
     '#gh-boot-overlay.gh-boot-running #gh-boot-img{animation:none}',
-    '.gh-led.pwr i,#gh-boot-label u{animation:none}',
+    '#gh-boot-overlay.gh-boot-waiting #gh-boot-power,#gh-bios-cur{animation:none}',
     '#gh-boot-overlay{transition-duration:1ms}}',
-    '@media (max-width:420px){#gh-boot-vents{display:none}#gh-boot-row{justify-content:space-around}',
-    '#gh-boot-label{font-size:15px}}'
+    '@media (max-width:560px){#gh-boot-power{padding:14px 14px}.gh-bl .k{min-width:120px}',
+    '#gh-bios-clock{display:none}}',
+    '@media (min-width:1500px){#gh-boot-power{font-size:20px;line-height:24px;padding:34px 44px}',
+    '.gh-bl{min-height:24px}.gh-bl .k{min-width:240px}#gh-bios-cur{width:11px;height:19px}',
+    '#gh-bios-clock{top:34px;right:44px}}'
   ].join('');
 
   var styleEl = document.createElement('style');
@@ -162,8 +141,8 @@
 
   var overlay = document.createElement('div');
   overlay.id = 'gh-boot-overlay';
-  overlay.setAttribute('role', 'status');
-  overlay.setAttribute('aria-label', 'Starting up');
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-label', OS_NAME + ' startup screen. Press Enter or click to continue.');
 
   var img = new Image();
   img.id = 'gh-boot-img';
@@ -172,26 +151,13 @@
 
   var power = document.createElement('div');
   power.id = 'gh-boot-power';
-  power.innerHTML =
-    '<div id="gh-boot-case">' +
-      '<div id="gh-boot-badge"><span>Project Launcher PC</span><b>Model 95</b></div>' +
-      '<div id="gh-boot-row">' +
-        '<div id="gh-boot-vents"><i></i><i></i><i></i><i></i><i></i></div>' +
-        '<div id="gh-boot-btnwrap">' +
-          '<button id="gh-boot-btn" type="button" aria-label="Power on">' +
-            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" ' +
-            'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-            '<path d="M12 2.8v8.4"/><path d="M6.6 6.5a8 8 0 1 0 10.8 0"/></svg>' +
-          '</button>' +
-        '</div>' +
-        '<div id="gh-boot-leds">' +
-          '<div class="gh-led pwr"><i></i><span>POWER</span></div>' +
-          '<div class="gh-led hdd"><i></i><span>HDD</span></div>' +
-        '</div>' +
-      '</div>' +
-    '</div>' +
-    '<div id="gh-boot-label">Press power button<u>_</u></div>' +
-    '<div id="gh-boot-sub">Esc to skip</div>';
+  power.setAttribute('aria-hidden', 'true');
+  var clockEl = document.createElement('div');
+  clockEl.id = 'gh-bios-clock';
+  var term = document.createElement('div');
+  term.id = 'gh-bios-term';
+  power.appendChild(clockEl);
+  power.appendChild(term);
 
   var hint = document.createElement('div');
   hint.id = 'gh-boot-hint';
@@ -216,6 +182,10 @@
   var watchdog = null;
   var pausedSince = 0;
   var assetsTimer = null;
+  var postTimer = null;
+  var clockTimer = null;
+  var postStopped = false;
+  var cursorEl = null;
 
   function playAttempt() {
     // Resolves 'ok' | 'blocked' (needs a user gesture) | 'fail' (missing/unsupported file).
@@ -245,6 +215,7 @@
     clearTimeout(hintTimer);
     clearTimeout(assetsTimer);
     clearInterval(watchdog);
+    stopPost();
     try { audio.pause(); } catch (e) {}
 
     document.removeEventListener('keydown', onKeyDown, true);
@@ -305,8 +276,7 @@
   function powerOn() {
     if (phase !== 'waiting') return;
     phase = 'powering'; // blocks double activation (keydown + click)
-    var btn = document.getElementById('gh-boot-btn');
-    if (btn) btn.classList.add('gh-down');
+    stopPost();
 
     // play() must run synchronously inside the user's click/key event.
     playAttempt().then(function (result) {
@@ -321,8 +291,302 @@
     if (phase !== 'loading') return;
     phase = 'waiting';
     overlay.classList.add('gh-boot-waiting');
-    var btn = document.getElementById('gh-boot-btn');
-    if (btn) { try { btn.focus(); } catch (e) {} }
+    startPost();
+  }
+
+  // ---------- BIOS POST screen ----------
+  var reduceMotion = false;
+  try { reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+
+  function stopPost() {
+    postStopped = true;
+    clearTimeout(postTimer);
+    clearInterval(clockTimer);
+  }
+
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+  function timeString(d) {
+    var date = d.toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: '2-digit' });
+    var time = d.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' });
+    return date + '  ' + time;
+  }
+
+  function fmtBytes(n) {
+    if (!isFinite(n) || n < 0) return '?';
+    var u = ['B', 'KB', 'MB', 'GB', 'TB'], i = 0;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return (i === 0 ? String(Math.round(n)) : n.toFixed(n >= 100 ? 0 : 1)) + ' ' + u[i];
+  }
+
+  function withTimeout(makePromise, ms) {
+    return new Promise(function (resolve) {
+      var t = setTimeout(function () { resolve(null); }, ms);
+      var p = null;
+      try { p = makePromise(); } catch (e) { p = null; }
+      Promise.resolve(p).then(
+        function (v) { clearTimeout(t); resolve(v || null); },
+        function () { clearTimeout(t); resolve(null); }
+      );
+    });
+  }
+
+  function gatherInfo() {
+    var info = {};
+    return Promise.all([
+      withTimeout(function () { return navigator.getBattery && navigator.getBattery(); }, 500)
+        .then(function (b) { info.battery = b; }),
+      withTimeout(function () { return navigator.storage && navigator.storage.estimate && navigator.storage.estimate(); }, 500)
+        .then(function (e) { info.storage = e; }),
+      withTimeout(function () {
+        return navigator.userAgentData && navigator.userAgentData.getHighEntropyValues &&
+          navigator.userAgentData.getHighEntropyValues(['architecture', 'bitness']);
+      }, 500).then(function (v) { info.uad = v; })
+    ]).then(function () { return info; });
+  }
+
+  function getGPU() {
+    try {
+      var c = document.createElement('canvas');
+      var gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+      if (!gl) return null;
+      var ext = gl.getExtension('WEBGL_debug_renderer_info');
+      var r = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+      var lose = gl.getExtension('WEBGL_lose_context');
+      if (lose) lose.loseContext();
+      return r.replace(/^ANGLE \((.*)\)$/, '$1');
+    } catch (e) { return null; }
+  }
+
+  function getBrowserOS() {
+    var ua = navigator.userAgent || '';
+    var uad = navigator.userAgentData;
+    var browser = 'Unknown browser', m;
+    if ((m = ua.match(/Edg\/(\d+)/))) browser = 'Microsoft Edge ' + m[1];
+    else if ((m = ua.match(/OPR\/(\d+)/))) browser = 'Opera ' + m[1];
+    else if ((m = ua.match(/(?:Firefox|FxiOS)\/(\d+)/))) browser = 'Firefox ' + m[1];
+    else if ((m = ua.match(/(?:Chrome|CriOS)\/(\d+)/))) browser = 'Chrome ' + m[1];
+    else if ((m = ua.match(/Version\/(\d+).*Safari/))) browser = 'Safari ' + m[1];
+
+    var os = 'Unknown OS';
+    if (uad && uad.platform) os = uad.platform;
+    else if (/Windows/.test(ua)) os = 'Windows';
+    else if (/Android/.test(ua)) os = 'Android';
+    else if (/iPhone|iPod/.test(ua)) os = 'iOS';
+    else if (/iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) os = 'iPadOS';
+    else if (/Mac OS X|Macintosh/.test(ua)) os = 'macOS';
+    else if (/CrOS/.test(ua)) os = 'ChromeOS';
+    else if (/Linux/.test(ua)) os = 'Linux';
+    return { browser: browser, os: os };
+  }
+
+  function bumpBootCount() {
+    var count = 1, last = null;
+    try {
+      count = (parseInt(window.localStorage.getItem(COUNT_KEY), 10) || 0) + 1;
+      last = window.localStorage.getItem(LAST_KEY);
+      window.localStorage.setItem(COUNT_KEY, String(count));
+      window.localStorage.setItem(LAST_KEY, new Date().toISOString());
+    } catch (e) {}
+    return { count: count, last: last };
+  }
+
+  function addLine(label, value, status, cls) {
+    var line = document.createElement('div');
+    line.className = 'gh-bl' + (cls ? ' ' + cls : '');
+    var valEl = null;
+    if (label) {
+      var k = document.createElement('span');
+      k.className = 'k';
+      k.textContent = label;
+      line.appendChild(k);
+    }
+    if (value !== null && value !== undefined && value !== '') {
+      valEl = document.createElement('span');
+      valEl.className = 'v';
+      valEl.textContent = value;
+      line.appendChild(valEl);
+    }
+    if (status) {
+      var st = document.createElement('span');
+      st.className = 'hi';
+      st.textContent = ' ' + status;
+      line.appendChild(st);
+    }
+    if (cursorEl && cursorEl.parentNode) cursorEl.parentNode.removeChild(cursorEl);
+    cursorEl = document.createElement('span');
+    cursorEl.id = 'gh-bios-cur';
+    line.appendChild(cursorEl);
+    term.appendChild(line);
+    term.scrollTop = term.scrollHeight;
+    return { line: line, val: valEl };
+  }
+
+  function buildPostItems(info) {
+    var items = [];
+    var now = new Date();
+    var bo = getBrowserOS();
+    var mdy = pad2(now.getMonth() + 1) + '/' + pad2(now.getDate()) + '/' + String(now.getFullYear()).slice(-2);
+    var tz = '';
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) {}
+
+    var cores = navigator.hardwareConcurrency;
+    var arch = '';
+    if (info.uad && info.uad.architecture) {
+      arch = ' (' + info.uad.architecture + (info.uad.bitness ? ' ' + info.uad.bitness + '-bit' : '') + ')';
+    }
+    var mem = navigator.deviceMemory;
+    var memLabel = mem ? (mem >= 8 ? '8+ GB' : mem + ' GB') : 'not reported by browser';
+    var memTotalK = Math.round((mem || 4) * 1024 * 1024);
+    var gpu = getGPU();
+
+    var scr = window.screen || {};
+    var dpr = window.devicePixelRatio || 1;
+    var display = (scr.width || '?') + ' x ' + (scr.height || '?') + ', ' + (scr.colorDepth || 24) +
+      '-bit color, ' + (Math.round(dpr * 100) / 100) + 'x scale';
+
+    var pointer = 'Keyboard detected';
+    try {
+      var fine = window.matchMedia('(pointer: fine)').matches;
+      var touch = navigator.maxTouchPoints || 0;
+      pointer = (fine ? 'Mouse / trackpad' : 'No fine pointer') + (touch ? ', touchscreen (' + touch + ' pt)' : '');
+    } catch (e) {}
+
+    var pads = 0;
+    try {
+      var gp = navigator.getGamepads ? navigator.getGamepads() : [];
+      for (var i = 0; i < gp.length; i++) if (gp[i]) pads++;
+    } catch (e) {}
+
+    var net = navigator.onLine === false ? 'OFFLINE' : 'ONLINE';
+    var conn = navigator.connection;
+    if (conn && navigator.onLine !== false) {
+      var bits = [];
+      if (conn.effectiveType) bits.push(conn.effectiveType);
+      if (conn.downlink) bits.push('~' + conn.downlink + ' Mbps');
+      if (conn.rtt) bits.push(conn.rtt + ' ms RTT');
+      if (bits.length) net += ' (' + bits.join(', ') + ')';
+    }
+
+    var powerStr = 'Not reported by browser';
+    if (info.battery) {
+      powerStr = 'Battery ' + Math.round(info.battery.level * 100) + '%' + (info.battery.charging ? ' (charging)' : ' (discharging)');
+    } else if (navigator.getBattery) {
+      powerStr = 'AC power';
+    }
+
+    var disk = 'ColtonOS origin storage';
+    if (info.storage && info.storage.quota) {
+      disk += ', ' + fmtBytes(info.storage.usage || 0) + ' used of ' + fmtBytes(info.storage.quota);
+    }
+
+    var standalone = false;
+    try { standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch (e) {}
+    var sw = (navigator.serviceWorker && navigator.serviceWorker.controller) ? 'ACTIVE (offline cache ready)' : 'not yet installed';
+    var bc = bumpBootCount();
+
+    items.push({ blank: true });
+    items.push({ k: 'Date / Time', v: timeString(now) + (tz ? '  [' + tz + ']' : '') });
+    items.push({ k: 'BIOS Date', v: mdy + '   ID: ' + (now.getFullYear()) + '-GHUB-' + OS_NAME.toUpperCase() + '-00' });
+    items.push({ blank: true });
+    items.push({ k: 'Main Processor', v: (cores ? cores + ' logical core' + (cores === 1 ? '' : 's') : 'unknown core count') + arch, s: 'OK' });
+    items.push({ mem: memTotalK, label: 'Memory Test', note: '(' + memLabel + ')' });
+    items.push({ k: 'Video Adapter', v: gpu || 'Generic (WebGL unavailable)', s: 'OK' });
+    items.push({ k: 'Display', v: display });
+    items.push({ k: 'Window', v: window.innerWidth + ' x ' + window.innerHeight });
+    items.push({ pause: 140 });
+    items.push({ blank: true });
+    items.push({ text: 'Detecting hardware ...' });
+    items.push({ k: 'Pointing Device', v: pointer, s: 'OK' });
+    items.push({ k: 'Game Controllers', v: pads ? pads + ' detected' : 'none detected' });
+    items.push({ k: 'Network Adapter', v: net, s: navigator.onLine === false ? '' : 'OK' });
+    items.push({ k: 'Power Source', v: powerStr });
+    items.push({ k: 'Primary Master', v: disk, s: 'OK' });
+    items.push({ k: 'Cache Service', v: sw });
+    items.push({ k: 'Locale', v: navigator.language || 'unknown' });
+    items.push({ pause: 120 });
+    items.push({ blank: true });
+    items.push({ k: 'Operating System', v: bo.os });
+    items.push({ k: 'Browser Engine', v: bo.browser });
+    items.push({ k: 'Launch Mode', v: standalone ? 'Installed app' : 'Browser tab' });
+    items.push({ blank: true });
+    items.push({ text: 'Verifying DMI Pool Data ........', s: 'OK' });
+    items.push({ text: 'Checking NVRAM ..................', s: 'Update OK!' });
+    items.push({ text: 'Plug and Play BIOS Extension v1.0A', cls: 'dim' });
+    items.push({ k: 'Boot Count', v: String(bc.count) + (bc.last ? '   (last boot: ' + timeString(new Date(bc.last)) + ')' : '   (first boot)') });
+    items.push({ pause: 180 });
+    items.push({ blank: true });
+    items.push({ text: 'Boot device: ' + OS_NAME + ' (Hard Disk C:)', cls: 'hi' });
+    items.push({ blank: true });
+    items.push({ prompt: true });
+    return items;
+  }
+
+  function startPost() {
+    postStopped = false;
+
+    // Header appears instantly; live clock ticks in the corner.
+    addLine('', OS_NAME + ' BIOS v' + BIOS_VERSION, '', 'hi');
+    addLine('', 'Copyright (C) ' + new Date().getFullYear() + ' Colton Systems, Inc. All Rights Reserved.', '', '');
+    function tick() { clockEl.textContent = timeString(new Date()); }
+    tick();
+    clockTimer = setInterval(tick, 1000);
+
+    gatherInfo().then(function (info) {
+      if (postStopped || phase !== 'waiting') return;
+      runPost(buildPostItems(info));
+    });
+  }
+
+  function runPost(items) {
+    var i = 0;
+    function lineDelay() { return reduceMotion ? 0 : 20 + Math.random() * 30; }
+
+    function next() {
+      if (postStopped || phase !== 'waiting') return;
+      if (i >= items.length) return;
+      var it = items[i++];
+
+      if (it.pause) {
+        postTimer = setTimeout(next, reduceMotion ? 0 : it.pause);
+      } else if (it.blank) {
+        addLine('', '', '', '');
+        postTimer = setTimeout(next, lineDelay());
+      } else if (it.mem) {
+        runMemTest(it, function () { postTimer = setTimeout(next, lineDelay()); });
+      } else if (it.prompt) {
+        addLine('', 'Press ENTER, click anywhere, or press any key to boot into ' + OS_NAME, '', 'hi');
+        addLine('', 'Press ESC to skip the boot sequence', '', 'dim');
+      } else if (it.text !== undefined) {
+        addLine('', it.text, it.s || '', it.cls || '');
+        postTimer = setTimeout(next, lineDelay());
+      } else {
+        addLine(it.k, it.v, it.s || '', it.cls || '');
+        postTimer = setTimeout(next, lineDelay());
+      }
+    }
+    next();
+  }
+
+  function runMemTest(it, done) {
+    var row = addLine(it.label, '0K', '', '');
+    var start = Date.now();
+    var dur = reduceMotion ? 0 : 650;
+    (function step() {
+      if (postStopped || phase !== 'waiting') return;
+      var p = dur === 0 ? 1 : Math.min(1, (Date.now() - start) / dur);
+      if (p < 1) {
+        row.val.textContent = Math.floor(it.mem * p) + 'K';
+        postTimer = setTimeout(step, 24);
+      } else {
+        row.val.textContent = it.mem + 'K ' + it.note;
+        var ok = document.createElement('span');
+        ok.className = 'hi';
+        ok.textContent = ' OK';
+        row.line.insertBefore(ok, cursorEl);
+        done();
+      }
+    })();
   }
 
   function onOverlayClick() {
@@ -330,22 +594,36 @@
     else if (phase === 'running' && Date.now() >= skipAllowedAt) finish();
   }
 
+  function isNonActivatingKey(e) {
+    // Modifier-only keys, shortcuts (Ctrl+R, Alt+Tab...) and F-keys (F5, F11, F12)
+    // must pass through to the browser and cannot unlock audio anyway.
+    if (e.ctrlKey || e.metaKey || e.altKey) return true;
+    return /^(Shift|Control|Alt|AltGraph|Meta|OS|CapsLock|NumLock|ScrollLock|Fn|FnLock|ContextMenu|Dead|Unidentified|F\d{1,2})$/.test(e.key);
+  }
+
   function onKeyDown(e) {
     if (phase === 'done') return;
     e.stopPropagation(); // nothing behind the boot screen reacts to keys
 
     var key = e.key;
-    if (phase === 'waiting') {
-      if (key === 'Escape') { e.preventDefault(); finish(); }
-      else if (key === 'Enter' || key === ' ') { e.preventDefault(); powerOn(); }
-    } else if (phase === 'running') {
-      if ((key === 'Escape' || key === 'Enter' || key === ' ') && Date.now() >= skipAllowedAt) {
+    if (key === 'Escape') {
+      if (phase === 'waiting' || phase === 'powering' || phase === 'loading' ||
+          (phase === 'running' && Date.now() >= skipAllowedAt)) {
         e.preventDefault();
         finish();
       }
-    } else if (key === 'Escape') {
+      return;
+    }
+
+    if (phase === 'waiting') {
+      if (isNonActivatingKey(e)) return;
       e.preventDefault();
-      finish();
+      powerOn(); // Enter, Space, letters... anything
+    } else if (phase === 'running') {
+      if ((key === 'Enter' || key === ' ') && Date.now() >= skipAllowedAt) {
+        e.preventDefault();
+        finish();
+      }
     }
   }
 
