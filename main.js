@@ -1930,8 +1930,21 @@ function setupToSModal() {
   // boot.js sets window.__ghBooting while the startup sequence is playing. The Terms
   // modal must not appear until it has COMPLETELY finished (even on a first-ever visit),
   // so wait for its 'gh-boot-complete' event. If no boot is running, show it right away.
-  if (window.__ghBooting) {
-    window.addEventListener('gh-boot-complete', showTermsIfNeeded, { once: true });
+  // The overlay element is checked too, so this still works if a stale cached boot.js
+  // (from before the flag existed) is served alongside this file.
+  function bootIsRunning() {
+    return !!window.__ghBooting || !!document.getElementById('gh-boot-overlay');
+  }
+  if (bootIsRunning()) {
+    var termsShown = false;
+    var showOnce = function () {
+      if (termsShown) return;
+      termsShown = true;
+      clearInterval(bootPoll);
+      showTermsIfNeeded();
+    };
+    var bootPoll = setInterval(function () { if (!bootIsRunning()) showOnce(); }, 150);
+    window.addEventListener('gh-boot-complete', showOnce, { once: true });
   } else {
     showTermsIfNeeded();
   }
