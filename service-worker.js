@@ -6,7 +6,7 @@
  * URLs are resolved against this worker's directory so GitHub Pages repository
  * deployments (for example /games-hub/) work the same as root deployments.
  */
-const VERSION = '4.1.6';
+const VERSION = '4.1.7';
 const CACHE_PREFIX = 'games-hub-';
 const CACHE = CACHE_PREFIX + VERSION;
 const APP_BASE = new URL('./', self.location.href);
