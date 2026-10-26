@@ -1,12 +1,12 @@
 /*
- * Games Hub service worker — v4.1.6
+ * Games Hub service worker — v4.2.0
  *
  * The local manifest below is generated from files that actually exist in the
  * repository. Missing/deprecated placeholder paths are intentionally omitted.
  * URLs are resolved against this worker's directory so GitHub Pages repository
  * deployments (for example /games-hub/) work the same as root deployments.
  */
-const VERSION = '4.1.7';
+const VERSION = '4.2.0';
 const CACHE_PREFIX = 'games-hub-';
 const CACHE = CACHE_PREFIX + VERSION;
 const APP_BASE = new URL('./', self.location.href);
@@ -104,12 +104,40 @@ const IMAGES = [
   "./images/icons/notes.png",
   "./images/icons/paint.png",
   "./images/icons/weather.png",
+  "./images/icons/cdrom.svg",
+  "./images/icons/control-panel.svg",
+  "./images/icons/document.svg",
+  "./images/icons/documents-folder.svg",
+  "./images/icons/error.svg",
+  "./images/icons/find.svg",
+  "./images/icons/floppy.svg",
+  "./images/icons/folder-open.svg",
+  "./images/icons/folder.svg",
+  "./images/icons/gamepad.svg",
+  "./images/icons/globe.svg",
+  "./images/icons/hard-disk.svg",
+  "./images/icons/help.svg",
+  "./images/icons/hourglass.svg",
+  "./images/icons/info.svg",
+  "./images/icons/monitor-graph.svg",
+  "./images/icons/my-computer.svg",
+  "./images/icons/network.svg",
+  "./images/icons/programs.svg",
+  "./images/icons/question.svg",
+  "./images/icons/recycle-bin.svg",
+  "./images/icons/run.svg",
+  "./images/icons/shortcut.svg",
+  "./images/icons/shutdown.svg",
+  "./images/icons/speaker.svg",
+  "./images/icons/star.svg",
+  "./images/icons/warning.svg",
   "./images/missing.png",
   "./images/tile.GIF",
   "./images/w95f.woff",
   "./images/w95f.woff2",
   "./images/windows.png",
   "./images/bootscreen.PNG",
+  "./images/winBG.PNG",
   "./images/win95.mp3"
 ];
 

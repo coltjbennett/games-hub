@@ -1,7 +1,7 @@
 // data.js
 
 const siteData = {
-  version: "v4.1.7",
+  version: "v4.2.0",
   author: "COLTON BENNETT",
   location: "Waukesha, WI",
   heroTitle: "Project Launcher",
