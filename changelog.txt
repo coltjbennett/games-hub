@@ -1,0 +1,171 @@
++———————————————————————————————————————+
+|  Colton’s Project Launcher Changelog  |
++———————————————————————————————————————+
+
+2026-10-26 - v4.2.1 - Desktop polish
+
+• Window buttons redrawn on one centered pixel grid so minimize, maximize, restore and close match in size and weight on every screen.
+• New: screen savers (bouncing logo, starfield, marquee), system sounds, tiled wallpaper, Date/Time panel, taskbar right-click menu (Cascade, Tile, Minimize All), wireframe minimize/restore animation, Ctrl+Alt+Arrow window switcher, F2 icon rename, and Back/Up/Address bar in folder windows.
+• Fixed: keyboard shortcuts now work while a game or app has focus.
+
+2026-10-25 - v4.2.0 - ColtonOS 95 desktop
+
+• The whole site is now a Windows 95-style desktop. Every game is a desktop icon, Classic Games is a folder, and there are My Computer, Accessories and Recycle Bin icons plus a Start menu with Programs, Favorites, Documents, Settings, Find, Help, Run and Shut Down.
+• Real windows: drag, resize from any edge, minimize, maximize, system menu, taskbar buttons, and Alt+F4. Icons can be dragged, rubber-band selected, arranged, and snapped to a grid. Windows open maximized on phones.
+• New Project Library window keeps search, status filter, favorites, recents, featured game, and tags. Announcements and the tour live in a Welcome window; Help and Find (Ctrl+K) replace Quick Launch.
+• Control Panel is now a full settings applet: Display (wallpaper, desktop color, color schemes, CRT), Mouse, Taskbar, Accessibility, Sounds, System, and Library/Theme packs.
+• Teal (#008080) desktop with the ColtonOS logo at 30% of screen height, shrinking to fit narrow screens.
+• New CRT effect: one static, GPU-friendly overlay (scanlines, phosphor mask, vignette) that pauses while a game is open by default.
+• Mouse, keyboard, touch and pen supported; screen-reader announcements, High Contrast, text size, and reduced motion options.
+
+2026-10-24 - v4.1.7 - Windows 95 boot sequence
+
+• Added a Windows 95-style startup screen with the classic boot sound. It plays once per fresh visit (not on refresh) and can be skipped with a click, Enter, Space, or Esc.
+• If your browser blocks automatic sound, a retro PC power button appears first; pressing it starts the boot with audio.
+
+2026-10-24 - v4.1.6 - Significant chatroom refactor
+
+• Rebuilt chat storage on IndexedDB with one record per message, so only changed messages are written instead of rewriting the entire history, and attachments are stored as separate deduplicated Blobs. Existing history is migrated automatically.
+• Attachments are now sent as hash-verified binary frames on their own topic, automatically broadcast to everyone and retroactively synced to users who are missing them. The attachment limit is now 20 MB.
+• Added chat thumbnails and video poster frames, lazy media loading, and lossless EXIF/GPS metadata stripping for photos, with rotated photos redrawn upright.
+• Images and videos now open in a lightbox with a Windows-style close button. Videos can also play inline, iPad .mov clips are supported, and right-click or long-press on media offers Download.
+• Added image/file paste and drag-and-drop uploads, smaller voice memos, a click-to-load YouTube embed, and optional "Hide join/leave messages" and desktop-notification settings.
+• DMs and sync traffic now use private per-user topics instead of the shared room topic, durable messages use a persistent broker session with an outbox that retries failed sends, and disconnected users are detected via MQTT Last Will.
+• Sync is much quieter, with unicast responses, sampled responders, byte-sized packets, and a slow anti-entropy check instead of a minute-by-minute broadcast.
+• The message list now reuses existing elements instead of rebuilding the whole chat, and search now covers the full stored history.
+• Replaced all native alert, confirm, and prompt dialogs with styled modals, and message editing now uses a large Apply/Cancel editor.
+• The GitHub chat-backup restore now runs only on first visit, with a new "Restore from GitHub Backup" button in settings.
+• Added send rate limits and optional signed admin commands, fixed an injection hole in message buttons, and fixed numerous sync, mention, and media bugs.
+
+2026-10-20 — v4.1.5 — Service-worker, dependency & project documentation maintenance
+
+• Rebuilt the service-worker cache manifest to better match the files actually present in the repository and removed stale references to deprecated or missing files.
+• Improved deployment-subpath handling so local cache URLs resolve relative to the service worker's location rather than assuming the site is hosted at the domain root.
+• Expanded the dependency cache list to account for multiple versions of Three.js and other libraries used across the site's games and applets, including physics, input, networking, charting, and Flash-emulation libraries.
+• Improved best-effort caching coverage for Google Fonts and external dependency resources while retaining offline fallbacks.
+• Added Fieldkit 3D Engine to the project catalog immediately after FPS beta, using the existing missing-image placeholder until a dedicated thumbnail is available.
+• Updated sitemap.xml to better represent the site's game, classic-game, applet, and launcher pages.
+• Expanded llms.txt with additional project, architecture, game, applet, and dependency information.
+• Expanded README.md with project structure, deployment, offline behavior, dependency, privacy, and contribution documentation.
+• Updated package.json metadata and dependency declarations to better reflect the libraries used by the project.
+
+2026-10-16 - v4.1.4 - Import/export addition
+
+• Users can now export their entire site data as a .zip file and import it into other browsers. This includes: page preferences, game save data, chat data, and more. The button to do this is located in the system monitor applet.
+
+2026-10-02 — v4.1.3 – Automatic service-worker updates & stale-cache recovery
+
+• Added automatic service-worker update checks so the launcher can detect newly published versions without requiring users to manually clear Cache Storage.
+• Added explicit service-worker update checks when the launcher tab opens.
+• Added periodic service-worker update checks while the launcher remains open.
+• Added automatic activation of newly installed service workers so updates do not remain waiting behind an older active worker.
+• Added automatic client takeover through service-worker client claiming so updated workers can begin controlling existing launcher tabs immediately.
+• Added automatic page reload handling when a newly updated service worker takes control, ensuring the current tab switches to the updated application code.
+• Added service-worker cache bypass behavior for update checks so stale HTTP-cached service-worker scripts cannot prevent update detection.
+• Bumped the application cache generation so obsolete cache generations are automatically removed when the new service worker activates.
+• Improved stale-cache recovery for users who were previously locked onto older cached launcher versions.
+• Changed normal application-resource loading to prefer the current live site when online, using Cache Storage as an offline fallback instead of treating the cache as the primary source.
+• Added automatic cache refreshes from successful live responses so cached resources stay synchronized with the currently published site.
+• Preserved offline functionality by continuing to serve previously cached resources when the live site cannot be reached.
+• Removed the need for users to manually open System Monitor and clear Cache Storage to receive future launcher updates.
+• Improved update resilience for returning users by allowing the existing service-worker installation to migrate itself to the current launcher version.
+
+2026-10-02 — v4.1.2 – Chat low-power optimization, persistent window minimization & fullscreen behavior
+
+• Reduced Chat synchronization to 10% frequency when Low Power Mode is active while the Chat window is closed.
+• Reduced Chat packet size to 25% and packet rate to 25% during closed-window Low Power Mode operation.
+• Added additional Low Power Mode performance optimizations to reduce unnecessary rendering, timers, polling, and background work so games can run as smoothly as possible.
+• Fixed Chat ping banners so they can remain visible over fullscreened applications through the fullscreen notification layer.
+• Added a minimize button to all application windows, positioned to the left of the refresh button.
+• Changed window minimization so minimizing an app no longer closes its iframe or navigates it to about:blank; the application continues running while minimized.
+• Added a dedicated minimized-application tray above the Start button that appears only when applications are minimized.
+• Added square minimized-app buttons matching the launcher applet style, displaying the first letter of each minimized application's name.
+• Added clickable minimized-app tray buttons that restore their corresponding application windows.
+• Kept the minimized-app tray separate from the taskbar while visually attaching it above the taskbar.
+• Made the minimized-app tray remain above floating windows but not above fullscreened applications.
+• Added Start-menu-aware tray positioning so the minimized-app tray moves to the right when the Start menu is opened.
+• Added automatic fullscreen Low Power Mode handling for non-Chat application windows while preserving the user's previous Low Power Mode state.
+• Restored the previous Low Power Mode state when a fullscreened application exits fullscreen or its window closes.
+
+2026-10-02 — v4.1.1 – Chat sync throttling, fullscreen low-power behavior & persistent ping banners
+
+• Reduced Chat synchronization to half rate whenever Low Power Mode is active or the Chat window is closed, including 25-message sync batches, doubled batch spacing, halved manifest entry payloads, doubled manifest debounce/minimum timing, and slower periodic manifest broadcasts.
+• Restored full Chat synchronization rate when the Chat window is open and Low Power Mode is not active.
+• Reduced Chat PING frequency from 5 seconds to 10 seconds while Low Power Mode is active, including when the Chat window is closed.
+• Added parent activity-state reporting so Chat can react immediately when the Chat window opens/closes or Low Power Mode changes.
+• Added automatic Low Power Mode activation while any non-Chat application window is maximized/full-screened, while preserving the previous Low Power Mode state after the window is restored or closed.
+• Ensured restored desktop window state also reapplies the fullscreen-triggered Low Power Mode behavior correctly.
+• Raised the Chat ping-notification banner above maximized/full-screened application windows so ping alerts can still pop down over other apps.
+
+2026-10-02 - New Game:
+
+• Asphalt Rush is now the featured game.
+• ADDED NEW GAME: Asphalt Rush, a Need-For-Speed inspired game.
+
+2026-09-30 - v4.1.0 - Storage optimization, performance improvements, expanded themes & chat resilience
+
+• Reworked service-worker caching to prevent unnecessary persistent Cache Storage writes on ordinary page loads and avoid repeatedly rewriting the main document.
+• Reduced persistent cache growth by limiting cached resources by type and size, excluding large game/preview assets from the core cache, and removing obsolete Arcade Hub cache snapshots during service-worker activation.
+• Added bounded, compressed chat-history persistence using browser compression APIs where available with LZString fallback.
+• Added automatic chat-history compaction and configurable retention windows, with support for Forever, 7-day, 30-day, and 90-day history retention.
+• Added configurable chat-history storage modes for Text Only, Attachments, and Full Media.
+• Added automatic lossy image compression for oversized chat images and size-bounded handling for videos, voice recordings, and other attachments to reduce persistent storage usage while retaining chat media.
+• Added a unified Storage Manager to System Monitor covering Cache Storage, IndexedDB/localForage, localStorage, sessionStorage, and estimated overall origin usage.
+• Added per-category browser-storage cleanup controls and lightweight storage diagnostics to identify persistent storage consumers.
+• Added Low Power Mode with reduced decorative effects, paused hidden applets, visibility-aware timers, reduced polling/presence activity, capped large-grid rendering, and other optimizations for older or resource-constrained devices.
+• Added visibility-aware rendering and image decoding improvements to reduce unnecessary work for hidden or off-screen content.
+• Added session/layout restoration, desktop layout profiles, recent-project history, favorites organization, crash-recovery state, and settings import/export support.
+• Expanded the Windows-era visual system with Windows 95 Blue, Windows Gray, Windows 98 Teal, Olive Desktop, Plum Desktop, DOS Amber, Blue-Gray NT, and Midnight DOS theme presets.
+• Added theme-specific desktop patterns and wallpaper support while preserving the classic Windows-style UI structure.
+• Added more authentic Windows-era interface details including hierarchical Start-menu behavior, classic tooltips, selection states, beveled group boxes, progress indicators, system-tray overflow handling, context menus, Explorer-style address bars, and themed desktop combinations.
+• Added optional startup splash and classic system-sound support for startup, dial-up/network, and other desktop events.
+• Expanded System Monitor with lightweight diagnostics for browser storage, rendering/performance state, and resource usage.
+• Improved Chat persistence and recovery so existing local history is loaded before network synchronization and malformed/legacy stored data does not silently present as an empty chat.
+• Added automatic discovery and merging of available GitHub chat-history exports, including export-date tracking so newer discovered backups can be merged without replacing existing history.
+• Preserved existing MQTT chat functionality while improving durable history handling, media storage, and recovery behavior.
+• Improved Chat connection-state handling and resilience around reconnects, presence, online-user tracking, and administrative functionality.
+• Added safer handling for persisted chat state so pending DMs, tombstones, settings, and other non-history data cannot be incorrectly compacted as message history.
+• Optimized repeated audio notification handling by reusing a shared AudioContext instead of creating a new audio context for every notification.
+• Reduced unnecessary browser work during repeat visits and background operation while retaining existing applets, games, CRT functionality, and other site features.
+• Fixed persistent-storage growth caused by redundant cache writes and duplicated cached Arcade Hub data.
+• Fixed chat-history loading and recovery paths that could make previously stored conversations appear to have disappeared.
+• Fixed chat initialization paths so persistent history recovery does not prevent the MQTT connection from being established.
+• Fixed theme persistence and switching behavior so desktop backgrounds, title bars, and other themed surfaces can change independently without altering the classic Win95-style blue header and launch-button treatment.
+
+2026-09-30 - v4.0.0 - Desktop upgrade, convenience features & resilience
+
+• Added Control Panel applet with theme switching, CRT/motion/compact/high-contrast controls, install-as-app action, and safe interface reset.
+• Added System Monitor applet with live FPS, viewport/DPR, browser capability, network, JS heap, and Storage API telemetry.
+• Added Timer applet with presets, custom durations, pause/reset, and optional completion sound.
+• Added Quick Launch command palette (Ctrl+K or /) covering applets, site sections, and every cataloged game.
+• Added persistent project favorites, recent-project history, one-click copy-link actions, and quick library filters.
+• Added live online/offline indicator and a global toast notification layer for launcher feedback.
+• Added PWA manifest, install prompt handling, service-worker caching, and an offline landing page for better repeat loads and weak-network behavior.
+• Added appearance presets (classic, graphite, midnight mint), reduced-motion mode, compact mode, and high-contrast mode.
+• Added more taskbar/start-menu entries for the new utility suite.
+• Added cache-aware Arcade Hub directory snapshots so temporary GitHub API failures can fall back to the most recent known listing.
+• Added generated PWA launcher icons based on the existing site icon.
+• Updated project-library controls to clear search/status/history views without reloading the site.
+• Added additional keyboard and accessibility affordances around the new quick-launch surface.
+• Added a visible MQTT connection-state indicator in Chat so connecting/reconnecting/offline states are distinguishable from an idle room.
+• Fixed the Gang Wars home link so it correctly returns to the launcher from the games directory.
+
+2026-09-30 - v3.5.0 Maintenance & hardening
+
+• Added the Web Browser to the homepage Applets taskbar.
+• Kept makedata.html as a direct-link-only utility; it is not exposed in the homepage taskbar.
+• Removed the tiled background and CRT treatment from Notes and restored a normal Windows-gray workspace.
+• Reworked Calculator toward a classic Windows 95-era calculator appearance and removed dynamic JavaScript expression evaluation.
+• Hardened the game library against malformed repository metadata and unsafe game URLs.
+• Encoded repository path segments in Arcade Hub asset/game URLs for safer handling of unusual filenames.
+• Hardened same-origin cross-frame messaging between the shell, Arcade Hub, and Chat.
+• Reworked security-sensitive chat UI paths to avoid interpolating network usernames into executable event-handler HTML.
+• Added chat payload validation, plain-text length limits, and strict local media-data URL checks to reduce malformed state and accidental lag.
+• Hardened generic file attachments while retaining ordinary downloadable file types.
+• Tightened the web browser applet's URL parsing and blocked embedded credentials.
+• Added additional defensive browser-storage handling where practical without introducing a server.
+
+2026-09-30 - v3.4.1 Added Changelog
+
+• Began logging updates (prior updates will not be retroactively added to this log)
+• Added a changelog and respective homepage button
