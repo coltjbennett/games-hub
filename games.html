@@ -15,91 +15,273 @@
   <script src="https://unpkg.com/@ruffle-rs/ruffle"></script>
 
   <style>
-    /* Arcade Hub is an application running INSIDE the ColtonOS desktop.
-       Keep the desktop shell outside this document; this page is the app window. */
-    html, body { width:100%; height:100%; min-height:0; margin:0; overflow:hidden; background:var(--face,#c0c0c0); color:var(--text,#000); }
-    body { font-family:var(--ui-font,"W95FA","MS Sans Serif",Tahoma,sans-serif); font-size:14px; }
-    button, input { font:inherit; }
-    .app-shell { height:100%; min-height:0; display:flex; flex-direction:column; padding:4px; gap:3px; background:var(--face,#c0c0c0); }
-    .titlebar { height:22px; flex:none; display:flex; align-items:center; gap:5px; padding:2px 3px; color:#fff; background:var(--title-a,#000080); font-weight:bold; user-select:none; }
-    .titlebar img { width:16px; height:16px; object-fit:contain; }
-    .titlebar .title { flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-    .window-controls { display:flex; gap:2px; }
-    .window-controls button { width:18px; height:18px; min-width:18px; min-height:18px; padding:0; line-height:14px; font-weight:bold; border:0; border-radius:0; color:#000; background:var(--face,#c0c0c0); box-shadow:inset -1px -1px #000,inset 1px 1px #fff,inset -2px -2px #808080,inset 2px 2px #dfdfdf; }
-    .menubar { flex:none; display:flex; gap:0; padding:0 2px; }
-    .menubar button { border:0; background:transparent; color:var(--text,#000); padding:4px 8px; }
-    .menubar button:hover, .menubar button:focus-visible { box-shadow:inset -1px -1px #fff,inset 1px 1px #808080; outline:none; }
-    .toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:5px; border-top:1px solid #808080; box-shadow:0 -1px #fff; }
-    .toolbar label { white-space:nowrap; }
-    .field { flex:1; min-width:100px; width:auto; background:#fff; color:#000; border:0; border-radius:0; min-height:25px; padding:4px 6px; box-shadow:inset -1px -1px #fff,inset 1px 1px #808080,inset -2px -2px #dfdfdf,inset 2px 2px #000; }
-    .btn { min-height:25px; padding:3px 12px; border:0; border-radius:0; background:var(--face,#c0c0c0); color:#000; box-shadow:inset -1px -1px #000,inset 1px 1px #fff,inset -2px -2px #808080,inset 2px 2px #dfdfdf; }
-    .btn:active { padding:4px 11px 2px 13px; box-shadow:inset -1px -1px #fff,inset 1px 1px #000,inset -2px -2px #dfdfdf,inset 2px 2px #808080; }
-    .intro { flex:none; padding:7px 8px 5px; }
-    .intro strong { display:block; font-size:16px; margin-bottom:3px; }
-    .intro p { margin:0; }
-    .library { flex:1; min-height:0; display:flex; flex-direction:column; background:#fff; color:#000; border:0; box-shadow:inset -1px -1px #fff,inset 1px 1px #808080,inset -2px -2px #dfdfdf,inset 2px 2px #000; }
-    .library-heading { flex:none; display:flex; justify-content:space-between; align-items:center; gap:8px; padding:5px 7px; background:var(--face,#c0c0c0); color:#000; border-bottom:1px solid #808080; box-shadow:0 1px #fff; font-weight:bold; }
-    .library-heading span:last-child { font-weight:normal; font-size:12px; }
-    .arcade-grid { flex:1; min-height:0; overflow:auto; display:grid; align-content:start; grid-template-columns:repeat(auto-fill,minmax(132px,1fr)); gap:8px; padding:8px; background:#fff; }
-    .arcade-card { min-width:0; overflow:hidden; display:flex; flex-direction:column; background:var(--face,#c0c0c0); color:#000; border:0; border-radius:0; box-shadow:inset -1px -1px #000,inset 1px 1px #fff,inset -2px -2px #808080,inset 2px 2px #dfdfdf; cursor:pointer; text-align:left; padding:3px; }
-    .arcade-card:hover { outline:1px dotted #000; outline-offset:-4px; }
-    .arcade-card:focus-visible { outline:1px dotted #000; outline-offset:-4px; }
-    .card-image { aspect-ratio:1/1; padding:4px; background:#fff; box-shadow:inset -1px -1px #fff,inset 1px 1px #808080; }
-    .card-image img { display:block; width:100%; height:100%; object-fit:contain; background:#fff; image-rendering:auto; }
-    .card-body { min-height:36px; display:flex; align-items:center; justify-content:center; padding:5px 4px 3px; text-align:center; }
-    .card-body h3 { margin:0; font-size:14px; line-height:1.2; font-weight:normal; overflow-wrap:anywhere; }
-    .status-container { grid-column:1/-1; padding:28px 12px; text-align:center; color:#000; line-height:1.5; }
-    .status-container.error { text-align:left; }
-    .status-container button { margin-top:8px; }
-    .statusbar { flex:none; display:flex; gap:3px; padding-top:2px; }
-    .statusbar span { min-width:0; flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; padding:3px 5px; background:var(--face,#c0c0c0); box-shadow:inset 1px 1px #808080,inset -1px -1px #fff; }
-    #game-modal { position:absolute; inset:4px; z-index:20; display:none; flex-direction:column; padding:3px; background:var(--face,#c0c0c0); box-shadow:0 0 0 2px var(--face,#c0c0c0),inset -1px -1px #000,inset 1px 1px #fff,inset -2px -2px #808080,inset 2px 2px #dfdfdf; }
-    #game-modal .titlebar { flex:none; }
-    #game-container { flex:1; min-height:0; width:100%; overflow:hidden; background:#000; box-shadow:inset 1px 1px #000; }
-    #game-container iframe, #game-container ruffle-player { display:block; width:100%; height:100%; border:0; background:#000; }
-    @media (max-width:480px) { .app-shell { padding:3px; } .arcade-grid { grid-template-columns:repeat(auto-fill,minmax(104px,1fr)); gap:6px; padding:6px; } .toolbar { align-items:stretch; } .field { flex-basis:100%; } .intro { padding:5px; } }
+    /* Arcade Hub is a Win95 application inside the desktop shell, not a desktop. */
+    html, body {
+      height: auto !important;
+      min-height: 100%;
+      overflow-x: hidden !important;
+      overflow-y: auto !important;
+      background: #c0c0c0;
+      color: #000;
+      font-family: "W95FA", "MS Sans Serif", Tahoma, sans-serif;
+      font-size: 14px;
+      line-height: 1.2;
+      overscroll-behavior-y: contain;
+    }
+    body { margin: 0; padding: 12px; }
+    *, *::before, *::after { box-sizing: border-box; }
+    button, input { font: inherit; }
+    button, .arcade-card { cursor: pointer; }
+    .page-shell {
+      width: min(1100px, 100%);
+      margin: 0 auto;
+      padding: 0 0 18px !important;
+    }
+    header { margin: 0 0 12px; background: transparent !important; }
+    .panel, .panel-dark {
+      background: #c0c0c0;
+      color: #000;
+      padding: 3px;
+      border: 0;
+      border-radius: 0;
+      box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff,
+                  inset -2px -2px #808080, inset 2px 2px #dfdfdf;
+    }
+    .panel-title-bar {
+      min-height: 22px;
+      display: flex;
+      align-items: center;
+      padding: 3px 6px;
+      gap: 8px;
+      background: #000080 !important;
+      color: #fff !important;
+      font-weight: bold;
+      text-shadow: none !important;
+    }
+    .panel-title-bar > span:first-child { flex: 1; }
+    .panel-body { padding: 12px; }
+    .header-top-banner {
+      display: inline-block;
+      padding: 3px 7px;
+      margin-bottom: 8px;
+      background: #c0c0c0;
+      color: #000080;
+      border: 1px solid #808080;
+      box-shadow: inset 1px 1px #fff;
+      font-weight: bold;
+    }
+    h1 { margin: 0 0 6px; font-size: 1.5rem; font-weight: bold; }
+    p { margin: 6px 0; }
+    .hero-copy { margin-bottom: 0; }
+    .controls-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 0 0 10px;
+      border-bottom: 1px solid #808080;
+      box-shadow: 0 1px #fff;
+      margin-bottom: 10px;
+    }
+    .hint { margin: 0; }
+    .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+    .search-input {
+      width: min(250px, 100%);
+      min-width: 150px;
+      min-height: 25px;
+      padding: 4px 5px;
+      background: #fff;
+      color: #000;
+      border: 0;
+      border-radius: 0;
+      box-shadow: inset -1px -1px #fff, inset 1px 1px #808080,
+                  inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a;
+    }
+    .sort-btn {
+      min-height: 25px;
+      padding: 4px 10px;
+      border: 0;
+      border-radius: 0;
+      background: #c0c0c0;
+      color: #000;
+      box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff,
+                  inset -2px -2px #808080, inset 2px 2px #dfdfdf;
+    }
+    .sort-btn:active {
+      box-shadow: inset -1px -1px #fff, inset 1px 1px #0a0a0a,
+                  inset -2px -2px #dfdfdf, inset 2px 2px #808080;
+      padding: 5px 9px 3px 11px;
+    }
+    .arcade-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+      gap: 8px;
+      align-items: stretch;
+    }
+    .arcade-card {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 3px;
+      background: #c0c0c0;
+      color: #000;
+      border: 0;
+      border-radius: 0;
+      box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff,
+                  inset -2px -2px #808080, inset 2px 2px #dfdfdf;
+      text-align: left;
+      transition: none !important;
+    }
+    .arcade-card:hover { background: #d4d4d4; }
+    .arcade-card:focus-visible { outline: 1px dotted #000; outline-offset: -5px; }
+    .arcade-card:active { box-shadow: inset -1px -1px #fff, inset 1px 1px #0a0a0a,
+                          inset -2px -2px #dfdfdf, inset 2px 2px #808080; }
+    .arcade-card .card-image {
+      aspect-ratio: 1 / 1;
+      padding: 5px;
+      background: #fff;
+      border: 1px solid #808080;
+      box-shadow: inset 1px 1px #0a0a0a, inset -1px -1px #fff;
+    }
+    .arcade-card .card-image img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #fff;
+      border: 0;
+      image-rendering: auto;
+    }
+    .arcade-card .card-body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 7px 5px 5px;
+    }
+    .arcade-card h3 {
+      margin: 0;
+      font-size: 1rem;
+      line-height: 1.2;
+      text-align: center;
+      overflow-wrap: anywhere;
+      font-weight: normal;
+    }
+    .status-container {
+      grid-column: 1 / -1;
+      padding: 24px 12px;
+      text-align: center;
+      color: #000;
+      background: #fff;
+      border: 1px solid #808080;
+      box-shadow: inset 1px 1px #0a0a0a, inset -1px -1px #dfdfdf;
+      line-height: 1.4;
+    }
+    footer {
+      padding: 10px 4px 0;
+      color: #fff;
+      text-align: center;
+    }
+    footer p { margin: 4px 0; }
+    .footer-note { font-weight: bold; }
+    #game-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: none;
+      flex-direction: column;
+      background: #000;
+    }
+    #game-modal .panel-title-bar {
+      flex: 0 0 28px;
+      min-height: 28px;
+      padding: 4px 6px;
+    }
+    #game-modal .win-btns { display: flex; }
+    #game-modal .btn-close {
+      width: 20px;
+      height: 19px;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: #c0c0c0;
+      color: #000;
+      font-weight: bold;
+      line-height: 1;
+      box-shadow: inset -1px -1px #0a0a0a, inset 1px 1px #fff,
+                  inset -2px -2px #808080, inset 2px 2px #dfdfdf;
+    }
+    #game-container { flex: 1; min-height: 0; width: 100%; background: #000; overflow: hidden; }
+    #game-container iframe, #game-container ruffle-player { display: block; width: 100%; height: 100%; border: 0; }
+    @media (max-width: 520px) {
+      body { padding: 6px; }
+      .panel-body { padding: 8px; }
+      .arcade-grid { grid-template-columns: repeat(auto-fill, minmax(115px, 1fr)); gap: 6px; }
+      .controls-row { align-items: stretch; }
+      .toolbar { width: 100%; }
+      .search-input { flex: 1; width: auto !important; }
+    }
   </style>
 </head>
 <body>
-  <div class="app-shell">
-    <div class="titlebar">
-      <img src="images/icon.JPG" alt="">
-      <span class="title">Arcade Hub</span>
-      <span class="window-controls">
-        <button type="button" aria-label="Minimize" title="Minimize" id="minimize-app">_</button>
-        <button type="button" aria-label="Maximize" title="Maximize" disabled>□</button>
-        <button type="button" aria-label="Close" title="Close" id="close-app">×</button>
-      </span>
-    </div>
-    <nav class="menubar" aria-label="Application menu">
-      <button type="button" id="menu-file">File</button>
-      <button type="button" id="menu-view">View</button>
-      <button type="button" id="menu-help">Help</button>
-    </nav>
-    <section class="intro">
-      <strong>Web Arcade</strong>
-      <p>Browse and launch third-party games hosted in the repository. These are not games made by ColtonOS.</p>
-    </section>
-    <div class="toolbar">
-      <label for="search">Find:</label>
-      <input type="search" id="search" class="field" placeholder="Search games..." autocomplete="off">
-      <button id="refresh-btn" class="btn" type="button">Refresh</button>
-    </div>
-    <section class="library" aria-label="Game library">
-      <div class="library-heading"><span>Game Library</span><span id="game-count">Loading directory…</span></div>
-      <div id="grid" class="arcade-grid" aria-live="polite">
-        <div class="status-container">Loading arcade library… please wait.</div>
+
+  <div class="page-shell" style="padding-bottom: 20px;">
+    <!-- AN IMPORTANT NOTE; THIS IS NOT MY GAMES!!! THEY ARE 3RD PARTY GAMES LIKE COOKIE CLICKER AND BAD PIGGIES!!! NOT MY GAMES HOSTED ON THE HOMEPAGE!-->
+    <!-- Header -->
+    <header>
+      <div class="panel-dark">
+        <div class="panel-title-bar w95-text">
+          <span>ARCADE HUB</span>
+        </div>
+        <div class="panel-body">
+          <div class="header-top-banner">GAME DIRECTORY</div>
+          <h1>ARCADE HUB</h1>
+          <p class="hero-copy">Browse, search, and play games directly from the repository.</p>
+        </div>
       </div>
-    </section>
-    <div class="statusbar"><span id="status-message">Ready</span><span id="status-count">Connecting to GitHub API…</span></div>
+    </header>
+
+    <!-- Main Content -->
+    <main>
+      <div class="panel">
+        <div class="panel-title-bar w95-text">
+          <span>GAME LIBRARY</span>
+        </div>
+        <div class="panel-body">
+          
+          <!-- Search Toolbar -->
+          <div class="controls-row">
+            <p class="hint">Type to filter games below.</p>
+            <div class="toolbar">
+              <input type="text" id="search" class="search-input" placeholder="Search games..." style="width: 250px;">
+              <button id="refresh-btn" class="sort-btn w95-text" onclick="fetchGames(true)">Refresh API</button>
+            </div>
+          </div>
+
+          <!-- Game Grid -->
+          <div id="grid" class="arcade-grid">
+            <div class="status-container">Loading arcade library... please wait.</div>
+          </div>
+
+        </div>
+      </div>
+    </main>
+    
+    <!-- Footer -->
+    <footer>
+      <p>Powered by GitHub API & Githack CDN</p>
+      <p class="footer-note w95-text">Best viewed with a monitor</p>
+    </footer>
+
   </div>
 
-  <div id="game-modal" role="dialog" aria-modal="true" aria-label="Game player">
-    <div class="titlebar">
-      <img src="images/icon.JPG" alt="">
-      <span id="modal-title" class="title">Game Player</span>
-      <span class="window-controls">
-        <button type="button" class="btn-close" id="close-game" aria-label="Close game" title="Close game">×</button>
+  <!-- Full-Window Game Viewport (Replaces Modal Window) -->
+  <div id="game-modal">
+    <div class="panel-title-bar w95-text">
+      <span id="modal-title" style="font-weight: bold; font-size: 0.9rem;">Game Player</span>
+      <span class="win-btns">
+        <button type="button" class="win-btn btn-close" onclick="closeModal()" aria-label="Close">✕</button>
       </span>
     </div>
     <div id="game-container"></div>
@@ -134,9 +316,9 @@
         grid.innerHTML = `<div class="status-container">Loading arcade library... please wait.</div>`;
       }
       
-      let cachedData = safeStorageGet('arcade_games_cache');
       try {
         let data;
+        const cachedData = safeStorageGet('arcade_games_cache');
         const lastFetchDate = safeStorageGet('arcade_games_cache_date');
         const today = new Date().toDateString();
         const needsDailyUpdate = lastFetchDate !== today;
@@ -213,12 +395,7 @@
           console.warn('Arcade local snapshot fallback failed:', localCacheError);
         }
       }
-        grid.replaceChildren();
-        const errorBox = document.createElement('div');
-        errorBox.className = 'status-container error';
-        errorBox.textContent = `Unable to load the arcade directory: ${err.message}`;
-        grid.appendChild(errorBox);
-        setStatus('Directory load failed');
+        grid.innerHTML = `<div class="status-container">${err.message}</div>`;
         console.error(err);
       }
     }
@@ -232,10 +409,6 @@
     function renderGrid(gameList) {
       const grid = document.getElementById('grid');
       grid.replaceChildren();
-      const count = document.getElementById('game-count');
-      const statusCount = document.getElementById('status-count');
-      if (count) count.textContent = `${gameList.length} item${gameList.length === 1 ? '' : 's'}`;
-      if (statusCount) statusCount.textContent = `${games.length} games and folders found`;
 
       if (gameList.length === 0) {
         const empty = document.createElement('div');
@@ -246,9 +419,10 @@
       }
 
       gameList.forEach((game) => {
-        const card = document.createElement('button');
-        card.type = 'button';
-        card.className = 'arcade-card';
+        const card = document.createElement('div');
+        card.className = 'project-card arcade-card';
+        card.tabIndex = 0;
+        card.setAttribute('role', 'button');
         card.setAttribute('aria-label', `Open ${game.title}`);
         card.addEventListener('click', () => openGame(game.path, game.isSwf, game.title));
         card.addEventListener('keydown', (event) => {
@@ -408,7 +582,6 @@
 
       // Display full game viewport
       modal.style.display = 'flex';
-      setStatus(`Playing: ${title}`);
 
       // Tell the parent immediately, then keep checking child-frame focus.
       startArcadeActivityMonitor(title);
@@ -421,7 +594,6 @@
 
       modal.style.display = 'none';
       container.replaceChildren();
-      setStatus('Ready');
       notifyArcadeHubActivity();
     }
 
@@ -443,33 +615,6 @@
       notifyParentActivity('Arcade Hub', false);
     });
 
-    document.getElementById('refresh-btn').addEventListener('click', () => fetchGames(true));
-    document.getElementById('close-game').addEventListener('click', closeModal);
-    document.getElementById('close-app').addEventListener('click', () => {
-      closeModal();
-      setStatus('Close Arcade Hub using the window controls on the desktop.');
-    });
-    document.getElementById('minimize-app').addEventListener('click', () => {
-      setStatus('Use the desktop taskbar to minimize Arcade Hub.');
-    });
-    document.getElementById('menu-file').addEventListener('click', () => {
-      closeModal();
-      document.getElementById('search').value = '';
-      renderGrid(games);
-      document.getElementById('search').focus();
-      setStatus('Library view restored');
-    });
-    document.getElementById('menu-view').addEventListener('click', () => {
-      document.getElementById('search').focus();
-      setStatus('Type in Find to filter the library');
-    });
-    document.getElementById('menu-help').addEventListener('click', () => {
-      setStatus('Arcade Hub: select a game to launch it. Close the game to return.');
-    });
-    function setStatus(message) {
-      const status = document.getElementById('status-message');
-      if (status) status.textContent = message;
-    }
     fetchGames(false);
   </script>
 </body>
