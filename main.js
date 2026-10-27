@@ -72,7 +72,7 @@
     reducedMotion: false, highContrast: false, compact: false, lowPower: false, textScale: 1,
     clickMode: 'auto', dblClickMs: 450, autoHide: false, showClock: true, snap: true, autoArrange: false,
     windowAnim: true, opaqueDrag: true, welcome: true, startupSound: true,
-    uiSounds: false, uiVolume: 50, saver: 'logo', saverMin: 10, saverText: 'ColtonOS 95'
+    uiSounds: false, uiVolume: 50, saver: 'pipes', saverMin: 10, saverText: 'ColtonOS 95', pipesCount: 3, pipesJoint: 'mixed', pipesSpeed: 100
   };
   const SCHEMES = {
     standard: 'Windows Standard', highcontrast: 'High Contrast Black', rose: 'Rose', marine: 'Marine', pumpkin: 'Pumpkin',
@@ -134,7 +134,7 @@
     H.classList.toggle('auto-low-power', devicePrefersLowPower());
     const crt = $('#crt');
     if (crt) crt.classList.toggle('flicker', !!s.crtFlicker && !s.reducedMotion && !lowPowerActive());
-    const meta = $('meta[name="theme-color"]'); if (meta) meta.content = s.desktopColor;
+    const meta = $('meta[name="theme-color"]'); if (meta) meta.content = '#000000';
     applyHooks.forEach(f => { try { f(); } catch (e) {} });
     sendActivityToChat();
   }
@@ -1601,10 +1601,10 @@
   const clockBtn = h('button', { type: 'button', class: 'tray-clock', 'aria-label': 'Clock' });
   const chatTray = h('button', { type: 'button', class: 'tray-btn', title: 'Chatroom', 'aria-label': 'Chatroom' }, h('img', { src: 'images/icons/chatroom.png', alt: '' }), h('span', { class: 'dot', hidden: true }));
   const netTray = h('button', { type: 'button', class: 'tray-btn', title: 'Network', 'aria-label': 'Network status' }, h('img', { src: IC('network'), alt: '' }));
-  const sndTray = h('button', { type: 'button', class: 'tray-btn', title: 'Sound settings', 'aria-label': 'Sound settings' }, h('img', { src: IC('speaker'), alt: '' }));
+  const sndTray = h('button', { type: 'button', class: 'tray-btn', title: 'Volume', 'aria-label': 'Volume', 'aria-haspopup': 'dialog', 'aria-expanded': 'false' }, h('img', { src: IC('speaker'), alt: '' }));
   tray.append(chatTray, netTray, sndTray, clockBtn);
   chatTray.addEventListener('click', () => openItem('app:chat', chatTray));
-  sndTray.addEventListener('click', () => openControl('sounds'));
+  sndTray.addEventListener('click', () => openVolume());
   netTray.addEventListener('click', () => msgBox('Network status: ' + (navigator.onLine ? 'Online' : 'Offline') + '\nUsers online in the chatroom: ' + onlineCount + (navigator.onLine ? '' : '\n\nLocal games and apps still work offline.'), { title: 'Network', icon: 'info' }));
   clockBtn.addEventListener('dblclick', () => openItem('app:clock', clockBtn));
   clockBtn.addEventListener('click', e => { if (e.detail === 0) openItem('app:clock', clockBtn); });
@@ -1638,7 +1638,7 @@
 
   function taskbarMenu(x, y) {
     showContextMenu([{ label: '&Cascade Windows', onClick: () => arrangeWindows('cascade') }, { label: 'Tile Windows &Horizontally', onClick: () => arrangeWindows('horizontal') }, { label: 'Tile Windows &Vertically', onClick: () => arrangeWindows('vertical') },
-      { label: '&Minimize All Windows', onClick: minimizeAll }, { sep: true }, { label: 'Show &Desktop', onClick: showDesktop }, { sep: true }, { label: 'P&roperties', onClick: () => openControl('taskbar') }], x, y);
+      { label: '&Minimize All Windows', onClick: minimizeAll }, { sep: true }, { label: 'Show &Desktop', onClick: showDesktop }, { label: 'Task &Manager…', onClick: openTaskManager }, { sep: true }, { label: 'P&roperties', onClick: () => openControl('taskbar') }], x, y);
     const m = menuStack[0]; if (m) m.el.style.top = Math.max(0, y - m.el.offsetHeight) + 'px';
   }
   (function () {
@@ -1710,6 +1710,52 @@
    *  SYSTEM DIALOGS: About, System Properties, Run, Shut Down
    * ===================================================================== */
   function visitCount() { const n = parseInt(store.get(LEGACY.visits, '0'), 10); return isNaN(n) ? 0 : n; }
+
+  /* =====================================================================
+   *  CLOSE PROGRAM (task manager)
+   * ===================================================================== */
+  function openTaskManager() {
+    const list = h('div', { class: 'find-results sunken', role: 'listbox', 'aria-label': 'Programs', style: { height: '190px', overflow: 'auto' }, tabindex: '0' });
+    let sel = null, rows = [];
+    const progs = () => Array.from(wins.values()).filter(w => !w.o.dialog && w.visible);
+    function draw() {
+      const p = progs(); list.replaceChildren(); rows = [];
+      if (!p.find(w => w.id === sel)) sel = p[0] && p[0].id;
+      p.forEach(w => {
+        const st = w.minimized ? 'Minimized' : (activeWin === w ? 'Active' : 'Running');
+        const r = h('div', { class: 'ex-item' + (w.id === sel ? ' selected' : ''), role: 'option', 'aria-selected': String(w.id === sel), dataset: { id: w.id }, style: { flexDirection: 'row', width: '100%', textAlign: 'left', gap: '8px', padding: '3px 6px', alignItems: 'center', cursor: 'default' } },
+          h('img', { src: w.o.icon || IC('programs'), alt: '', width: 16, height: 16, style: { width: '16px', height: '16px', objectFit: 'cover' } }), h('span', { class: 'grow', text: w.title }), h('span', { style: { opacity: '.75' }, text: st }));
+        r.addEventListener('click', () => { sel = w.id; draw(); }); r.addEventListener('dblclick', () => act('switch')); rows.push(r); list.append(r);
+      });
+      if (!p.length) list.append(h('div', { class: 'ex-empty', text: 'No programs are running.' }));
+    }
+    function act(kind) { const w = wins.get(sel); if (!w) return; if (kind === 'switch') { dlg.finish('ok'); focusWin(w, false); } else { w.close(true); draw(); announce(w.title + ' ended'); } }
+    list.addEventListener('keydown', e => { const i = rows.findIndex(r => r.dataset.id === sel); if (e.key === 'ArrowDown' && rows[i + 1]) { e.preventDefault(); sel = rows[i + 1].dataset.id; draw(); } else if (e.key === 'ArrowUp' && rows[i - 1]) { e.preventDefault(); sel = rows[i - 1].dataset.id; draw(); } else if (e.key === 'Delete') { e.preventDefault(); act('end'); } });
+    const body = h('div', { class: 'dialog-pad' }, h('p', { style: { margin: '0 0 8px' }, text: 'These programs are running. You can switch to one or end it. Ending a game closes it without saving.' }), list);
+    const dlg = openDialog({ title: 'Close Program', icon: IC('programs'), content: body, width: 420, focus: () => list, buttons: [
+      { label: 'End Task', value: 'end', onClick: () => { act('end'); return false; } }, { label: 'Switch To', value: 'switch', onClick: () => { act('switch'); return false; } }, { label: 'Cancel', value: 'cancel', default: true }] });
+    draw();
+  }
+  addItem({ id: 'app:taskmgr', title: 'Task Manager', type: 'Application', icon: IC('programs'), desc: 'See and end running programs', keywords: 'task manager close program end task running ctrl alt delete', open: () => openTaskManager() });
+
+  /* tray volume popup */
+  let volEl = null;
+  function closeVolume() { if (volEl) { volEl.remove(); volEl = null; sndTray.setAttribute('aria-expanded', 'false'); D.removeEventListener('pointerdown', volOutside, true); D.removeEventListener('keydown', volKey, true); } }
+  const volOutside = e => { if (volEl && !volEl.contains(e.target) && !sndTray.contains(e.target)) closeVolume(); };
+  const volKey = e => { if (e.key === 'Escape') { closeVolume(); sndTray.focus(); } };
+  function openVolume() {
+    if (volEl) { closeVolume(); return; }
+    closeMenus(false);
+    const range = h('input', { type: 'range', min: '0', max: '100', step: '5', 'aria-label': 'System sound volume', style: { width: '120px' } }); range.value = settings.uiVolume;
+    range.addEventListener('input', () => setSetting('uiVolume', +range.value, true)); range.addEventListener('change', () => playSound('info'));
+    const mute = h('input', { type: 'checkbox', checked: !settings.uiSounds }); mute.addEventListener('change', () => { setSetting('uiSounds', !mute.checked, true); if (!mute.checked) playSound('info'); });
+    volEl = h('div', { class: 'win raised vol-pop', role: 'dialog', 'aria-label': 'Volume', style: { position: 'fixed', zIndex: '100000', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'center' } },
+      h('strong', { text: 'Volume' }), range, h('label', { class: 'chk' }, mute, h('span', { class: 'box' }), h('span', { class: 'lbl', text: 'Mute' })),
+      h('button', { type: 'button', class: 'btn small', text: 'Sound settings…', on: { click: () => { closeVolume(); openControl('sounds'); } } }));
+    D.body.append(volEl); const r = sndTray.getBoundingClientRect(); volEl.style.left = clamp(r.left + r.width / 2 - volEl.offsetWidth / 2, 4, innerWidth - volEl.offsetWidth - 4) + 'px'; volEl.style.top = (r.top - volEl.offsetHeight - 4) + 'px';
+    sndTray.setAttribute('aria-expanded', 'true'); D.addEventListener('pointerdown', volOutside, true); D.addEventListener('keydown', volKey, true); range.focus();
+  }
+
   function showAbout() {
     const body = h('div', { class: 'dialog-body' }, h('img', { class: 'di', src: 'images/windows.png', alt: '', width: 32, height: 32, style: { objectFit: 'contain' } }),
       h('div', { class: 'msg', style: { whiteSpace: 'normal' } }, h('strong', { text: 'ColtonOS 95' }), h('br'), 'Macrohard Corporation (the exact opposite of Microsoft)', h('br'), 'Version ' + (SITE.version || ''), h('div', { class: 'hr' }),
@@ -1724,11 +1770,17 @@
       row('System:', 'ColtonOS 95 ' + (SITE.version || '')), row('Registered to:', (SITE.author || '') + ' · ' + (SITE.location || '')), row('Computer:', 'Web browser — ' + ua), row('Memory:', mem + ' · ' + cores + ' logical processor(s)'))));
     const perf = h('div', { class: 'col' }, row('Low Power Mode:', lowPowerActive() ? 'ON' + (devicePrefersLowPower() ? ' (automatic for this device)' : '') : 'Off'), row('CRT effect:', settings.crt), row('Network:', navigator.onLine ? 'Online' : 'Offline'), row('Chat users online:', String(onlineCount)),
       h('div', { class: 'hr' }), h('button', { type: 'button', class: 'btn', text: 'Open System Monitor…', on: { click: () => openItem('app:monitor') } }));
-    const tabs = makeTabs([{ label: 'General', panel: general }, { label: 'Performance', panel: perf }]);
+    const resBox = h('div', { class: 'col' });
+    const res = () => {
+      const sc = window.screen || {}, row2 = (a, b) => h('div', { style: { margin: '2px 0' } }, h('strong', { text: a }), h('br'), b);
+      const est = h('span', { text: 'Checking…' }); resBox.replaceChildren(row2('Display:', (sc.width || '?') + ' × ' + (sc.height || '?') + ' at ' + (window.devicePixelRatio || 1) + '× scale, ' + (sc.colorDepth || '?') + '-bit color'), row2('Window:', innerWidth + ' × ' + innerHeight), row2('Language:', navigator.language || '?'), row2('Time zone:', (Intl.DateTimeFormat().resolvedOptions().timeZone || '?')), row2('Input:', coarse() ? 'Touch screen' : 'Mouse and keyboard'), row2('Saved data (this browser):', est));
+      if (navigator.storage && navigator.storage.estimate) navigator.storage.estimate().then(e => { est.textContent = (e.usage / 1048576).toFixed(1) + ' MB used of about ' + Math.round(e.quota / 1048576) + ' MB available'; }).catch(() => { est.textContent = 'Not available'; }); else est.textContent = 'Not available';
+    };
+    const tabs = makeTabs([{ label: 'General', panel: general }, { label: 'Performance', panel: perf }, { label: 'Resources', panel: resBox, onShow: res }]);
     openDialog({ title: 'System Properties', icon: IC('my-computer'), content: tabs, width: 420, buttons: [{ label: 'OK', value: 'ok', default: true }, { label: 'Cancel', value: 'cancel' }] });
   }
 
-  const RUN_ALIASES = { calc: 'app:calculator', notepad: 'app:notes', mspaint: 'app:paint', control: 'app:control', 'control panel': 'app:control', explorer: 'sys:my-computer', iexplore: 'app:browser', winver: 'about', help: 'help', sysmon: 'app:monitor', taskmgr: 'app:monitor', chat: 'app:chat', arcade: 'app:arcade', timer: 'app:timer', clock: 'app:clock', weather: 'app:weather', welcome: 'app:welcome', library: 'app:library', find: 'find', shutdown: 'shutdown', 'c:\\': 'drive:c', 'c:': 'drive:c', 'a:': 'drive:a', 'd:': 'drive:d' };
+  const RUN_ALIASES = { calc: 'app:calculator', notepad: 'app:notes', mspaint: 'app:paint', control: 'app:control', 'control panel': 'app:control', explorer: 'sys:my-computer', iexplore: 'app:browser', winver: 'about', help: 'help', sysmon: 'app:monitor', taskmgr: 'app:taskmgr', 'close program': 'app:taskmgr', saver: 'saver', chat: 'app:chat', arcade: 'app:arcade', timer: 'app:timer', clock: 'app:clock', weather: 'app:weather', welcome: 'app:welcome', library: 'app:library', find: 'find', shutdown: 'shutdown', 'c:\\': 'drive:c', 'c:': 'drive:c', 'a:': 'drive:a', 'd:': 'drive:d' };
   function resolveRun(text) {
     const t = text.trim().toLowerCase().replace(/\.(exe|html?|txt)$/, ''); if (!t) return null;
     if (RUN_ALIASES[t]) return RUN_ALIASES[t];
@@ -1737,7 +1789,7 @@
     return null;
   }
   function runCommand(id, opener) {
-    if (id === 'about') showAbout(); else if (id === 'help') openHelp(); else if (id === 'find') openFind(); else if (id === 'shutdown') openShutdown(); else openItem(id, opener);
+    if (id === 'saver') GH.previewSaver(); else if (id === 'about') showAbout(); else if (id === 'help') openHelp(); else if (id === 'find') openFind(); else if (id === 'shutdown') openShutdown(); else openItem(id, opener);
   }
   function openRun() {
     const hist = store.json(KEYS.runHistory, []);
@@ -1901,7 +1953,14 @@
       h('div', { class: 'marquee', 'aria-hidden': 'true' }, h('span', { text: mqText })),
       h('p', { class: 'small' }, 'Got suggestions or ideas? I\'d love to hear them! ', h('a', { class: 'link', href: 'mailto:coltjbennett@gmail.com', text: 'Send them here' }), '.'));
     const news = h('div', {}, NEWS.map(a => { const p = h('p'); p.innerHTML = a.content; return h('div', { class: 'ann well' }, h('h3', { text: a.title }), p); }));
-    const tabs = makeTabs([{ label: 'Welcome', panel: welcome }, { label: 'What\'s New', panel: news }]);
+    const TIPS = ['Press Ctrl+K at any time to search every game, app and folder.', 'Drag an icon onto the Recycle Bin to hide it. You can always restore it.', 'Right-click the taskbar to cascade or tile your windows.', 'Hold Ctrl+Alt and tap the arrow keys to switch windows, like Alt+Tab.', 'Press F2 on a desktop icon to rename it.', 'Open Control Panel › Display › Screen Saver to try 3D Pipes, Starfield and Mystify.', 'Turn on Low Power Mode if a game runs slowly.', 'Double-click a window title bar to maximize it, or double-click the little icon on its left to close it.', 'The CRT effect pauses while a game is open. You can change that under Display › Effects.', 'In a folder window, press Backspace to go up one level.', 'Add a game to Favorites in the Project Library and it appears on the Start menu.', 'Click the speaker in the taskbar to turn system sounds on and adjust the volume.'];
+    let tipN = Math.floor(Math.random() * TIPS.length);
+    const tipText = h('p', { style: { fontSize: '1.1em', lineHeight: '1.4' } }), tipNo = h('div', { class: 'small', style: { opacity: '.75' } });
+    const showTip = () => { tipText.textContent = TIPS[tipN]; tipNo.textContent = 'Tip ' + (tipN + 1) + ' of ' + TIPS.length; };
+    showTip();
+    const tipsPanel = h('div', {}, h('div', { class: 'row', style: { alignItems: 'flex-start', gap: '12px' } }, h('img', { src: IC('help'), alt: '', width: 32, height: 32 }), h('div', { class: 'grow' }, h('strong', { text: 'Did you know…' }), tipText, tipNo)),
+      h('div', { class: 'row', style: { marginTop: '10px' } }, h('button', { type: 'button', class: 'btn', text: 'Previous Tip', on: { click: () => { tipN = (tipN - 1 + TIPS.length) % TIPS.length; showTip(); } } }), h('button', { type: 'button', class: 'btn', text: 'Next Tip', on: { click: () => { tipN = (tipN + 1) % TIPS.length; showTip(); } } })));
+    const tabs = makeTabs([{ label: 'Welcome', panel: welcome }, { label: 'Tips', panel: tipsPanel }, { label: 'What\'s New', panel: news }]);
     tabs.style.cssText = 'flex:1;min-height:0;display:flex;flex-direction:column;padding:8px';
     $('.tabpanel', tabs).style.cssText = 'flex:1;min-height:0;overflow:auto';
     const chk = h('input', { type: 'checkbox', checked: settings.welcome, on: { change: e => setSetting('welcome', e.target.checked) } });
@@ -1923,6 +1982,8 @@
     ['touch', 'Touchscreen tips', `<h2>Touchscreen tips</h2><p>Tap an icon to open it (Control Panel › Mouse can switch to double-tap). Drag icons and title bars with your finger. <b>Press and hold</b> for the right-click menu. Windows open maximized on phones; use the middle title-bar button to restore or the taskbar to switch.</p>`],
     ['access', 'Accessibility', `<h2>Accessibility</h2><p>Everything can be done with the keyboard, and the desktop works with screen readers (window changes are announced). Open <b>Control Panel › Accessibility</b> to enable High Contrast, larger text, reduced motion, and to turn off the CRT effect.</p>`],
     ['crt', 'Screen effects and speed', `<h2>Screen effects and speed</h2><p>The CRT effect is a single lightweight overlay: scanlines, a phosphor mask and a soft vignette. It pauses automatically while a game is open so games stay sharp and fast. Change it under Control Panel › Display › Effects. <b>Low Power Mode</b> turns off decoration on slower devices without removing any features.</p>`],
+    ['saver', 'Screen savers', `<h2>Screen savers</h2><p>After a few minutes with no activity, ColtonOS starts a screen saver. Choose one under <b>Control Panel › Display › Screen Saver</b>: <b>3D Pipes</b> (the classic, drawn with three.js), <b>Mystify</b>, <b>Starfield</b>, a bouncing <b>ColtonOS logo</b>, a scrolling <b>marquee</b>, or a blank screen. Move the mouse, press a key or tap to return.</p><p>Screen savers never start while a game is open, and 3D Pipes falls back to Mystify if the 3D library cannot load (for example, when you are offline for the first time). Pipes can be customized: number of pipes, joint style and speed. To preview one, press <kbd>Ctrl</kbd>+<kbd>K</kbd> and Run <b>saver</b>, or use Preview in Control Panel.</p>`],
+    ['taskmgr', 'Close Program', `<h2>Close Program</h2><p>If an app stops responding, open <b>Task Manager</b> from the taskbar's right-click menu, from Run (type <b>taskmgr</b>), or press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Delete</kbd>. Select a program, then <b>End Task</b> to close it or <b>Switch To</b> to bring it forward.</p>`],
     ['trouble', 'Troubleshooting', `<h2>Troubleshooting</h2><p><b>A game is slow:</b> turn on Low Power Mode, close other windows, or maximize the game.</p><p><b>I deleted an icon:</b> open the Recycle Bin and choose Restore, or use Control Panel › Display › Desktop › Restore default icons.</p><p><b>Reset everything:</b> Control Panel › System › Reset all desktop settings. Game saves and chat data are never touched by this.</p>`]
   ];
   function openHelp(page) {
@@ -2033,6 +2094,7 @@
     else if (e.ctrlKey && e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); switcherStep(-1); }
     else if (e.key === 'Escape' && swEl) { e.preventDefault(); closeSwitcher(false); }
     else if (e.ctrlKey && e.altKey && (e.key === 'd' || e.key === 'D')) { e.preventDefault(); showDesktop(); }
+    else if (e.ctrlKey && e.altKey && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); openTaskManager(); }
     else if (e.altKey && e.key === ' ' && activeWin && !activeWin.o.dialog) { e.preventDefault(); openSystemMenu(activeWin, true); }
     else if (e.altKey && e.key === 'F4' && activeWin) { e.preventDefault(); activeWin.requestClose(); }
     else if ((e.key === 'F10' && !e.shiftKey) || (e.key === 'Alt' && false)) { if (activeWin && activeWin.menubar) { e.preventDefault(); const b = activeWin.menubar._btns[0]; b.focus(); } }
@@ -2102,8 +2164,11 @@
     closeMenus(false);
     const el = h('div', { id: 'saver', role: 'dialog', 'aria-label': 'Screen saver. Press any key or tap to return.', tabindex: '-1' });
     el.style.cssText = 'position:fixed;inset:0;z-index:2147482500;background:#000;overflow:hidden;cursor:none;touch-action:none';
-    const still = reducedMotion();
-    if (kind === 'starfield') {
+    const still = !!settings.reducedMotion;
+    if (still && (kind === 'pipes' || kind === 'mystify')) kind = 'logo';
+    if (kind === 'pipes') { el._cleanup = runPipes(el); }
+    else if (kind === 'mystify') { el._cleanup = runMystify(el); }
+    else if (kind === 'starfield') {
       const cv = h('canvas', { 'aria-hidden': 'true' }); el.append(cv); const ctx = cv.getContext('2d'); let w = 0, hh = 0; const stars = [];
       const fit = () => { w = cv.width = innerWidth; hh = cv.height = innerHeight; }; fit(); window.addEventListener('resize', fit);
       for (let i = 0; i < 180; i++) stars.push({ x: (Math.random() - .5) * 2, y: (Math.random() - .5) * 2, z: Math.random() });
@@ -2133,6 +2198,119 @@
     el._wake = wake; ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(ev => window.addEventListener(ev, wake, true));
     announce('Screen saver started. Press any key or tap to return.');
   }
+
+  /* ----- 3D Pipes (three.js r128 from the same cdnjs URL the games use) ----- */
+  function loadThree() {
+    if (window.THREE) return Promise.resolve(window.THREE);
+    if (loadThree.p) return loadThree.p;
+    loadThree.p = new Promise((res, rej) => {
+      const sc = h('script', { src: 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js', async: true });
+      sc.onload = () => (window.THREE ? res(window.THREE) : rej(new Error('three missing')));
+      sc.onerror = () => { loadThree.p = null; sc.remove(); rej(new Error('three offline')); };
+      D.head.append(sc);
+    });
+    return loadThree.p;
+  }
+
+  function runPipes(host) {
+    const state = { dead: false, stop: null };
+    loadThree().then(THREE => { if (!state.dead) state.stop = initPipes(THREE, host); }).catch(() => { if (!state.dead) state.stop = runMystify(host); });
+    return () => { state.dead = true; if (state.stop) state.stop(); };
+  }
+
+  function initPipes(THREE, host) {
+    const low = lowPowerActive(), N = 10, R = 0.15, BALL = 0.27, MAX_MESHES = low ? 360 : 700, FILL = 0.3;
+    const count = clamp(settings.pipesCount | 0 || 3, 1, 5), speedMul = clamp(settings.pipesSpeed || 100, 40, 250) / 100, jointStyle = settings.pipesJoint || 'mixed';
+    let W = innerWidth, Hh = innerHeight, raf = 0, alive = true, last = 0, angle = Math.random() * 6, resetAt = 0;
+    const renderer = new THREE.WebGLRenderer({ antialias: !low, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, low ? 1 : 1.5)); renderer.setSize(W, Hh); renderer.setClearColor(0x000000, 1);
+    const cv = renderer.domElement; cv.setAttribute('aria-hidden', 'true'); cv.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;display:block'; host.append(cv);
+    const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(60, W / Hh, 0.1, 200);
+    scene.add(new THREE.AmbientLight(0x505060, 1)); const dir = new THREE.DirectionalLight(0xffffff, 0.9); dir.position.set(6, 10, 8); scene.add(dir);
+    const pl = new THREE.PointLight(0xffffff, 0.8, 0); scene.add(pl);
+    const seg = low ? 8 : 14, cylGeo = new THREE.CylinderGeometry(R, R, 1, seg, 1, false), ballGeo = new THREE.SphereGeometry(BALL, seg + 4, seg), elbowGeo = new THREE.SphereGeometry(R * 1.02, seg, Math.max(6, seg - 4));
+    const mats = [], mk = () => new THREE.MeshPhongMaterial({ color: new THREE.Color().setHSL(Math.random(), 0.9, 0.52), shininess: 95, specular: 0x777777 });
+    for (let i = 0; i < 14; i++) mats.push(mk());
+    const DIRS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]], UP = new THREE.Vector3(0, 1, 0), off = (N - 1) / 2;
+    const occ = new Uint8Array(N * N * N), idx = (x, y, z) => x + N * (y + N * z), inb = (x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < N && y < N && z < N;
+    const free = (x, y, z) => inb(x, y, z) && !occ[idx(x, y, z)];
+    const meshes = []; let used = 0;
+    const world = c => new THREE.Vector3(c[0] - off, c[1] - off, c[2] - off);
+    const add = m => { scene.add(m); meshes.push(m); return m; };
+    const joint = (c, mat, kind) => { const ball = kind === 'ball' || (kind === 'mixed' && Math.random() < 0.45); const m = add(new THREE.Mesh(ball ? ballGeo : elbowGeo, mat)); m.position.copy(world(c)); };
+    let pipes = [];
+    function spawn() {
+      for (let tries = 0; tries < 40; tries++) {
+        const c = [Math.random() * N | 0, Math.random() * N | 0, Math.random() * N | 0];
+        if (!free(c[0], c[1], c[2])) continue;
+        const ds = DIRS.map((d, i) => i).filter(i => free(c[0] + DIRS[i][0], c[1] + DIRS[i][1], c[2] + DIRS[i][2]));
+        if (!ds.length) continue;
+        const p = { c, d: ds[Math.random() * ds.length | 0], mat: mats[Math.random() * mats.length | 0], mesh: null, t: 0, wait: 0 };
+        occ[idx(c[0], c[1], c[2])] = 1; used++; joint(c, p.mat, 'ball'); startSeg(p); return p;
+      }
+      return null;
+    }
+    function startSeg(p) {
+      const d = DIRS[p.d], m = new THREE.Mesh(cylGeo, p.mat); m.quaternion.setFromUnitVectors(UP, new THREE.Vector3(d[0], d[1], d[2])); m.scale.y = 0.001; m.position.copy(world(p.c)); add(m); p.mesh = m; p.t = 0;
+    }
+    for (let i = 0; i < count; i++) { const p = spawn(); if (p) pipes.push(p); }
+    function step(p, dt) {
+      if (p.wait > 0) { p.wait -= dt; return; }
+      p.t += dt * 2.4 * speedMul;
+      const pr = Math.min(p.t, 1), d = DIRS[p.d], w = world(p.c);
+      p.mesh.scale.y = Math.max(pr, 0.001); p.mesh.position.set(w.x + d[0] * pr / 2, w.y + d[1] * pr / 2, w.z + d[2] * pr / 2);
+      if (p.t < 1) return;
+      p.c = [p.c[0] + d[0], p.c[1] + d[1], p.c[2] + d[2]]; occ[idx(p.c[0], p.c[1], p.c[2])] = 1; used++;
+      const opts = []; for (let i = 0; i < 6; i++) if (free(p.c[0] + DIRS[i][0], p.c[1] + DIRS[i][1], p.c[2] + DIRS[i][2])) opts.push(i);
+      if (!opts.length) { joint(p.c, p.mat, 'ball'); p.dead = true; return; }
+      const others = opts.filter(i => i !== p.d);
+      const nd = (opts.includes(p.d) && (Math.random() > 0.38 || !others.length)) ? p.d : others[Math.random() * others.length | 0];
+      if (nd !== p.d) joint(p.c, p.mat, jointStyle);
+      p.d = nd; startSeg(p);
+    }
+    function reset() { meshes.forEach(m => scene.remove(m)); meshes.length = 0; occ.fill(0); used = 0; pipes = []; mats.forEach((m, i) => { m.color.setHSL(Math.random(), 0.9, 0.52); }); for (let i = 0; i < count; i++) { const p = spawn(); if (p) pipes.push(p); } resetAt = 0; }
+    const onResize = () => { W = innerWidth; Hh = innerHeight; renderer.setSize(W, Hh); cam.aspect = W / Hh; cam.updateProjectionMatrix(); };
+    window.addEventListener('resize', onResize);
+    const frame = t => {
+      if (!alive) return; raf = requestAnimationFrame(frame);
+      if (low && t - last < 33) return; const dt = Math.min(0.05, (t - last) / 1000 || 0.016); last = t;
+      angle += dt * 0.09; const r = 13.5;
+      cam.position.set(Math.cos(angle) * r, Math.sin(angle * 0.63) * 4.5, Math.sin(angle) * r); cam.lookAt(0, 0, 0); pl.position.copy(cam.position);
+      if (!resetAt) {
+        pipes.forEach(p => step(p, dt));
+        pipes = pipes.filter(p => !p.dead).concat([]);
+        while (pipes.length < count && used < N * N * N * FILL) { const p = spawn(); if (!p) break; pipes.push(p); }
+        if (used > N * N * N * FILL || meshes.length > MAX_MESHES || (!pipes.length)) resetAt = t + 1800;
+      } else if (t > resetAt) reset();
+      renderer.render(scene, cam);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => {
+      alive = false; cancelAnimationFrame(raf); window.removeEventListener('resize', onResize);
+      try { meshes.forEach(m => scene.remove(m)); cylGeo.dispose(); ballGeo.dispose(); elbowGeo.dispose(); mats.forEach(m => m.dispose()); renderer.dispose(); if (renderer.forceContextLoss) renderer.forceContextLoss(); } catch (e) {}
+      cv.remove();
+    };
+  }
+
+  /* ----- Mystify (classic bouncing polygons; also the offline fallback for Pipes) ----- */
+  function runMystify(host) {
+    const cv = h('canvas', { 'aria-hidden': 'true' }); host.append(cv); const ctx = cv.getContext('2d'); let w = 0, hh = 0, raf = 0, alive = true, last = 0, hue = Math.random() * 360;
+    const fit = () => { w = cv.width = innerWidth; hh = cv.height = innerHeight; }; fit(); window.addEventListener('resize', fit);
+    const mkPoly = () => Array.from({ length: 4 }, () => ({ x: Math.random() * w, y: Math.random() * hh, vx: (Math.random() < .5 ? -1 : 1) * (2 + Math.random() * 3), vy: (Math.random() < .5 ? -1 : 1) * (2 + Math.random() * 3) }));
+    const polys = [mkPoly(), mkPoly()], hist = [[], []], TR = 12;
+    const frame = t => {
+      if (!alive) return; raf = requestAnimationFrame(frame); if (t - last < 33) return; last = t; hue = (hue + 0.6) % 360;
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, hh);
+      polys.forEach((pts, k) => {
+        pts.forEach(p => { p.x += p.vx; p.y += p.vy; if (p.x < 0 || p.x > w) { p.vx *= -1; p.x = clamp(p.x, 0, w); } if (p.y < 0 || p.y > hh) { p.vy *= -1; p.y = clamp(p.y, 0, hh); } });
+        hist[k].unshift(pts.map(p => [p.x, p.y])); if (hist[k].length > TR) hist[k].pop();
+        hist[k].forEach((poly, i) => { ctx.strokeStyle = 'hsla(' + ((hue + k * 140 + i * 6) % 360) + ',90%,60%,' + (1 - i / TR) + ')'; ctx.lineWidth = 2; ctx.beginPath(); poly.forEach((q, j) => (j ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.closePath(); ctx.stroke(); });
+      });
+    };
+    raf = requestAnimationFrame(frame);
+    return () => { alive = false; cancelAnimationFrame(raf); window.removeEventListener('resize', fit); cv.remove(); };
+  }
+
   function stopSaver() {
     if (!saverEl) return; const el = saverEl; saverEl = null;
     ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(ev => window.removeEventListener(ev, el._wake, true));

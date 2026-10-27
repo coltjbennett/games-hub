@@ -151,16 +151,31 @@
               check('Keep the effect on while a game is open', 'crtOverGames', 'Off keeps games sharp and fast. The effect returns when you close the game.')));
         }],
         ['Screen Saver', function () {
+          var box = h('div'), redraw = function () { box.replaceChildren(build()); };
+          function build() {
           var g = gh(), s = S(), sel = h('select', { class: 'field', 'aria-label': 'Screen saver' });
-          [['none', '(None)'], ['logo', 'Bouncing ColtonOS logo'], ['starfield', 'Starfield'], ['marquee', 'Scrolling marquee'], ['blank', 'Blank screen']].forEach(function (o) { var op = h('option', { value: o[0], text: o[1] }); if (s.saver === o[0]) op.selected = true; sel.append(op); });
-          sel.addEventListener('change', function () { set('saver', sel.value); });
+          [['none', '(None)'], ['pipes', '3D Pipes (OpenGL)'], ['mystify', 'Mystify Your Mind'], ['starfield', 'Starfield'], ['logo', 'Bouncing ColtonOS logo'], ['marquee', 'Scrolling marquee'], ['blank', 'Blank screen']].forEach(function (o) { var op = h('option', { value: o[0], text: o[1] }); if (s.saver === o[0]) op.selected = true; sel.append(op); });
+          sel.addEventListener('change', function () { set('saver', sel.value); redraw(); });
           var mins = h('input', { type: 'number', min: '1', max: '60', class: 'field', style: 'width:70px', 'aria-label': 'Wait minutes' }); mins.value = s.saverMin;
           mins.addEventListener('change', function () { var v = Math.max(1, Math.min(60, parseInt(mins.value, 10) || 10)); mins.value = v; set('saverMin', v); });
           var txt = h('input', { type: 'text', class: 'field', maxlength: '40', 'aria-label': 'Marquee text', style: 'width:200px' }); txt.value = s.saverText;
           txt.addEventListener('input', function () { set('saverText', txt.value); });
+          var pipesGroup = null;
+          if (s.saver === 'pipes') {
+            var cnt = h('select', { class: 'field', 'aria-label': 'Number of pipes' }); [1, 2, 3, 4, 5].forEach(function (n) { var o = h('option', { value: n, text: String(n) }); if (s.pipesCount === n) o.selected = true; cnt.append(o); });
+            cnt.addEventListener('change', function () { set('pipesCount', Number(cnt.value)); });
+            var jt = h('select', { class: 'field', 'aria-label': 'Joint style' }); [['mixed', 'Mixed (balls and elbows)'], ['ball', 'Ball joints'], ['elbow', 'Elbow joints']].forEach(function (o) { var op = h('option', { value: o[0], text: o[1] }); if (s.pipesJoint === o[0]) op.selected = true; jt.append(op); });
+            jt.addEventListener('change', function () { set('pipesJoint', jt.value); });
+            var sp = h('input', { type: 'range', min: '40', max: '250', step: '10', 'aria-label': 'Pipe growth speed' }); sp.value = s.pipesSpeed; sp.addEventListener('input', function () { set('pipesSpeed', Number(sp.value)); });
+            pipesGroup = group('3D Pipes settings', h('label', { class: 'row' }, h('span', { text: 'Pipes at once:' }), cnt), h('label', { class: 'row', style: 'margin-top:6px' }, h('span', { text: 'Joints:' }), jt), h('label', { class: 'row', style: 'margin-top:6px' }, h('span', { text: 'Slow' }), sp, h('span', { text: 'Fast' })),
+              h('p', { class: 'hint', style: 'margin-left:0', text: 'Needs a one-time download of the 3D library (the same one the 3D games use). Falls back to Mystify offline.' }));
+          }
           return h('div', {}, group('Screen Saver', h('label', { class: 'row' }, h('span', { text: 'Style:' }), sel, btn('Preview', function () { g && g.previewSaver(sel.value === 'none' ? 'logo' : sel.value); }, 'small')),
             h('label', { class: 'row', style: 'margin-top:8px' }, h('span', { text: 'Wait:' }), mins, h('span', { text: 'minutes' })), h('label', { class: 'row', style: 'margin-top:8px' }, h('span', { text: 'Marquee text:' }), txt)),
+            pipesGroup,
             h('p', { class: 'hint', style: 'margin-left:0', text: 'Starts only after you have been idle, and never while a game is open. Move the mouse, press a key, or tap to return.' }));
+          }
+          redraw(); return box;
         }],
         ['Desktop', function () {
           var g = gh();

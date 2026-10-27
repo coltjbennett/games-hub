@@ -1,12 +1,12 @@
 /*
- * Games Hub service worker — v4.2.1
+ * Games Hub service worker — v4.2.3
  *
  * The local manifest below is generated from files that actually exist in the
  * repository. Missing/deprecated placeholder paths are intentionally omitted.
  * URLs are resolved against this worker's directory so GitHub Pages repository
  * deployments (for example /games-hub/) work the same as root deployments.
  */
-const VERSION = '4.2.1';
+const VERSION = '4.2.3';
 const CACHE_PREFIX = 'games-hub-';
 const CACHE = CACHE_PREFIX + VERSION;
 const APP_BASE = new URL('./', self.location.href);
