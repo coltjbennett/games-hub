@@ -264,8 +264,7 @@ const classics = [
 const applets = [
   { title: 'Calculator', description: 'Scientific calculator', icon: 'images/icons/calculator.png', url: 'applets/calculator.html', w: 360, h: 520 },
   { title: 'Clock', description: 'Clock, stopwatch and alarms', icon: 'images/icons/clock.png', url: 'applets/clock.html', w: 600, h: 480 },
-  { title: 'Notes', description: 'Quick notes that stay in your browser', icon: 'images/icons/notes.png', url: 'applets/notes.html', w: 520, h: 420 },
-  { title: 'Notepad', description: 'Create and save .txt files into My Documents', icon: 'images/icons/document.svg', url: 'applets/notepad.html', w: 560, h: 440 },
+  { title: 'Notepad', description: 'Create and save .txt files into My Documents', icon: 'images/icons/notes.png', url: 'applets/notepad.html', w: 520, h: 420 },
   { title: 'Paint', description: 'Canvas drawing program; save pictures to My Documents', icon: 'images/icons/paint.png', url: 'applets/paint.html', w: 780, h: 580 },
   { title: 'MS-DOS Prompt', description: 'Command line: DIR your games and type a name to launch it', icon: 'images/icons/run.svg', url: 'applets/msdos.html', w: 640, h: 400 },
   { title: 'Weather', description: 'Weather dashboard', icon: 'images/icons/weather.png', url: 'applets/weather.html', w: 660, h: 580 },
