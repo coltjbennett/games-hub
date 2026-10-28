@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Minesweeper</title>
+<style>
+  @font-face{font-family:W95FA;src:url('../images/w95f.woff2') format('woff2'),url('../images/w95f.woff') format('woff')}
+  :root{color-scheme:light only}
+  *{box-sizing:border-box;font-family:W95FA,"MS Sans Serif",sans-serif;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:#c0c0c0;color:#000;height:100%;overflow:auto;touch-action:manipulation}
+  #wrap{display:inline-block;margin:8px;padding:6px;background:#c0c0c0;box-shadow:inset 2px 2px #fff,inset -2px -2px #808080}
+  #top{display:flex;align-items:center;justify-content:space-between;padding:4px 6px;margin-bottom:6px;box-shadow:inset 2px 2px #808080,inset -2px -2px #fff;gap:8px}
+  .seg{background:#000;color:#f00;font:bold 22px/1 "Courier New",monospace;padding:2px 4px;min-width:50px;text-align:center;letter-spacing:2px}
+  #face{width:34px;height:34px;font-size:20px;padding:0;background:#c0c0c0;border:2px outset #fff;cursor:pointer}
+  #face:active{border-style:inset}
+  #grid{display:grid;box-shadow:inset 2px 2px #808080,inset -2px -2px #fff;padding:2px;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+  .c{width:24px;height:24px;font:bold 15px/22px W95FA,monospace;text-align:center;background:#c0c0c0;border:2px outset #fff;cursor:default;padding:0;color:#000}
+  .c.o{border:1px solid #808080;background:#c0c0c0}
+  .c.x{background:#f00}
+  .n1{color:#00f}.n2{color:#080}.n3{color:#f00}.n4{color:#000080}.n5{color:#800000}.n6{color:#088}.n7{color:#000}.n8{color:#808080}
+  #bar{display:flex;gap:6px;align-items:center;margin:8px 8px 0;font-size:13px;flex-wrap:wrap}
+  select,button.b{font:inherit;color:#000;background:#c0c0c0;border:2px outset #fff;padding:2px 8px}
+</style>
+</head>
+<body>
+<div id="bar"><label>Level: <select id="lv"><option value="9,9,10">Beginner</option><option value="16,16,40">Intermediate</option><option value="24,16,70">Expert</option></select></label>
+<span style="font-size:12px">Right-click or long-press to flag. Middle-click or click a number to chord.</span></div>
+<div id="wrap"><div id="top"><div class="seg" id="mines">010</div><button id="face" aria-label="New game">🙂</button><div class="seg" id="time">000</div></div><div id="grid" role="grid" aria-label="Minefield"></div></div>
+<script>
+(function(){
+  var W=9,Hh=9,M=10,cells=[],started=false,over=false,flags=0,t=0,timer=0,revealed=0;
+  var g=document.getElementById('grid'),face=document.getElementById('face');
+  function pad(n){n=Math.max(-99,Math.min(999,n));return (n<0?'-':'')+('00'+Math.abs(n)).slice(-(n<0?2:3));}
+  function upd(){document.getElementById('mines').textContent=pad(M-flags);document.getElementById('time').textContent=pad(t);}
+  function nb(i){var x=i%W,y=(i/W)|0,r=[];for(var dy=-1;dy<=1;dy++)for(var dx=-1;dx<=1;dx++){if(!dx&&!dy)continue;var a=x+dx,b=y+dy;if(a>=0&&a<W&&b>=0&&b<Hh)r.push(b*W+a);}return r;}
+  function init(){
+    var v=document.getElementById('lv').value.split(',').map(Number);W=v[0];Hh=v[1];M=v[2];clearInterval(timer);
+    started=over=false;flags=0;t=0;revealed=0;face.textContent='🙂';
+    g.style.gridTemplateColumns='repeat('+W+',24px)';g.replaceChildren();cells=[];
+    for(var i=0;i<W*Hh;i++){(function(i){var b=document.createElement('button');b.className='c';b.type='button';b.setAttribute('role','gridcell');
+      var c={el:b,mine:false,open:false,flag:false,n:0};cells.push(c);
+      var lp=0,fired=false;
+      b.addEventListener('pointerdown',function(e){fired=false;if(e.pointerType!=='mouse'){lp=setTimeout(function(){fired=true;flag(i);},450);}});
+      ['pointerup','pointerleave','pointercancel'].forEach(function(ev){b.addEventListener(ev,function(){clearTimeout(lp);});});
+      b.addEventListener('click',function(){if(fired){fired=false;return;}if(cells[i].open)chord(i);else reveal(i);});
+      b.addEventListener('contextmenu',function(e){e.preventDefault();flag(i);});
+      b.addEventListener('auxclick',function(e){if(e.button===1){e.preventDefault();chord(i);}});
+      g.append(b);})(i);}
+    upd();
+  }
+  function place(safe){var ban=new Set([safe].concat(nb(safe))),n=0;while(n<M){var r=(Math.random()*W*Hh)|0;if(ban.has(r)||cells[r].mine)continue;cells[r].mine=true;n++;}
+    cells.forEach(function(c,i){c.n=nb(i).filter(function(j){return cells[j].mine;}).length;});}
+  function flag(i){if(over)return;var c=cells[i];if(c.open)return;c.flag=!c.flag;flags+=c.flag?1:-1;c.el.textContent=c.flag?'🚩':'';upd();}
+  function reveal(i){
+    if(over)return;var c=cells[i];if(c.open||c.flag)return;
+    if(!started){started=true;place(i);timer=setInterval(function(){t++;upd();},1000);}
+    var st=[i];
+    while(st.length){var k=st.pop(),d=cells[k];if(d.open||d.flag)continue;d.open=true;revealed++;d.el.classList.add('o');
+      if(d.mine){boom(k);return;}
+      if(d.n){d.el.textContent=d.n;d.el.classList.add('n'+d.n);}else nb(k).forEach(function(j){if(!cells[j].open)st.push(j);});}
+    if(revealed===W*Hh-M)win();
+  }
+  function chord(i){var c=cells[i];if(!c.open||!c.n||over)return;var ns=nb(i);if(ns.filter(function(j){return cells[j].flag;}).length!==c.n)return;ns.forEach(function(j){reveal(j);});}
+  function boom(k){over=true;clearInterval(timer);face.textContent='😵';cells.forEach(function(c,i){if(c.mine&&!c.flag){c.el.classList.add('o');c.el.textContent='💣';}else if(c.flag&&!c.mine){c.el.textContent='❌';}});cells[k].el.classList.add('x');}
+  function win(){over=true;clearInterval(timer);face.textContent='😎';cells.forEach(function(c){if(c.mine&&!c.flag){c.flag=true;c.el.textContent='🚩';}});flags=M;upd();}
+  face.onclick=init;document.getElementById('lv').onchange=init;init();
+})();
+</script>
+</body></html>

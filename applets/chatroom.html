@@ -3441,7 +3441,9 @@
 
         function updateAndBroadcastPresence() {
             let count = activeUsers.size;
-            window.parent.postMessage({ source: 'universal-chat', kind: 'presence', count: count }, CHAT_ORIGIN);
+            let users = [];
+            try { activeUsers.forEach((v, k) => { if (typeof k === 'string' && !(v && v.isGhost)) users.push(k); }); } catch (e) {}
+            window.parent.postMessage({ source: 'universal-chat', kind: 'presence', count: count, users: users.slice(0, 100) }, CHAT_ORIGIN);
         }
 
         function handleChatWindowOpened(data = null) {

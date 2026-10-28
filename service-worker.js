@@ -6,7 +6,7 @@
  * URLs are resolved against this worker's directory so GitHub Pages repository
  * deployments (for example /games-hub/) work the same as root deployments.
  */
-const VERSION = '4.2.3';
+const VERSION = '4.3.0';
 const CACHE_PREFIX = 'games-hub-';
 const CACHE = CACHE_PREFIX + VERSION;
 const APP_BASE = new URL('./', self.location.href);
@@ -24,8 +24,13 @@ const CORE = [
   "./applets/clock.html",
   "./applets/control-panel.html",
   "./applets/makedata.html",
+  "./applets/minesweeper.html",
+  "./applets/msdos.html",
+  "./applets/notepad.html",
   "./applets/notes.html",
   "./applets/paint.html",
+  "./applets/solitaire.html",
+  "./applets/textviewer.html",
   "./applets/system-monitor.html",
   "./applets/timer.html",
   "./applets/weather.html",
@@ -61,6 +66,9 @@ const CORE = [
   "./links.txt",
   "./llms.txt",
   "./main.js",
+  "./os-extras.js",
+  "./vfs.js",
+  "./minizip.js",
   "./manifest.webmanifest",
   "./offline.html",
   "./package.json",

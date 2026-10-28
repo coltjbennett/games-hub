@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MS-DOS Prompt</title>
+<style>
+  @font-face{font-family:W95FA;src:url('../images/w95f.woff2') format('woff2'),url('../images/w95f.woff') format('woff')}
+  :root{color-scheme:dark}
+  html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  #scr{height:100%;overflow-y:auto;padding:6px 8px;color:#c0c0c0;font:16px/1.15 W95FA,"Courier New",monospace;white-space:pre-wrap;word-break:break-all;cursor:text;-webkit-font-smoothing:none}
+  #cur{display:inline-block;width:.6em;height:1em;background:currentColor;vertical-align:text-bottom;animation:b 1s steps(1) infinite}
+  @keyframes b{50%{opacity:0}}
+  #in{position:fixed;left:-999px;top:0;opacity:0}
+  .bright{color:#fff}
+</style>
+</head>
+<body>
+<div id="scr" tabindex="0"></div>
+<input id="in" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="MS-DOS command line">
+<script src="../vfs.js"></script>
+<script>
+(function(){
+  var scr=document.getElementById('scr'), inp=document.getElementById('in');
+  var full=/[?&]mode=full/.test(location.search);
+  var P=null;try{P=window.parent&&window.parent.GHShell;}catch(e){}
+  var cwd=[], out='', line='', hist=[], hi=0, busy=false, color='#c0c0c0';
+  var fsReady=window.ColtonFS.ready();
+  function tag(s){return s.replace(/[^A-Za-z0-9]/g,'').toUpperCase();}
+  function short(name){var b=name.replace(/\.[^.]*$/,'');var t=tag(b);return (t.length>8?t.slice(0,6)+'~1':t)||'FILE';}
+  function cat(){return P&&P.catalog?P.catalog():{games:[],classics:[],applets:[]};}
+  /* directory model */
+  function dirs(){return {GAMES:'games',CLASSIC:'classics',ACCESS:'applets',MYDOCS:'docs'};}
+  function entries(path){
+    var c=cat(), r=[];
+    if(!path.length){r.push({n:'GAMES',d:1},{n:'CLASSIC',d:1},{n:'ACCESS',d:1},{n:'MYDOCS',d:1},{n:'AUTOEXEC',e:'BAT',s:128},{n:'CONFIG',e:'SYS',s:96},{n:'COMMAND',e:'COM',s:93812},{n:'CHANGELO',e:'TXT',s:4096,f:'changelog.txt'});return r;}
+    var k=dirs()[path[0]];
+    if(path.length===1&&k){
+      if(k==='docs'){FS().children('docs').forEach(function(m){r.push(m.kind==='folder'?{n:short(m.name),d:1,real:m}:{n:short(m.name),e:m.kind==='text'?'TXT':'PNG',s:m.size,real:m});});return r;}
+      (c[k]||[]).forEach(function(p){var u=p.url||'';var b=u.split('/').pop().replace(/\.html$/,'');r.push({n:short(b),e:'EXE',s:Math.max(1024,(p.title||'').length*4096),run:p,full:b});});
+    }
+    return r;
+  }
+  function FS(){return window.ColtonFS;}
+  function fmtS(n){return String(n).replace(/\B(?=(\d{3})+(?!\d))/g,',');}
+  function prompt(){return 'C:\\'+cwd.join('\\')+'>';}
+  function print(s){out+=(s==null?'':s)+'\n';}
+  function render(){scr.innerHTML='';var t=document.createElement('span');t.textContent=out;scr.append(t);var l=document.createElement('span');l.textContent=(busy?'':prompt()+line);scr.append(l);if(!busy){var c=document.createElement('span');c.id='cur';scr.append(c);}scr.style.color=color;scr.scrollTop=scr.scrollHeight;}
+  function now(){return new Date();}
+  function find(name){name=name.toUpperCase();var up=name.replace(/\.(EXE|COM|BAT)$/,'');return entries(cwd).concat(!cwd.length?[]:[]).filter(function(e){return !e.d&&(e.n===name||e.n===up||(e.full&&e.full.toUpperCase()===up)||(e.run&&(e.run.title||'').toUpperCase()===up));})[0];}
+  function globalFind(name){var c=cat();var up=name.toUpperCase().replace(/\.EXE$/,'');var hit=null;['games','classics','applets'].forEach(function(k){(c[k]||[]).forEach(function(p){var b=(p.url||'').split('/').pop().replace(/\.html$/,'').toUpperCase();if(!hit&&(b===up||tag(p.title)===tag(up)||short(b)===up))hit=p;});});return hit;}
+  var JOKES=['Why did the programmer quit? He didn\'t get arrays.','There are 10 kinds of people: those who understand binary and those who don\'t.','Macrohard: hard by name, hard by nature.','A SQL query walks into a bar, walks up to two tables and asks: "Can I join you?"'];
+  var C={
+    help:function(){print('Supported commands:\n  DIR [/W]   CD [dir]   CLS   TYPE file   ECHO text   VER   DATE   TIME\n  MEM   VOL   TREE   COLOR [fg]   FORTUNE   WIN / EXIT   RUN name\n\nType the name of a game or program to launch it. Try DIR in C:\\GAMES.\n');},
+    ver:function(){print('\nColtonOS 95 [Version '+((P&&P.version)||'4.x')+']  (Macrohard Corporation)\n');},
+    cls:function(){out='';},
+    date:function(){print('Current date is '+now().toDateString());},
+    time:function(){print('Current time is '+now().toLocaleTimeString());},
+    vol:function(){print(' Volume in drive C is COLTONOS\n Volume Serial Number is 0C0A-95FF');},
+    mem:function(){print('\nMemory Type        Total       Used       Free\n----------------  --------  --------  --------\nConventional          640K       38K      602K\nExtended (XMS)     65,535K    1,024K   64,511K\n----------------  --------  --------  --------\nTotal memory       66,175K    1,062K   65,113K\n');},
+    echo:function(a){print(a.join(' '));},
+    color:function(a){var m={'0':'#000','1':'#00a','2':'#0a0','3':'#0aa','4':'#a00','5':'#a0a','6':'#a50','7':'#c0c0c0','8':'#555','9':'#55f',a:'#5f5',b:'#5ff',c:'#f55',d:'#f5f',e:'#ff5',f:'#fff'};var k=(a[0]||'7').slice(-1).toLowerCase();color=m[k]||color;},
+    fortune:function(){print(JOKES[Math.floor(Math.random()*JOKES.length)]);},
+    dir:function(a){
+      var wide=a.some(function(x){return /^\/w$/i.test(x);});var e=entries(cwd);
+      print(' Volume in drive C is COLTONOS\n Directory of C:\\'+cwd.join('\\')+'\n');
+      var fc=0,dc=0,bytes=0,d=now();var ds=('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)+'-'+String(d.getFullYear()).slice(-2);
+      if(cwd.length){e=[{n:'.',d:1},{n:'..',d:1}].concat(e);}
+      e.forEach(function(x){if(x.d)dc++;else{fc++;bytes+=x.s||0;}
+        if(wide){return;}
+        var nm=(x.n+'        ').slice(0,8),ex=((x.e||'')+'   ').slice(0,3);
+        print(nm+' '+(x.d?'<DIR>    ':ex+'      ').slice(0,9)+' '+(x.d?'       ':('       '+fmtS(x.s||0)).slice(-7))+'  '+ds+'  9:00a');});
+      if(wide)print(e.map(function(x){return x.d?'['+x.n+']':x.n+(x.e?'.'+x.e:'');}).join('  '));
+      print('\n'+('   '+fc).slice(-4)+' file(s)'+('            '+fmtS(bytes)).slice(-14)+' bytes\n'+('   '+dc).slice(-4)+' dir(s)      1,048,576,000 bytes free\n');},
+    cd:function(a){
+      var t=(a[0]||'').replace(/\//g,'\\');
+      if(!t){print('C:\\'+cwd.join('\\'));return;}
+      if(t==='\\'){cwd=[];return;}
+      t.split('\\').forEach(function(p){if(!p)return;if(p==='..'){cwd.pop();return;}if(p==='.')return;
+        var u=p.toUpperCase();if(!cwd.length&&dirs()[u])cwd.push(u);else print('Invalid directory');});
+    },
+    chdir:function(a){C.cd(a);},
+    tree:function(){print('Folder PATH listing\nVolume serial number is 0C0A-95FF\nC:.\n├───GAMES\n├───CLASSIC\n├───ACCESS\n└───MYDOCS\n');},
+    type:function(a){
+      var e=find(a[0]||'');if(!e&&a[0]&&/changelo/i.test(a[0])&&!cwd.length)e={f:'changelog.txt'};
+      if(!e){print('File not found - '+(a[0]||''));return 1;}
+      if(e.real&&e.real.kind==='text'){busy=true;FS().read(e.real.id).then(function(d){print(d||'');busy=false;render();});return 1;}
+      if(e.f){busy=true;fetch('../'+e.f).then(function(r){return r.text();}).then(function(t){print(t.slice(0,2500)+(t.length>2500?'\n...(more)':''));}).catch(function(){print('Cannot read file.');}).then(function(){busy=false;render();});return 1;}
+      print('Cannot display this file.');
+    },
+    win:function(){leave();},exit:function(){leave();},
+    run:function(a){launch(a.join(' '));},
+    format:function(a){print('WARNING, ALL DATA ON NON-REMOVABLE DISK\nDRIVE C: WILL BE LOST!\nProceed with Format (Y/N)? N\n\n...just kidding. Nothing here can be formatted.');},
+    deltree:function(){print('Nice try. Everything on this computer is safe.');},
+    edit:function(){if(P)P.openItem('app:notepad');print('Starting Notepad...');},
+    xyzzy:function(){print('Nothing happens.');},
+    doom:function(){print('Not enough memory. (Did you mean FPS?)');},
+    ping:function(a){print('Pinging '+(a[0]||'localhost')+' with 32 bytes of data:\nReply from 127.0.0.1: bytes=32 time<1ms TTL=128\nReply from 127.0.0.1: bytes=32 time<1ms TTL=128');},
+    matrix:function(){color='#0f0';print('Wake up, Colton...\nThe Matrix has you...\nFollow the white rabbit.');},
+    hello:function(){print('Hello, human.');},
+    who:function(){print('Colton Bennett built this. Probably at 2 a.m.');},
+    cdrom:function(){print('Drive D: has no disc.');}
+  };
+  function launch(name){
+    var p=globalFind(name);if(!p){print('Bad command or file name');return false;}
+    print('Starting '+p.title+'...');
+    if(P&&P.launchByUrl){P.launchByUrl(p.url);if(full)print('(Type EXIT to return to ColtonOS.)');}else print('Cannot launch from here.');
+    return true;
+  }
+  function leave(){
+    if(full){try{window.parent.postMessage({source:'msdos',action:'exit'},location.origin);}catch(e){}return;}
+    try{var w=window.frameElement.closest('.win');w.querySelector('.c-close').click();}catch(e){print('You can close this window with the X button.');}
+  }
+  function exec(raw){
+    var s=raw.trim();print(prompt()+raw);if(!s)return;
+    var m=s.match(/^(\S+?)(?:[\s\/](.*))?$/);var cmd=s.split(/\s+/)[0].toLowerCase();var rest=s.slice(cmd.length).trim();
+    if(/^cd[\\.]/.test(cmd)){cmd='cd';rest=s.slice(2).trim();}
+    if(cmd==='dir'&&rest==='/w'){}
+    var args=rest?rest.split(/\s+/):[];
+    if(cmd==='cd..'){C.cd(['..']);return;}
+    if(C[cmd]){var r=C[cmd](args);if(r)return;print('');return;}
+    if(/^[a-z]:$/.test(cmd)){if(cmd!=='c:')print('Invalid drive specification');return;}
+    var e=find(cmd);
+    if(e&&e.run){launch(e.run.title);return;}
+    if(!launch(cmd)){}
+  }
+  function key(e){
+    if(busy)return;
+    if(e.ctrlKey||e.metaKey||e.altKey)return;
+    if(e.key==='Enter'){exec(line);if(line.trim())hist.push(line);hi=hist.length;line='';e.preventDefault();}
+    else if(e.key==='Backspace'){line=line.slice(0,-1);e.preventDefault();}
+    else if(e.key==='ArrowUp'){if(hi>0){hi--;line=hist[hi];}e.preventDefault();}
+    else if(e.key==='ArrowDown'){if(hi<hist.length-1){hi++;line=hist[hi];}else{hi=hist.length;line='';}e.preventDefault();}
+    else if(e.key==='Escape'){line='';}
+    else if(e.key.length===1){line+=e.key;e.preventDefault();}
+    else return;
+    render();
+  }
+  document.addEventListener('keydown',key);
+  /* mobile / IME fallback: read characters typed into the hidden input */
+  inp.addEventListener('input',function(){if(inp.value&&!busy){line+=inp.value;}inp.value='';render();});
+  scr.addEventListener('pointerdown',function(){inp.focus();});
+  window.addEventListener('focus',function(){inp.focus();});
+  function boot(){
+    print('ColtonOS 95 [Version '+((P&&P.version)||'4.x')+']');
+    print('(C)Copyright Macrohard Corp 1995-'+now().getFullYear()+'.\n');
+    if(full){print('Starting MS-DOS mode...\nType WIN or EXIT to restart ColtonOS.\n');}
+    render();inp.focus();
+  }
+  fsReady.then(boot);
+})();
+</script>
+</body></html>

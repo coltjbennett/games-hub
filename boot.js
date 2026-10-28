@@ -441,8 +441,59 @@
     }, FADE_MS + 50);
   }
 
+  // ---------- ScanDisk (shown when the previous session never used Shut Down) ----------
+  var scanDone = false;
+  function needScanDisk() {
+    try {
+      if (window.localStorage.getItem('gh-dirty') !== '1') return false;
+      var st = JSON.parse(window.localStorage.getItem('gh-desktop-v2') || '{}');
+      return st.scandisk !== false;
+    } catch (e) { return false; }
+  }
+  function runScanDisk(next) {
+    try { audio.pause(); audio.currentTime = 0; } catch (e) {}
+    var box = document.createElement('div');
+    box.style.cssText = 'position:absolute;inset:0;z-index:20;background:#0000a8;color:#fff;padding:28px 36px;font-size:16px;line-height:1.35;overflow:hidden;cursor:default;text-align:left;justify-content:flex-start;align-items:flex-start;flex-direction:column;display:flex';
+    var title = document.createElement('div');
+    title.style.cssText = 'background:#c0c0c0;color:#0000a8;display:inline-block;padding:0 10px;margin-bottom:16px';
+    title.textContent = ' ColtonOS ScanDisk ';
+    var msg = document.createElement('div');
+    msg.style.cssText = 'white-space:pre-line;max-width:640px';
+    msg.textContent = 'Your computer was not shut down properly.\nScanDisk is now checking drive C for errors.\n\nTo avoid this in the future, always choose Shut Down from the Start menu.';
+    var step = document.createElement('div'); step.style.cssText = 'margin-top:18px';
+    var bar = document.createElement('div'); bar.style.cssText = 'border:2px solid #fff;height:18px;width:min(520px,80vw);margin:10px 0';
+    var fill = document.createElement('div'); fill.style.cssText = 'height:100%;width:0;background:#fff'; bar.appendChild(fill);
+    var hintLine = document.createElement('div'); hintLine.style.cssText = 'margin-top:14px;color:#c0c0ff'; hintLine.textContent = 'Press any key to skip.';
+    box.appendChild(title); box.appendChild(msg); box.appendChild(step); box.appendChild(bar); box.appendChild(hintLine);
+    overlay.appendChild(box);
+    var steps = ['media descriptor', 'file allocation tables', 'directory structure', 'file system', 'free space', 'game saves'];
+    var k = 0, finished = false, timer = 0;
+    function end() {
+      if (finished) return; finished = true; clearTimeout(timer);
+      document.removeEventListener('keydown', skip, true); box.removeEventListener('click', skip);
+      if (box.parentNode) box.parentNode.removeChild(box);
+      try { window.localStorage.setItem('gh-dirty', '0'); } catch (e) {}
+      try { var pr = audio.play(); if (pr && pr.catch) pr.catch(function () {}); } catch (e) {}
+      next();
+    }
+    function skip(e) { if (e && e.stopPropagation) { e.stopPropagation(); if (e.preventDefault) e.preventDefault(); } end(); }
+    document.addEventListener('keydown', skip, true); box.addEventListener('click', skip);
+    var per = reduceMotion ? 40 : 520;
+    (function tickStep() {
+      if (finished) return;
+      if (k >= steps.length) {
+        step.textContent = 'ScanDisk did not find any problems on drive C.'; hintLine.textContent = 'Starting ColtonOS…';
+        timer = setTimeout(end, reduceMotion ? 100 : 1300); return;
+      }
+      step.textContent = 'Checking ' + steps[k] + '…'; k++;
+      fill.style.width = Math.round(k / steps.length * 100) + '%';
+      timer = setTimeout(tickStep, per + (Math.random() * per * 0.6));
+    })();
+  }
+
   function beginBoot(soundIsPlaying) {
     if (phase === 'done' || phase === 'running') return;
+    if (!scanDone && needScanDisk()) { scanDone = true; runScanDisk(function () { beginBoot(soundIsPlaying); }); return; }
     phase = 'running';
     bootStartedAt = Date.now();
     skipAllowedAt = bootStartedAt + SKIP_GUARD_MS;

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Project Snippet Generator</title>
+  <title>Data Entry Generator (Games &amp; Applets)</title>
   <style>
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -78,17 +78,31 @@
 <body>
 
   <div class="form-container">
-    <h2>Add New Project</h2>
+    <h2 id="form-title">Add New Project</h2>
+
+    <label>Entry type</label>
+    <select id="p-mode" onchange="setMode()">
+      <option value="game">Game (goes in the projects list, shown in the Library)</option>
+      <option value="applet">Applet (goes in the applets list, Accessories only)</option>
+    </select>
     
     <label>Title</label>
     <input type="text" id="p-title" placeholder="e.g. Space Invaders" oninput="updateAltText()">
 
-    <label>HTML Filename (auto prepends 'games/')</label>
+    <label id="l-url">HTML Filename (auto prepends 'games/')</label>
     <input type="text" id="p-url" placeholder="e.g. space.html">
 
-    <label>Image Filename (auto prepends 'images/')</label>
+    <label id="l-image">Image Filename (auto prepends 'images/')</label>
     <input type="text" id="p-image" placeholder="e.g. IMG_1234.jpeg">
 
+    <div id="applet-only" style="display:none">
+      <label>Window size (optional, width x height in pixels)</label>
+      <div style="display:flex;gap:8px"><input type="text" id="a-w" placeholder="width, e.g. 560"><input type="text" id="a-h" placeholder="height, e.g. 440"></div>
+      <div class="checkbox-group"><input type="checkbox" id="a-keep"><label for="a-keep">Keep loaded when closed (for timers etc.)</label></div>
+      <div class="checkbox-group"><input type="checkbox" id="a-games"><label for="a-games">Show under Start › Programs › Games</label></div>
+    </div>
+
+    <div class="game-only">
     <label>Alt Text (auto-filled from Title)</label>
     <input type="text" id="p-alt" placeholder="e.g. Space Invaders">
 
@@ -110,19 +124,23 @@
     <label>Tags (comma separated)</label>
     <input type="text" id="p-tags" placeholder="e.g. Shooter, Space, Retro">
 
+    </div><!-- /game-only (type, tags, status) -->
     <label>Description</label>
-    <textarea id="p-desc" rows="3" placeholder="A short description of the game..."></textarea>
+    <textarea id="p-desc" rows="3" placeholder="A short description..."></textarea>
+    <div class="game-only">
 
     <div class="checkbox-group">
       <input type="checkbox" id="p-featured">
       <label for="p-featured">Featured Game</label>
+    </div>
     </div>
 
     <button onclick="generateSnippet()">Generate & Copy Snippet</button>
   </div>
 
   <div class="output-container">
-    <h2>Ready for data.js</h2>
+    <h2 id="out-title">Ready for data.js (projects array)</h2>
+    <p style="color:#aaa;font-size:.85em;margin:0 0 8px">Paste inside the matching <code>const projects = [...]</code> or <code>const applets = [...]</code> array in data.js. Applets are auto-detected by the site; no other file needs editing.</p>
     <pre id="output-snippet">// Fill out the form to generate code...</pre>
   </div>
 
@@ -136,7 +154,36 @@
       return str.replace(/'/g, "\\'");
     }
 
+    function mode() { return document.getElementById('p-mode').value; }
+    function setMode() {
+      const a = mode() === 'applet';
+      document.querySelectorAll('.game-only').forEach(e => e.style.display = a ? 'none' : '');
+      document.getElementById('applet-only').style.display = a ? '' : 'none';
+      document.getElementById('form-title').textContent = a ? 'Add New Applet' : 'Add New Project';
+      document.getElementById('l-url').textContent = a ? "HTML Filename (auto prepends 'applets/')" : "HTML Filename (auto prepends 'games/')";
+      document.getElementById('l-image').textContent = a ? "Icon path (e.g. calculator.png auto-prepends 'images/icons/'; a full path like images/icons/x.svg is kept)" : "Image Filename (auto prepends 'images/')";
+      document.getElementById('out-title').textContent = a ? 'Ready for data.js (applets array)' : 'Ready for data.js (projects array)';
+      generateSnippet();
+    }
+    function appletSnippet() {
+      let url = document.getElementById('p-url').value.trim();
+      if (url && !/^applets\//i.test(url)) url = 'applets/' + url;
+      let icon = document.getElementById('p-image').value.trim();
+      if (icon && !/^images\//i.test(icon)) icon = 'images/icons/' + icon;
+      const w = parseInt(document.getElementById('a-w').value, 10), hh = parseInt(document.getElementById('a-h').value, 10);
+      let extra = '';
+      if (w > 0 && hh > 0) extra += `, w: ${w}, h: ${hh}`;
+      if (document.getElementById('a-keep').checked) extra += ', keep: true';
+      if (document.getElementById('a-games').checked) extra += `, group: 'games'`;
+      return `  { title: '${escapeQuotes(document.getElementById('p-title').value || '')}', description: '${escapeQuotes(document.getElementById('p-desc').value || '')}', icon: '${escapeQuotes(icon)}', url: '${escapeQuotes(url)}'${extra} },`;
+    }
     function generateSnippet() {
+      if (mode() === 'applet') {
+        const out = appletSnippet();
+        document.getElementById('output-snippet').textContent = out;
+        try { navigator.clipboard && navigator.clipboard.writeText(out); } catch (e) {}
+        return;
+      }
       const title = document.getElementById('p-title').value || '';
       
       let url = document.getElementById('p-url').value || '';
@@ -179,6 +226,7 @@
 
       // Display it
       document.getElementById('output-snippet').textContent = snippet;
+      try { navigator.clipboard && navigator.clipboard.writeText(snippet); } catch (e) {}
     }
 
     // Attach auto-update to all inputs

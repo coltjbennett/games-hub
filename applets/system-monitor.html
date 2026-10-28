@@ -33,7 +33,7 @@
   <div class="panel"><div class="bar">CACHE / DATABASE DIAGNOSTICS</div><div class="scroll"><table class="storage-table"><thead><tr><th>Name</th><th>Type</th><th>Estimate</th></tr></thead><tbody id="detail-rows"></tbody></table></div></div>
   <div class="panel"><div class="tiny" id="notes"></div></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="../minizip.js"></script>
 <script>
 const $=id=>document.getElementById(id);
 const fmtBytes=n=>{if(!Number.isFinite(n))return 'n/a';const u=['B','KB','MB','GB'];let i=0,v=Math.max(0,n);while(v>=1024&&i<u.length-1){v/=1024;i++}return `${v.toFixed(i?1:0)} ${u[i]}`};
@@ -159,9 +159,9 @@ function openDatabase(name, version, upgrade) {
   });
 }
 async function exportDatabases(zip) {
-  if(!indexedDB.databases) throw new Error('This browser does not expose the IndexedDB database list, so a complete database backup cannot be made here.');
   const result=[];
-  for(const info of await indexedDB.databases()) {
+  const infos=indexedDB.databases ? await indexedDB.databases() : ['ColtonOS-fs','ColtonOS-wallpaper'].map(n=>({name:n}));
+  for(const info of infos) {
     if(!info.name) continue;
     const db=await openDatabase(info.name);
     try {
@@ -194,7 +194,7 @@ async function exportOPFS(zip) {
   catch(e) { return {supported:true,files,error:String(e)}; }
 }
 async function exportSiteData() {
-  if(!window.JSZip) throw new Error('ZIP library did not load. Connect to the internet and reload this page, then try again.');
+  if(!window.JSZip) throw new Error('ZIP support is unavailable in this browser.');
   const zip=new JSZip();
   const local={}; for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);local[k]=localStorage.getItem(k);}
   const manifest={format:'system-monitor-site-data-backup',version:1,createdAt:new Date().toISOString(),
@@ -213,14 +213,16 @@ async function exportSiteData() {
 }
 function deleteDatabase(name) {
   return new Promise((resolve,reject)=>{
-    const req=indexedDB.deleteDatabase(name); req.onsuccess=()=>resolve();
-    req.onerror=()=>reject(req.error||new Error('Could not delete database '+name));
-    req.onblocked=()=>reject(new Error('Deletion blocked for '+name+'. Close other tabs using this site and retry.'));
+    let settled=false; const fin=(fn,v)=>{ if(!settled){ settled=true; clearTimeout(timer); fn(v); } };
+    const timer=setTimeout(()=>fin(reject,new Error('Deletion of '+name+' is still blocked by another open page or window. Close other tabs of this site and retry.')),8000);
+    const req=indexedDB.deleteDatabase(name); req.onsuccess=()=>fin(resolve);
+    req.onerror=()=>fin(reject,req.error||new Error('Could not delete database '+name));
+    /* onblocked is only a warning: the delete finishes as soon as the other connections close */
+    req.onblocked=()=>{ backupNote('Waiting for other windows to release '+name+'…'); try{ window.parent.GHShell.releaseFrames(window); }catch(e){} };
   });
 }
 async function restoreDatabases(entries, zip) {
-  if(!indexedDB.databases) throw new Error('This browser cannot list IndexedDB databases; restore is stopped to avoid leaving old data mixed with the backup.');
-  const existing=await indexedDB.databases();
+  const existing=indexedDB.databases ? await indexedDB.databases() : ['ColtonOS-fs','ColtonOS-wallpaper'].map(n=>({name:n}));
   for(const info of existing) if(info.name) await deleteDatabase(info.name);
   for(const item of entries) {
     const db=await openDatabase(item.name,item.version,(created,tx)=>{
@@ -272,8 +274,9 @@ $('export-data').onclick=async()=>{
 $('import-data').onclick=()=>{ $('import-file').value=''; $('import-file').click(); };
 $('import-file').onchange=async event=>{
   const file=event.target.files?.[0]; if(!file) return;
-  if(!window.JSZip) { alert('ZIP library did not load. Connect to the internet and reload this page.'); return; }
+  if(!window.JSZip) { alert('ZIP support is unavailable in this browser.'); return; }
   if(!confirm('Importing replaces this origin’s localStorage, IndexedDB databases, and OPFS files with the backup. This can overwrite saves and chat history. Cache Storage and sessionStorage are not changed. Continue?')) return;
+  try{ window.parent.GHShell.releaseFrames(window); }catch(e){}
   backupNote('Reading backup ZIP…');
   try {
     const zip=await JSZip.loadAsync(file), mf=zip.file('site-data.json');
@@ -287,7 +290,7 @@ $('import-file').onchange=async event=>{
     backupNote('Restoring IndexedDB…'); await restoreDatabases(manifest.indexedDB||[],zip);
     backupNote('Restoring OPFS files…'); await restoreOPFS(manifest.opfs,zip);
     backupNote('Import completed. Reload the page so other site components reload their restored data.');
-    alert('Import completed. Reload the page now. Some application components may need a reload before they see restored data.');
+    if(confirm('Import completed. Reload ColtonOS now so everything picks up the restored data?')){ try{ window.parent.location.reload(); }catch(e){ location.reload(); } }
     await refreshStorage();
   } catch(e) { backupNote('Import failed: '+(e?.message||e)); console.error(e); alert('Import failed: '+(e?.message||e)+'. Some data may already have been replaced; reload and inspect the site.'); }
 };

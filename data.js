@@ -1,7 +1,7 @@
 // data.js
 
 const siteData = {
-  version: "v4.2.2",
+  version: "v4.3.0",
   author: "COLTON BENNETT",
   location: "Waukesha, WI",
   heroTitle: "Project Launcher",
@@ -251,4 +251,26 @@ const classics = [
     image: "images/IMG_1804.jpeg",
     alt: "Snake"
   }
+];
+
+/* ---------------------------------------------------------------------
+ * Applets (desktop accessories). Unlike games they have no tags or status and
+ * never appear in the Project Library — only in the Accessories folder, Start
+ * menu and Find. main.js auto-detects every entry here; use applets/makedata.html
+ * (Applet mode) to generate new ones.
+ *   title, description, icon (path), url (applets/xxx.html)
+ *   optional: w, h (window size), keep (stay loaded when closed), group ('games' puts it in Start > Programs > Games)
+ * ------------------------------------------------------------------ */
+const applets = [
+  { title: 'Calculator', description: 'Scientific calculator', icon: 'images/icons/calculator.png', url: 'applets/calculator.html', w: 360, h: 520 },
+  { title: 'Clock', description: 'Clock, stopwatch and alarms', icon: 'images/icons/clock.png', url: 'applets/clock.html', w: 600, h: 480 },
+  { title: 'Notes', description: 'Quick notes that stay in your browser', icon: 'images/icons/notes.png', url: 'applets/notes.html', w: 520, h: 420 },
+  { title: 'Notepad', description: 'Create and save .txt files into My Documents', icon: 'images/icons/document.svg', url: 'applets/notepad.html', w: 560, h: 440 },
+  { title: 'Paint', description: 'Canvas drawing program; save pictures to My Documents', icon: 'images/icons/paint.png', url: 'applets/paint.html', w: 780, h: 580 },
+  { title: 'MS-DOS Prompt', description: 'Command line: DIR your games and type a name to launch it', icon: 'images/icons/run.svg', url: 'applets/msdos.html', w: 640, h: 400 },
+  { title: 'Weather', description: 'Weather dashboard', icon: 'images/icons/weather.png', url: 'applets/weather.html', w: 660, h: 580 },
+  { title: 'Timer', description: 'Countdown timer', icon: 'images/icons/hourglass.svg', url: 'applets/timer.html', w: 460, h: 520, keep: true },
+  { title: 'Web Browser', description: 'Experimental proxy browser', icon: 'images/icons/globe.svg', url: 'applets/web_proxy_browser_applet.html', w: 920, h: 640 },
+  { title: 'Minesweeper', description: 'Find the mines without stepping on one', icon: 'images/icons/warning.svg', url: 'applets/minesweeper.html', w: 340, h: 420, group: 'games' },
+  { title: 'Solitaire', description: 'Klondike card game (original card art)', icon: 'images/icons/star.svg', url: 'applets/solitaire.html', w: 620, h: 540, group: 'games' }
 ];

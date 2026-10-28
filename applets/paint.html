@@ -265,7 +265,10 @@
     <span class="menu-item" id="btn-undo">Undo</span>
     <span class="menu-item" id="btn-redo">Redo</span>
     <span class="menu-item" id="btn-clear">Clear</span>
-    <span class="menu-item" id="btn-save">Save Image</span>
+    <span class="menu-item" id="btn-open" title="Open a picture from My Documents">Open…</span>
+    <span class="menu-item" id="btn-savedocs" title="Save into My Documents (stored in this browser)">Save</span>
+    <span class="menu-item" id="btn-saveas">Save As…</span>
+    <span class="menu-item" id="btn-save" title="Download a PNG file">Download PNG</span>
   </div>
 
   <div class="paint-body">
@@ -328,6 +331,7 @@
     </div>
   </div>
 
+  <script src="../vfs.js"></script>
   <script>
     const canvas = document.getElementById('paintCanvas');
     const ctx = canvas.getContext('2d');
@@ -695,6 +699,32 @@
     // Initial setup
     clearCanvas();
     updateZoom(100);
+
+    /* ---- My Documents (IndexedDB virtual file system) ---- */
+    (function () {
+      const FS = window.ColtonFS; let cur = null;
+      const toBlob = () => new Promise(r => canvas.toBlob(r, 'image/png'));
+      function setTitle() { try { const t = window.frameElement.closest('.win').querySelector('.wt-text'); if (t) t.textContent = (cur ? cur.name : 'untitled') + ' - Paint'; } catch (e) {} }
+      function loadMeta(m) {
+        FS.read(m.id).then(b => { if (!b) return; return createImageBitmap(b); }).then(bmp => {
+          if (!bmp) return; saveState(); ctx.fillStyle = bgColor; ctx.fillRect(0, 0, canvas.width, canvas.height);
+          const k = Math.min(canvas.width / bmp.width, canvas.height / bmp.height, 1); ctx.drawImage(bmp, 0, 0, bmp.width * k, bmp.height * k);
+          cur = m; setTitle();
+        });
+      }
+      function saveAs() {
+        return FS.dialog({ mode: 'save', kind: 'image', name: cur ? cur.name : 'untitled.png', parent: cur ? cur.parent : 'docs', title: 'Save As' }).then(r => {
+          if (!r) return; return toBlob().then(b => r.meta ? FS.write(r.meta.id, b) : FS.create({ parent: r.parent, name: r.name, kind: 'image', data: b })).then(m => { cur = m; setTitle(); });
+        });
+      }
+      function save() { if (!cur) return saveAs(); return toBlob().then(b => FS.write(cur.id, b)).then(m => { cur = m; setTitle(); }); }
+      document.getElementById('btn-open').addEventListener('click', () => FS.dialog({ mode: 'open', kind: 'image', title: 'Open' }).then(r => { if (r && r.meta) loadMeta(r.meta); }));
+      document.getElementById('btn-savedocs').addEventListener('click', save);
+      document.getElementById('btn-saveas').addEventListener('click', saveAs);
+      document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); e.shiftKey ? saveAs() : save(); } });
+      const id = new URLSearchParams(location.search).get('open');
+      if (id) FS.ready().then(() => { const m = FS.meta(id); if (m) loadMeta(m); });
+    })();
   </script>
 </body>
 </html>
