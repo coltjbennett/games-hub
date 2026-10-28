@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Solitaire</title>
+<style>
+  @font-face{font-family:W95FA;src:url('../images/w95f.woff2') format('woff2'),url('../images/w95f.woff') format('woff')}
+  :root{color-scheme:light only}
+  *{box-sizing:border-box;font-family:W95FA,"MS Sans Serif",sans-serif;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:#008000;color:#fff;overflow:auto;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+  #bar{display:flex;gap:8px;align-items:center;padding:6px 8px;background:#c0c0c0;color:#000;font-size:13px;flex-wrap:wrap;position:sticky;top:0;z-index:3}
+  #bar button,#bar select{font:inherit;color:#000;background:#c0c0c0;border:2px outset #fff;padding:2px 10px}
+  #bd{position:relative;min-width:560px;height:520px;margin:10px}
+  .slot{position:absolute;width:64px;height:90px;border:2px solid rgba(255,255,255,.35);border-radius:6px}
+  .card{position:absolute;width:64px;height:90px;border-radius:6px;background:#fff;border:1px solid #000;color:#000;font:bold 15px/1 W95FA,sans-serif;cursor:default}
+  .card.red{color:#c00}
+  .card .tl{position:absolute;left:5px;top:4px}.card .mid{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:34px}
+  .card.down{background:repeating-linear-gradient(45deg,#1a3b9c 0 4px,#2c56d6 4px 8px);border:3px solid #fff;outline:1px solid #000}
+  .card.down *{display:none}
+  .card.sel{outline:3px solid #ff0;z-index:50}
+  #msg{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.45);font-size:28px;z-index:10;text-align:center}
+</style>
+</head>
+<body>
+<div id="bar"><button id="nw">Deal</button><label>Draw <select id="dr"><option value="1">1</option><option value="3">3</option></select></label><button id="un">Undo</button><span id="sc">Moves: 0</span>
+<span style="font-size:12px">Click a card, then a destination. Double-click sends a card to the foundation.</span></div>
+<div id="bd"></div><div id="msg">You won!<br><small>Click anywhere to deal again</small></div>
+<script>
+(function(){
+  var S=['♠','♥','♦','♣'],R=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+  var st,hist,sel=null,moves=0;
+  var bd=document.getElementById('bd');
+  function red(s){return s===1||s===2;}
+  function newGame(){
+    var d=[];for(var s=0;s<4;s++)for(var r=0;r<13;r++)d.push({s:s,r:r,up:false});
+    for(var i=d.length-1;i>0;i--){var j=(Math.random()*(i+1))|0,t=d[i];d[i]=d[j];d[j]=t;}
+    st={stock:[],waste:[],found:[[],[],[],[]],tab:[[],[],[],[],[],[],[]]};
+    for(var c=0;c<7;c++)for(var k=0;k<=c;k++){var x=d.pop();x.up=k===c;st.tab[c].push(x);}
+    st.stock=d;hist=[];sel=null;moves=0;document.getElementById('msg').style.display='none';draw();
+  }
+  function snap(){hist.push(JSON.stringify(st));if(hist.length>200)hist.shift();}
+  function undo(){if(!hist.length)return;st=JSON.parse(hist.pop());sel=null;moves=Math.max(0,moves-1);draw();}
+  function pile(ref){return ref.t==='tab'?st.tab[ref.i]:ref.t==='found'?st.found[ref.i]:ref.t==='waste'?st.waste:st.stock;}
+  function canTab(card,dst){var top=dst[dst.length-1];if(!top)return card.r===12;return top.up&&red(top.s)!==red(card.s)&&top.r===card.r+1;}
+  function canFound(card,i){var f=st.found[i],top=f[f.length-1];if(!top)return card.r===0;return top.s===card.s&&card.r===top.r+1;}
+  function tryMove(from,to){
+    var p=pile(from),n=p.length-from.k,cards=p.slice(from.k);if(!cards.length||!cards[0].up)return false;
+    if(to.t==='found'){if(cards.length!==1)return false;var i=to.i;if(!canFound(cards[0],i))return false;snap();p.pop();st.found[i].push(cards[0]);}
+    else if(to.t==='tab'){if(!canTab(cards[0],st.tab[to.i]))return false;if(from.t==='tab'&&from.i===to.i)return false;snap();p.splice(from.k,n);st.tab[to.i]=st.tab[to.i].concat(cards);}
+    else return false;
+    if(from.t==='tab'){var q=st.tab[from.i];if(q.length)q[q.length-1].up=true;}
+    moves++;sel=null;draw();check();return true;
+  }
+  function autoFound(from){var p=pile(from);var c=p[p.length-1];if(!c||!c.up||from.k!==p.length-1)return false;for(var i=0;i<4;i++)if(canFound(c,i))return tryMove(from,{t:'found',i:i});return false;}
+  function click(ref){
+    if(ref.t==='waste')ref.k=st.waste.length-1;
+    if(ref.t==='stock'){snap();var n=+document.getElementById('dr').value;
+      if(!st.stock.length){st.stock=st.waste.reverse().map(function(c){c.up=false;return c;});st.waste=[];}
+      else for(var i=0;i<n&&st.stock.length;i++){var c=st.stock.pop();c.up=true;st.waste.push(c);}
+      moves++;sel=null;draw();return;}
+    if(sel){var s=sel;sel=null;if(!tryMove(s,ref)){if(ref.t!=='found'&&pile(ref)[ref.k]&&pile(ref)[ref.k].up&&!(s.t===ref.t&&s.i===ref.i&&s.k===ref.k))sel=ref;draw();}return;}
+    if(ref.t==='found'&&!pile(ref).length)return;
+    var c2=pile(ref)[ref.k];if(c2&&c2.up){sel=ref;draw();}
+  }
+  function check(){if(st.found.every(function(f){return f.length===13;})){var m=document.getElementById('msg');m.style.display='flex';}}
+  function el(card,x,y,ref){
+    var d=document.createElement('div');d.className='card'+(card.up?(red(card.s)?' red':''):' down');d.style.left=x+'px';d.style.top=y+'px';d.style.zIndex=ref.k+1;
+    if(card.up){d.innerHTML='<span class="tl">'+R[card.r]+S[card.s]+'</span><span class="mid">'+S[card.s]+'</span>';}
+    if(sel&&sel.t===ref.t&&sel.i===ref.i&&ref.k>=sel.k)d.classList.add('sel');
+    d.onclick=function(e){e.stopPropagation();click(ref);};
+    d.ondblclick=function(e){e.stopPropagation();sel=null;autoFound(ref);draw();};
+    bd.append(d);
+  }
+  function slot(x,y,ref,label){var d=document.createElement('div');d.className='slot';d.style.left=x+'px';d.style.top=y+'px';if(label){d.textContent=label;d.style.cssText+=';display:flex;align-items:center;justify-content:center;font-size:26px;color:rgba(255,255,255,.5)';}d.onclick=function(){click(ref);};bd.append(d);}
+  function draw(){
+    bd.replaceChildren();
+    slot(0,0,{t:'stock',i:0,k:0},'↺');st.stock.forEach(function(c,k){if(k>=st.stock.length-1)el(c,0,0,{t:'stock',i:0,k:k});});
+    var w=st.waste,vis=Math.min(w.length,+document.getElementById('dr').value===3?3:1);
+    w.forEach(function(c,k){var off=k>=w.length-vis?(k-(w.length-vis))*18:0;if(k>=w.length-vis)el(c,76+off,0,{t:'waste',i:0,k:k});});
+    for(var f=0;f<4;f++){slot(228+f*76,0,{t:'found',i:f,k:0},S[f]);st.found[f].forEach(function(c,k){if(k>=st.found[f].length-1)el(c,228+f*76,0,{t:'found',i:f,k:k});});}
+    for(var t=0;t<7;t++){slot(t*76,110,{t:'tab',i:t,k:0});st.tab[t].forEach(function(c,k){el(c,t*76,110+k*(c.up?24:12),{t:'tab',i:t,k:k});});}
+    document.getElementById('sc').textContent='Moves: '+moves;
+    var maxY=0;st.tab.forEach(function(p){var y=110+p.reduce(function(a,c){return a+(c.up?24:12);},0)+100;if(y>maxY)maxY=y;});bd.style.height=Math.max(520,maxY)+'px';
+  }
+  document.getElementById('nw').onclick=newGame;document.getElementById('un').onclick=undo;document.getElementById('dr').onchange=function(){newGame();};
+  document.getElementById('msg').onclick=newGame;bd.onclick=function(){sel=null;draw();};
+  newGame();
+})();
+</script>
+</body></html>
