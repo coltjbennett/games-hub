@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>MS-DOS Prompt</title>
+<style>
+  @font-face{font-family:W95FA;src:url('../images/w95f.woff2') format('woff2'),url('../images/w95f.woff') format('woff')}
+  :root{color-scheme:dark}
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;overscroll-behavior:none}
+  body{display:flex;flex-direction:column;position:fixed;inset:0}
+  #scr{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:6px 8px;color:#c0c0c0;font:16px/1.15 W95FA,"Courier New",monospace;white-space:pre-wrap;word-break:break-all;cursor:text;-webkit-font-smoothing:none;-webkit-user-select:text;user-select:text;-webkit-overflow-scrolling:touch}
+  #cur{display:inline-block;width:.6em;height:1em;background:currentColor;vertical-align:text-bottom;animation:b 1s steps(1) infinite}
+  @keyframes b{50%{opacity:0}}
+  /* The real input lives INSIDE the viewport (never off-screen) so mobile browsers keep the keyboard open.
+     It is the single source of truth for the command line; font-size 16px prevents iOS zoom-on-focus. */
+  #in{position:absolute;left:0;bottom:0;width:100%;height:24px;margin:0;padding:0;border:0;opacity:.01;font-size:16px;color:transparent;background:transparent;caret-color:transparent;pointer-events:none;z-index:-1}
+  #kb{display:none;gap:4px;padding:4px;background:#1a1a1a;border-top:1px solid #333;flex:none}
+  @media (pointer:coarse){#kb{display:flex}}
+  #kb button{flex:1;font:14px W95FA,monospace;color:#c0c0c0;background:#2a2a2a;border:1px solid #555;padding:8px 0;min-height:36px;touch-action:manipulation}
+  #kb button:active{background:#444}
+</style>
+</head>
+<body>
+<div id="scr" aria-live="off"></div>
+<div id="kb" role="toolbar" aria-label="On-screen keys"><button type="button" data-k="kbd">⌨ Keyboard</button><button type="button" data-k="up">▲</button><button type="button" data-k="down">▼</button><button type="button" data-k="tab">Tab</button><button type="button" data-k="esc">Esc</button><button type="button" data-k="ent">Enter</button></div>
+<input id="in" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send" inputmode="text" aria-label="MS-DOS command line">
+<script src="../vfs.js"></script>
+<script src="textgames-core.js"></script>
+<script>
+(function(){
+  var scr=document.getElementById('scr'), inp=document.getElementById('in'), kb=document.getElementById('kb');
+  var full=/[?&]mode=full/.test(location.search);
+  var P=null;try{P=window.parent&&window.parent.GHShell;}catch(e){}
+  var cwd=[], out='', line='', hist=[], hi=0, busy=false, color='#c0c0c0', playing=null, pending=null;
+  var fsReady=window.ColtonFS.ready();
+  function emit(n){try{P&&P.emit&&P.emit(n);}catch(e){}}
+  function tag(s){return s.replace(/[^A-Za-z0-9]/g,'').toUpperCase();}
+  function short(name){var b=name.replace(/\.[^.]*$/,'');var t=tag(b);return (t.length>8?t.slice(0,6)+'~1':t)||'FILE';}
+  function ext3(name){var m=/\.([^.]+)$/.exec(name);return m?tag(m[1]).slice(0,3):'';}
+  function cat(){return P&&P.catalog?P.catalog():{games:[],classics:[],applets:[]};}
+  function FS(){return window.ColtonFS;}
+  function dirs(){return {GAMES:'games',CLASSIC:'classics',ACCESS:'applets',MYDOCS:'docs'};}
+  /* resolve the current path inside MYDOCS to a VFS folder id (or null when not in MYDOCS) */
+  function docsId(path){
+    if(path[0]!=='MYDOCS')return null; var cur='docs';
+    for(var i=1;i<path.length;i++){var hit=FS().children(cur).filter(function(m){return m.kind==='folder'&&(short(m.name)===path[i]||m.name.toUpperCase()===path[i]);})[0];if(!hit)return null;cur=hit.id;}
+    return cur;
+  }
+  function docKids(id){return FS().children(id).map(function(m){return m.kind==='folder'?{n:short(m.name),d:1,real:m}:{n:short(m.name),e:ext3(m.name)||(m.kind==='text'?'TXT':'PNG'),s:m.size,real:m};});}
+  function entries(path){
+    var c=cat(), r=[];
+    if(!path.length){r.push({n:'GAMES',d:1},{n:'CLASSIC',d:1},{n:'ACCESS',d:1},{n:'MYDOCS',d:1},{n:'AUTOEXEC',e:'BAT',s:128},{n:'CONFIG',e:'SYS',s:96},{n:'COMMAND',e:'COM',s:93812},{n:'CHANGELO',e:'TXT',s:4096,f:'changelog.txt'});return r;}
+    if(path[0]==='MYDOCS'){var id=docsId(path);return id?docKids(id):[];}
+    var k=dirs()[path[0]];
+    if(path.length===1&&k){
+      (c[k]||[]).forEach(function(p){var u=p.url||'';var b=u.split('/').pop().replace(/\.html$/,'');r.push({n:short(b),e:'EXE',s:Math.max(1024,(p.title||'').length*4096),run:p,full:b});});
+    }
+    return r;
+  }
+  function fmtS(n){return String(n).replace(/\B(?=(\d{3})+(?!\d))/g,',');}
+  function prompt(){return 'C:\\'+cwd.join('\\')+'>';}
+  function print(s){out+=(s==null?'':s)+'\n';}
+  function render(){
+    scr.textContent='';var t=document.createElement('span');t.textContent=out;scr.append(t);
+    var l=document.createElement('span');l.textContent=(busy?'':(playing?'':prompt())+line);scr.append(l);
+    if(!busy){var c=document.createElement('span');c.id='cur';scr.append(c);}
+    scr.style.color=color;scr.scrollTop=scr.scrollHeight;
+  }
+  function now(){return new Date();}
+  function find(name){name=name.toUpperCase();var up=name.replace(/\.(EXE|COM|BAT)$/,'');return entries(cwd).filter(function(e){return !e.d&&(e.n===name||e.n===up||(e.full&&e.full.toUpperCase()===up)||(e.run&&(e.run.title||'').toUpperCase()===up)||(e.real&&e.real.name.toUpperCase()===name));})[0];}
+  function findAny(name){name=name.toUpperCase();return entries(cwd).filter(function(e){return e.n===name||(e.real&&e.real.name.toUpperCase()===name);})[0];}
+  function globalFind(name){var c=cat();var up=name.toUpperCase().replace(/\.EXE$/,'');var hit=null;['games','classics','applets'].forEach(function(k){(c[k]||[]).forEach(function(p){var b=(p.url||'').split('/').pop().replace(/\.html$/,'').toUpperCase();if(!hit&&(b===up||tag(p.title)===tag(up)||short(b)===up))hit=p;});});return hit;}
+  var JOKES=['Why did the programmer quit? He didn\'t get arrays.','There are 10 kinds of people: those who understand binary and those who don\'t.','Macrohard: hard by name, hard by nature.','A SQL query walks into a bar, walks up to two tables and asks: "Can I join you?"','Tapey says: I\'m sticking with you.','Why was the tape roll good at poker? It knew how to hold things together.'];
+  var TAPEY='   .-""""-.\n  / (o)(o) \\\n |  .----.  |    "It looks like you are\n |  | __ |  |     typing in MS-DOS.\n  \\  \'----\'  /      Would you like help?"\n   \'-.____.-\'  \n     /_||_\\\n';
+  var GAMEIDS={advent:'adventure',adventure:'adventure',hangman:'hangman',guess:'guess',madlibs:'madlibs',scramble:'scramble',blackjack:'blackjack',jack:'blackjack'};
+  function startGame(id){
+    playing=TextGames.start(id,{print:print,event:function(n){emit('dos:'+n);}});emit('textgame:'+id);playing.intro();endCheck();
+  }
+  function endCheck(){if(playing&&playing.done){playing=null;print('');}}
+  function docsTarget(){var id=docsId(cwd);return id;}
+  function needDocs(){var id=docsTarget();if(!id){print('Access denied - this directory is read-only.\nChange to MYDOCS (CD MYDOCS) to use file commands.');return null;}return id;}
+  function wait(p){busy=true;render();p.then(function(){},function(){print('The operation failed.');}).then(function(){busy=false;render();});return 1;}
+  var C={
+    help:function(){print('Supported commands:\n  DIR [/W]  CD [dir]  CLS  TYPE file  ECHO text  VER  DATE  TIME  MEM  VOL  TREE\n  COLOR [fg]  FORTUNE  WIN / EXIT  RUN name\nIn C:\\MYDOCS (your real files):\n  MD name  RD name  DEL file  REN old new  COPY src dst  MOVE src dst  EDIT file\nText games:  GAMES  ADVENT  HANGMAN  GUESS  MADLIBS  SCRAMBLE  BLACKJACK\n\nType the name of a game or program to launch it. Press Tab to complete names.\n');},
+    ver:function(){print('\nColtonOS 95 [Version '+((P&&P.version)||'4.x')+']  (Macrohard Corporation)\n');},
+    cls:function(){out='';},
+    date:function(){print('Current date is '+now().toDateString());},
+    time:function(){print('Current time is '+now().toLocaleTimeString());},
+    vol:function(){print(' Volume in drive C is COLTONOS\n Volume Serial Number is 0C0A-95FF');},
+    mem:function(){print('\nMemory Type        Total       Used       Free\n----------------  --------  --------  --------\nConventional          640K       38K      602K\nExtended (XMS)     65,535K    1,024K   64,511K\n----------------  --------  --------  --------\nTotal memory       66,175K    1,062K   65,113K\n');},
+    echo:function(a){print(a.join(' '));},
+    color:function(a){var m={'0':'#000','1':'#00a','2':'#0a0','3':'#0aa','4':'#a00','5':'#a0a','6':'#a50','7':'#c0c0c0','8':'#555','9':'#55f',a:'#5f5',b:'#5ff',c:'#f55',d:'#f5f',e:'#ff5',f:'#fff'};var k=(a[0]||'7').slice(-1).toLowerCase();color=m[k]||color;},
+    fortune:function(){print(JOKES[Math.floor(Math.random()*JOKES.length)]);},
+    tapey:function(){print(TAPEY);emit('dos:tapey');},
+    games:function(){print('Text games (type the name to play):');TextGames.list().forEach(function(g){print('  '+(g.id==='adventure'?'ADVENT':g.id.toUpperCase())+'        '+g.name+' - '+g.desc);});print('');},
+    dir:function(a){
+      var wide=a.some(function(x){return /^\/w$/i.test(x);});var e=entries(cwd);
+      print(' Volume in drive C is COLTONOS\n Directory of C:\\'+cwd.join('\\')+'\n');
+      var fc=0,dc=0,bytes=0,d=now();var ds=('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)+'-'+String(d.getFullYear()).slice(-2);
+      if(cwd.length){e=[{n:'.',d:1},{n:'..',d:1}].concat(e);}
+      e.forEach(function(x){if(x.d)dc++;else{fc++;bytes+=x.s||0;}
+        if(wide)return;
+        var nm=(x.n+'        ').slice(0,8),ex=((x.e||'')+'   ').slice(0,3);
+        print(nm+' '+(x.d?'<DIR>    ':ex+'      ').slice(0,9)+' '+(x.d?'       ':('       '+fmtS(x.s||0)).slice(-7))+'  '+ds+'  9:00a'+(x.real&&x.real.name.toUpperCase()!==x.n+(x.e?'.'+x.e:'')?'  '+x.real.name:''));});
+      if(wide)print(e.map(function(x){return x.d?'['+x.n+']':x.n+(x.e?'.'+x.e:'');}).join('  '));
+      print('\n'+('   '+fc).slice(-4)+' file(s)'+('            '+fmtS(bytes)).slice(-14)+' bytes\n'+('   '+dc).slice(-4)+' dir(s)      1,048,576,000 bytes free\n');},
+    cd:function(a){
+      var t=a.join(' ').replace(/\//g,'\\');
+      if(!t){print('C:\\'+cwd.join('\\'));return;}
+      if(t==='\\'){cwd=[];return;}
+      t.split('\\').forEach(function(p){if(!p)return;if(p==='..'){cwd.pop();return;}if(p==='.')return;
+        var u=p.toUpperCase();
+        if(!cwd.length&&dirs()[u]){cwd.push(u);return;}
+        if(cwd[0]==='MYDOCS'){var id=docsId(cwd);var hit=id&&FS().children(id).filter(function(m){return m.kind==='folder'&&(short(m.name)===u||m.name.toUpperCase()===u);})[0];if(hit){cwd.push(short(hit.name));return;}}
+        print('Invalid directory');});
+    },
+    chdir:function(a){C.cd(a);},
+    tree:function(){print('Folder PATH listing\nVolume serial number is 0C0A-95FF\nC:.\n├───GAMES\n├───CLASSIC\n├───ACCESS\n└───MYDOCS');
+      var lines=[];(function walk(id,pre){var k=FS().children(id).filter(function(m){return m.kind==='folder';});k.forEach(function(m,i){var last=i===k.length-1;lines.push(pre+(last?'└───':'├───')+short(m.name));walk(m.id,pre+(last?'    ':'│   '));});})('docs','    ');
+      if(lines.length)print(lines.join('\n'));print('');},
+    type:function(a){
+      var e=find(a[0]||'');if(!e&&a[0]&&/changelo/i.test(a[0])&&!cwd.length)e={f:'changelog.txt'};
+      if(!e){print('File not found - '+(a[0]||''));return;}
+      if(e.real&&e.real.kind==='text'){return wait(FS().read(e.real.id).then(function(d){print(d||'');}));}
+      if(e.f){busy=true;render();fetch('../'+e.f).then(function(r){return r.text();}).then(function(t){print(t.slice(0,2500)+(t.length>2500?'\n...(more)':''));}).catch(function(){print('Cannot read file.');}).then(function(){busy=false;render();});return 1;}
+      print('Cannot display this file.');
+    },
+    md:function(a){var id=needDocs();if(!id)return;if(!a.length){print('The syntax of the command is incorrect.');return;}return wait(FS().create({parent:id,name:a.join(' '),kind:'folder'}).then(function(m){print('Directory created: '+m.name);emit('dos:md');}));},
+    mkdir:function(a){return C.md(a);},
+    rd:function(a){var id=needDocs();if(!id)return;var e=findAny(a.join(' '));if(!e||!e.d){print('Invalid path, not directory, or directory not empty');return;}if(FS().children(e.real.id).length){print('Invalid path, not directory, or directory not empty');return;}return wait(FS().remove(e.real.id).then(function(){print('Removed.');}));},
+    rmdir:function(a){return C.rd(a);},
+    del:function(a){var id=needDocs();if(!id)return;var e=find(a.join(' '));if(!e||!e.real){print('File not found - '+a.join(' '));return;}return wait(FS().remove(e.real.id).then(function(){print('Deleted '+e.real.name);}));},
+    erase:function(a){return C.del(a);},
+    ren:function(a){var id=needDocs();if(!id)return;if(a.length<2){print('The syntax of the command is incorrect.');return;}var e=findAny(a[0]);if(!e||!e.real){print('File not found - '+a[0]);return;}return wait(FS().rename(e.real.id,a.slice(1).join(' ')).then(function(m){print('Renamed to '+m.name);}));},
+    rename:function(a){return C.ren(a);},
+    copy:function(a){
+      var id=needDocs();if(!id)return;if(a.length<2){print('The syntax of the command is incorrect.');return;}var e=find(a[0]);if(!e||!e.real||e.d){print('File not found - '+a[0]);return;}
+      return wait(FS().read(e.real.id).then(function(data){return FS().create({parent:id,name:a.slice(1).join(' '),kind:e.real.kind,mime:e.real.mime,data:data});}).then(function(m){print('        1 file(s) copied to '+m.name);}));
+    },
+    move:function(a){
+      var id=needDocs();if(!id)return;if(a.length<2){print('The syntax of the command is incorrect.');return;}var e=findAny(a[0]);if(!e||!e.real){print('File not found - '+a[0]);return;}
+      var dest=findAny(a[1]);if(!dest||!dest.d){print('Destination must be an existing directory.');return;}
+      return wait(FS().move(e.real.id,dest.real.id).then(function(){print('Moved.');}));
+    },
+    edit:function(a){
+      if(!P){print('Cannot start the editor here.');return;}
+      var id=docsId(cwd);var e=a.length&&id?find(a.join(' ')):null;
+      if(a.length&&id&&!e){return wait(FS().create({parent:id,name:a.join(' '),kind:'text',data:''}).then(function(m){print('New file '+m.name+' created.');P.openFile&&P.openFile(m.id);}));}
+      if(e&&e.real&&P.openFile){P.openFile(e.real.id);print('Opening '+e.real.name+'...');return;}
+      P.openItem('app:notepad');print('Starting Notepad...');
+    },
+    win:function(){leave();},exit:function(){leave();},
+    run:function(a){launch(a.join(' '));},
+    format:function(){print('WARNING, ALL DATA ON NON-REMOVABLE DISK\nDRIVE C: WILL BE LOST!\nProceed with Format (Y/N)? N\n\n...just kidding. Nothing here can be formatted.');},
+    deltree:function(){print('Nice try. Everything on this computer is safe.');},
+    xyzzy:function(){print('Nothing happens.');},
+    doom:function(){print('Not enough memory. (Did you mean FPS?)');},
+    ping:function(a){print('Pinging '+(a[0]||'localhost')+' with 32 bytes of data:\nReply from 127.0.0.1: bytes=32 time<1ms TTL=128\nReply from 127.0.0.1: bytes=32 time<1ms TTL=128');},
+    matrix:function(){color='#0f0';print('Wake up, Colton...\nThe Matrix has you...\nFollow the white rabbit.');},
+    hello:function(){print('Hello, human.');},
+    who:function(){print('Colton Bennett built this. Probably at 2 a.m.');},
+    cdrom:function(){print('Drive D: has no disc.');}
+  };
+  var NAMES=Object.keys(C).concat(Object.keys(GAMEIDS));
+  function launch(name){
+    var p=globalFind(name);if(!p){print('Bad command or file name');return false;}
+    print('Starting '+p.title+'...');
+    if(P&&P.launchByUrl){P.launchByUrl(p.url);emit('dos:launch');if(full)print('(Type EXIT to return to ColtonOS.)');}else print('Cannot launch from here.');
+    return true;
+  }
+  function leave(){
+    if(full){try{window.parent.postMessage({source:'msdos',action:'exit'},location.origin);}catch(e){}return;}
+    try{var w=window.frameElement.closest('.win');w.querySelector('.c-close').click();}catch(e){print('You can close this window with the X button.');}
+  }
+  function exec(raw){
+    var s=raw.trim();
+    if(playing){print(raw);playing.input(raw);endCheck();return;}
+    print(prompt()+raw);if(!s)return;
+    var cmd=s.split(/\s+/)[0].toLowerCase();var rest=s.slice(cmd.length).trim();
+    if(/^cd[\\.]/.test(cmd)){cmd='cd';rest=s.slice(2).trim();}
+    var args=rest?rest.split(/\s+/):[];
+    if(cmd==='cd..'){C.cd(['..']);return;}
+    if(cmd==='dir'&&rest==='/w'){args=['/w'];}
+    if(Object.prototype.hasOwnProperty.call(C,cmd)){emit('dos:'+cmd);if(C[cmd](args))return;print('');return;}
+    if(GAMEIDS[cmd]){startGame(GAMEIDS[cmd]);return;}
+    if(/^[a-z]:$/.test(cmd)){if(cmd!=='c:')print('Invalid drive specification');return;}
+    var e=find(cmd);
+    if(e&&e.run){launch(e.run.title);return;}
+    launch(cmd);
+  }
+  /* Tab completion: commands (first word) or entries in the current directory */
+  function complete(){
+    var parts=line.split(/\s+/), last=parts[parts.length-1].toLowerCase(), first=parts.length===1;
+    if(!last||playing)return;
+    var pool=first?NAMES.concat(entries(cwd).map(function(e){return e.n.toLowerCase();})):entries(cwd).map(function(e){return (e.real?e.real.name:e.n).toLowerCase();});
+    var m=pool.filter(function(n){return n.indexOf(last)===0;});
+    if(m.length===1){parts[parts.length-1]=m[0];setLine(parts.join(' '));}
+    else if(m.length>1){print(prompt()+line);print(m.join('  '));render();}
+  }
+  function setLine(v){line=v;inp.value=v;render();}
+  function submit(){
+    if(busy)return;var v=line;
+    exec(v);if(v.trim()&&!playing)hist.push(v);hi=hist.length;
+    line='';inp.value='';render();
+  }
+  function histMove(d){
+    if(playing||busy)return;
+    if(d<0&&hi>0){hi--;setLine(hist[hi]);}
+    else if(d>0){if(hi<hist.length-1){hi++;setLine(hist[hi]);}else{hi=hist.length;setLine('');}}
+  }
+  /* ---- input: the <input> element is the source of truth, so soft keyboards, IMEs, autocorrect and paste all work ---- */
+  inp.addEventListener('input',function(){if(busy){inp.value=line;return;}line=inp.value;render();});
+  inp.addEventListener('keydown',function(e){
+    if(busy){e.preventDefault();return;}
+    if(e.key==='Enter'){e.preventDefault();submit();}
+    else if(e.key==='ArrowUp'){e.preventDefault();histMove(-1);}
+    else if(e.key==='ArrowDown'){e.preventDefault();histMove(1);}
+    else if(e.key==='Tab'){e.preventDefault();complete();}
+    else if(e.key==='Escape'){setLine('');}
+  });
+  /* focus handling: tapping the screen must NOT blur the input (that is what made the keyboard flicker/disappear) */
+  scr.addEventListener('mousedown',function(e){if(window.getSelection&&String(window.getSelection()))return;e.preventDefault();});
+  scr.addEventListener('click',function(){if(window.getSelection&&String(window.getSelection()))return;focusIn();});
+  function focusIn(){try{inp.focus({preventScroll:true});}catch(e){inp.focus();}}
+  kb.addEventListener('pointerdown',function(e){e.preventDefault();});       // keep focus (and the keyboard) while using these
+  kb.addEventListener('click',function(e){
+    var b=e.target.closest('button');if(!b)return;var k=b.dataset.k;
+    if(k==='kbd')focusIn();else if(k==='up'){histMove(-1);}else if(k==='down'){histMove(1);}else if(k==='tab'){complete();}else if(k==='esc'){setLine('');}else if(k==='ent'){submit();}
+  });
+  /* keep the newest line visible when the on-screen keyboard resizes the viewport */
+  function stick(){scr.scrollTop=scr.scrollHeight;}
+  if(window.visualViewport){window.visualViewport.addEventListener('resize',function(){setTimeout(stick,30);});}
+  window.addEventListener('resize',function(){setTimeout(stick,30);});
+  function boot(){
+    print('ColtonOS 95 [Version '+((P&&P.version)||'4.x')+']');
+    print('(C)Copyright Macrohard Corp 1995-'+now().getFullYear()+'.\n');
+    if(full){print('Starting MS-DOS mode...\nType WIN or EXIT to restart ColtonOS.\n');}
+    print('Type HELP for commands, GAMES for text games.\n');
+    render();if(!(window.matchMedia&&matchMedia('(pointer:coarse)').matches))focusIn();
+  }
+  fsReady.then(boot);
+})();
+</script>
+</body></html>

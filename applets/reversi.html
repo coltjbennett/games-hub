@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reversi</title>
+<link rel="stylesheet" href="w95.css">
+<style>
+  body{align-items:center}
+  #bd{display:grid;grid-template-columns:repeat(8,1fr);width:min(100vw - 16px,100vh - 90px,420px);aspect-ratio:1;margin:6px;border:3px inset #808080;background:#0a7a2a;gap:1px;touch-action:manipulation}
+  .c{background:#0a8a30;border:0;padding:0;position:relative;min-height:0;min-width:0;border-radius:0}
+  .c.h::after{content:"";position:absolute;inset:38%;border-radius:50%;background:rgba(255,255,255,.35)}
+  .p{position:absolute;inset:10%;border-radius:50%;box-shadow:1px 2px 3px rgba(0,0,0,.5)}.p.b{background:#111}.p.w{background:#f4f4f4}
+  #info{display:flex;gap:12px;align-items:center;margin:4px}
+</style></head><body>
+<div id="info"><b id="sc"></b><span id="tn"></span><select id="lv"><option value="0">Easy</option><option value="1" selected>Normal</option><option value="2">Hard</option></select><button id="nw">New Game</button></div>
+<div id="bd" role="grid" aria-label="Reversi board"></div>
+<script>
+(function(){
+  var B,turn,bd=document.getElementById('bd'),over=false,human=1,busy=false;
+  var D=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+  var W=[[100,-20,10,5,5,10,-20,100],[-20,-50,-2,-2,-2,-2,-50,-20],[10,-2,1,1,1,1,-2,10],[5,-2,1,0,0,1,-2,5],[5,-2,1,0,0,1,-2,5],[10,-2,1,1,1,1,-2,10],[-20,-50,-2,-2,-2,-2,-50,-20],[100,-20,10,5,5,10,-20,100]];
+  function flips(b,r,c,p){var out=[];if(b[r][c])return out;D.forEach(function(d){var rr=r+d[0],cc=c+d[1],t=[];while(rr>=0&&rr<8&&cc>=0&&cc<8&&b[rr][cc]===-p){t.push([rr,cc]);rr+=d[0];cc+=d[1];}if(t.length&&rr>=0&&rr<8&&cc>=0&&cc<8&&b[rr][cc]===p)out=out.concat(t);});return out;}
+  function moves(b,p){var m=[];for(var r=0;r<8;r++)for(var c=0;c<8;c++){var f=flips(b,r,c,p);if(f.length)m.push({r:r,c:c,f:f});}return m;}
+  function count(p){var n=0;B.forEach(function(r){r.forEach(function(v){if(v===p)n++;});});return n;}
+  function init(){B=[];for(var i=0;i<8;i++)B.push([0,0,0,0,0,0,0,0]);B[3][3]=B[4][4]=-1;B[3][4]=B[4][3]=1;turn=1;over=false;busy=false;draw();}
+  function apply(m,p){B[m.r][m.c]=p;m.f.forEach(function(x){B[x[0]][x[1]]=p;});}
+  function draw(){
+    bd.textContent='';var mv=turn===human?moves(B,human):[];
+    for(var r=0;r<8;r++)for(var c=0;c<8;c++){var b=document.createElement('button');b.type='button';b.className='c';b.setAttribute('aria-label','Row '+(r+1)+' column '+(c+1));
+      if(B[r][c]){var p=document.createElement('span');p.className='p '+(B[r][c]===1?'b':'w');b.append(p);}
+      else if(mv.some(function(m){return m.r===r&&m.c===c;}))b.classList.add('h');
+      (function(r,c){b.onclick=function(){click(r,c);};})(r,c);bd.append(b);}
+    document.getElementById('sc').textContent='You (black) '+count(1)+' - '+count(-1)+' CPU (white)';
+    document.getElementById('tn').textContent=over?'Game over':(turn===human?'Your move':'Thinking...');
+  }
+  function click(r,c){if(over||busy||turn!==human)return;var f=flips(B,r,c,human);if(!f.length)return;apply({r:r,c:c,f:f},human);turn=-human;draw();after();}
+  function after(){
+    var h=moves(B,human).length,a=moves(B,-human).length;
+    if(!h&&!a){over=true;draw();var x=count(1),y=count(-1);document.getElementById('tn').textContent=x>y?'You win!':x<y?'CPU wins':'Draw';if(x>y){try{parent.GHShell.emit('win:reversi');}catch(e){}}return;}
+    if(turn===-human){if(!a){turn=human;draw();return;}busy=true;setTimeout(cpu,450);}
+    else if(!h){turn=-human;draw();after();}
+  }
+  function cpu(){
+    var lv=+document.getElementById('lv').value,m=moves(B,-human);if(!m.length){busy=false;turn=human;draw();return;}
+    var best;if(lv===0)best=m[Math.floor(Math.random()*m.length)];
+    else{var sc=-1e9;m.forEach(function(x){var s=lv===1?x.f.length+W[x.r][x.c]*0.3:W[x.r][x.c]*2+x.f.length-moves(sim(x),human).length*3;s+=Math.random();if(s>sc){sc=s;best=x;}});}
+    apply(best,-human);turn=human;busy=false;draw();after();
+  }
+  function sim(m){var b=B.map(function(r){return r.slice();});var save=B;B=b;apply(m,-human);B=save;return b;}
+  document.getElementById('nw').onclick=init;init();
+})();
+</script></body></html>

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><title>FreeCell</title>
+<link rel="stylesheet" href="w95.css">
+<style>
+  body{background:#008000;overflow:auto}
+  #top{display:flex;gap:6px;padding:6px;align-items:center;background:#c0c0c0;flex-wrap:wrap}
+  #board{padding:6px;display:flex;flex-direction:column;gap:10px;--cw:min(11.2vw,72px);--ch:calc(var(--cw)*1.4)}
+  .row{display:grid;grid-template-columns:repeat(8,var(--cw));gap:calc(var(--cw)*.12);justify-content:center}
+  .slot{height:var(--ch);border:2px solid rgba(255,255,255,.35);border-radius:4px;position:relative;background:rgba(0,0,0,.12);min-width:0}
+  .col{position:relative;min-height:calc(var(--ch)*1.2)}
+  .card{position:absolute;left:0;width:100%;height:var(--ch);background:#fff;border:1px solid #000;border-radius:4px;font-weight:bold;font-size:calc(var(--cw)*.26);padding:2px 3px;line-height:1;cursor:pointer;user-select:none;-webkit-user-select:none;box-shadow:1px 1px 0 rgba(0,0,0,.4);overflow:hidden}
+  .card.red{color:#c00}.card.blk{color:#000}.card.sel{outline:3px solid #00f;z-index:50}
+  .card .big{position:absolute;right:4px;bottom:2px;font-size:calc(var(--cw)*.5);opacity:.85}
+  .slot.foundation::before{content:attr(data-s);position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:calc(var(--cw)*.55);opacity:.3;color:#fff}
+  #msg{font-weight:bold;margin-left:auto}
+</style></head><body>
+<div id="top"><button id="nw">New Game</button><button id="nm">Game #…</button><button id="un">Undo</button><label><input type="checkbox" id="au" checked> Auto-play</label><span id="msg" role="status"></span></div>
+<div id="board"><div class="row" id="r1"></div><div class="row" id="r2"></div></div>
+<script>
+(function(){
+  var SU=['♣','♦','♥','♠'],RK=['','A','2','3','4','5','6','7','8','9','10','J','Q','K'],RED=function(s){return s===1||s===2;};
+  var T,F,H,sel=null,undo=[],seed=0,won=false;
+  function rng(s){var x=s;return function(){x=(x*214013+2531011)%2147483648;return x>>16;};}
+  function deal(n){
+    seed=n||Math.floor(Math.random()*32000)+1;var r=rng(seed),d=[];for(var s=0;s<4;s++)for(var k=1;k<=13;k++)d.push({r:k,s:s});
+    for(var i=d.length-1;i>0;i--){var j=r()%(i+1),t=d[i];d[i]=d[j];d[j]=t;}
+    T=[[],[],[],[],[],[],[],[]];d.forEach(function(c,i){T[i%8].push(c);});H=[null,null,null,null];F=[0,0,0,0];sel=null;undo=[];won=false;draw();msg('');
+  }
+  function msg(t){document.getElementById('msg').textContent=t;}
+  function snap(){undo.push(JSON.stringify({T:T,H:H,F:F}));if(undo.length>200)undo.shift();}
+  function ok(a,b){return a.r===b.r-1&&RED(a.s)!==RED(b.s);}
+  function maxMove(toEmpty){var fc=H.filter(function(x){return !x;}).length,ec=T.filter(function(c){return !c.length;}).length-(toEmpty?1:0);return (fc+1)*Math.pow(2,Math.max(0,ec));}
+  function seqFrom(col,i){var c=T[col];for(var k=i;k<c.length-1;k++)if(!ok(c[k+1],c[k]))return false;return true;}
+  function draw(){
+    var r1=document.getElementById('r1'),r2=document.getElementById('r2');r1.textContent='';r2.textContent='';
+    for(var i=0;i<4;i++){(function(i){var s=document.createElement('div');s.className='slot';s.setAttribute('aria-label','Free cell '+(i+1));s.onclick=function(){toCell(i);};if(H[i])s.append(mk(H[i],'h',i,0));r1.append(s);})(i);}
+    for(var i=0;i<4;i++){(function(i){var s=document.createElement('div');s.className='slot foundation';s.dataset.s=SU[i];s.onclick=function(){toFound();};if(F[i]){s.append(mk({r:F[i],s:i},'f',i,0));}r1.append(s);})(i);}
+    for(var c=0;c<8;c++){(function(c){var col=document.createElement('div');col.className='col';col.onclick=function(e){if(e.target===col)toCol(c);};
+      T[c].forEach(function(cd,i){var e=mk(cd,'t',c,i);e.style.top='calc(var(--ch)*.28*'+i+')';col.append(e);});col.style.height='calc(var(--ch) + var(--ch)*.28*'+Math.max(0,T[c].length-1)+' + 20px)';r2.append(col);})(c);}
+    check();
+  }
+  function mk(cd,kind,a,i){
+    var e=document.createElement('div');e.className='card '+(RED(cd.s)?'red':'blk');e.innerHTML=RK[cd.r]+SU[cd.s]+'<span class="big">'+SU[cd.s]+'</span>';e.setAttribute('role','button');e.setAttribute('aria-label',RK[cd.r]+' of '+['clubs','diamonds','hearts','spades'][cd.s]);
+    if(sel&&sel.kind===kind&&sel.a===a&&(kind!=='t'||i>=sel.i))e.classList.add('sel');
+    e.onclick=function(ev){ev.stopPropagation();click(kind,a,i,cd);};e.ondblclick=function(ev){ev.stopPropagation();auto1(kind,a,i,cd);};return e;
+  }
+  function click(kind,a,i,cd){
+    if(sel){ // try to move the selection here
+      if(kind==='t'&&i===T[a].length-1)return toCol(a);
+      if(kind==='f')return toFound();
+      if(sel.kind===kind&&sel.a===a&&sel.i===i){sel=null;return draw();}
+    }
+    if(kind==='t'){if(!seqFrom(a,i)){msg("Those cards aren't in sequence.");return;}sel={kind:'t',a:a,i:i};}
+    else if(kind==='h')sel={kind:'h',a:a,i:0};else return;
+    msg('');draw();
+  }
+  function selCards(){if(!sel)return [];return sel.kind==='h'?[H[sel.a]]:T[sel.a].slice(sel.i);}
+  function removeSel(){if(sel.kind==='h')H[sel.a]=null;else T[sel.a].splice(sel.i);}
+  function toCol(c){
+    if(!sel){return;}var cs=selCards(),dest=T[c];if(sel.kind==='t'&&sel.a===c){sel=null;return draw();}
+    if(cs.length>maxMove(!dest.length)){msg('Not enough free cells to move that many cards.');return;}
+    if(dest.length&&!ok(cs[0],dest[dest.length-1])){msg('That move is not allowed.');return;}
+    snap();removeSel();T[c]=dest.concat(cs);sel=null;draw();autoplay();
+  }
+  function toCell(i){
+    if(!sel){return;}if(H[i]){if(sel.kind==='h'&&sel.a===i){sel=null;draw();}return;}var cs=selCards();if(cs.length!==1){msg('Only one card fits in a free cell.');return;}
+    snap();removeSel();H[i]=cs[0];sel=null;draw();autoplay();
+  }
+  function canFound(cd){return F[cd.s]===cd.r-1;}
+  function toFound(){if(!sel)return;var cs=selCards();if(cs.length!==1||!canFound(cs[0])){msg('That card cannot go to a foundation yet.');return;}snap();var cd=cs[0];removeSel();F[cd.s]=cd.r;sel=null;draw();autoplay();}
+  function auto1(kind,a,i,cd){if(kind==='t'&&i!==T[a].length-1)return;if(!canFound(cd))return;sel={kind:kind,a:a,i:i};toFound();}
+  function autoplay(){
+    if(!document.getElementById('au').checked)return;
+    var min=function(red){var m=99;for(var s=0;s<4;s++)if(RED(s)===red)m=Math.min(m,F[s]);return m;};
+    function safe(c){return c.r<=2||(c.r<=min(!RED(c.s))+2);}
+    for(var c=0;c<8;c++){var l=T[c][T[c].length-1];if(l&&canFound(l)&&safe(l)){snap();T[c].pop();F[l.s]=l.r;draw();return setTimeout(autoplay,120);}}
+    for(var i=0;i<4;i++){var h=H[i];if(h&&canFound(h)&&safe(h)){snap();H[i]=null;F[h.s]=h.r;draw();return setTimeout(autoplay,120);}}
+  }
+  function check(){if(!won&&F.every(function(x){return x===13;})){won=true;msg('You win!');try{parent.GHShell.emit('win:freecell');}catch(e){}}}
+  document.getElementById('nw').onclick=function(){deal();};
+  document.getElementById('nm').onclick=function(){var n=parseInt(prompt('Game number (1-32000):',seed),10);if(n>0&&n<=32000)deal(n);};
+  document.getElementById('un').onclick=function(){if(!undo.length)return;var o=JSON.parse(undo.pop());T=o.T;H=o.H;F=o.F;sel=null;won=false;msg('');draw();};
+  var nm=document.getElementById('nm');var od=draw;draw=function(){od();nm.textContent='Game #'+seed;};
+  deal();
+})();
+</script></body></html>

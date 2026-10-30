@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Internet Explorer</title>
+  
+  
+  <style>
+    :root {
+      --win-bg: #c0c0c0;
+      --win-blue: #000080;
+      --win-text-dark: #000000;
+      --win-text-light: #ffffff;
+      --win-border-light: #ffffff;
+      --win-border-dark: #808080;
+      --win-border-darker: #000000;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      border-radius: 0;
+      font-family: "MS Sans Serif", Tahoma, Arial, sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      background-color: var(--win-bg);
+      overflow: hidden;
+      cursor: default;
+      user-select: none;
+    }
+
+    /* Main Window Shell */
+    .app-shell {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      background-color: var(--win-bg);
+      color: var(--win-text-dark);
+      /* Base border removed so it fits cleanly in an iframe wrapper */
+    }
+
+    /* Title Bar */
+    .panel-title-bar {
+      background: var(--win-blue);
+      color: var(--win-text-light);
+      font-size: 13px;
+      font-weight: bold;
+      padding: 3px 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .panel-title-bar .win-btns {
+      display: inline-flex;
+      gap: 2px;
+    }
+
+    button.win-btn {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      padding: 0;
+      width: 16px;
+      height: 14px;
+      background: var(--win-bg);
+      border-top: 1px solid var(--win-border-light);
+      border-left: 1px solid var(--win-border-light);
+      border-right: 1px solid var(--win-border-darker);
+      border-bottom: 1px solid var(--win-border-darker);
+      box-shadow: inset -1px -1px 0 var(--win-border-dark), inset 1px 1px 0 #dfdfdf;
+      font-size: 9px;
+      font-weight: bold;
+      color: var(--win-text-dark);
+      cursor: pointer;
+    }
+    button.win-btn:active {
+      border-top: 1px solid var(--win-border-darker);
+      border-left: 1px solid var(--win-border-darker);
+      border-right: 1px solid var(--win-border-light);
+      border-bottom: 1px solid var(--win-border-light);
+      box-shadow: inset 1px 1px 0 var(--win-border-dark);
+      padding: 1px 0 0 1px;
+    }
+
+    /* Toolbar Area */
+    .toolbar {
+      padding: 6px;
+      border-bottom: 1px solid var(--win-border-dark);
+      box-shadow: 0 1px 0 var(--win-border-light);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .address-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .address-bar .search-input {
+      min-width: 120px;
+    }
+
+    .address-label {
+      font-size: 12px;
+      color: var(--win-text-dark);
+    }
+
+    .search-input {
+      flex-grow: 1;
+      background: var(--win-text-light);
+      border-top: 1px solid var(--win-border-darker);
+      border-left: 1px solid var(--win-border-darker);
+      border-right: 1px solid var(--win-border-light);
+      border-bottom: 1px solid var(--win-border-light);
+      box-shadow: inset 1px 1px 0 var(--win-border-dark);
+      padding: 3px 5px;
+      font-size: 13px;
+      color: var(--win-text-dark);
+      outline: none;
+      user-select: text;
+    }
+    .search-input:focus {
+      background: #ffffff;
+    }
+
+    .win95-btn {
+      background-color: var(--win-bg);
+      color: var(--win-text-dark);
+      font-size: 12px;
+      padding: 2px 10px;
+      border-top: 1px solid var(--win-border-light);
+      border-left: 1px solid var(--win-border-light);
+      border-right: 1px solid var(--win-border-darker);
+      border-bottom: 1px solid var(--win-border-darker);
+      box-shadow: inset -1px -1px 0 var(--win-border-dark), inset 1px 1px 0 #dfdfdf;
+      cursor: pointer;
+    }
+    .win95-btn:active {
+      border-top: 1px solid var(--win-border-darker);
+      border-left: 1px solid var(--win-border-darker);
+      border-right: 1px solid var(--win-border-light);
+      border-bottom: 1px solid var(--win-border-light);
+      box-shadow: inset 1px 1px 0 var(--win-border-dark);
+      padding: 3px 9px 1px 11px;
+    }
+
+    /* Internal applet tabs: links open here instead of creating real browser tabs. */
+    .tab-strip {
+      display: flex;
+      align-items: stretch;
+      gap: 3px;
+      min-height: 27px;
+      padding: 4px 6px 0;
+      border-bottom: 1px solid var(--win-border-dark);
+      box-shadow: 0 1px 0 var(--win-border-light);
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: thin;
+    }
+
+    .applet-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+      max-width: 220px;
+      min-width: 82px;
+      height: 22px;
+      padding: 2px 6px;
+      font-size: 11px;
+      color: var(--win-text-dark);
+      background: #b8b8b8;
+      border: 1px solid var(--win-border-dark);
+      border-bottom: 0;
+      cursor: pointer;
+    }
+
+    .applet-tab.active {
+      background: var(--win-text-light);
+      border-top: 1px solid var(--win-border-light);
+      border-left: 1px solid var(--win-border-light);
+      position: relative;
+      top: 1px;
+      font-weight: bold;
+    }
+
+    .applet-tab-title {
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .applet-tab-close {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      width: 13px;
+      height: 13px;
+      border: 1px solid transparent;
+      background: transparent;
+      font-size: 12px;
+      line-height: 10px;
+      cursor: pointer;
+    }
+
+    .applet-tab-close:hover { border-color: var(--win-border-dark); }
+
+    .new-applet-tab {
+      width: 23px;
+      min-width: 23px;
+      height: 22px;
+      padding: 0;
+      font-size: 16px;
+      line-height: 16px;
+    }
+
+    /* Content Area */
+    .viewport-container {
+      flex-grow: 1;
+      position: relative;
+      border-top: 2px solid var(--win-border-dark);
+      border-left: 2px solid var(--win-border-dark);
+      border-right: 2px solid var(--win-border-light);
+      border-bottom: 2px solid var(--win-border-light);
+      background-color: var(--win-text-light);
+      overflow: hidden;
+      margin: 4px;
+    }
+
+    #proxy-frame {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background-color: var(--win-text-light);
+    }
+
+    .overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(192, 192, 192, 0.85);
+      display: none;
+      justify-content: center;
+      align-items: center;
+      z-index: 10;
+    }
+
+    .dialog-box {
+      background: var(--win-bg);
+      border-top: 2px solid var(--win-border-light);
+      border-left: 2px solid var(--win-border-light);
+      border-right: 2px solid var(--win-border-darker);
+      border-bottom: 2px solid var(--win-border-darker);
+      box-shadow: inset -1px -1px 0 var(--win-border-dark), 2px 2px 5px rgba(0,0,0,0.5);
+      width: 320px;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .dialog-title {
+      background: var(--win-blue);
+      color: var(--win-text-light);
+      padding: 3px 6px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .dialog-content {
+      padding: 15px;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* Fake Windows 95 Progress Bar */
+    .progress-bar-container {
+      width: 100%;
+      height: 18px;
+      border-top: 1px solid var(--win-border-darker);
+      border-left: 1px solid var(--win-border-darker);
+      border-right: 1px solid var(--win-border-light);
+      border-bottom: 1px solid var(--win-border-light);
+      background: var(--win-text-light);
+      padding: 1px;
+      display: flex;
+      gap: 2px;
+      overflow: hidden;
+    }
+    
+    .progress-block {
+      width: 10px;
+      height: 100%;
+      background-color: var(--win-blue);
+      animation: progress-blink 1s infinite alternate;
+    }
+
+    @keyframes progress-blink {
+      0% { opacity: 0.3; }
+      100% { opacity: 1; }
+    }
+
+    .error-text {
+      color: #cc0000;
+      font-weight: bold;
+    }
+
+    .fallback-link {
+      color: var(--win-blue);
+      text-decoration: underline;
+      cursor: pointer;
+      word-break: break-all;
+    }
+
+    .dialog-buttons {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    /* Status Bar */
+    .status-bar {
+      height: 22px;
+      border-top: 1px solid var(--win-border-light);
+      display: flex;
+      padding: 2px;
+      gap: 2px;
+    }
+
+    .status-pane {
+      border-top: 1px solid var(--win-border-dark);
+      border-left: 1px solid var(--win-border-dark);
+      border-right: 1px solid var(--win-border-light);
+      border-bottom: 1px solid var(--win-border-light);
+      padding: 2px 6px;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .status-pane-main {
+      flex-grow: 1;
+    }
+    
+    .status-pane-icon {
+      width: 80px;
+      justify-content: center;
+    }
+  
+    /* ===== Internet Explorer look ===== */
+    body{font-family:Tahoma,"MS Sans Serif",Arial,sans-serif}
+    .ie-menubar{display:flex;align-items:center;background:#d4d0c8;border-bottom:1px solid #808080;box-shadow:0 1px #fff;padding:1px 2px;gap:0;position:relative}
+    .ie-menu{background:none;border:1px solid transparent;font-size:12px;padding:2px 8px;color:#000;cursor:default}
+    .ie-menu:hover,.ie-menu.on{border-color:#fff #808080 #808080 #fff}.ie-menu.on{border-color:#808080 #fff #fff #808080}
+    .ie-throb{margin-left:auto;display:flex;align-items:center;padding:0 6px;border-left:1px solid #808080;box-shadow:-1px 0 #fff}
+    body.loading .ie-throb svg{animation:ieSpin 1.4s linear infinite}
+    @keyframes ieSpin{to{transform:rotate(360deg)}}
+    .ie-toolbar{display:flex;align-items:stretch;background:#d4d0c8;border-bottom:1px solid #808080;box-shadow:0 1px #fff;padding:2px 3px 2px 9px;gap:1px;flex-wrap:wrap;position:relative}
+    .ie-toolbar::before{content:"";position:absolute;left:3px;top:3px;bottom:3px;width:3px;border-left:1px solid #fff;border-right:1px solid #808080}
+    .ie-tb{display:flex;flex-direction:column;align-items:center;gap:1px;background:none;border:1px solid transparent;padding:2px 6px;min-width:48px;font-size:11px;color:#000;cursor:default}
+    .ie-tb:hover:not(:disabled){border-color:#fff #808080 #808080 #fff}.ie-tb:active:not(:disabled){border-color:#808080 #fff #fff #808080}
+    .ie-tb:disabled{opacity:.45;filter:grayscale(1)}.ie-tb svg{display:block}
+    .ie-sep{width:2px;margin:2px 4px;border-left:1px solid #808080;border-right:1px solid #fff}
+    .ie-address{display:flex;align-items:center;gap:6px;background:#d4d0c8;border-bottom:1px solid #808080;box-shadow:0 1px #fff;padding:3px 4px 3px 9px}
+    .ie-addr-wrap{flex:1;display:flex;align-items:center;background:#fff;border:2px inset #808080;padding:0 3px;min-width:0}
+    .ie-addr-wrap .search-input{flex:1;border:0!important;box-shadow:none!important;background:transparent!important;min-width:0;font-size:13px;padding:2px 3px;user-select:text;outline:0}
+    .ie-page-ico{width:16px;height:16px;flex:none}
+    .ie-go{display:inline-flex;align-items:center;gap:3px}.ie-go-arrow{color:#14602a;font-weight:bold;font-size:15px}
+    .ie-links{display:flex;align-items:center;background:#d4d0c8;border-bottom:2px solid #808080;padding:1px 4px 1px 9px;gap:2px;overflow:hidden;white-space:nowrap}
+    .ie-links-label{font-size:11px;color:#444;margin-right:4px}
+    .ie-link{background:none;border:1px solid transparent;font-size:11px;padding:1px 7px;color:#000;cursor:default}
+    .ie-link:hover{border-color:#fff #808080 #808080 #fff}
+    .ie-pop{position:absolute;z-index:40;background:#d4d0c8;border:2px outset #fff;box-shadow:2px 2px 0 rgba(0,0,0,.4);min-width:210px;max-width:min(360px,92vw);max-height:60vh;overflow:auto;padding:2px;font-size:12px}
+    .ie-pop[hidden]{display:none}
+    .ie-pop button{display:block;width:100%;text-align:left;background:none;border:0;padding:3px 18px 3px 10px;font-size:12px;cursor:default;color:#000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ie-pop button:hover{background:#000080;color:#fff}.ie-pop hr{border:0;border-top:1px solid #808080;border-bottom:1px solid #fff;margin:3px 1px}.ie-pop .hd{padding:2px 8px;color:#555;font-size:11px}
+    .tab-strip{background:#d4d0c8!important;padding:3px 4px 0!important;gap:2px}
+    .applet-tab{font-size:11px!important}
+    .ie-progress{flex:none!important;width:120px;padding:2px!important}#ie-pbar{height:100%;width:0;background:#000080;transition:width .25s}
+    body.loading #ie-pbar{width:100%;transition:width 6s linear}
+    .status-bar{background:#d4d0c8}
+  </style>
+</head>
+<body>
+
+  <div class="app-shell">
+    
+    <div class="ie-menubar" role="menubar" aria-label="Menu">
+      <button type="button" class="ie-menu" data-menu="file"><u>F</u>ile</button><button type="button" class="ie-menu" data-menu="edit"><u>E</u>dit</button><button type="button" class="ie-menu" data-menu="view"><u>V</u>iew</button><button type="button" class="ie-menu" data-menu="fav"><u>F</u>avorites</button><button type="button" class="ie-menu" data-menu="tools"><u>T</u>ools</button><button type="button" class="ie-menu" data-menu="help"><u>H</u>elp</button>
+      <span class="ie-throb" id="throbber" title="Activity indicator" aria-hidden="true"><svg viewBox="0 0 40 40" width="34" height="34"><circle cx="20" cy="20" r="17" fill="#2a7fd4" stroke="#0a3b8f" stroke-width="2"/><path d="M6 20h28M20 3c-8 8-8 26 0 34M20 3c8 8 8 26 0 34M9 11c8 4 14 4 22 0M9 29c8-4 14-4 22 0" fill="none" stroke="#bfe0ff" stroke-width="1.4"/><path d="M8 24c4-6 8-3 11-8s5-6 8-4" fill="none" stroke="#3fbf5a" stroke-width="5" stroke-linecap="round" class="ie-land"/></svg></span>
+    </div>
+    <div class="ie-toolbar" role="toolbar" aria-label="Browser buttons">
+      <button type="button" class="ie-tb" id="back-btn" title="Back" disabled><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#3fbf5a" stroke="#14602a" stroke-width="1.5"/><path d="M14 6l-6 6 6 6" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Back</span></button>
+      <button type="button" class="ie-tb" id="fwd-btn" title="Forward" disabled><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#3fbf5a" stroke="#14602a" stroke-width="1.5"/><path d="M10 6l6 6-6 6" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Forward</span></button>
+      <button type="button" class="ie-tb" id="stop-btn" title="Stop"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="12" cy="12" r="10" fill="#e24b4b" stroke="#7a1010" stroke-width="1.5"/><path d="M8 8l8 8M16 8l-8 8" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg><span>Stop</span></button>
+      <button type="button" class="ie-tb" id="refresh-btn" title="Refresh"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M19 12a7 7 0 1 1-2.2-5.100" fill="none" stroke="#14602a" stroke-width="3.2" stroke-linecap="round"/><path d="M20 3v6h-6z" fill="#14602a"/></svg><span>Refresh</span></button>
+      <button type="button" class="ie-tb" id="home-btn" title="Home"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M3 12L12 3l9 9" fill="none" stroke="#7a3b10" stroke-width="2.4" stroke-linejoin="round"/><path d="M6 11v9h4v-6h4v6h4v-9" fill="#e8b060" stroke="#7a3b10" stroke-width="1.6" stroke-linejoin="round"/></svg><span>Home</span></button>
+      <span class="ie-sep"></span>
+      <button type="button" class="ie-tb" id="search-btn" title="Search"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="10" cy="10" r="6" fill="#cfeaff" stroke="#0a3b8f" stroke-width="2.2"/><path d="M15 15l6 6" stroke="#0a3b8f" stroke-width="3.5" stroke-linecap="round"/></svg><span>Search</span></button>
+      <button type="button" class="ie-tb" id="favs-btn" title="Favorites"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M12 2l3 7 7 .6-5.400 4.700 1.700 7.200L12 17.700 5.700 21.500l1.700-7.200L2 9.600 9 9z" fill="#ffd400" stroke="#8a6a00" stroke-width="1.5" stroke-linejoin="round"/></svg><span>Favorites</span></button>
+      <button type="button" class="ie-tb" id="hist-btn" title="History"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="12" cy="12" r="9.500" fill="#fff" stroke="#0a3b8f" stroke-width="2"/><path d="M12 6v6l4 2" fill="none" stroke="#0a3b8f" stroke-width="2.4" stroke-linecap="round"/></svg><span>History</span></button>
+    </div>
+    <div class="ie-address">
+      <span class="address-label"><u>A</u>ddress</span>
+      <div class="ie-addr-wrap"><img class="ie-page-ico" alt="" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 1h7l3 3v11H3z' fill='%23fff' stroke='%23000'/%3E%3Cpath d='M5 8h6M5 10h6M5 12h4' stroke='%23000080'/%3E%3C/svg%3E"><input type="text" id="url-input" class="search-input" placeholder="Type an address or some words to search" value="about:home" autocomplete="off" spellcheck="false" /></div>
+      <button type="button" id="go-btn" class="win95-btn ie-go"><span class="ie-go-arrow">&rarr;</span> Go</button>
+      <button type="button" id="direct-btn" class="win95-btn" title="Manually open the address outside the applet">Open Direct</button>
+    </div>
+    <div class="ie-links" role="toolbar" aria-label="Links"><span class="ie-links-label">Links</span>
+      <button type="button" class="ie-link" data-go="about:home">ColtonNet</button><button type="button" class="ie-link" data-go="https://en.wikipedia.org/">Wikipedia</button><button type="button" class="ie-link" data-go="https://archive.org/">Internet Archive</button><button type="button" class="ie-link" data-go="https://wiby.me/">Wiby</button><button type="button" class="ie-link" data-go="https://example.com/">Example</button>
+    </div>
+    <div class="ie-pop" id="ie-pop" hidden role="menu"></div>
+
+    <div class="tab-strip" id="tab-strip" role="tablist" aria-label="Applet browser tabs">
+      <button type="button" class="applet-tab active" data-tab-id="1" role="tab" aria-selected="true">
+        <span class="applet-tab-title">Example Domain</span>
+        <span class="applet-tab-close" role="button" aria-label="Close tab" title="Close tab">×</span>
+      </button>
+      <button type="button" class="win95-btn new-applet-tab" id="new-tab-btn" title="New tab" aria-label="New tab">+</button>
+    </div>
+    
+    <div class="viewport-container">
+      
+      <!-- Remote pages are sandboxed; all ordinary links are routed to applet tabs. -->
+      <iframe id="proxy-frame" title="Proxied webpage" sandbox="allow-scripts allow-forms allow-downloads allow-modals allow-pointer-lock allow-presentation" src="about:blank"></iframe>
+      
+      <div id="loading-overlay" class="overlay">
+        <div class="dialog-box">
+          <div class="dialog-title">Downloading...</div>
+          <div class="dialog-content">
+            <span id="loading-text">Connecting to site...</span>
+            <div class="progress-bar-container" id="progress-container">
+              <!-- Blocks generated via JS to look like Win95 -->
+            </div>
+            <div class="dialog-buttons">
+              <button type="button" class="win95-btn" id="cancel-load-btn">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="error-overlay" class="overlay">
+        <div class="dialog-box">
+          <div class="dialog-title">Navigation Canceled</div>
+          <div class="dialog-content">
+            <span class="error-text" id="error-summary">The page could not be loaded through the available public proxies.</span>
+            <span id="error-detail">Some websites block proxy traffic, require cookies, or use features that cannot run inside an embedded page.</span>
+            <a id="fallback-link" class="fallback-link" href="#"></a>
+            <div class="dialog-buttons">
+              <button type="button" class="win95-btn" id="open-error-direct-btn">Open Directly</button>
+              <button type="button" class="win95-btn" id="close-error-btn">OK</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="status-bar">
+      <div class="status-pane status-pane-main" id="status-text">Done</div>
+      <div class="status-pane ie-progress"><div id="ie-pbar"></div></div>
+      <div class="status-pane status-pane-icon">🌐 Internet</div>
+    </div>
+
+  </div>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const urlInput = document.getElementById('url-input');
+      const goBtn = document.getElementById('go-btn');
+      const directBtn = document.getElementById('direct-btn');
+      const proxyFrame = document.getElementById('proxy-frame');
+      const tabStrip = document.getElementById('tab-strip');
+      const newTabBtn = document.getElementById('new-tab-btn');
+
+      const loadingOverlay = document.getElementById('loading-overlay');
+      const loadingText = document.getElementById('loading-text');
+      const progressContainer = document.getElementById('progress-container');
+      const cancelBtn = document.getElementById('cancel-load-btn');
+      const errorOverlay = document.getElementById('error-overlay');
+      const errorSummary = document.getElementById('error-summary');
+      const errorDetail = document.getElementById('error-detail');
+      const fallbackLink = document.getElementById('fallback-link');
+      const openErrorDirectBtn = document.getElementById('open-error-direct-btn');
+      const closeErrorBtn = document.getElementById('close-error-btn');
+      const statusText = document.getElementById('status-text');
+
+      // Public proxies are fallbacks, not guaranteed infrastructure. Each one
+      // may be rate-limited or block a particular origin, so try them in turn.
+      const PROXIES = [
+        {
+          name: 'CORS.dev',
+          url: target => 'https://proxy.cors.dev/' + target
+        },
+        {
+          name: 'AllOrigins',
+          url: target => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(target)
+        },
+        {
+          name: 'CodeTabs',
+          url: target => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(target)
+        }
+      ];
+      const PROXY_TIMEOUT_MS = 12000;
+      let activeProxy = PROXIES[0];
+
+      let activeController = null;
+      let progressInterval = null;
+      let navigationToken = 0;
+      let lastTargetUrl = 'about:home';
+      let nextTabId = 2;
+      let activeTabId = 1;
+      const tabs = [{ id: 1, url: 'about:home', title: 'ColtonNet Start Page', hist: ['about:home'], hi: 0 }];
+
+      const getActiveTab = () => tabs.find(tab => tab.id === activeTabId) || tabs[0];
+
+      const titleForUrl = rawUrl => {
+        try {
+          const url = new URL(rawUrl);
+          return url.hostname.replace(/^www\./i, '') || 'New Tab';
+        } catch (_) { return 'New Tab'; }
+      };
+
+      const renderTabs = () => {
+        tabStrip.querySelectorAll('.applet-tab').forEach(node => node.remove());
+        for (const tab of tabs) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'applet-tab' + (tab.id === activeTabId ? ' active' : '');
+          button.dataset.tabId = String(tab.id);
+          button.setAttribute('role', 'tab');
+          button.setAttribute('aria-selected', tab.id === activeTabId ? 'true' : 'false');
+          button.title = tab.url;
+
+          const title = document.createElement('span');
+          title.className = 'applet-tab-title';
+          title.textContent = tab.title || titleForUrl(tab.url);
+          if (tab.url === 'about:home') title.textContent = 'ColtonNet Start Page';
+          button.appendChild(title);
+
+          const close = document.createElement('span');
+          close.className = 'applet-tab-close';
+          close.setAttribute('role', 'button');
+          close.setAttribute('aria-label', 'Close tab');
+          close.title = 'Close tab';
+          close.textContent = '×';
+          button.appendChild(close);
+          tabStrip.insertBefore(button, newTabBtn);
+        }
+      };
+
+      const createTab = (rawUrl, title) => {
+        if (!rawUrl) rawUrl = 'about:home';
+        let url;
+        try { url = normaliseUrl(rawUrl); }
+        catch (error) {
+          showError(String(rawUrl || ''), 'That address is not valid.', error.message);
+          return;
+        }
+        const tab = { id: nextTabId++, url, title: title || titleForUrl(url), hist: [], hi: -1 };
+        tabs.push(tab);
+        activeTabId = tab.id;
+        renderTabs();
+        navigate(url);
+      };
+
+      const activateTab = tabId => {
+        const tab = tabs.find(item => item.id === tabId);
+        if (!tab || tab.id === activeTabId) return;
+        activeTabId = tab.id;
+        renderTabs();
+        navigate(tab.url, { noHistory: true });
+      };
+
+      const closeTab = tabId => {
+        if (tabs.length <= 1) {
+          const tab = tabs[0];
+          tab.url = 'about:home';
+          tab.title = 'ColtonNet Start Page'; tab.hist = ['about:home']; tab.hi = 0;
+          activeTabId = tab.id;
+          renderTabs();
+          navigate(tab.url);
+          return;
+        }
+        const index = tabs.findIndex(tab => tab.id === tabId);
+        if (index < 0) return;
+        const wasActive = tabs[index].id === activeTabId;
+        tabs.splice(index, 1);
+        if (wasActive) {
+          const replacement = tabs[Math.min(index, tabs.length - 1)];
+          activeTabId = replacement.id;
+          renderTabs();
+          navigate(replacement.url, { noHistory: true });
+        } else {
+          renderTabs();
+        }
+      };
+
+      const renderProgressBar = () => {
+        progressContainer.innerHTML = '';
+        let blocks = 0;
+        clearInterval(progressInterval);
+        progressInterval = setInterval(() => {
+          if (blocks < 25) {
+            const block = document.createElement('div');
+            block.className = 'progress-block';
+            progressContainer.appendChild(block);
+            blocks++;
+          }
+        }, 180);
+      };
+
+      const resetUI = () => {
+        document.body.classList.remove('loading');
+        clearInterval(progressInterval);
+        progressInterval = null;
+        loadingOverlay.style.display = 'none';
+        errorOverlay.style.display = 'none';
+      };
+
+      const cancelActiveRequest = () => {
+        if (activeController) {
+          activeController.abort();
+          activeController = null;
+        }
+      };
+
+      const normaliseUrl = raw => {
+        let value = String(raw || '').trim();
+        if (!value) throw new Error('Enter a website address first.');
+        if (/^(about:home|about:blank|home)$/i.test(value)) return 'about:home';
+        if (!/^https?:\/\//i.test(value)) {
+          // like the old autosearch: words with spaces (or no dot) become a web search
+          if (/\s/.test(value) || (!/\./.test(value) && !/^localhost(:|\/|$)/i.test(value))) return 'https://duckduckgo.com/html/?q=' + encodeURIComponent(value);
+          value = 'https://' + value;
+        }
+
+        const parsed = new URL(value);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          throw new Error('Only HTTP and HTTPS pages are allowed.');
+        }
+        if (parsed.username || parsed.password) {
+          throw new Error('URLs containing embedded credentials are blocked.');
+        }
+        return parsed.href;
+      };
+
+      const showError = (url, summary, detail) => {
+        resetUI();
+        errorSummary.textContent = summary || 'The page could not be loaded through the available public proxies.';
+        errorDetail.textContent = detail || 'This site may block proxy traffic or depend on browser features that a proxy cannot reproduce.';
+        fallbackLink.href = url;
+        fallbackLink.textContent = url;
+        fallbackLink.rel = 'noopener noreferrer';
+        errorOverlay.style.display = 'flex';
+        statusText.textContent = 'Unable to load through proxy.';
+      };
+
+      const escapeAttribute = value => String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+      // The proxied HTML lives in an opaque-origin sandbox. Its bridge can
+      // request navigation via postMessage, but cannot read this applet's DOM.
+      const makeBridgeScript = (target, proxyName) => {
+        const safeTarget = JSON.stringify(target).replace(/</g, '\\u003c');
+        const safeProxyName = JSON.stringify(proxyName || 'CORS.dev').replace(/</g, '\\u003c');
+        return `
+<script>
+(() => {
+  const proxyTarget = ${safeTarget};
+  const proxyName = ${safeProxyName};
+  const proxyUrl = url => {
+    const value = String(url);
+    if (proxyName === 'AllOrigins') return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(value);
+    if (proxyName === 'CodeTabs') return 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(value);
+    return 'https://proxy.cors.dev/' + value;
+  };
+  const postToBrowser = (url, method = 'GET', action = 'navigate') => {
+    try {
+      const resolved = new URL(url, document.baseURI);
+      if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') return;
+      parent.postMessage({ __win95ProxyApplet: true, action, url: resolved.href, method }, '*');
+    } catch (_) {}
+  };
+  // Route common JavaScript network requests through the same public proxy.
+  // This helps many games load API/configuration resources, though some APIs
+  // require cookies, WebSockets, or headers public proxies cannot provide.
+  const proxify = value => {
+    try {
+      const resolved = new URL(value, document.baseURI);
+      if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') return value;
+      if (resolved.hostname === 'proxy.cors.dev' || resolved.hostname === 'api.allorigins.win' || resolved.hostname === 'api.codetabs.com') return resolved.href;
+      return proxyUrl(resolved.href);
+    } catch (_) { return value; }
+  };
+  const nativeFetch = window.fetch ? window.fetch.bind(window) : null;
+  if (nativeFetch) window.fetch = (input, init) => {
+    try {
+      if (input instanceof Request) return nativeFetch(new Request(proxify(input.url), input), init);
+      return nativeFetch(proxify(String(input)), init);
+    } catch (_) { return nativeFetch(input, init); }
+  };
+  const nativeXhrOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+    return nativeXhrOpen.call(this, method, proxify(String(url)), ...rest);
+  };
+  // Sites often use window.open for game windows and search results. Keep those
+  // inside this applet as a new internal tab; never create a real browser popup.
+  window.open = function(url) {
+    if (url && String(url) !== 'about:blank') postToBrowser(url, 'GET', 'new-tab');
+    return null;
+  };
+  // Meta refresh redirects can be handled before they escape to a direct URL.
+  const refreshMeta = document.querySelector('meta[http-equiv="refresh" i]');
+  if (refreshMeta) {
+    const match = String(refreshMeta.content || '').match(/url\s*=\s*['\"]?([^'\"]+)/i);
+    if (match) {
+      refreshMeta.remove();
+      postToBrowser(match[1].trim(), 'GET');
+    }
+  }
+  const handleLinkActivation = event => {
+    if (event.defaultPrevented) return;
+    if (event.type === 'click' && event.button !== 0) return;
+    if (event.type === 'auxclick' && event.button !== 1) return;
+    const link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
+    if (!link || link.hasAttribute('download')) return;
+    const rawHref = link.getAttribute('href');
+    if (!rawHref || /^\s*javascript:/i.test(rawHref) || /^\s*mailto:/i.test(rawHref) || /^\s*tel:/i.test(rawHref)) return;
+    let resolved;
+    try { resolved = new URL(rawHref, document.baseURI); } catch (_) { return; }
+    if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') return;
+    // Every normal web link opens as a new tab in the applet, even links marked
+    // target=_blank and Ctrl/Cmd-clicks. Same-page anchors are included too.
+    event.preventDefault();
+    event.stopPropagation();
+    postToBrowser(resolved.href, 'GET', 'new-tab');
+  };
+  document.addEventListener('click', handleLinkActivation, true);
+  document.addEventListener('auxclick', handleLinkActivation, true);
+  document.addEventListener('submit', event => {
+    const form = event.target;
+    if (!form || !form.tagName || form.tagName.toLowerCase() !== 'form') return;
+    const method = String(form.method || 'get').toUpperCase();
+    let action;
+    try { action = new URL(form.getAttribute('action') || proxyTarget, document.baseURI); } catch (_) { return; }
+    if (method !== 'GET') {
+      event.preventDefault();
+      parent.postMessage({ __win95ProxyApplet: true, action: 'unsupported-form', method }, '*');
+      return;
+    }
+    event.preventDefault();
+    const params = new URLSearchParams(new FormData(form));
+    for (const [key, value] of params.entries()) action.searchParams.append(key, value);
+    postToBrowser(action.href, 'GET');
+  }, true);
+})();
+<\/script>`;
+      };
+
+      const proxyAssetUrl = (raw, baseUrl, proxy = activeProxy) => {
+        const value = String(raw || '').trim();
+        if (!value || value.startsWith('#') || /^(data:|blob:|javascript:|mailto:|tel:)/i.test(value)) return value;
+        try {
+          const absolute = new URL(value, baseUrl || window.__proxyCurrentTarget || lastTargetUrl);
+          if (absolute.protocol !== 'http:' && absolute.protocol !== 'https:') return value;
+          // Use the same proxy that successfully served the document. Mixing proxy
+          // providers often breaks relative CSS URLs and CDN asset requests.
+          return proxy.url(absolute.href);
+        } catch (_) { return value; }
+      };
+
+      const rewriteSrcset = value => String(value || '').split(',').map(candidate => {
+        const parts = candidate.trim().split(/\s+/);
+        if (parts[0]) parts[0] = proxyAssetUrl(parts[0]);
+        return parts.join(' ');
+      }).join(', ');
+
+      const prepareDocument = async (rawHtml, targetUrl, proxy) => {
+        let page = String(rawHtml || '');
+        // Remove response-equivalent meta policies that otherwise interfere
+        // with a document reconstructed from the proxy response.
+        page = page.replace(/<meta\b[^>]*http-equiv\s*=\s*(['"]?)content-security-policy\1[^>]*>/gi, '');
+        page = page.replace(/<meta\b[^>]*http-equiv\s*=\s*(['"]?)x-frame-options\1[^>]*>/gi, '');
+        page = page.replace(/<base\b[^>]*>/gi, '');
+        page = page.replace(/\s+crossorigin\s*=\s*(['"]).*?\1/gi, '');
+
+        // Rewrite common static asset attributes, but leave ordinary links and
+        // form actions alone: those are routed by the navigation bridge.
+        page = page.replace(/\b(src|poster|data-src|data-original|data-lazy-src)\s*=\s*(["'])(.*?)\2/gi,
+          (whole, attr, quote, value) => `${attr}=${quote}${escapeAttribute(proxyAssetUrl(value))}${quote}`);
+        page = page.replace(/\bsrcset\s*=\s*(["'])(.*?)\1/gi,
+          (whole, quote, value) => `srcset=${quote}${escapeAttribute(rewriteSrcset(value))}${quote}`);
+        page = page.replace(/\bstyle\s*=\s*(["'])(.*?)\1/gi, (whole, quote, value) => {
+          const rewritten = value.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi,
+            (match, q, url) => `url("${escapeAttribute(proxyAssetUrl(url))}")`);
+          return `style=${quote}${rewritten}${quote}`;
+        });
+        page = page.replace(/url\(\s*(['"]?)(.*?)\1\s*\)/gi,
+          (whole, quote, url) => `url("${escapeAttribute(proxyAssetUrl(url))}")`);
+
+        // Resolve assets using the successful document proxy. CSS is fetched and
+        // inlined so url(...) references resolve against the stylesheet's original
+        // URL rather than the public proxy's URL (a common cause of missing images/fonts).
+        const cssLinks = [];
+        page = page.replace(/<link\b([^>]*?)\bhref\s*=\s*(["'])(.*?)\2([^>]*)>/gi,
+          (whole, before, quote, href, after) => {
+            const rel = ((before + ' ' + after).match(/\brel\s*=\s*(["'])(.*?)\1/i) || [,'',''])[2].toLowerCase();
+            if (/stylesheet/.test(rel)) {
+              const marker = `__APPLET_CSS_${cssLinks.length}__`;
+              try { cssLinks.push({ marker, url: new URL(href, targetUrl).href }); return marker; }
+              catch (_) { return whole; }
+            }
+            if (/icon|preload|modulepreload|manifest|prefetch|apple-touch-icon/.test(rel)) {
+              return `<link${before}href=${quote}${escapeAttribute(proxyAssetUrl(href, targetUrl, proxy))}${quote}${after}>`;
+            }
+            return whole;
+          });
+
+        const cssFetch = async url => {
+          const response = await fetch(proxy.url(url), { credentials: 'omit', cache: 'no-store' });
+          if (!response.ok) throw new Error('CSS request failed: ' + response.status);
+          return response.text();
+        };
+        for (const item of cssLinks) {
+          let replacement = '';
+          try {
+            let css = await cssFetch(item.url);
+            css = css.replace(/url\(\s*(["']?)(.*?)\1\s*\)/gi, (whole, q, resource) => {
+              const trimmed = resource.trim();
+              if (!trimmed || /^(data:|blob:|#)/i.test(trimmed)) return whole;
+              return `url("${escapeAttribute(proxyAssetUrl(trimmed, item.url, proxy))}")`;
+            });
+            css = css.replace(/@import\s+(?:url\()?\s*(["'])(.*?)\1\s*\)?/gi, (whole, q, imported) => {
+              return `@import url("${escapeAttribute(proxyAssetUrl(imported, item.url, proxy))}")`;
+            });
+            replacement = `<style>/* proxied stylesheet: ${escapeAttribute(item.url)} */\n${css}\n</style>`;
+          } catch (_) {
+            // Keep a proxied link as a fallback if CSS text cannot be retrieved.
+            replacement = `<link rel="stylesheet" href="${escapeAttribute(proxyAssetUrl(item.url, targetUrl, proxy))}">`;
+          }
+          page = page.replace(item.marker, replacement);
+        }
+
+        const injection = '<base href="' + escapeAttribute(targetUrl) + '">' + makeBridgeScript(targetUrl, proxy.name);
+        if (/<head\b[^>]*>/i.test(page)) {
+          page = page.replace(/<head\b[^>]*>/i, match => match + '\n' + injection + '\n');
+        } else if (/<html\b[^>]*>/i.test(page)) {
+          page = page.replace(/<html\b[^>]*>/i, match => match + '<head>' + injection + '</head>');
+        } else {
+          page = '<!doctype html><html><head>' + injection + '</head><body>' + page + '</body></html>';
+        }
+        return page;
+      };
+
+      const fetchThroughProxies = async (targetUrl, token) => {
+        const failures = [];
+        for (let index = 0; index < PROXIES.length; index++) {
+          if (token !== navigationToken) throw new DOMException('Navigation canceled', 'AbortError');
+          const proxy = PROXIES[index];
+          loadingText.textContent = `Trying ${proxy.name} (${index + 1} of ${PROXIES.length})...`;
+          statusText.textContent = `Contacting ${proxy.name}...`;
+          const controller = new AbortController();
+          activeController = controller;
+          const timeoutId = setTimeout(() => controller.abort(), PROXY_TIMEOUT_MS);
+          try {
+            const response = await fetch(proxy.url(targetUrl), {
+              method: 'GET',
+              redirect: 'follow',
+              credentials: 'omit',
+              cache: 'no-store',
+              headers: { 'Accept': 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8' },
+              signal: controller.signal
+            });
+            if (!response.ok) throw new Error(`${response.status} ${response.statusText || 'Proxy request failed'}`);
+            const content = await response.text();
+            if (!content.trim()) throw new Error('The proxy returned an empty page.');
+            if (!/<(?:!doctype|html|head|body|script|title|main|div|article|svg)\b/i.test(content)) {
+              throw new Error('The proxy returned a response that does not look like a webpage.');
+            }
+            return { html: content, proxyName: proxy.name, proxy };
+          } catch (error) {
+            if (token !== navigationToken) throw new DOMException('Navigation canceled', 'AbortError');
+            const reason = error && error.name === 'AbortError'
+              ? `timed out after ${Math.round(PROXY_TIMEOUT_MS / 1000)} seconds`
+              : (error && error.message ? error.message : 'request failed');
+            failures.push(`${proxy.name}: ${reason}`);
+          } finally {
+            clearTimeout(timeoutId);
+            if (activeController === controller) activeController = null;
+          }
+        }
+        throw new Error(failures.join(' | '));
+      };
+
+      const navigate = async (explicitUrl, navOpts) => {
+        let targetUrl;
+        try {
+          targetUrl = normaliseUrl(explicitUrl || urlInput.value);
+        } catch (error) {
+          showError(String(explicitUrl || urlInput.value || ''), 'That address is not valid.', error.message);
+          return;
+        }
+
+        navigationToken++;
+        const token = navigationToken;
+        cancelActiveRequest();
+        lastTargetUrl = targetUrl;
+        const activeTab = getActiveTab();
+        if (activeTab && !(navOpts && navOpts.noHistory)) {
+          activeTab.hist = (activeTab.hist || []).slice(0, (activeTab.hi == null ? -1 : activeTab.hi) + 1);
+          if (activeTab.hist[activeTab.hist.length - 1] !== targetUrl) activeTab.hist.push(targetUrl);
+          activeTab.hi = activeTab.hist.length - 1; addGlobalHistory(targetUrl);
+        }
+        updateNavButtons();
+        if (targetUrl === 'about:home') {
+          resetUI(); document.body.classList.remove('loading');
+          if (activeTab) { activeTab.url = 'about:home'; activeTab.title = 'ColtonNet Start Page'; renderTabs(); }
+          urlInput.value = 'about:home'; proxyFrame.removeAttribute('srcdoc'); proxyFrame.src = 'ie-home.html';
+          statusText.textContent = 'Done'; return;
+        }
+        if (activeTab) {
+          activeTab.url = targetUrl;
+          if (!activeTab.title || activeTab.title === 'New Tab') activeTab.title = titleForUrl(targetUrl);
+          renderTabs();
+        }
+        urlInput.value = targetUrl;
+        resetUI();
+        loadingOverlay.style.display = 'flex'; document.body.classList.add('loading');
+        loadingText.textContent = 'Preparing to connect...';
+        statusText.textContent = `Opening ${targetUrl}...`;
+        renderProgressBar();
+
+        try {
+          const result = await fetchThroughProxies(targetUrl, token);
+          if (token !== navigationToken) return;
+          window.__proxyCurrentTarget = targetUrl;
+          activeProxy = result.proxy;
+          const titleMatch = result.html.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
+          const loadedTitle = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').trim() : '';
+          const activeTab = getActiveTab();
+          if (activeTab && activeTab.id === activeTabId && loadedTitle) activeTab.title = loadedTitle.slice(0, 80);
+          renderTabs();
+          proxyFrame.srcdoc = await prepareDocument(result.html, targetUrl, result.proxy);
+          if (token !== navigationToken) return;
+          resetUI();
+          statusText.textContent = `Loaded via ${result.proxyName}. Links open in applet tabs.`;
+        } catch (error) {
+          if (token !== navigationToken || (error && error.name === 'AbortError')) return;
+          showError(
+            targetUrl,
+            'None of the available public proxies could load this page.',
+            `${error.message || 'The proxy requests failed.'} Sites with anti-bot protection, sign-in requirements, WebSockets, or complex game engines may still fail; public proxies cannot reproduce every browser feature. Use Open Direct to load the site in a normal browser tab.`
+          );
+        }
+      };
+
+      const openDirect = rawUrl => {
+        try {
+          const targetUrl = normaliseUrl(rawUrl || urlInput.value || lastTargetUrl);
+          window.open(targetUrl, '_blank', 'noopener,noreferrer');
+          statusText.textContent = 'Opened in a separate browser tab (if pop-ups are allowed).';
+        } catch (error) {
+          showError(String(rawUrl || urlInput.value || ''), 'That address is not valid.', error.message);
+        }
+      };
+
+      tabStrip.addEventListener('click', event => {
+        const tabButton = event.target.closest('.applet-tab');
+        if (!tabButton) return;
+        const tabId = Number(tabButton.dataset.tabId);
+        if (event.target.closest('.applet-tab-close')) closeTab(tabId);
+        else activateTab(tabId);
+      });
+      newTabBtn.addEventListener('click', () => createTab('about:home', 'ColtonNet Start Page'));
+      fallbackLink.addEventListener('click', event => {
+        event.preventDefault();
+        createTab(lastTargetUrl, titleForUrl(lastTargetUrl));
+      });
+
+      goBtn.addEventListener('click', () => navigate());
+      directBtn.addEventListener('click', () => openDirect());
+      urlInput.addEventListener('keydown', event => {
+        if (event.key === 'Enter') navigate();
+      });
+
+      cancelBtn.addEventListener('click', () => {
+        navigationToken++;
+        cancelActiveRequest();
+        resetUI();
+        proxyFrame.srcdoc = '<!doctype html><html><body style="font:13px Tahoma,Arial;padding:16px">Navigation canceled.</body></html>';
+        statusText.textContent = 'Navigation canceled.';
+      });
+
+      closeErrorBtn.addEventListener('click', () => {
+        errorOverlay.style.display = 'none';
+        statusText.textContent = 'Ready.';
+      });
+      openErrorDirectBtn.addEventListener('click', () => openDirect(lastTargetUrl));
+
+      window.addEventListener('message', event => {
+        // Only accept requests from the applet's own sandboxed frame.
+        if (event.source !== proxyFrame.contentWindow || !event.data || event.data.__win95ProxyApplet !== true) return;
+        if (event.data.action === 'navigate' || event.data.action === 'new-tab') {
+          if (event.data.method !== 'GET') {
+            showError(lastTargetUrl, 'This form needs a request type the public proxies may not support.', 'Open the site directly in a separate browser tab to submit this form.');
+            return;
+          }
+          try {
+            const requestedUrl = new URL(event.data.url);
+            if (requestedUrl.protocol !== 'http:' && requestedUrl.protocol !== 'https:') return;
+            if (event.data.action === 'new-tab') createTab(requestedUrl.href, titleForUrl(requestedUrl.href));
+            else navigate(requestedUrl.href);
+          } catch (_) {}
+        } else if (event.data.action === 'shell') {
+          try { const g = window.parent.GHShell, it = String(event.data.item || ''); if (it === 'action:random') g.randomGame(); else if (/^(app|game|sys|folder):/.test(it)) g.openItem(it); } catch (_) {}
+        } else if (event.data.action === 'unsupported-form') {
+          showError(lastTargetUrl, 'This page submitted a form that uses ' + String(event.data.method || 'a non-GET method') + '.', 'Public browser proxies do not consistently support form submissions of this type. Open the site directly in a separate browser tab to continue.');
+        }
+      });
+
+
+      /* ---------- Internet Explorer chrome: history, favorites, menus ---------- */
+      const backBtn = document.getElementById('back-btn'), fwdBtn = document.getElementById('fwd-btn'), pop = document.getElementById('ie-pop');
+      const FAVKEY = 'gh-ie-favs', HISKEY = 'gh-ie-history';
+      const jget = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (_) { return d; } };
+      const jset = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} };
+      const defaultFavs = [{ t: 'ColtonNet Start Page', u: 'about:home' }, { t: 'Wikipedia', u: 'https://en.wikipedia.org/' }, { t: 'Internet Archive', u: 'https://archive.org/' }, { t: 'Wiby', u: 'https://wiby.me/' }, { t: 'Project Gutenberg', u: 'https://www.gutenberg.org/' }];
+      const getFavs = () => jget(FAVKEY, null) || defaultFavs.slice();
+      function addGlobalHistory(u) { if (u === 'about:home') return; const h = jget(HISKEY, []).filter(x => x.u !== u); h.unshift({ u, t: (getActiveTab() && getActiveTab().title) || titleForUrl(u), at: Date.now() }); jset(HISKEY, h.slice(0, 40)); }
+      function updateNavButtons() { const t = getActiveTab(); backBtn.disabled = !t || !(t.hi > 0); fwdBtn.disabled = !t || !t.hist || t.hi >= t.hist.length - 1; }
+      function goHist(d) { const t = getActiveTab(); if (!t || !t.hist) return; const i = t.hi + d; if (i < 0 || i >= t.hist.length) return; t.hi = i; navigate(t.hist[i], { noHistory: true }); }
+      backBtn.addEventListener('click', () => goHist(-1)); fwdBtn.addEventListener('click', () => goHist(1));
+      document.getElementById('home-btn').addEventListener('click', () => navigate('about:home'));
+      document.getElementById('refresh-btn').addEventListener('click', () => navigate(lastTargetUrl, { noHistory: true }));
+      document.getElementById('stop-btn').addEventListener('click', () => { navigationToken++; cancelActiveRequest(); resetUI(); statusText.textContent = 'Navigation stopped.'; });
+      document.getElementById('search-btn').addEventListener('click', () => { navigate('about:home'); setTimeout(() => { try { proxyFrame.contentWindow.focus(); } catch (_) {} }, 400); });
+      document.querySelectorAll('.ie-link').forEach(b => b.addEventListener('click', () => navigate(b.dataset.go)));
+      function closePop() { pop.hidden = true; document.querySelectorAll('.ie-menu.on').forEach(x => x.classList.remove('on')); }
+      function showPop(items, anchor) {
+        pop.textContent = '';
+        items.forEach(it => { if (it === '-') { pop.appendChild(document.createElement('hr')); return; } if (it.hd) { const d = document.createElement('div'); d.className = 'hd'; d.textContent = it.hd; pop.appendChild(d); return; } const b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', 'menuitem'); b.textContent = it.t; b.title = it.u || ''; b.addEventListener('click', () => { closePop(); it.fn ? it.fn() : navigate(it.u); }); pop.appendChild(b); });
+        const r = anchor.getBoundingClientRect(); pop.hidden = false; pop.style.left = Math.max(2, Math.min(r.left, innerWidth - pop.offsetWidth - 4)) + 'px'; pop.style.top = (r.bottom + 1) + 'px';
+      }
+      function favItems() { const f = getFavs(); const t = getActiveTab(); const cur = t && t.url; return [{ t: 'Add to Favorites…', fn: () => { if (!cur || f.some(x => x.u === cur)) return; f.push({ t: (t.title || cur).slice(0, 40), u: cur }); jset(FAVKEY, f); statusText.textContent = 'Added to Favorites.'; } }, { t: 'Organize: reset Favorites', fn: () => { try { localStorage.removeItem(FAVKEY); } catch (_) {} statusText.textContent = 'Favorites reset.'; } }, '-'].concat(f.map(x => ({ t: '★ ' + x.t, u: x.u }))); }
+      function histItems() { const h = jget(HISKEY, []); return h.length ? [{ hd: 'Recently visited' }].concat(h.slice(0, 20).map(x => ({ t: (x.t || x.u), u: x.u })), ['-', { t: 'Clear History', fn: () => { jset(HISKEY, []); statusText.textContent = 'History cleared.'; } }]) : [{ hd: 'No history yet' }]; }
+      const MENUS = {
+        file: () => [{ t: 'New Tab', fn: () => createTab('about:home') }, { t: 'Close Tab', fn: () => closeTab(activeTabId) }, '-', { t: 'Open Direct (separate browser tab)', fn: () => openDirect() }],
+        edit: () => [{ t: 'Select Address Bar', fn: () => { urlInput.focus(); urlInput.select(); } }, { t: 'Copy Address', fn: () => { try { navigator.clipboard.writeText(urlInput.value); } catch (_) {} } }],
+        view: () => [{ t: 'Stop', fn: () => document.getElementById('stop-btn').click() }, { t: 'Refresh', fn: () => document.getElementById('refresh-btn').click() }, '-', { t: 'Go: Home Page', fn: () => navigate('about:home') }],
+        fav: favItems, tools: () => [{ t: 'History', fn: () => showPop(histItems(), document.getElementById('hist-btn')) }, { t: 'Clear History', fn: () => { jset(HISKEY, []); statusText.textContent = 'History cleared.'; } }],
+        help: () => [{ t: 'About Internet Explorer', fn: () => { statusText.textContent = 'ColtonNet Explorer: a retro proxy browser. Some sites will not load.'; } }]
+      };
+      document.querySelectorAll('.ie-menu').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); if (b.classList.contains('on')) return closePop(); closePop(); b.classList.add('on'); showPop(MENUS[b.dataset.menu](), b); }));
+      document.getElementById('favs-btn').addEventListener('click', e => { e.stopPropagation(); closePop(); showPop(favItems(), e.currentTarget); });
+      document.getElementById('hist-btn').addEventListener('click', e => { e.stopPropagation(); closePop(); showPop(histItems(), e.currentTarget); });
+      document.addEventListener('click', e => { if (!pop.contains(e.target)) closePop(); });
+      document.addEventListener('keydown', e => { if (e.key === 'Escape') closePop(); else if (e.altKey && e.key === 'ArrowLeft') goHist(-1); else if (e.altKey && e.key === 'ArrowRight') goHist(1); else if (e.altKey && e.key === 'Home') navigate('about:home'); else if (e.key === 'F5') { e.preventDefault(); document.getElementById('refresh-btn').click(); } });
+
+      renderTabs();
+      navigate();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Achievements</title>
+<link rel="stylesheet" href="w95.css">
+<style>
+  #top{padding:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  #bar{flex:1;min-width:140px;height:18px;border:2px inset #808080;background:#fff;padding:1px}#fill{height:100%;background:#000080;width:0}
+  #list{flex:1;min-height:0;overflow:auto;margin:0 6px 6px;padding:4px;display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:4px;align-content:start}
+  .a{display:flex;gap:8px;align-items:center;padding:6px;border:1px solid #c0c0c0;background:#fff}
+  .a .ic{font-size:26px;width:38px;text-align:center;flex:none}
+  .a b{display:block}.a small{color:#555;display:block}
+  .a.lock{background:#e8e8e8;color:#777}.a.lock .ic{filter:grayscale(1);opacity:.45}
+  .a.new{outline:2px solid #000080}
+</style></head><body>
+<div id="top"><b id="cnt"></b><div id="bar"><div id="fill"></div></div>
+  <span><button data-f="all" class="on">All</button> <button data-f="done">Unlocked</button> <button data-f="todo">Locked</button></span><button id="rst">Reset…</button></div>
+<div id="list" class="sunken" role="list"></div>
+<div class="status"><div id="s1"></div></div>
+<script>
+(function(){
+  var P=null;try{P=parent.GHShell;}catch(e){}var f='all',list=document.getElementById('list');
+  function draw(){
+    if(!P||!P.ach){list.textContent='Achievements need the ColtonOS desktop.';return;}
+    var all=P.ach.list(),done=all.filter(function(a){return a.at;}).length;
+    document.getElementById('cnt').textContent='🏆 '+done+' / '+all.length;document.getElementById('fill').style.width=(done/all.length*100)+'%';
+    list.textContent='';
+    all.sort(function(a,b){return (b.at?1:0)-(a.at?1:0)||b.at-a.at;}).forEach(function(a){
+      if(f==='done'&&!a.at)return;if(f==='todo'&&a.at)return;
+      var hide=a.hidden&&!a.at,d=document.createElement('div');d.className='a'+(a.at?'':' lock')+(a.at&&Date.now()-a.at<60000?' new':'');d.setAttribute('role','listitem');
+      var ic=document.createElement('div');ic.className='ic';ic.textContent=hide?'❓':a.i;var t=document.createElement('div'),b=document.createElement('b'),s=document.createElement('small');
+      b.textContent=hide?'Hidden achievement':a.n;s.textContent=hide?'Keep exploring to find out how to unlock this one.':a.d+(a.at?'  ·  '+new Date(a.at).toLocaleDateString():'');t.append(b,s);d.append(ic,t);list.append(d);});
+    var s=P.ach.stats();document.getElementById('s1').textContent='Games tried: '+s.games.length+'  ·  Time on site: '+Math.floor(s.minutes/60)+'h '+Math.round(s.minutes%60)+'m';
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('[data-f]'),function(b){b.onclick=function(){f=b.dataset.f;document.querySelectorAll('[data-f]').forEach(function(x){x.classList.toggle('on',x===b);});draw();};});
+  document.getElementById('rst').onclick=function(){if(confirm('Reset all achievements and statistics? This cannot be undone.')){P.ach.reset();draw();}};
+  draw();if(P&&P.on){P.on(function(n){if(n==='ach'||n==='ach_reset')draw();});}
+})();
+</script></body></html>

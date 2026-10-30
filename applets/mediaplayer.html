@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Media Player</title>
+<link rel="stylesheet" href="w95.css">
+<style>
+  #main{display:flex;flex:1;min-height:0;gap:6px;padding:6px}
+  #stage{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+  #screen{flex:1;min-height:90px;background:#000;border:2px inset #808080;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative}
+  #screen video,#screen img{max-width:100%;max-height:100%}
+  #vis{position:absolute;inset:0;width:100%;height:100%}
+  #list{width:190px;overflow:auto;padding:2px;display:flex;flex-direction:column}
+  #list button{text-align:left;border:0;background:transparent;padding:3px 4px;min-height:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #list button.on{background:#000080;color:#fff}#list h4{margin:6px 2px 2px;font-size:12px;color:#444}
+  #ctl{display:flex;gap:4px;align-items:center}#seek{flex:1}
+  @media(max-width:520px){#main{flex-direction:column}#list{width:auto;height:90px}}
+</style></head><body>
+<div class="bar"><button id="open">Open file…</button><button id="docs">My Documents…</button><span id="now" style="margin-left:6px"></span></div>
+<div id="main">
+  <div id="stage"><div id="screen"><canvas id="vis"></canvas></div>
+    <div id="ctl"><button id="pp" aria-label="Play or pause">▶</button><button id="st" aria-label="Stop">■</button><input id="seek" type="range" min="0" max="1000" value="0" aria-label="Seek"><span id="tm" style="min-width:84px;text-align:right">0:00 / 0:00</span><input id="vol" type="range" min="0" max="100" value="80" style="width:60px" aria-label="Volume"></div></div>
+  <div id="list" class="sunken" role="list"></div>
+</div>
+<div class="status"><div id="s1">Ready</div></div>
+<input type="file" id="file" accept="audio/*,video/*,image/*" hidden>
+<script src="../vfs.js"></script>
+<script>
+(function(){
+  var $=function(i){return document.getElementById(i);},FS=window.ColtonFS,el=null,ac=null,an=null,srcNode=null,raf=0,synth=null,url='';
+  var screen=$('screen'),vis=$('vis'),g=vis.getContext('2d');
+  /* built-in original tunes (synthesised, no files) */
+  var TUNES=[{n:'Desktop Daydream',bpm:96,w:'triangle',s:'C4 E4 G4 E4 A4 G4 E4 D4 C4 E4 G4 C5 B4 G4 A4 G4'},{n:'Dial-Up Disco',bpm:132,w:'square',s:'A3 C4 E4 A4 E4 C4 A3 G3 B3 D4 G4 D4 B3 G3 F3 A3 C4 F4'},{n:'Blue Screen Blues',bpm:72,w:'sawtooth',s:'E3 G3 B3 E4 D4 B3 G3 D3 E3 G3 A3 B3 G3 E3 D3 E3'}];
+  var N={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+  function freq(n){var o=+n.slice(-1),k=N[n[0]]+(n[1]==='#'?1:0)+(n.length>2?0:0);return 440*Math.pow(2,(k+12*(o-4)-9)/12);}
+  function ctx(){ac=ac||new(window.AudioContext||window.webkitAudioContext)();if(ac.state==='suspended')ac.resume();if(!an){an=ac.createAnalyser();an.fftSize=256;an.connect(ac.destination);}return ac;}
+  function stopAll(){if(synth){synth.stop();synth=null;}if(el){try{el.pause();}catch(e){}el.remove();el=null;}cancelAnimationFrame(raf);if(url){URL.revokeObjectURL(url);url='';}screen.querySelectorAll('img,video').forEach(function(n){n.remove();});$('pp').textContent='▶';}
+  function playTune(t){
+    stopAll();var c=ctx(),notes=t.s.split(' '),beat=60/t.bpm,i=0,alive=true,out=c.createGain();out.gain.value=($('vol').value/100)*0.5;out.connect(an);
+    (function step(){if(!alive)return;var f=freq(notes[i%notes.length]),o=c.createOscillator(),e=c.createGain(),now=c.currentTime;o.type=t.w;o.frequency.value=f;e.gain.setValueAtTime(0.0001,now);e.gain.exponentialRampToValueAtTime(0.4,now+0.02);e.gain.exponentialRampToValueAtTime(0.0001,now+beat*0.9);o.connect(e);e.connect(out);o.start(now);o.stop(now+beat);i++;synth._to=setTimeout(step,beat*1000);})();
+    synth={stop:function(){alive=false;clearTimeout(synth&&synth._to);out.disconnect();},vol:function(v){out.gain.value=v*0.5;}};
+    $('pp').textContent='❚❚';$('now').textContent='♪ '+t.n;$('s1').textContent='Playing '+t.n;draw();try{parent.GHShell.emit('media:play');}catch(e){}
+  }
+  function draw(){cancelAnimationFrame(raf);(function f(){vis.width=screen.clientWidth;vis.height=screen.clientHeight;g.fillStyle='#000';g.fillRect(0,0,vis.width,vis.height);if(an){var d=new Uint8Array(an.frequencyBinCount);an.getByteFrequencyData(d);var w=vis.width/d.length*1.6;for(var i=0;i<d.length*0.6;i++){var h=d[i]/255*vis.height;g.fillStyle='hsl('+(120+i*2)+',90%,55%)';g.fillRect(i*w,vis.height-h,w-1,h);}}raf=requestAnimationFrame(f);})();}
+  function fmt(s){if(!isFinite(s))return '0:00';return ((s/60)|0)+':'+('0'+((s%60)|0)).slice(-2);}
+  function playBlob(b,name){
+    stopAll();url=URL.createObjectURL(b);var mt=b.type||'';
+    if(/^image/.test(mt)){var im=document.createElement('img');im.src=url;im.alt=name;screen.append(im);vis.style.display='none';$('now').textContent=name;$('s1').textContent='Viewing '+name;return;}
+    var v=/^video/.test(mt);el=document.createElement(v?'video':'audio');el.src=url;el.volume=$('vol').value/100;if(v){screen.append(el);vis.style.display='none';}else{vis.style.display='';}
+    el.addEventListener('timeupdate',function(){$('seek').value=el.duration?el.currentTime/el.duration*1000:0;$('tm').textContent=fmt(el.currentTime)+' / '+fmt(el.duration);});
+    el.addEventListener('ended',function(){$('pp').textContent='▶';});el.addEventListener('error',function(){$('s1').textContent='This file could not be played.';});
+    if(!v){try{var c=ctx();srcNode=c.createMediaElementSource(el);srcNode.connect(an);draw();}catch(e){}}
+    el.play().then(function(){$('pp').textContent='❚❚';try{parent.GHShell.emit('media:play');}catch(e){}}).catch(function(){});$('now').textContent=name;$('s1').textContent='Playing '+name;
+  }
+  function openMeta(m){FS.read(m.id).then(function(d){var b=d instanceof Blob?d:new Blob([d]);if(!b.type)b=new Blob([b],{type:m.mime||''});playBlob(b,m.name);});}
+  function list(){
+    var L=$('list');L.textContent='';var h=document.createElement('h4');h.textContent='Built-in tunes';L.append(h);
+    TUNES.forEach(function(t){var b=document.createElement('button');b.textContent='♪ '+t.n;b.onclick=function(){playTune(t);};L.append(b);});
+    var media=FS.all().filter(function(m){return m.kind==='file'&&/^(audio|video|image)\//.test(m.mime||'');});
+    h=document.createElement('h4');h.textContent='My Documents media';L.append(h);
+    if(!media.length){var e=document.createElement('div');e.style.cssText='color:#666;padding:3px';e.textContent='(none yet - record a sound or open a file)';L.append(e);}
+    media.forEach(function(m){var b=document.createElement('button');b.textContent=(/^audio/.test(m.mime)?'♫ ':/^video/.test(m.mime)?'▶ ':'▣ ')+m.name;b.onclick=function(){openMeta(m);};L.append(b);});
+  }
+  $('open').onclick=function(){$('file').click();};$('file').onchange=function(){var f=this.files[0];if(f)playBlob(f,f.name);this.value='';};
+  $('docs').onclick=function(){FS.dialog({mode:'open',kind:'file',kinds:['file'],title:'Open Media'}).then(function(r){if(r&&r.meta)openMeta(r.meta);});};
+  $('pp').onclick=function(){if(synth){stopAll();return;}if(!el)return;if(el.paused){el.play();$('pp').textContent='❚❚';}else{el.pause();$('pp').textContent='▶';}};
+  $('st').onclick=function(){stopAll();$('now').textContent='';$('s1').textContent='Stopped';$('seek').value=0;};
+  $('seek').oninput=function(){if(el&&el.duration)el.currentTime=el.duration*this.value/1000;};
+  $('vol').oninput=function(){var v=this.value/100;if(el)el.volume=v;if(synth)synth.vol(v);};
+  FS.ready().then(function(){list();FS.onChange(list);var id=new URLSearchParams(location.search).get('open'),m=id&&FS.meta(id);if(m)openMeta(m);});
+  window.addEventListener('pagehide',stopAll);
+})();
+</script></body></html>

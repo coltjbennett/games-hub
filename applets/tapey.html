@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tapey Settings</title>
+<link rel="stylesheet" href="w95.css">
+<style>
+  #tabs{display:flex;gap:0;padding:6px 6px 0;flex-wrap:wrap}
+  #tabs button{border-bottom:0;margin-right:-1px;padding:3px 10px}#tabs button.on{background:#dcdcdc;font-weight:bold;position:relative;top:1px}
+  #pg{flex:1;min-height:0;overflow:auto;margin:0 6px;border:2px outset #fff;padding:10px;background:#c0c0c0}
+  .row{display:flex;align-items:center;gap:8px;margin:5px 0;flex-wrap:wrap}.row>label:first-child,.row>span:first-child{min-width:150px}
+  .row small{color:#444;flex-basis:100%;margin-left:158px;margin-top:-2px}
+  fieldset{border:2px groove #fff;margin:0 0 8px;padding:6px 10px}legend{padding:0 4px}
+  input[type=range]{width:160px}.val{min-width:44px;text-align:right}
+  #prev{display:flex;gap:10px;align-items:center;padding:6px 8px 8px}#pv{width:72px;height:72px}
+  #gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:4px}
+  #gal button{padding:2px;background:#fff;display:flex;flex-direction:column;align-items:center;font-size:11px}
+  #gal img{width:64px;height:64px}
+  .foot{display:flex;gap:6px;padding:6px;flex-wrap:wrap}
+</style></head><body>
+<div id="prev"><div id="pv"></div><div><b>Tapey</b><div id="st" style="font-size:12px"></div></div><span style="flex:1"></span><button id="tg"></button><button id="tst">Say something</button></div>
+<div id="tabs" role="tablist"></div>
+<div id="pg" role="tabpanel"></div>
+<div class="foot"><button id="rst">Restore Defaults</button><button id="fg">Forget seen tips</button><button id="rp">Reset position</button></div>
+<script>
+(function(){
+  var P=null;try{P=parent.GHShell;}catch(e){}
+  var tp=P&&P.tapey;if(!tp){document.body.textContent='Tapey lives on the ColtonOS desktop.';return;}
+  var pg=document.getElementById('pg'),tabs=document.getElementById('tabs'),cur='general';
+  var tones=tp.tones();
+  /* each setting: [key, label, type, options, hint] */
+  var TABS={
+   general:['General',[
+     ['enabled','Show Tapey on the desktop','bool'],['greeting','Greet me when I arrive','bool'],['hideSmall','Hide on small screens','bool'],['onTop','Stay on top of windows','bool','','Turn off to let windows cover Tapey.'],
+     ['userName','Call me','text','','Optional. Used in some greetings.'],['sleep','Fall asleep when idle','bool'],['sleepAfter','Fall asleep after','range',[0,900,15,'s'],'0 means never.']]],
+   personality:['Personality',[
+     ['tone','Personality','select',Object.keys(tones).map(function(k){return [k,tones[k].name+' - '+tones[k].desc];})],
+     ['chatty','Chattiness','range',[0,100,5,'%'],'How often Tapey reacts to what you do.'],['interval','Idle comment every','range',[0,600,15,'s'],'Base time between idle comments. 0 turns idle chatter off.'],
+     ['reactions','React to events','bool'],['appTips','Tips when I open apps','bool'],['gameTips','Tips when I launch games','bool'],['achTalk','Celebrate achievements','bool'],['clippyOffers','Offer help when I start writing','bool'],
+     ['quietGames','Stay quiet while a game has focus','bool'],['quietDialogs','Stay quiet while a dialog is open','bool']]],
+   topics:['Topics',[
+     ['catTip','Tips','bool'],['catJoke','Jokes','bool'],['catFact','Fun facts','bool'],['catChat','Small talk','bool'],['catCompliment','Compliments','bool'],['catNudge','Suggestions (games to try)','bool'],['catContext','Context-aware comments','bool','','Time of day, session length, windows open, battery, network...']]],
+   look:['Appearance',[
+     ['size','Size','range',[48,200,4,'px']],['opacity','Opacity','range',[25,100,5,'%']],['hue','Tape color (hue shift)','range',[0,360,5,'°'],'Gold is 0. Try 200 for blue or 300 for pink.'],['saturate','Color intensity','range',[0,200,5,'%']],
+     ['flip','Mirror image','bool'],['shadow','Drop shadow','bool'],['glow','Glow','bool'],['bob','Gentle bobbing','bool'],['poseAnim','Change pose when talking','bool'],['snap','Snap to screen edges','bool']]],
+   speech:['Speech',[
+     ['balloon','Balloon style','select',[['classic','Classic yellow'],['white','White'],['dark','Dark'],['pink','Pink'],['blue','Blue'],['terminal','Green terminal']]],
+     ['fontSize','Text size','range',[10,22,1,'px']],['readSpeed','Time on screen','range',[40,300,10,'%'],'Higher means balloons stay longer.'],['balloonPos','Balloon position','select',[['auto','Automatic'],['above','Above Tapey'],['below','Below Tapey']]],['showClose','Show the close button on balloons','bool']]],
+   eyes:['Eyes',[
+     ['eyes','Eyes follow the cursor','bool'],['eyeStrength','Eye movement','range',[0,100,5,'%'],'How far the pupils travel.'],['eyeSmooth','Eye smoothing','range',[0,95,5,'%'],'Higher is slower and floatier.'],
+     ['crossEyed','Cross eyes when the cursor gets close','bool'],['eyeFrames','Keep following inside apps and games','bool','','Does not work inside third-party Arcade games.'],['eyeBlink','Blink now and then','bool'],['blink','Blink animation','bool']]],
+   sound:['Sounds',[
+     ['sounds','Tapey blips when he talks','bool','','Tiny synthesized sounds. Off by default.'],['soundVol','Volume','range',[0,100,5,'%']],['voicePitch','Pitch','range',[60,180,5,'%']]]],
+   poses:['Poses',null]
+  };
+  function render(){
+    tabs.textContent='';Object.keys(TABS).forEach(function(k){var b=document.createElement('button');b.type='button';b.textContent=TABS[k][0];b.setAttribute('role','tab');b.className=k===cur?'on':'';b.onclick=function(){cur=k;render();};tabs.append(b);});
+    pg.textContent='';var T=tp.get();
+    if(cur==='poses'){var p=document.createElement('p');p.textContent='All 20 of Tapey\'s poses. Click one to see it on the desktop.';pg.append(p);var g=document.createElement('div');g.id='gal';tp.poses.forEach(function(n){var b=document.createElement('button');b.type='button';var i=document.createElement('img');i.src='../images/tapey/tapey-'+n+'.svg';i.alt='';b.append(i,n);b.onclick=function(){tp.pose(n,4000);};g.append(b);});pg.append(g);}
+    else{var fs=document.createElement('fieldset'),lg=document.createElement('legend');lg.textContent=TABS[cur][0];fs.append(lg);
+      TABS[cur][1].forEach(function(d){var key=d[0],type=d[2],opt=d[3],hint=d[4];var row=document.createElement('div');row.className='row';var lab=document.createElement('label');lab.textContent=d[1];var id='s_'+key;lab.htmlFor=id;
+        var el;
+        if(type==='bool'){el=document.createElement('input');el.type='checkbox';el.checked=!!T[key];el.onchange=function(){tp.set(key,el.checked);};row.append(el,lab);row.firstChild.style.minWidth='';}
+        else if(type==='range'){el=document.createElement('input');el.type='range';el.min=opt[0];el.max=opt[1];el.step=opt[2];el.value=T[key];var v=document.createElement('span');v.className='val';v.textContent=T[key]+opt[3];el.oninput=function(){v.textContent=el.value+opt[3];tp.set(key,+el.value,true);};row.append(lab,el,v);}
+        else if(type==='select'){el=document.createElement('select');opt.forEach(function(o){var oo=document.createElement('option');oo.value=o[0];oo.textContent=o[1];el.append(oo);});el.value=T[key];el.onchange=function(){tp.set(key,el.value);};row.append(lab,el);}
+        else{el=document.createElement('input');el.type='text';el.maxLength=24;el.value=T[key]||'';el.onchange=function(){tp.set(key,el.value.trim());};row.append(lab,el);}
+        el.id=id;if(hint){var sm=document.createElement('small');sm.textContent=hint;row.append(sm);}fs.append(row);});pg.append(fs);}
+    var s=tp.stats();document.getElementById('st').textContent=s.lines+' lines of dialog in '+s.pools+' topics  ·  visit #'+s.visits;
+    var tg=document.getElementById('tg');tg.textContent=T.enabled?'Hide Tapey':'Show Tapey';
+  }
+  document.getElementById('tg').onclick=function(){tp.toggle();setTimeout(render,300);};
+  document.getElementById('tst').onclick=function(){tp.test();};
+  document.getElementById('rst').onclick=function(){if(confirm('Restore all Tapey settings to their defaults?')){tp.reset();render();}};
+  document.getElementById('fg').onclick=function(){tp.forgetTips();alert('Tapey will show first-time tips again.');};
+  document.getElementById('rp').onclick=function(){tp.resetPosition();};
+  var pv=document.getElementById('pv');pv.innerHTML='<img src="../images/tapey/tapey-wave.svg" width="72" height="72" alt="">';
+  tp.onChange(function(){if(!document.activeElement||document.activeElement.type!=='range')render();});
+  render();
+})();
+</script></body></html>

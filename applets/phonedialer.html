@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Phone Dialer</title>
+<link rel="stylesheet" href="w95.css">
+<style>
+  #wrap{padding:8px;display:flex;flex-direction:column;gap:8px;max-width:340px;margin:0 auto;width:100%;overflow:auto}
+  #num{font:22px "Courier New",monospace;text-align:center;width:100%;padding:6px}
+  #pad{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+  #pad button{font-size:20px;min-height:44px}#pad small{display:block;font-size:9px;color:#444}
+  #sd{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+  #stat{min-height:18px;text-align:center}
+</style></head><body>
+<div id="wrap">
+  <input id="num" type="text" inputmode="tel" placeholder="Number to dial" aria-label="Number to dial" autocomplete="off">
+  <div id="pad"></div>
+  <div style="display:flex;gap:4px"><button id="dial" style="flex:2">📞 Dial</button><button id="hang" style="flex:1">Hang Up</button><button id="bk" aria-label="Backspace" style="flex:1">⌫</button></div>
+  <div id="stat" role="status"></div>
+  <div><b>Speed Dial</b> (right-click or long-press to set)</div><div id="sd"></div>
+</div>
+<script>
+(function(){
+  var F={1:[697,1209],2:[697,1336],3:[697,1477],4:[770,1209],5:[770,1336],6:[770,1477],7:[852,1209],8:[852,1336],9:[852,1477],'*':[941,1209],0:[941,1336],'#':[941,1477]};
+  var L={2:'ABC',3:'DEF',4:'GHI',5:'JKL',6:'MNO',7:'PQRS',8:'TUV',9:'WXYZ'};
+  var ac=null,num=document.getElementById('num'),stat=document.getElementById('stat'),timer=0,busy=false;
+  function ctx(){try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();if(ac.state==='suspended')ac.resume();}catch(e){}return ac;}
+  function tone(k,dur){var c=ctx();if(!c||!F[k])return;var t=c.currentTime,g=c.createGain();g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.12,t+0.01);g.gain.setValueAtTime(0.12,t+dur-0.02);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);g.connect(c.destination);F[k].forEach(function(f){var o=c.createOscillator();o.frequency.value=f;o.connect(g);o.start(t);o.stop(t+dur+0.02);});}
+  var pad=document.getElementById('pad');
+  Object.keys(F).sort(function(a,b){var o='123456789*0#';return o.indexOf(a)-o.indexOf(b);}).forEach(function(k){var b=document.createElement('button');b.type='button';b.innerHTML=k+(L[k]?'<small>'+L[k]+'</small>':'<small>&nbsp;</small>');b.onclick=function(){if(busy)return;num.value+=k;tone(k,0.15);};pad.append(b);});
+  document.getElementById('bk').onclick=function(){num.value=num.value.slice(0,-1);};
+  function ring(c,on,off,n,cb){var i=0;(function r(){if(!busy)return;if(i++>=n){cb();return;}var t=c.currentTime,g=c.createGain();g.gain.value=0.08;g.connect(c.destination);[440,480].forEach(function(f){var o=c.createOscillator();o.frequency.value=f;o.connect(g);o.start(t);o.stop(t+on);});timer=setTimeout(r,(on+off)*1000);})();}
+  function dial(){
+    var n=num.value.replace(/[^0-9*#]/g,'');if(!n){stat.textContent='Enter a number first.';return;}if(busy)return;busy=true;var c=ctx(),i=0;stat.textContent='Dialing '+n+'...';
+    (function next(){if(!busy)return;if(i>=n.length){stat.textContent='Ringing...';ring(c,1.2,0.6,2,function(){busy=false;stat.textContent=/^(911|0)$/.test(n)?'Please hang up and dial again. (This is a toy phone!)':n==='5551234'?'Hello? Tapey speaking! Wrong number, but nice to meet you.':'The number you have dialed is not in service.';try{parent.GHShell.emit('phone:dial');}catch(e){}});return;}tone(n[i++],0.12);timer=setTimeout(next,190);})();
+  }
+  document.getElementById('dial').onclick=dial;
+  document.getElementById('hang').onclick=function(){busy=false;clearTimeout(timer);stat.textContent='Call ended.';};
+  var KEY='gh-speeddial',sdv={};try{sdv=JSON.parse(localStorage.getItem(KEY)||'{}')||{};}catch(e){}
+  var sd=document.getElementById('sd');
+  function drawSd(){sd.textContent='';for(var i=1;i<=6;i++){(function(i){var b=document.createElement('button');b.type='button';var v=sdv[i];b.textContent=i+': '+(v?v.name:'(empty)');
+    function setIt(){var nm=prompt('Name for speed dial '+i+':',v?v.name:'');if(!nm)return;var nu=prompt('Number:',num.value||(v?v.num:''));if(!nu)return;sdv[i]={name:nm.slice(0,16),num:nu.slice(0,20)};try{localStorage.setItem(KEY,JSON.stringify(sdv));}catch(e){}drawSd();}
+    var lp=0,fired=false;b.onclick=function(){if(fired){fired=false;return;}if(v){num.value=v.num;dial();}else setIt();};b.oncontextmenu=function(e){e.preventDefault();setIt();};
+    b.addEventListener('pointerdown',function(e){if(e.pointerType!=='mouse')lp=setTimeout(function(){fired=true;setIt();},600);});['pointerup','pointercancel','pointerleave'].forEach(function(ev){b.addEventListener(ev,function(){clearTimeout(lp);});});sd.append(b);})(i);}}
+  drawSd();
+})();
+</script></body></html>

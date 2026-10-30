@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en" data-scheme="standard">
+<head>
+  <base href="../">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Control Panel</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    html, body { overflow: auto; height: 100%; background: var(--face); }
+    body { display: flex; flex-direction: column; font-size: calc(var(--ui-size) * var(--text-scale)); }
+    #crt, #wallpaper { display: none !important; }
+    .cp-bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px; flex: none; border-bottom: 1px solid var(--shadow); box-shadow: 0 1px 0 var(--hl); }
+    .cp-bar h1 { margin: 0; font-size: 1.1em; flex: 1; }
+    .cp-main { flex: 1; min-height: 0; overflow: auto; padding: 10px; }
+    .cp-foot { flex: none; padding: 8px; display: flex; justify-content: space-between; gap: 8px; align-items: center; border-top: 1px solid var(--shadow); box-shadow: 0 -1px 0 var(--hl); flex-wrap: wrap; }
+    .cp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; background: var(--win); color: var(--win-text); padding: 8px; min-height: 100%; align-content: start; }
+    .cp-icon { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; background: transparent; border: 0; padding: 8px 4px; color: inherit; border-radius: 0; min-height: 84px; }
+    .cp-icon img { width: 32px; height: 32px; object-fit: cover; }
+    .cp-icon span { padding: 1px 3px; overflow-wrap: anywhere; }
+    .cp-icon:hover span, .cp-icon:focus-visible span { background: var(--sel); color: var(--sel-text); }
+    .cp-icon:focus-visible { outline: none; }
+    .group { margin: 0 0 10px; padding: 10px 10px 8px; position: relative; }
+    .group > legend, .group > .gl { position: absolute; top: -9px; left: 8px; background: var(--face); padding: 0 4px; }
+    fieldset.group { border: 1px solid var(--shadow); box-shadow: 1px 1px 0 var(--hl), inset 1px 1px 0 var(--hl); min-width: 0; margin-left: 0; margin-right: 0; margin-top: 14px; }
+    fieldset.group legend { position: static; padding: 0 4px; }
+    .opt { display: block; margin: 5px 0; }
+    .hint { margin: 4px 0 0 20px; opacity: .85; font-size: .92em; line-height: 1.3; }
+    .row { flex-wrap: wrap; }
+    .swatches { display: grid; grid-template-columns: repeat(8, 28px); gap: 3px; margin: 6px 0; }
+    .sw { width: 28px; height: 24px; padding: 0; border: 0; border-radius: 0; box-shadow: inset 0 0 0 1px #000; }
+    .sw[aria-pressed="true"] { box-shadow: inset 0 0 0 1px #000, inset 0 0 0 3px #fff, inset 0 0 0 4px #000; }
+    .monitor { width: 180px; height: 130px; margin: 0 auto 10px; padding: 12px 12px 18px; background: var(--face); box-shadow: inset -1px -1px var(--dk), inset 1px 1px var(--hl), inset -2px -2px var(--shadow), inset 2px 2px var(--light); flex: none; }
+    .screen { position: relative; width: 100%; height: 100%; box-shadow: inset 1px 1px var(--shadow), inset -1px -1px var(--hl); overflow: hidden; }
+    .screen img { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 70%; max-height: 80%; object-fit: contain; }
+    .mini-win { position: absolute; left: 8px; top: 8px; width: 108px; height: 62px; background: var(--face); box-shadow: inset -1px -1px #000, inset 1px 1px #fff; padding: 2px; }
+    .mini-win b { display: block; height: 9px; background: var(--pv-title, #000080); }
+    .mini-win i { display: block; margin: 5px 4px 0; height: 4px; background: #000; opacity: .6; }
+    .mini-win .mw-sel { display: inline-block; margin: 4px 4px 0; padding: 0 4px; background: var(--pv-title, #000080); color: #fff; font-size: 9px; font-style: normal; }
+    .preview-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+    .preview-row > .col { flex: 1; min-width: 200px; }
+    .dbl { width: 64px; height: 64px; background: var(--win); box-shadow: inset 1px 1px var(--shadow), inset -1px -1px var(--hl); display: flex; align-items: center; justify-content: center; font-size: 28px; touch-action: manipulation; user-select: none; cursor: url('images/Cursor_15.cur'), pointer; }
+    input[type="range"] { width: 200px; max-width: 100%; accent-color: var(--title-a); }
+    .kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; }
+    .kv dt { margin: 0; } .kv dd { margin: 0; }
+    .crumb { opacity: .8; }
+    a.cplink { color: var(--link); text-decoration: underline; background: none; border: 0; padding: 0; }
+  </style>
+</head>
+<body>
+  <div class="cp-bar">
+    <button type="button" class="btn small" id="back" hidden>◄ Back</button>
+    <h1 id="title" tabindex="-1">Control Panel</h1>
+  </div>
+  <div class="cp-main" id="main"></div>
+  <div class="cp-foot">
+    <span class="small" id="foot-note">Changes take effect immediately.</span>
+    <button type="button" class="btn" id="close">Close</button>
+  </div>
+
+  <script>
+  (function () {
+    'use strict';
+    var P = window.parent, D = document;
+    function gh() { try { return P && P.GHShell; } catch (e) { return null; } }
+    var $ = function (s, r) { return (r || D).querySelector(s); };
+    function h(tag, a) {
+      var e = D.createElement(tag), kids = Array.prototype.slice.call(arguments, 2);
+      if (a) Object.keys(a).forEach(function (k) {
+        var v = a[k]; if (v === null || v === undefined || v === false) return;
+        if (k === 'class') e.className = v; else if (k === 'text') e.textContent = v;
+        else if (k === 'on') Object.keys(v).forEach(function (ev) { e.addEventListener(ev, v[ev]); });
+        else e.setAttribute(k, v === true ? '' : v);
+      });
+      kids.forEach(function add(c) { if (Array.isArray(c)) return c.forEach(add); if (c === null || c === undefined || c === false) return; e.append(c.nodeType ? c : D.createTextNode(String(c))); });
+      return e;
+    }
+    var S = function () { var g = gh(); return g ? g.getSettings() : {}; };
+    var set = function (k, v) { var g = gh(); if (g) g.set(k, v); mirror(); };
+    var uid = 0;
+
+    /* mirror the shell's look so this applet follows the colour scheme */
+    function mirror() {
+      var s = S(), r = D.documentElement;
+      r.dataset.scheme = s.highContrast ? 'highcontrast' : (s.scheme || 'standard');
+      r.classList.toggle('high-contrast', !!s.highContrast); r.classList.toggle('reduced-motion', !!s.reducedMotion);
+      r.style.setProperty('--text-scale', String(s.textScale || 1));
+    }
+
+    /* ---------- control builders ---------- */
+    function check(label, key, hint, onchange) {
+      var id = 'c' + (++uid), inp = h('input', { type: 'checkbox', id: id });
+      inp.checked = !!S()[key];
+      inp.addEventListener('change', function () { set(key, inp.checked); if (onchange) onchange(inp.checked); });
+      return h('div', { class: 'opt' }, h('label', { class: 'chk' }, inp, h('span', { class: 'box' }), h('span', { class: 'lbl', text: label })), hint ? h('div', { class: 'hint', text: hint }) : null);
+    }
+    function radios(name, key, options, legend) {
+      var cur = S()[key];
+      var fs = h('fieldset', { class: 'group' }, h('legend', { text: legend }));
+      options.forEach(function (o) {
+        var inp = h('input', { type: 'radio', name: name, value: String(o[0]) });
+        inp.checked = String(cur) === String(o[0]);
+        inp.addEventListener('change', function () { set(key, typeof cur === 'number' ? Number(o[0]) : o[0]); });
+        fs.append(h('div', { class: 'opt' }, h('label', { class: 'rad' }, inp, h('span', { class: 'box' }), h('span', { class: 'lbl', text: o[1] })), o[2] ? h('div', { class: 'hint', text: o[2] }) : null));
+      });
+      return fs;
+    }
+    function btn(label, fn, cls) { return h('button', { type: 'button', class: 'btn ' + (cls || ''), text: label, on: { click: fn } }); }
+    function group(title) { var a = Array.prototype.slice.call(arguments, 1); return h('fieldset', { class: 'group' }, h('legend', { text: title }), a); }
+    function tabs(list) {
+      var bar = h('div', { class: 'tabs', role: 'tablist' }), host = h('div', { class: 'tabpanel' }), btns = [];
+      function sel(i, f) { btns.forEach(function (b, j) { b.setAttribute('aria-selected', String(i === j)); b.tabIndex = i === j ? 0 : -1; }); host.replaceChildren(list[i][1]()); host.setAttribute('role', 'tabpanel'); host.setAttribute('aria-labelledby', btns[i].id); if (f) btns[i].focus(); }
+      list.forEach(function (t, i) {
+        var b = h('button', { type: 'button', role: 'tab', id: 'tab' + (++uid), text: t[0], 'aria-selected': 'false' });
+        b.addEventListener('click', function () { sel(i); });
+        b.addEventListener('keydown', function (e) { if (e.key === 'ArrowRight') { e.preventDefault(); sel((i + 1) % list.length, true); } else if (e.key === 'ArrowLeft') { e.preventDefault(); sel((i - 1 + list.length) % list.length, true); } });
+        btns.push(b); bar.append(b);
+      });
+      sel(0);
+      return h('div', {}, bar, host);
+    }
+
+    /* ---------- pages ---------- */
+    var COLORS = ['#008080', '#000000', '#000080', '#008000', '#800000', '#800080', '#808000', '#808080', '#c0c0c0', '#0000ff', '#00ff00', '#00ffff', '#ff0000', '#ff00ff', '#ffff00', '#ffffff'];
+    var SCHEME_PV = { standard: '#000080', highcontrast: '#000080', rose: '#800040', marine: '#004060', pumpkin: '#a04000', spruce: '#004000', slate: '#304860', wheat: '#806000', eggplant: '#400060', rainyday: '#406080', hotdog: '#000000' };
+
+    function pageDisplay() {
+      return tabs([
+        ['Background', function () {
+          var s = S(), scr = h('div', { class: 'screen', style: 'background:' + s.desktopColor }), pimg = h('img', { src: 'images/winBG.PNG', alt: '' });
+          if (s.wallpaper === 'none') pimg.style.display = 'none'; scr.append(pimg);
+          var mon = h('div', { class: 'monitor', 'aria-hidden': 'true' }, scr);
+          var sw = h('div', { class: 'swatches', role: 'group', 'aria-label': 'Desktop color' });
+          COLORS.forEach(function (c) { var b = h('button', { type: 'button', class: 'sw', style: 'background:' + c, 'aria-label': 'Color ' + c + (c === '#008080' ? ' (Windows teal)' : ''), 'aria-pressed': String(s.desktopColor === c), title: c }); b.addEventListener('click', function () { set('desktopColor', c); render(); }); sw.append(b); });
+          var custom = h('input', { type: 'color', value: s.desktopColor, 'aria-label': 'Custom desktop color' }); custom.addEventListener('change', function () { set('desktopColor', custom.value); render(); });
+          return h('div', {}, mon, radios('wp', 'wallpaper', [['logo', 'ColtonOS 95 logo (centered)', 'Sized to 30% of the screen height and shrunk to fit narrow screens.'], ['tile', 'Tiled pattern', 'Repeats the classic tile image over your desktop color.'], ['custom', 'Your own tiled image', 'Pick a picture below. It is shrunk to the tile size you choose and saved in this browser.'], ['none', '(None)']], 'Wallpaper'),
+            customTileGroup(),
+            group('ColtonOS logo', h('label', { class: 'row' }, h('span', { text: 'Logo height:' }), rangeCtl('logoSize', 10, 80, 5, function (v) { return v + '% of screen'; }))),
+            group('Desktop color', sw, h('label', { class: 'row' }, h('span', { text: 'Custom:' }), custom), btn('Windows teal (default)', function () { set('desktopColor', '#008080'); render(); }, 'small')));
+        }],
+        ['Appearance', function () {
+          var s = S(), cur = s.scheme, mini = h('div', { class: 'screen', style: 'background:' + s.desktopColor + ';height:100px;width:100%;--pv-title:' + SCHEME_PV[cur] }, h('div', { class: 'mini-win' }, h('b'), h('i'), h('i'), h('span', { class: 'mw-sel', text: 'Selected' })));
+          var sel = h('select', { class: 'field', id: 'scheme', 'aria-label': 'Scheme' });
+          var schemes = (gh() && gh().schemes) || {}; Object.keys(schemes).forEach(function (k) { var o = h('option', { value: k, text: schemes[k] }); if (k === cur) o.selected = true; sel.append(o); });
+          sel.addEventListener('change', function () { set('scheme', sel.value); render(); });
+          return h('div', {}, h('div', { class: 'preview-row' }, h('div', { class: 'col' }, mini), h('div', { class: 'col' }, h('label', { for: 'scheme', text: 'Scheme:' }), sel,
+            h('p', { class: 'hint', style: 'margin-left:0', text: s.highContrast ? 'High Contrast is on (Accessibility), which overrides the scheme.' : 'Changes title bar and window colors. Your desktop color stays as chosen on the Background tab.' }))));
+        }],
+        ['Effects', function () {
+          return h('div', {}, radios('crt', 'crt', [['off', 'Off', 'Crisp, flat display.'], ['light', 'Light', 'Soft scanlines and a gentle vignette.'], ['standard', 'Standard', 'Scanlines, phosphor mask and vignette. Static, very cheap.'], ['heavy', 'Heavy', 'Adds stronger scanlines and a slow rolling refresh bar.']], 'CRT monitor effect'),
+            group('Fine tuning', h('label', { class: 'row' }, h('span', { text: 'Intensity:' }), (function () { var r = h('input', { type: 'range', min: '10', max: '100', step: '5', 'aria-label': 'CRT intensity' }); r.value = S().crtIntensity; r.addEventListener('input', function () { set('crtIntensity', Number(r.value)); }); return r; })()),
+              check('Subtle phosphor flicker', 'crtFlicker', 'Off by default. Never runs with Reduce Motion or Low Power Mode.'),
+              check('Keep the effect on while a game is open', 'crtOverGames', 'Off keeps games sharp and fast. The effect returns when you close the game.')));
+        }],
+        ['Screen Saver', function () {
+          var box = h('div'), redraw = function () { box.replaceChildren(build()); };
+          function build() {
+          var g = gh(), s = S(), sel = h('select', { class: 'field', 'aria-label': 'Screen saver' });
+          [['none', '(None)'], ['pipes', '3D Pipes (OpenGL)'], ['mystify', 'Mystify Your Mind'], ['starfield', 'Starfield'], ['logo', 'Bouncing ColtonOS logo'], ['marquee', 'Scrolling marquee'], ['blank', 'Blank screen']].forEach(function (o) { var op = h('option', { value: o[0], text: o[1] }); if (s.saver === o[0]) op.selected = true; sel.append(op); });
+          sel.addEventListener('change', function () { set('saver', sel.value); redraw(); });
+          var mins = h('input', { type: 'number', min: '1', max: '60', class: 'field', style: 'width:70px', 'aria-label': 'Wait minutes' }); mins.value = s.saverMin;
+          mins.addEventListener('change', function () { var v = Math.max(1, Math.min(60, parseInt(mins.value, 10) || 10)); mins.value = v; set('saverMin', v); });
+          var txt = h('input', { type: 'text', class: 'field', maxlength: '40', 'aria-label': 'Marquee text', style: 'width:200px' }); txt.value = s.saverText;
+          txt.addEventListener('input', function () { set('saverText', txt.value); });
+          var pipesGroup = null;
+          if (s.saver === 'pipes') {
+            var cnt = h('select', { class: 'field', 'aria-label': 'Number of pipes' }); [1, 2, 3, 4, 5].forEach(function (n) { var o = h('option', { value: n, text: String(n) }); if (s.pipesCount === n) o.selected = true; cnt.append(o); });
+            cnt.addEventListener('change', function () { set('pipesCount', Number(cnt.value)); });
+            var jt = h('select', { class: 'field', 'aria-label': 'Joint style' }); [['mixed', 'Mixed (balls and elbows)'], ['ball', 'Ball joints'], ['elbow', 'Elbow joints']].forEach(function (o) { var op = h('option', { value: o[0], text: o[1] }); if (s.pipesJoint === o[0]) op.selected = true; jt.append(op); });
+            jt.addEventListener('change', function () { set('pipesJoint', jt.value); });
+            var sp = h('input', { type: 'range', min: '40', max: '250', step: '10', 'aria-label': 'Pipe growth speed' }); sp.value = s.pipesSpeed; sp.addEventListener('input', function () { set('pipesSpeed', Number(sp.value)); });
+            pipesGroup = group('3D Pipes settings', h('label', { class: 'row' }, h('span', { text: 'Pipes at once:' }), cnt), h('label', { class: 'row', style: 'margin-top:6px' }, h('span', { text: 'Joints:' }), jt), h('label', { class: 'row', style: 'margin-top:6px' }, h('span', { text: 'Slow' }), sp, h('span', { text: 'Fast' })),
+              h('p', { class: 'hint', style: 'margin-left:0', text: 'Needs a one-time download of the 3D library (the same one the 3D games use). Falls back to Mystify offline.' }));
+          }
+          return h('div', {}, group('Screen Saver', h('label', { class: 'row' }, h('span', { text: 'Style:' }), sel, btn('Preview', function () { g && g.previewSaver(sel.value === 'none' ? 'logo' : sel.value); }, 'small')),
+            h('label', { class: 'row', style: 'margin-top:8px' }, h('span', { text: 'Wait:' }), mins, h('span', { text: 'minutes' })), h('label', { class: 'row', style: 'margin-top:8px' }, h('span', { text: 'Marquee text:' }), txt)),
+            pipesGroup,
+            h('p', { class: 'hint', style: 'margin-left:0', text: 'Starts only after you have been idle, and never while a game is open. Move the mouse, press a key, or tap to return.' }));
+          }
+          redraw(); return box;
+        }],
+        ['Desktop', function () {
+          var g = gh();
+          return h('div', {}, group('Icons', check('Compact icon spacing', 'compact', 'Smaller grid and text.'), check('Snap icons to a grid', 'snap'), check('Auto arrange icons', 'autoArrange', 'Icons fill the grid in order; dropping an icon re-orders it.', function () { }),
+            h('div', { class: 'row', style: 'margin-top:8px' }, btn('Arrange by Name', function () { g && g.arrangeIcons('name'); }), btn('Arrange by Type', function () { g && g.arrangeIcons('type'); }))),
+            group('Restore', h('p', { class: 'hint', style: 'margin-left:0', text: 'Put every icon back where it started and bring back anything in the Recycle Bin.' }), btn('Restore default icons', function () { g && g.resetIcons(); })));
+        }]
+      ]);
+    }
+    function pageMouse() {
+      var res = h('div', { class: 'hint', style: 'margin-left:0', role: 'status', 'aria-live': 'polite', text: 'Double-click the box to test your speed.' }), last = 0;
+      var test = h('div', { class: 'dbl', role: 'button', tabindex: '0', 'aria-label': 'Double-click test area', text: '☺' });
+      var go = function () { var now = performance.now(); if (now - last < S().dblClickMs) { res.textContent = 'Double-click detected!'; test.textContent = '☻'; setTimeout(function () { test.textContent = '☺'; }, 400); last = 0; } else last = now; };
+      test.addEventListener('click', go); test.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
+      var speed = h('input', { type: 'range', min: '250', max: '900', step: '50', 'aria-label': 'Double-click speed in milliseconds' }); speed.value = S().dblClickMs; var out = h('span', { text: speed.value + ' ms' });
+      speed.addEventListener('input', function () { out.textContent = speed.value + ' ms'; set('dblClickMs', Number(speed.value)); });
+      return tabs([['Buttons', function () {
+        return h('div', {}, radios('click', 'clickMode', [['auto', 'Automatic', 'Single-tap on touchscreens, double-click with a mouse.'], ['double', 'Double-click to open items', 'Classic behavior. Single click selects.'], ['single', 'Single-click to open items', 'Easiest for touch, pens and one-handed use.']], 'Click behavior'),
+          group('Double-click speed', h('label', { class: 'row' }, h('span', { text: 'Slow' }), speed, h('span', { text: 'Fast' }), out), h('div', { class: 'row', style: 'margin-top:8px' }, test, res)));
+      }]]);
+    }
+    function pageTaskbar() {
+      return tabs([['Taskbar Options', function () {
+        return h('div', {}, group('Taskbar', check('Auto hide', 'autoHide', 'The taskbar slides away until you move the pointer to the bottom edge or focus it.'), check('Show clock', 'showClock')),
+          group('Windows', check('Animate windows when they open', 'windowAnim'), check('Show window contents while dragging', 'opaqueDrag', 'Turn off to drag just an outline, which is faster on slow devices.')));
+      }]]);
+    }
+    function pageAccess() {
+      var cur = S().textScale, sel = h('select', { class: 'field', 'aria-label': 'Text size' });
+      [[1, 'Normal (100%)'], [1.15, 'Large (115%)'], [1.3, 'Larger (130%)'], [1.5, 'Largest (150%)']].forEach(function (o) { var op = h('option', { value: o[0], text: o[1] }); if (Number(cur) === o[0]) op.selected = true; sel.append(op); });
+      sel.addEventListener('change', function () { set('textScale', Number(sel.value)); });
+      return tabs([['Display', function () {
+        return h('div', {}, group('Make the screen easier to see', check('Use High Contrast', 'highContrast', 'Black background with bright text and a yellow selection. Overrides the color scheme.'), check('Reduce motion and animation', 'reducedMotion', 'Stops window animations, the marquee and screen-effect motion.'), h('label', { class: 'row', style: 'margin-top:6px' }, h('span', { text: 'Text size:' }), sel)),
+          group('Keyboard', h('p', { class: 'hint', style: 'margin-left:0', text: 'Every part of ColtonOS works from the keyboard. Press Ctrl+Esc for Start, Ctrl+K to Find, Alt+Space for the window menu. Full list: Start › Help › Keyboard shortcuts.' }), btn('Open keyboard help', function () { var g = gh(); g && g.openHelp('keys'); }, 'small')));
+      }]]);
+    }
+    function pageSounds() {
+      return tabs([['Sounds', function () {
+        return h('div', {}, group('Startup', check('Play the startup sound and boot screen', 'startupSound', 'Applies the next time you start ColtonOS. Press Esc on the boot screen to skip it any time.'), check('Show the Welcome screen when ColtonOS starts', 'welcome')),
+          group('System sounds', check('Play sounds for windows and messages', 'uiSounds', 'Short synthesized beeps when programs open, close, minimize, or show a message.'),
+            h('label', { class: 'row', style: 'margin-top:6px' }, h('span', { text: 'Volume:' }), (function () { var r = h('input', { type: 'range', min: '0', max: '100', step: '5', 'aria-label': 'System sound volume' }); r.value = S().uiVolume; r.addEventListener('input', function () { set('uiVolume', Number(r.value)); }); r.addEventListener('change', function () { var g = gh(); g && g.playSound('info'); }); return r; })()),
+            h('div', { class: 'row', style: 'margin-top:8px' }, ['open', 'close', 'info', 'warning', 'error', 'tada'].map(function (k) { return btn('▶ ' + k, function () { var g = gh(); if (g) { var was = S().uiSounds; if (!was) { g.set('uiSounds', true); } g.playSound(k); if (!was) { setTimeout(function () { g.set('uiSounds', false); }, 700); } } }, 'small'); }))),
+          h('p', { class: 'hint', style: 'margin-left:0', text: 'Game and chat sounds are controlled by each program. Use your device volume for everything.' }));
+      }]]);
+    }
+    function pageSystem() {
+      var g = gh(), auto = g && g.lowPowerAuto && g.lowPowerAuto();
+      return tabs([
+        ['Performance', function () {
+          return h('div', {}, group('Low Power Mode', check('Use Low Power Mode', 'lowPower', 'Keeps every feature but removes decoration (animations, rolling CRT bar, shadows) and lets hidden apps rest.'), h('p', { class: 'hint', style: 'margin-left:0', text: auto ? 'This device asked for power saving, so Low Power Mode is on automatically.' : 'Tip: turn this on if games feel slow.' })),
+            group('System tools', h('div', { class: 'row' }, btn('System Monitor…', function () { g && g.openItem('app:monitor'); }), btn('System Properties…', function () { g && g.showSystemProperties(); }), btn('Install as app', function () { g && g.install(); }))));
+        }],
+        ['Session', function () {
+          return h('div', {}, group('Window layout (this browser tab only)', h('div', { class: 'row' }, btn('Save layout', function () { g && g.saveLayout(); }), btn('Restore layout', function () { g && g.restoreLayout(); }), btn('Reset all windows', function () { g && g.resetLayout(); }))));
+        }],
+        ['Reset', function () {
+          return h('div', {}, group('Reset', h('p', { class: 'hint', style: 'margin-left:0', text: 'Puts every display, mouse, taskbar and accessibility setting back to its default. Game saves, chat data and favorites are not touched.' }), btn('Reset all desktop settings', function () { if (g) { g.msgBox('Reset every desktop setting to its default?', { title: 'Control Panel', icon: 'question', buttons: ['Yes', 'No'], def: 1, cancel: 'no' }).then(function (r) { if (r === 'yes') { g.resetSettings(); mirror(); render(); } }); } })));
+        }]
+      ]);
+    }
+    function pageLibrary() {
+      var g = gh(), file = h('input', { type: 'file', accept: '.json,application/json', hidden: true });
+      file.addEventListener('change', function () { var f = file.files && file.files[0]; if (!f) return; var r = new FileReader(); r.onload = function () { try { var ok = g.importTheme(JSON.parse(r.result)); g.toast(ok ? 'Theme pack imported.' : 'Theme pack rejected.'); mirror(); render(); } catch (e) { g.toast('That file is not a valid theme pack.'); } }; r.readAsText(f); file.value = ''; });
+      return tabs([['Library data', function () {
+        return h('div', {}, group('Favorites and recent games', h('p', { class: 'hint', style: 'margin-left:0', text: (g ? g.favoritesCount() : 0) + ' favorite(s), ' + (g ? g.recentsCount() : 0) + ' recent item(s). Stored only in this browser.' }),
+          h('div', { class: 'row' }, btn('Clear favorites', function () { g.clearFavorites(); render(); }), btn('Clear recent games', function () { g.clearRecents(); render(); }), btn('Open Project Library', function () { g.openItem('app:library'); }))),
+          group('Theme packs', h('div', { class: 'row' }, btn('Export theme…', function () { var blob = new Blob([JSON.stringify(g.exportTheme(), null, 2)], { type: 'application/json' }), a = h('a', { href: URL.createObjectURL(blob), download: 'coltonos-theme.json' }); D.body.append(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0); }), btn('Import theme…', function () { file.click(); }), file),
+            h('p', { class: 'hint', style: 'margin-left:0', text: 'Packs include your scheme, desktop color, screen effects, mouse and accessibility options.' })));
+      }]]);
+    }
+    function pageAbout() {
+      var g = gh();
+      return h('div', {}, group('ColtonOS 95', h('dl', { class: 'kv' }, h('dt', { text: 'Version' }), h('dd', { text: g ? g.version : '' }), h('dt', { text: 'Maker' }), h('dd', { text: 'Macrohard Corporation' }), h('dt', { text: 'Registered to' }), h('dd', { text: 'Colton Bennett' }))), btn('About ColtonOS…', function () { g.showAbout(); }));
+    }
+
+    function pageDateTime() {
+      var now = new Date(), y = now.getFullYear(), m = now.getMonth(), first = new Date(y, m, 1).getDay(), days = new Date(y, m + 1, 0).getDate();
+      var tbl = h('table', { class: 'sunken', style: 'background:var(--win);color:var(--win-text);border-collapse:collapse;text-align:center;width:100%;max-width:300px', role: 'grid', 'aria-label': now.toLocaleDateString([], { month: 'long', year: 'numeric' }) });
+      var head = h('tr'); ['S', 'M', 'T', 'W', 'T', 'F', 'S'].forEach(function (d, i) { head.append(h('th', { scope: 'col', 'aria-label': ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i], text: d, style: 'padding:3px;background:var(--face);color:var(--text);font-weight:normal' })); }); tbl.append(head);
+      var d = 1 - first;
+      for (var r = 0; r < 6 && d <= days; r++) { var tr = h('tr'); for (var c = 0; c < 7; c++, d++) { var td = h('td', { style: 'padding:4px 0' }); if (d >= 1 && d <= days) { td.textContent = d; if (d === now.getDate()) { td.style.cssText += ';background:var(--sel);color:var(--sel-text);font-weight:bold'; td.setAttribute('aria-current', 'date'); } } tr.append(td); } tbl.append(tr); }
+      var clock = h('div', { style: 'font-size:2em;text-align:center;margin:6px 0', 'aria-live': 'off' });
+      var tick = function () { clock.textContent = new Date().toLocaleTimeString(); }; tick(); var iv = setInterval(function () { if (!clock.isConnected) { clearInterval(iv); return; } tick(); }, 1000);
+      var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+      return tabs([['Date & Time', function () { return h('div', { class: 'preview-row' }, h('div', { class: 'col' }, h('strong', { text: now.toLocaleDateString([], { month: 'long', year: 'numeric' }) }), tbl), h('div', { class: 'col' }, clock, h('div', { class: 'hint', style: 'margin-left:0;text-align:center', text: 'Time zone: ' + tz }), h('p', { class: 'hint', style: 'margin-left:0', text: 'ColtonOS uses your device clock. Open the Clock program for alarms and a stopwatch.' }), btn('Open Clock', function () { var g = gh(); g && g.openItem('app:clock'); }, 'small'))); }]]);
+    }
+
+    /* ---------- extra helpers (v4.3) ---------- */
+    function rangeCtl(key, min, max, step, fmt) {
+      var out = h('span', { class: 'hint', style: 'margin:0 0 0 6px' }), r = h('input', { type: 'range', min: String(min), max: String(max), step: String(step), 'aria-label': key });
+      r.value = S()[key]; out.textContent = fmt ? fmt(Number(r.value)) : r.value;
+      r.addEventListener('input', function () { out.textContent = fmt ? fmt(Number(r.value)) : r.value; set(key, Number(r.value)); });
+      return h('span', {}, r, out);
+    }
+    function selectCtl(label, key, opts, numeric) {
+      var sel = h('select', { class: 'field', 'aria-label': label }), cur = S()[key];
+      opts.forEach(function (o) { var op = h('option', { value: o[0], text: o[1] }); if (String(cur) === String(o[0])) op.selected = true; sel.append(op); });
+      sel.addEventListener('change', function () { set(key, numeric ? Number(sel.value) : sel.value); });
+      return h('label', { class: 'row' }, h('span', { text: label }), sel);
+    }
+    function colorCtl(label, key, fallback) {
+      var c = h('input', { type: 'color', value: S()[key] || fallback, 'aria-label': label });
+      c.addEventListener('change', function () { set(key, c.value); });
+      return h('div', { class: 'row' }, h('span', { text: label }), c, btn('Default', function () { set(key, ''); render(); }, 'small'));
+    }
+    var TILE_PRESETS = [[16, 'Tiny — 16 px'], [32, 'Small — 32 px'], [64, 'Medium — 64 px'], [128, 'Large — 128 px'], [256, 'Extra large — 256 px']];
+    function customTileGroup() {
+      var g = gh(), s = S(), note = h('p', { class: 'hint', style: 'margin-left:0', role: 'status', text: 'Choose a picture, then pick how big each tile should be. The picture is reduced to that size automatically and stored in IndexedDB.' });
+      var file = h('input', { type: 'file', accept: 'image/*', 'aria-label': 'Choose a tile image' });
+      var sel = h('select', { class: 'field', 'aria-label': 'Tile size' }); TILE_PRESETS.forEach(function (o) { var op = h('option', { value: o[0], text: o[1] }); if (Number(s.wpTilePx) === o[0]) op.selected = true; sel.append(op); });
+      var smooth = h('input', { type: 'checkbox' }); smooth.checked = !!s.wpSmooth;
+      function apply() {
+        var f = file.files && file.files[0]; if (!g) return;
+        note.textContent = 'Working…';
+        var p = f ? g.setCustomWallpaper(f, Number(sel.value), smooth.checked) : g.rescaleWallpaper(Number(sel.value)).then(function (ok) { if (ok) g.set('wpSmooth', smooth.checked); return ok; });
+        p.then(function (ok) { note.textContent = ok ? 'Done — your tiled image is now the wallpaper.' : 'Pick an image first.'; if (ok) render(); }).catch(function (e) { note.textContent = 'Could not use that image: ' + (e && e.message || e); });
+      }
+      sel.addEventListener('change', function () { if (!file.files.length && g) g.rescaleWallpaper(Number(sel.value)).then(function (ok) { note.textContent = ok ? 'Tile size changed.' : 'Pick an image first.'; }); else apply(); });
+      smooth.addEventListener('change', function () { g && g.set('wpSmooth', smooth.checked); });
+      return group('Your own tiled image', h('div', { class: 'row' }, file), h('label', { class: 'row' }, h('span', { text: 'Tile size:' }), sel),
+        h('label', { class: 'opt' }, smooth, ' Smooth scaling (off keeps crisp retro pixels)'), h('div', { class: 'row' }, btn('Use this image', apply), btn('Remove', function () { set('wallpaper', 'logo'); render(); }, 'small')), note);
+    }
+    function pagePersonalize() {
+      var g = gh();
+      return tabs([
+        ['Themes', function () {
+          var list = h('div', { class: 'row' }), names = (g && g.themes && g.themes()) || [];
+          names.forEach(function (n) { list.append(btn(n, function () { g.applyTheme(n); render(); }, S().themeName === n ? 'default' : '')); });
+          return h('div', {}, group('Desktop themes', h('p', { class: 'hint', style: 'margin-left:0', text: 'A theme changes the color scheme, desktop color, wallpaper, CRT effect, screen saver and sounds all at once. You can still tweak anything afterwards.' }), list));
+        }],
+        ['Icons & Labels', function () {
+          return h('div', {}, group('Desktop icons', selectCtl('Name lines:', 'labelLines', [[1, '1 line'], [2, '2 lines (default)'], [3, '3 lines'], [4, '4 lines']], true),
+            h('label', { class: 'row' }, h('span', { text: 'Icon spacing:' }), rangeCtl('iconSpacing', 0, 120, 5, function (v) { return v < 50 ? 'Automatic' : v + ' px'; })),
+            check('Outline icon names', 'labelShadow', 'Black outline so names stay readable on busy wallpapers.'), check('Hide all desktop icons', 'hideIcons', 'They are still in Start, Find and My Computer.')),
+            group('Selection color', colorCtl('Highlight:', 'selColor', '#000080')));
+        }],
+        ['Windows', function () {
+          return h('div', {}, group('Window style', check('Shadow behind windows', 'winShadow'), check('Gradient title bars', 'titleGradient', 'The Windows 98 look.'), check('Show window contents while dragging', 'opaqueDrag'), check('Animate minimize and restore', 'windowAnim')),
+            group('Colors & font', colorCtl('Active title bar:', 'titleColor', '#000080'), selectCtl('Interface font:', 'fontMode', [['w95', 'Pixel font (W95FA)'], ['system', 'System font (easier to read)']])));
+        }],
+        ['Taskbar & Clock', function () {
+          return h('div', {}, group('Taskbar', check('Show people online counter', 'showOnline', 'The green dot and number next to the chat icon.'), check('Auto-hide the taskbar', 'autoHide')),
+            group('Clock', check('24-hour clock', 'clock24'), check('Show seconds', 'showSeconds'), check('Show the clock', 'showClock')));
+        }],
+        ['Sounds & Theater', function () {
+          return h('div', {}, group('Computer theater', check('Hard-drive and modem sounds', 'theaterSounds', 'A hard-drive spin-up when a game loads (also needs "Play sounds for windows and messages") and the dial-up connection sound for the Web Browser and Chatroom.'),
+            check('“Copying files…” dialog when launching games', 'copyDialog'), check('Hourglass cursor while busy', 'busyCursor'), check('“Illegal operation” dialog if a game crashes', 'crashDialogs', 'Shows the real error under Details. You can always choose Ignore.')),
+            group('Startup & shutdown', check('Run ScanDisk after an improper shutdown', 'scandisk', 'If you close the tab without using Start › Shut Down, the next boot checks the disk.'), check('CRT power-off animation', 'crtPower'),
+              h('div', { class: 'row', style: 'margin-top:6px' }, btn('Restart in MS-DOS mode…', function () { g && g.openDosMode(); }), btn('Preview ScanDisk next boot', function () { try { localStorage.setItem('gh-dirty', '1'); } catch (e) {} g && g.toast('ScanDisk will run the next time ColtonOS boots.'); }))));
+        }]
+      ]);
+    }
+    var PAGES = {
+      display: ['Display Properties', 'my-computer', pageDisplay, 'Display'], mouse: ['Mouse Properties', 'my-computer', pageMouse, 'Mouse'],
+      taskbar: ['Taskbar Properties', 'programs', pageTaskbar, 'Taskbar & Start Menu'], access: ['Accessibility Options', 'help', pageAccess, 'Accessibility'],
+      sounds: ['Sounds Properties', 'speaker', pageSounds, 'Sounds'], system: ['System', 'hard-disk', pageSystem, 'System'],
+      datetime: ['Date/Time Properties', 'info', pageDateTime, 'Date/Time'], personalize: ['Customize ColtonOS', 'star', pagePersonalize, 'Customize'], library: ['Library & Themes', 'documents-folder', pageLibrary, 'Library & Themes'], about: ['About', 'info', pageAbout, 'About']
+    };
+    var HOME = ['display', 'personalize', 'access', 'mouse', 'taskbar', 'sounds', 'system', 'library', 'datetime', 'about'];
+    var current = 'home';
+
+    function render() {
+      var main = $('#main'), g = gh();
+      mirror();
+      main.replaceChildren();
+      $('#back').hidden = current === 'home';
+      if (current === 'home') {
+        $('#title').textContent = 'Control Panel';
+        var grid = h('div', { class: 'cp-grid', role: 'list', 'aria-label': 'Control Panel items' });
+        HOME.forEach(function (k) {
+          var label, icon;
+          if (k === 'datetime') { label = 'Date/Time'; icon = 'images/icons/clock.png'; } else { label = PAGES[k][3]; icon = 'images/icons/' + PAGES[k][1] + '.svg'; }
+          var b = h('button', { type: 'button', class: 'cp-icon', role: 'listitem' }, h('img', { src: icon, alt: '' }), h('span', { text: label }));
+          b.addEventListener('click', function () { go(k); });
+          grid.append(b);
+        });
+        main.append(grid);
+      } else {
+        var p = PAGES[current]; $('#title').textContent = p[0]; main.append(p[2]());
+      }
+      document.title = $('#title').textContent;
+    }
+    function go(page, focus) {
+      current = PAGES[page] ? page : 'home'; render();
+      if (focus !== false) { var t = $('#title'); t.focus(); }
+    }
+    $('#back').addEventListener('click', function () { go('home'); });
+    $('#close').addEventListener('click', function () { var g = gh(); if (g) { try { P.document.getElementById('app-control').querySelector('.c-close').click(); } catch (e) {} } });
+    D.addEventListener('keydown', function (e) { if (e.key === 'Escape' && current !== 'home') { e.preventDefault(); go('home'); } if (e.key === 'Backspace' && current !== 'home' && !/input|select|textarea/i.test(e.target.tagName)) { e.preventDefault(); go('home'); } });
+    window.addEventListener('message', function (e) {
+      if (e.origin !== location.origin) return; var d = e.data || {};
+      if (d.source !== 'parent-shell') return;
+      if (d.action === 'cpGoto') go(d.page || 'home', false);
+      if (d.action === 'settingsChanged') mirror();
+    });
+    var start = (gh() && gh().pendingPage) || 'home';
+    go(start, false);
+  })();
+  </script>
+</body>
+</html>
