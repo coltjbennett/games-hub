@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WordPad</title>
+<link rel="stylesheet" href="w95.css">
+<style>
+  #doc{flex:1;min-height:0;margin:4px;overflow:auto;padding:14px 18px;font:15px/1.4 "Times New Roman",serif;outline:0;user-select:text;-webkit-user-select:text}
+  #doc *{font-family:inherit}
+  #doc img{max-width:100%}
+  #fontsel{width:120px}
+</style></head><body>
+<div class="bar" role="toolbar" aria-label="File">
+  <button id="bNew" title="New">New</button><button id="bOpen" title="Open">Open…</button><button id="bSave" title="Save">Save</button><button id="bSaveAs">Save As…</button><button id="bPrint">Print</button>
+</div>
+<div class="bar" role="toolbar" aria-label="Formatting">
+  <select id="fontsel" aria-label="Font"><option>Times New Roman</option><option>Arial</option><option>Courier New</option><option>Comic Sans MS</option><option>Georgia</option><option>Verdana</option></select>
+  <select id="sizesel" aria-label="Size"><option value="1">8</option><option value="2">10</option><option value="3" selected>12</option><option value="4">14</option><option value="5">18</option><option value="6">24</option><option value="7">36</option></select>
+  <span class="sep"></span>
+  <button class="tbtn" data-c="bold" title="Bold"><b>B</b></button><button class="tbtn" data-c="italic" title="Italic"><i>I</i></button><button class="tbtn" data-c="underline" title="Underline"><u>U</u></button>
+  <input type="color" id="color" value="#000000" title="Text color" style="width:30px;height:26px;padding:0">
+  <span class="sep"></span>
+  <button class="tbtn" data-c="justifyLeft" title="Left">⇤</button><button class="tbtn" data-c="justifyCenter" title="Center">↔</button><button class="tbtn" data-c="justifyRight" title="Right">⇥</button>
+  <button class="tbtn" data-c="insertUnorderedList" title="Bullets">•≡</button><button class="tbtn" data-c="undo" title="Undo">↶</button><button class="tbtn" data-c="redo" title="Redo">↷</button>
+  <button id="bDate" title="Insert date">Date</button>
+</div>
+<div id="doc" class="sunken" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true" aria-label="Document"></div>
+<div class="status"><div id="st1">Ready</div><div id="st2">0 words</div></div>
+<script src="../vfs.js"></script>
+<script>
+(function(){
+  var doc=document.getElementById('doc'),cur=null,dirty=false,FS=window.ColtonFS,P=null;try{P=parent.GHShell;}catch(e){}
+  function st(t){document.getElementById('st1').textContent=t;}
+  function title(){try{var w=frameElement.closest('.win');var tt=w&&w.querySelector('.wt-text');if(tt)tt.textContent=(cur?cur.name:'Document')+(dirty?' *':'')+' - WordPad';}catch(e){}}
+  function words(){var t=doc.innerText.trim();document.getElementById('st2').textContent=(t?t.split(/\s+/).length:0)+' words';}
+  doc.addEventListener('input',function(){dirty=true;words();title();});
+  document.querySelectorAll('[data-c]').forEach(function(b){b.addEventListener('pointerdown',function(e){e.preventDefault();});b.addEventListener('click',function(){document.execCommand(b.dataset.c);doc.focus();});});
+  document.getElementById('fontsel').addEventListener('change',function(e){document.execCommand('fontName',false,e.target.value);doc.focus();});
+  document.getElementById('sizesel').addEventListener('change',function(e){document.execCommand('fontSize',false,e.target.value);doc.focus();});
+  document.getElementById('color').addEventListener('input',function(e){document.execCommand('foreColor',false,e.target.value);});
+  document.getElementById('bDate').onclick=function(){document.execCommand('insertText',false,new Date().toLocaleString());};
+  /* sanitise HTML we load: no scripts, handlers or remote content */
+  function clean(html){var t=document.createElement('template');t.innerHTML=html;t.content.querySelectorAll('script,iframe,object,embed,link,meta,style,form').forEach(function(n){n.remove();});
+    t.content.querySelectorAll('*').forEach(function(n){Array.prototype.slice.call(n.attributes).forEach(function(a){if(/^on/i.test(a.name)||/javascript:/i.test(a.value)||(a.name==='src'&&!/^data:image\//i.test(a.value)))n.removeAttribute(a.name);});});
+    return t.innerHTML;}
+  function load(m){return FS.read(m.id).then(function(d){return d instanceof Blob?d.text():String(d||'');}).then(function(t){var isHtml=/\.(htm|html|rtf)$/i.test(m.name)||/^\s*<(!doctype|html|body|div|p|b|i|u|span)/i.test(t);doc.innerHTML=isHtml?clean(t):'';if(!isHtml)doc.innerText=t;cur=m;dirty=false;title();words();st('Opened '+m.name);});}
+  function save(as){
+    var go=function(target){var html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+(target.name||'Document')+'</title></head><body>'+clean(doc.innerHTML)+'</body></html>';var blob=new Blob([html],{type:'text/html'});
+      var p=target.meta?FS.write(target.meta.id,blob,{name:target.name}):FS.create({parent:target.parent,name:target.name,kind:'file',mime:'text/html',data:blob});
+      return p.then(function(m){cur=m;dirty=false;title();st('Saved '+m.name);try{P&&P.emit&&P.emit('wordpad:save');}catch(e){}});};
+    if(!as&&cur&&cur.kind==='file')return go({meta:cur,name:cur.name});
+    var base=(cur&&cur.name||'Document').replace(/\.[^.]*$/,'')+'.htm';
+    return FS.dialog({mode:'save',kind:'file',kinds:['file'],name:base,title:'Save As'}).then(function(r){if(r){if(!/\.(htm|html|rtf)$/i.test(r.name))r.name+='.htm';go({parent:r.parent,name:r.name,meta:r.meta});}});
+  }
+  document.getElementById('bSave').onclick=function(){save(false);};
+  document.getElementById('bSaveAs').onclick=function(){save(true);};
+  document.getElementById('bNew').onclick=function(){if(dirty&&!confirm('Discard changes to this document?'))return;doc.innerHTML='';cur=null;dirty=false;title();words();doc.focus();};
+  document.getElementById('bOpen').onclick=function(){FS.dialog({mode:'open',kind:'file',kinds:['file','text'],title:'Open'}).then(function(r){if(r&&r.meta)load(r.meta);});};
+  document.getElementById('bPrint').onclick=function(){window.print();};
+  document.addEventListener('keydown',function(e){if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();save(false);}});
+  FS.ready().then(function(){var id=new URLSearchParams(location.search).get('open');var m=id&&FS.meta(id);if(m)load(m);else doc.focus();});
+})();
+</script></body></html>

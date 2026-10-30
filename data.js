@@ -1,7 +1,7 @@
 // data.js
 
 const siteData = {
-  version: "v4.3.0",
+  version: "v4.4.0",
   author: "COLTON BENNETT",
   location: "Waukesha, WI",
   heroTitle: "Project Launcher",
@@ -9,10 +9,14 @@ const siteData = {
   heroNote: "These are all made by me over the last year, and I do hope you enjoy!<br>Please excuse any bugs you find; I am still ironing things out.",
   marqueeText: "★★★ WELCOME TO COLTON'S PROJECT LAUNCHER ★★★ &nbsp;|&nbsp; BEST VIEWED IN 1024x768 &nbsp;|&nbsp; NETSCAPE NAVIGATOR 4.0 RECOMMENDED &nbsp;|&nbsp; ★★★ SIGN MY GUESTBOOK ★★★",
   footerCopyright: "© 2026 Colton Bennett",
-  footerLastUpdated: "October 28, 2026, 12:35:43"
+  footerLastUpdated: "October 29, 2026"
 };
 
 const announcements = [
+  {
+    title: "v4.4.0 — Tapey, achievements, widgets and a lot of classics",
+    content: "Meet <b>Tapey</b>, a roll of tape with eyes that follow your cursor, almost 1,900 lines of dialog, five personalities and loads of settings. Also new: <b>achievements</b>, desktop <b>widgets</b>, <b>save slots</b> for the local games (💾 in the title bar), a <b>Random Game</b> button in the Project Library, File Manager, WordPad, Media Player, Sound Recorder, Calendar, Character Map, Phone Dialer, Disk Defragmenter, FreeCell, Reversi and text games. Internet Explorer got a retro makeover and a ColtonNet start page, and the MS-DOS Prompt no longer loses the keyboard on phones."
+  },
   {
     title: "v4.1.x — Storage & performance upgrade",
     content: "Persistent cache writes are bounded, chat history is compacted and compressed, media uploads are size-limited, the System Monitor includes Storage Manager diagnostics, and Low Power Mode pauses nonessential work while preserving features. A massive improvement has made the chatroom cause next to no performance draw, compared to previous versions that ran so slow they impacted playing games even if chat was closed."
@@ -269,7 +273,20 @@ const applets = [
   { title: 'MS-DOS Prompt', description: 'Command line: DIR your games and type a name to launch it', icon: 'images/icons/run.svg', url: 'applets/msdos.html', w: 640, h: 400 },
   { title: 'Weather', description: 'Weather dashboard', icon: 'images/icons/weather.png', url: 'applets/weather.html', w: 660, h: 580 },
   { title: 'Timer', description: 'Countdown timer', icon: 'images/icons/hourglass.svg', url: 'applets/timer.html', w: 460, h: 520, keep: true },
-  { title: 'Web Browser', description: 'Experimental proxy browser', icon: 'images/icons/globe.svg', url: 'applets/web_proxy_browser_applet.html', w: 920, h: 640 },
+  { title: 'Internet Explorer', description: 'Retro proxy web browser with a ColtonNet start page, favorites and history', icon: 'images/icons/globe.svg', url: 'applets/web_proxy_browser_applet.html', w: 940, h: 660 },
+  { title: 'File Manager', description: 'Copy, move, import, export and search your files', icon: 'images/icons/filemanager.svg', url: 'applets/filemanager.html', w: 760, h: 520 },
+  { title: 'WordPad', description: 'Word processor with fonts, colors and lists', icon: 'images/icons/wordpad.svg', url: 'applets/wordpad.html', w: 660, h: 520 },
+  { title: 'Character Map', description: 'Copy symbols, arrows and emoji', icon: 'images/icons/charmap.svg', url: 'applets/charmap.html', w: 520, h: 440 },
+  { title: 'Calendar', description: 'Month view with notes and holidays', icon: 'images/icons/calendar.svg', url: 'applets/calendar.html', w: 620, h: 440 },
+  { title: 'Sound Recorder', description: 'Record from your microphone and save to My Documents', icon: 'images/icons/soundrec.svg', url: 'applets/soundrec.html', w: 380, h: 340 },
+  { title: 'Media Player', description: 'Play audio, video and pictures, plus built-in tunes', icon: 'images/icons/mediaplayer.svg', url: 'applets/mediaplayer.html', w: 640, h: 440 },
+  { title: 'Phone Dialer', description: 'Dial with real touch tones and speed dial', icon: 'images/icons/phone.svg', url: 'applets/phonedialer.html', w: 360, h: 560 },
+  { title: 'Disk Defragmenter', description: 'Watch your imaginary disk get tidy', icon: 'images/icons/defrag.svg', url: 'applets/defrag.html', w: 560, h: 420 },
+  { title: 'Achievements', description: 'Trophies you earn by exploring ColtonOS', icon: 'images/icons/achievements.svg', url: 'applets/achievements.html', w: 640, h: 520 },
+  { title: 'Tapey Settings', description: 'Customize Tapey, your tape-roll desktop assistant', icon: 'images/tapey/tapey-idle.svg', url: 'applets/tapey.html', w: 560, h: 600 },
+  { title: 'Text Games', description: 'Text adventure, Hangman, Mad Libs, Blackjack and more', icon: 'images/icons/textgames.svg', url: 'applets/textgames.html', w: 700, h: 460, group: 'games' },
+  { title: 'FreeCell', description: 'Classic card solitaire with numbered deals', icon: 'images/icons/freecell.svg', url: 'applets/freecell.html', w: 720, h: 560, group: 'games' },
+  { title: 'Reversi', description: 'Flip discs and take the corners', icon: 'images/icons/reversi.svg', url: 'applets/reversi.html', w: 460, h: 540, group: 'games' },
   { title: 'Minesweeper', description: 'Find the mines without stepping on one', icon: 'images/icons/warning.svg', url: 'applets/minesweeper.html', w: 340, h: 420, group: 'games' },
   { title: 'Solitaire', description: 'Klondike card game (original card art)', icon: 'images/icons/star.svg', url: 'applets/solitaire.html', w: 620, h: 540, group: 'games' }
 ];

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Character Map</title>
+<link rel="stylesheet" href="w95.css">
+<style>
+  #grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(28px,1fr));gap:0;margin:4px;overflow:auto;flex:1;min-height:0;align-content:start}
+  #grid button{border:1px solid #808080;background:#fff;font:18px "Segoe UI Symbol","Arial Unicode MS",Arial,sans-serif;min-height:32px;padding:0}
+  #grid button:hover{background:#000080;color:#fff}
+  #big{position:fixed;display:none;width:64px;height:64px;background:#fff;border:2px solid #000;font:44px Arial,sans-serif;text-align:center;line-height:60px;pointer-events:none;z-index:5}
+</style></head><body>
+<div class="bar"><label>Font: <select id="font"><option>Arial</option><option>Times New Roman</option><option>Courier New</option><option>Comic Sans MS</option></select></label>
+<label>Group: <select id="grp"></select></label></div>
+<div id="grid" class="sunken" role="grid" aria-label="Characters"></div>
+<div class="bar"><label>Characters to copy: <input type="text" id="buf" style="width:160px"></label><button id="sel">Select</button><button id="cp">Copy</button></div>
+<div class="status"><div id="info">Click a character to see it; double-click to select.</div></div>
+<div id="big"></div>
+<script>
+(function(){
+  var G={'Basic Latin':[32,126],'Latin-1 Supplement':[161,255],'Latin Extended':[256,383],'Greek':[880,1023],'Cyrillic':[1024,1119],'Punctuation':[8208,8303],'Currency':[8352,8383],'Arrows':[8592,8703],'Math Operators':[8704,8959],'Box Drawing':[9472,9599],'Block Elements':[9600,9631],'Shapes':[9632,9727],'Symbols':[9728,9983],'Dingbats':[9984,10175],'Emoji':[128512,128591]};
+  var grid=document.getElementById('grid'),grp=document.getElementById('grp'),buf=document.getElementById('buf'),info=document.getElementById('info'),big=document.getElementById('big'),font=document.getElementById('font');
+  Object.keys(G).forEach(function(k){var o=document.createElement('option');o.textContent=k;grp.append(o);});
+  function hex(n){return 'U+'+('0000'+n.toString(16).toUpperCase()).slice(-Math.max(4,n.toString(16).length));}
+  function draw(){grid.textContent='';var r=G[grp.value];grid.style.fontFamily=font.value;
+    for(var c=r[0];c<=r[1];c++){(function(c){var b=document.createElement('button');b.type='button';b.textContent=String.fromCodePoint(c);b.style.fontFamily=font.value+',"Segoe UI Symbol","Segoe UI Emoji",Arial';b.title=hex(c);
+      b.onclick=function(){info.textContent=hex(c)+'  (decimal '+c+')  '+b.textContent;var rc=b.getBoundingClientRect();big.style.display='block';big.textContent=b.textContent;big.style.left=Math.max(2,Math.min(innerWidth-70,rc.left-16))+'px';big.style.top=Math.max(2,rc.top-70)+'px';};
+      b.ondblclick=function(){buf.value+=b.textContent;};b.onblur=function(){big.style.display='none';};grid.append(b);})(c);}}
+  grp.onchange=draw;font.onchange=draw;
+  document.getElementById('sel').onclick=function(){var t=info.textContent.split('  ').pop();if(t&&t.length<=2)buf.value+=t;};
+  document.getElementById('cp').onclick=function(){buf.select();try{navigator.clipboard.writeText(buf.value);}catch(e){document.execCommand('copy');}info.textContent='Copied to the clipboard.';try{parent.GHShell.emit('charmap:copy');}catch(e){}};
+  draw();
+})();
+</script></body></html>

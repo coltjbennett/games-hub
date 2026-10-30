@@ -113,7 +113,7 @@
     'radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.5) 100%);animation:gh-fade-in 1.2s ease .3s both}',
     '@keyframes gh-fade-in{from{opacity:0}to{opacity:1}}',
     '#gh-boot-overlay.gh-boot-running #gh-boot-img{display:block;',
-    'animation:gh-crt-on .65s cubic-bezier(.2,.8,.2,1) both}',
+    'animation:gh-fade-in .5s ease both}',
     '@keyframes gh-crt-on{',
     '0%{transform:scale(.02,.004);filter:brightness(8);opacity:0}',
     '12%{opacity:1}',
@@ -126,7 +126,8 @@
     'z-index:1;color:#33ff33;font-size:16px;line-height:19px;',
     'text-shadow:0 0 5px rgba(51,255,51,.45),1px 0 0 rgba(255,60,120,.10),-1px 0 0 rgba(60,255,255,.085);',
     '-webkit-font-smoothing:none;font-smooth:never;text-rendering:optimizeSpeed}',
-    '#gh-boot-overlay.gh-boot-waiting #gh-boot-power{display:block;animation:gh-bios-on .6s ease-out,gh-flicker .18s infinite}',
+    '#gh-boot-overlay.gh-boot-waiting #gh-boot-power{display:block;transform-origin:50% 50%;animation:gh-crt-on .75s cubic-bezier(.2,.8,.2,1) both,gh-flicker .18s infinite .75s}',
+    '#gh-boot-overlay.gh-boot-waiting.gh-no-crt-on #gh-boot-power{animation:gh-bios-on .6s ease-out,gh-flicker .18s infinite}',
     '@keyframes gh-flicker{0%,100%{opacity:1}50%{opacity:.972}}',
     '@keyframes gh-bios-on{0%{filter:brightness(3.2) blur(3px)}35%{filter:brightness(1.8) blur(1px)}100%{filter:none}}',
     /* slow CRT refresh band rolling down the screen */
@@ -450,8 +451,27 @@
       return st.scandisk !== false;
     } catch (e) { return false; }
   }
+  /* hard-drive spin-up for ScanDisk (needs "Play sounds for windows" + theater sounds) */
+  function scanSpin() {
+    try {
+      var st = JSON.parse(window.localStorage.getItem('gh-desktop-v2') || '{}');
+      if (!st.uiSounds || st.theaterSounds === false) return function () {};
+      var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return function () {};
+      var c = new AC(); if (c.state === 'suspended') c.resume();
+      var v = Math.max(0, Math.min(100, st.uiVolume == null ? 50 : st.uiVolume)) / 100 * 0.3 + 0.0002, t0 = c.currentTime, up = 1.25;
+      var out = c.createGain(); out.gain.setValueAtTime(0.0001, t0); out.gain.exponentialRampToValueAtTime(v, t0 + 0.35); out.gain.setValueAtTime(v, t0 + up); out.gain.exponentialRampToValueAtTime(v * 0.4, t0 + up + 0.6); out.connect(c.destination);
+      var lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700; lp.connect(out);
+      var m = c.createOscillator(); m.type = 'sawtooth'; m.frequency.setValueAtTime(34, t0); m.frequency.exponentialRampToValueAtTime(122, t0 + up); m.connect(lp);
+      var w = c.createOscillator(), wg = c.createGain(); w.frequency.setValueAtTime(260, t0); w.frequency.exponentialRampToValueAtTime(1350, t0 + up); wg.gain.value = 0.07; w.connect(wg); wg.connect(out);
+      var buf = c.createBuffer(1, c.sampleRate, c.sampleRate), d = buf.getChannelData(0); for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      var ns = c.createBufferSource(); ns.buffer = buf; ns.loop = true; var bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.8; bp.frequency.setValueAtTime(140, t0); bp.frequency.exponentialRampToValueAtTime(520, t0 + up); var ng = c.createGain(); ng.gain.value = 0.55; ns.connect(bp); bp.connect(ng); ng.connect(out);
+      m.start(); w.start(); ns.start();
+      return function () { try { var t = c.currentTime; out.gain.cancelScheduledValues(t); out.gain.setValueAtTime(Math.max(out.gain.value, 0.0001), t); out.gain.exponentialRampToValueAtTime(0.0001, t + 0.35); m.stop(t + 0.4); w.stop(t + 0.4); ns.stop(t + 0.4); setTimeout(function () { try { c.close(); } catch (e) {} }, 700); } catch (e) {} };
+    } catch (e) { return function () {}; }
+  }
   function runScanDisk(next) {
     try { audio.pause(); audio.currentTime = 0; } catch (e) {}
+    var stopSpin = scanSpin();
     var box = document.createElement('div');
     box.style.cssText = 'position:absolute;inset:0;z-index:20;background:#0000a8;color:#fff;padding:28px 36px;font-size:16px;line-height:1.35;overflow:hidden;cursor:default;text-align:left;justify-content:flex-start;align-items:flex-start;flex-direction:column;display:flex';
     var title = document.createElement('div');
@@ -469,7 +489,7 @@
     var steps = ['media descriptor', 'file allocation tables', 'directory structure', 'file system', 'free space', 'game saves'];
     var k = 0, finished = false, timer = 0;
     function end() {
-      if (finished) return; finished = true; clearTimeout(timer);
+      if (finished) return; finished = true; clearTimeout(timer); stopSpin();
       document.removeEventListener('keydown', skip, true); box.removeEventListener('click', skip);
       if (box.parentNode) box.parentNode.removeChild(box);
       try { window.localStorage.setItem('gh-dirty', '0'); } catch (e) {}
@@ -549,6 +569,7 @@
   function showPowerScreen() {
     if (phase !== 'loading') return;
     phase = 'waiting';
+    try { var _st = JSON.parse(window.localStorage.getItem('gh-desktop-v2') || '{}'); if (_st.crtPower === false || reduceMotion) overlay.classList.add('gh-no-crt-on'); } catch (e) {}
     overlay.classList.add('gh-boot-waiting');
     startPost();
   }

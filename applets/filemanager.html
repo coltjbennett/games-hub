@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>File Manager</title>
+<link rel="stylesheet" href="w95.css">
+<style>
+  #main{display:flex;flex:1;min-height:0;gap:4px;padding:4px}
+  #tree{width:170px;flex:none;overflow:auto;padding:2px;user-select:none}
+  #tree div{padding:2px 4px;white-space:nowrap;cursor:default;display:flex;gap:4px;align-items:center}
+  #tree div.on,#rows tr.sel{background:#000080;color:#fff}
+  #tree .tg{width:12px;display:inline-block;text-align:center}
+  #list{flex:1;min-width:0;overflow:auto;position:relative}
+  table{border-collapse:collapse;width:100%;font-size:13px}th{position:sticky;top:0;background:#c0c0c0;border:1px solid;border-color:#fff #808080 #808080 #fff;text-align:left;padding:2px 6px;font-weight:normal;cursor:pointer}
+  td{padding:2px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}tr{cursor:default}
+  #drop{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,128,.25);border:3px dashed #000080;font-size:18px;pointer-events:none}
+  #list.over #drop{display:flex}
+  #disk{flex:1;max-width:220px;height:14px;border:2px inset #808080;background:#fff;padding:1px}#diskf{height:100%;background:#000080;width:1%}
+  @media(max-width:560px){#tree{display:none}.hide-s{display:none}}
+</style></head><body>
+<div class="bar" id="tb1"><button id="up">▲ Up</button><button id="nf">New Folder</button><button id="nt">New Text</button><button id="imp">Import…</button><button id="dl">Download</button><span class="sep"></span><button id="cut">Cut</button><button id="cpy">Copy</button><button id="pst">Paste</button><button id="ren">Rename</button><button id="del">Delete</button><button id="prp">Properties</button></div>
+<div class="bar"><b id="path" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></b><input type="search" id="q" placeholder="Search (use * ?)…" style="width:140px" aria-label="Search files"><button id="zx">Export ZIP</button><button id="zi">Import ZIP</button></div>
+<div id="main"><div id="tree" class="sunken" role="tree" aria-label="Folders"></div>
+<div id="list" class="sunken"><table><thead><tr><th data-k="name">Name</th><th data-k="type" class="hide-s">Type</th><th data-k="size">Size</th><th data-k="mtime" class="hide-s">Modified</th></tr></thead><tbody id="rows"></tbody></table><div id="drop">Drop files here to add them</div></div></div>
+<div class="status"><div id="s1">0 object(s)</div><div id="s2" style="flex:none;display:flex;gap:6px;align-items:center">Disk used: <span id="disk"><div id="diskf"></div></span><span id="s3"></span></div></div>
+<input type="file" id="fi" multiple hidden><input type="file" id="zf" accept=".zip,application/zip" hidden>
+<script src="../minizip.js"></script>
+<script src="../vfs.js"></script>
+<script>
+(function(){
+  var $=function(i){return document.getElementById(i);},FS=window.ColtonFS,P=null;try{P=parent.GHShell;}catch(e){}
+  var cur='docs',sel=new Set(),last=null,sortK='name',sortD=1,q='',open={docs:1,desktop:1};
+  function clip(){try{return parent.__ghClip||(parent.__ghClip={mode:null,ids:[]});}catch(e){return window.__c||(window.__c={mode:null,ids:[]});}}
+  function size(n){return n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(1)+' MB';}
+  function type(m){var e=(/\.([a-z0-9]+)$/i.exec(m.name)||[])[1];return m.kind==='folder'?'File Folder':m.kind==='text'?'Text Document':m.kind==='image'?'Bitmap Image':(e?e.toUpperCase()+' File':'File');}
+  function icon(m){return m.kind==='folder'?'📁':m.kind==='image'?'🖼':/^audio/.test(m.mime||'')?'🎵':/^video/.test(m.mime||'')?'🎞':m.kind==='text'?'📄':'📎';}
+  function root(){return {docs:'My Documents',desktop:'Desktop'};}
+  function tree(){
+    var T=$('tree');T.textContent='';
+    function node(id,label,depth){var d=document.createElement('div');d.style.paddingLeft=(4+depth*14)+'px';d.setAttribute('role','treeitem');var kids=FS.children(id).filter(function(m){return m.kind==='folder';});
+      var tg=document.createElement('span');tg.className='tg';tg.textContent=kids.length?(open[id]?'−':'+'):'';tg.onclick=function(e){e.stopPropagation();open[id]=!open[id];tree();};
+      d.append(tg,document.createTextNode((open[id]&&kids.length?'📂 ':'📁 ')+label));if(id===cur)d.classList.add('on');d.onclick=function(){go(id);};T.append(d);
+      if(open[id])kids.forEach(function(k){node(k.id,k.name,depth+1);});}
+    node('docs','My Documents',0);node('desktop','Desktop',0);
+  }
+  function go(id){cur=id;sel.clear();q='';$('q').value='';render();}
+  function list(){
+    var items=q?FS.search(q):FS.children(cur);
+    var k=sortK;items=items.slice().sort(function(a,b){if(!q&&(a.kind==='folder')!==(b.kind==='folder'))return a.kind==='folder'?-1:1;var x=k==='type'?type(a):a[k],y=k==='type'?type(b):b[k];if(typeof x==='string')return x.localeCompare(y)*sortD;return ((x||0)-(y||0))*sortD;});return items;
+  }
+  function render(){
+    tree();$('path').textContent=q?'Search results for "'+q+'"':FS.pathOf(cur);var rows=$('rows');rows.textContent='';var items=list();
+    items.forEach(function(m){var tr=document.createElement('tr');tr.dataset.id=m.id;if(sel.has(m.id))tr.className='sel';
+      var td=function(t,c){var e=document.createElement('td');e.textContent=t;if(c)e.className=c;return e;};
+      tr.append(td(icon(m)+' '+m.name),td(type(m),'hide-s'),td(m.kind==='folder'?'':size(m.size||0)),td(new Date(m.mtime).toLocaleString(),'hide-s'));
+      tr.onclick=function(e){pick(m.id,e,items);};tr.ondblclick=function(){openIt(m);};
+      tr.oncontextmenu=function(e){e.preventDefault();if(!sel.has(m.id)){sel.clear();sel.add(m.id);render();}};
+      var lp=0;tr.addEventListener('pointerdown',function(e){if(e.pointerType!=='mouse')lp=setTimeout(function(){if(!sel.has(m.id)){sel.clear();sel.add(m.id);render();}},500);});['pointerup','pointercancel','pointermove'].forEach(function(ev){tr.addEventListener(ev,function(){clearTimeout(lp);});});
+      rows.append(tr);});
+    if(!items.length){var tr=document.createElement('tr'),t=document.createElement('td');t.colSpan=4;t.style.cssText='color:#666;padding:12px';t.textContent=q?'No files found.':'This folder is empty. Use New Folder, New Text, Import, or drag files here.';tr.append(t);rows.append(tr);}
+    var u=FS.usage(),quota=50*1048576;$('s1').textContent=items.length+' object(s)'+(sel.size?', '+sel.size+' selected':'');$('s3').textContent=size(u.bytes)+' in '+u.files+' file(s)';$('diskf').style.width=Math.max(1,Math.min(100,u.bytes/quota*100))+'%';
+    var any=sel.size>0;['cut','cpy','ren','del','prp','dl'].forEach(function(b){$(b).disabled=!any;});$('pst').disabled=!clip().ids.length||!!q;$('up').disabled=cur==='docs'||cur==='desktop';
+  }
+  function pick(id,e,items){
+    if(e.shiftKey&&last){var ids=items.map(function(m){return m.id;}),a=ids.indexOf(last),b=ids.indexOf(id);if(a>=0&&b>=0){sel.clear();ids.slice(Math.min(a,b),Math.max(a,b)+1).forEach(function(i){sel.add(i);});}}
+    else if(e.ctrlKey||e.metaKey){sel.has(id)?sel.delete(id):sel.add(id);last=id;}else{sel.clear();sel.add(id);last=id;}render();
+  }
+  function openIt(m){if(m.kind==='folder'){go(m.id);return;}try{P.openFile(m.id);}catch(e){}}
+  function chosen(){return Array.from(sel).map(function(i){return FS.meta(i);}).filter(Boolean);}
+  function say(t){$('s1').textContent=t;}
+  $('up').onclick=function(){var m=FS.meta(cur);if(m)go(m.parent);};
+  $('nf').onclick=function(){var n=prompt('New folder name:','New Folder');if(n)FS.create({parent:cur==='search'?'docs':cur,name:n,kind:'folder'});};
+  $('nt').onclick=function(){var n=prompt('File name:','New Text Document.txt');if(n)FS.create({parent:cur,name:n,kind:'text',data:''});};
+  $('imp').onclick=function(){$('fi').click();};
+  function addFiles(fl){var jobs=Array.prototype.map.call(fl,function(f){return FS.importFile(f,cur);});Promise.all(jobs).then(function(){say(jobs.length+' file(s) added.');try{P.emit('fs:import');}catch(e){}});}
+  $('fi').onchange=function(){addFiles(this.files);this.value='';};
+  $('dl').onclick=function(){chosen().forEach(function(m){if(m.kind!=='folder')FS.download(m.id);else FS.zipFolder(m.id).then(function(b){var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=m.name+'.zip';a.click();});});};
+  $('cut').onclick=function(){var c=clip();c.mode='cut';c.ids=Array.from(sel);say(sel.size+' item(s) cut.');render();};
+  $('cpy').onclick=function(){var c=clip();c.mode='copy';c.ids=Array.from(sel);say(sel.size+' item(s) copied.');render();};
+  $('pst').onclick=function(){var c=clip(),jobs=[];c.ids.forEach(function(id){if(!FS.meta(id))return;jobs.push(c.mode==='cut'?FS.move(id,cur):FS.copy(id,cur));});Promise.all(jobs).then(function(){if(c.mode==='cut'){c.ids=[];c.mode=null;}say('Pasted.');render();try{P.emit('fs:paste');}catch(e){}});};
+  $('ren').onclick=function(){var m=chosen()[0];if(!m)return;var n=prompt('Rename to:',m.name);if(n)FS.rename(m.id,n);};
+  $('del').onclick=function(){var c=chosen();if(!c.length)return;if(!confirm('Are you sure you want to delete '+(c.length===1?"'"+c[0].name+"'":'these '+c.length+' items')+'?\n\nThis cannot be undone.'))return;Promise.all(c.map(function(m){return FS.remove(m.id);})).then(function(){sel.clear();render();});};
+  $('prp').onclick=function(){var c=chosen();if(!c.length)return;var m=c[0],t;if(c.length>1){var b=c.reduce(function(a,x){return a+FS.sizeOf(x.id);},0);t=c.length+' items selected\nTotal size: '+size(b);}
+    else{t=m.name+'\n\nType: '+type(m)+'\nLocation: '+FS.pathOf(m.parent)+'\nSize: '+size(FS.sizeOf(m.id))+(m.kind==='folder'?'\nContains: '+FS.countIn(m.id).files+' file(s), '+FS.countIn(m.id).folders+' folder(s)':'')+'\nCreated: '+new Date(m.ctime).toLocaleString()+'\nModified: '+new Date(m.mtime).toLocaleString();}alert(t);};
+  $('q').oninput=function(){q=this.value.trim();render();};
+  document.querySelectorAll('th').forEach(function(th){th.onclick=function(){var k=th.dataset.k;if(sortK===k)sortD=-sortD;else{sortK=k;sortD=1;}render();};});
+  $('zx').onclick=function(){var root=cur;FS.zipFolder(root).then(function(b){var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=(root==='docs'?'My Documents':(FS.meta(root)||{name:'Desktop'}).name)+'.zip';a.click();say('ZIP exported.');}).catch(function(e){alert(e.message);});};
+  $('zi').onclick=function(){$('zf').click();};
+  $('zf').onchange=function(){var f=this.files[0];this.value='';if(!f)return;FS.unzipInto(f,cur).then(function(n){say('Extracted '+n+' file(s) into '+FS.pathOf(cur));}).catch(function(e){alert(e.message||'That ZIP could not be read.');});};
+  /* drag files in from the host computer */
+  var L=$('list'),dc=0;
+  L.addEventListener('dragenter',function(e){if(e.dataTransfer&&Array.from(e.dataTransfer.types||[]).indexOf('Files')>=0){dc++;L.classList.add('over');}});
+  L.addEventListener('dragleave',function(){dc=Math.max(0,dc-1);if(!dc)L.classList.remove('over');});
+  L.addEventListener('dragover',function(e){e.preventDefault();});
+  L.addEventListener('drop',function(e){e.preventDefault();dc=0;L.classList.remove('over');if(e.dataTransfer&&e.dataTransfer.files.length)addFiles(e.dataTransfer.files);});
+  document.addEventListener('keydown',function(e){if(e.target.matches('input'))return;if(e.key==='Delete'&&sel.size)$('del').click();else if(e.key==='F2'&&sel.size)$('ren').click();else if(e.key==='Enter'&&sel.size)openIt(chosen()[0]);else if(e.key==='Backspace'&&!$('up').disabled){e.preventDefault();$('up').click();}
+    else if((e.ctrlKey||e.metaKey)&&e.key==='c'&&sel.size)$('cpy').click();else if((e.ctrlKey||e.metaKey)&&e.key==='x'&&sel.size)$('cut').click();else if((e.ctrlKey||e.metaKey)&&e.key==='v')$('pst').click();else if((e.ctrlKey||e.metaKey)&&e.key==='a'){e.preventDefault();list().forEach(function(m){sel.add(m.id);});render();}});
+  FS.ready().then(function(){var id=new URLSearchParams(location.search).get('dir');if(id&&FS.isFolderId(id))cur=id;render();FS.onChange(function(){if(cur!=='docs'&&cur!=='desktop'&&!FS.meta(cur))cur='docs';render();});});
+})();
+</script></body></html>

@@ -1,4 +1,14 @@
-const VERSION = '4.3.0';
+/*
+ * Games Hub service worker
+ *
+ * The local manifest below is generated from files that actually exist in the
+ * repository. Missing/deprecated placeholder paths are intentionally omitted.
+ * URLs are resolved against this worker's directory so GitHub Pages repository
+ * deployments (for example /games-hub/) work the same as root deployments.
+ */
+/* The version comes from data.js (siteData.version) and nowhere else. */
+let VERSION = '0';
+try { importScripts('./data.js'); VERSION = String(siteData.version || '0').replace(/^v/i, ''); } catch (e) { /* data.js unavailable: keep fallback */ }
 const CACHE_PREFIX = 'games-hub-';
 const CACHE = CACHE_PREFIX + VERSION;
 const APP_BASE = new URL('./', self.location.href);
@@ -68,7 +78,24 @@ const CORE = [
   "./service-worker.js",
   "./sitemap.xml",
   "./styles.css",
-  "./boot.js"
+  "./boot.js",
+  "./os-more.js",
+  "./applets/achievements.html",
+  "./applets/calendar.html",
+  "./applets/charmap.html",
+  "./applets/defrag.html",
+  "./applets/filemanager.html",
+  "./applets/freecell.html",
+  "./applets/ie-home.html",
+  "./applets/mediaplayer.html",
+  "./applets/phonedialer.html",
+  "./applets/reversi.html",
+  "./applets/soundrec.html",
+  "./applets/tapey.html",
+  "./applets/textgames-core.js",
+  "./applets/textgames.html",
+  "./applets/w95.css",
+  "./applets/wordpad.html"
 ];
 
 const IMAGES = [
@@ -138,7 +165,45 @@ const IMAGES = [
   "./images/windows.png",
   "./images/bootscreen.PNG",
   "./images/winBG.PNG",
-  "./images/win95.mp3"
+  "./images/win95.mp3",
+  "./images/dial.mp3",
+  "./images/tapey-dialogs.js",
+  "./images/tapey-dialogs-more.js",
+  "./images/tapey/tapey-angry.svg",
+  "./images/tapey/tapey-blink.svg",
+  "./images/tapey/tapey-celebrate.svg",
+  "./images/tapey/tapey-confused.svg",
+  "./images/tapey/tapey-cool.svg",
+  "./images/tapey/tapey-dance.svg",
+  "./images/tapey/tapey-excited.svg",
+  "./images/tapey/tapey-flag.svg",
+  "./images/tapey/tapey-idea.svg",
+  "./images/tapey/tapey-idle.svg",
+  "./images/tapey/tapey-love.svg",
+  "./images/tapey/tapey-point.svg",
+  "./images/tapey/tapey-read.svg",
+  "./images/tapey/tapey-sad.svg",
+  "./images/tapey/tapey-search.svg",
+  "./images/tapey/tapey-shocked.svg",
+  "./images/tapey/tapey-sleep.svg",
+  "./images/tapey/tapey-think.svg",
+  "./images/tapey/tapey-wave.svg",
+  "./images/tapey/tapey-write.svg",
+  "./images/icons/achievements.svg",
+  "./images/icons/calendar.svg",
+  "./images/icons/charmap.svg",
+  "./images/icons/defrag.svg",
+  "./images/icons/dice.svg",
+  "./images/icons/filemanager.svg",
+  "./images/icons/freecell.svg",
+  "./images/icons/mediaplayer.svg",
+  "./images/icons/phone.svg",
+  "./images/icons/reversi.svg",
+  "./images/icons/save-slot.svg",
+  "./images/icons/soundrec.svg",
+  "./images/icons/textgames.svg",
+  "./images/icons/widgets.svg",
+  "./images/icons/wordpad.svg"
 ];
 
 const PRECACHE = CORE.concat(IMAGES);

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Calendar</title>
+<link rel="stylesheet" href="w95.css">
+<style>
+  #main{display:flex;flex:1;min-height:0;gap:6px;padding:6px}
+  #cal{flex:1.4;display:flex;flex-direction:column;min-width:0}
+  #days{display:grid;grid-template-columns:repeat(7,1fr);flex:1;border:2px inset #808080;background:#fff;min-height:0}
+  .dow{background:#000080;color:#fff;text-align:center;padding:2px;font-size:12px}
+  .d{border:1px solid #d0d0d0;padding:2px 3px;font-size:13px;cursor:pointer;position:relative;background:#fff;color:#000;text-align:left;min-height:0}
+  .d.o{color:#999;background:#f2f2f2}.d.t{background:#ffffa0;font-weight:bold}.d.s{outline:2px solid #000080;outline-offset:-2px}
+  .d i{position:absolute;right:3px;bottom:2px;width:7px;height:7px;background:#c00;border-radius:50%}
+  #side{flex:1;display:flex;flex-direction:column;gap:6px;min-width:150px}
+  #note{flex:1;resize:none;min-height:80px}
+  #hdr{display:flex;align-items:center;gap:6px;margin-bottom:4px}#hdr b{flex:1;text-align:center;font-size:15px}
+  @media(max-width:520px){#main{flex-direction:column}}
+</style></head><body>
+<div id="main">
+  <div id="cal"><div id="hdr"><button id="pv" aria-label="Previous month">◀</button><b id="ttl"></b><button id="nx" aria-label="Next month">▶</button><button id="tdy">Today</button></div><div id="days" role="grid"></div></div>
+  <div id="side"><div id="sel" style="font-weight:bold"></div><div id="hol"></div><textarea id="note" placeholder="Notes for this day..." aria-label="Notes for the selected day"></textarea><button id="clr">Clear note</button></div>
+</div>
+<script>
+(function(){
+  var KEY='gh-calendar-notes',notes={};try{notes=JSON.parse(localStorage.getItem(KEY)||'{}')||{};}catch(e){}
+  var now=new Date(),y=now.getFullYear(),m=now.getMonth(),sel=iso(now);
+  function iso(d){return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);}
+  function nth(y,mo,dow,n){var d=new Date(y,mo,1),c=0;while(true){if(d.getDay()===dow&&++c===n)return d.getDate();d.setDate(d.getDate()+1);}}
+  function last(y,mo,dow){var d=new Date(y,mo+1,0);while(d.getDay()!==dow)d.setDate(d.getDate()-1);return d.getDate();}
+  function holidays(y){var h={};h[y+'-01-01']="New Year's Day";h[y+'-02-14']="Valentine's Day";h[y+'-03-17']="St. Patrick's Day";h[y+'-07-04']='Independence Day';h[y+'-10-31']='Halloween';h[y+'-12-25']='Christmas Day';h[y+'-12-31']="New Year's Eve";
+    h[iso(new Date(y,0,nth(y,0,1,3)))]='Martin Luther King Jr. Day';h[iso(new Date(y,1,nth(y,1,1,3)))]="Presidents' Day";h[iso(new Date(y,4,last(y,4,1)))]='Memorial Day';h[iso(new Date(y,8,nth(y,8,1,1)))]='Labor Day';h[iso(new Date(y,10,nth(y,10,4,4)))]='Thanksgiving';h[iso(new Date(y,3,22))]=h[iso(new Date(y,3,22))]||'Earth Day';return h;}
+  var days=document.getElementById('days'),note=document.getElementById('note');
+  function draw(){
+    var hol=holidays(y);document.getElementById('ttl').textContent=new Date(y,m,1).toLocaleString(undefined,{month:'long',year:'numeric'});days.textContent='';
+    ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(function(n){var e=document.createElement('div');e.className='dow';e.textContent=n;days.append(e);});
+    var first=new Date(y,m,1).getDay(),start=new Date(y,m,1-first),today=iso(new Date());
+    for(var i=0;i<42;i++){var d=new Date(start.getFullYear(),start.getMonth(),start.getDate()+i),k=iso(d);var b=document.createElement('button');b.type='button';b.className='d'+(d.getMonth()!==m?' o':'')+(k===today?' t':'')+(k===sel?' s':'');b.textContent=d.getDate();b.style.border='1px solid #d0d0d0';b.title=hol[k]||'';
+      if(notes[k]){var dot=document.createElement('i');b.append(dot);}(function(k,d){b.onclick=function(){sel=k;if(d.getMonth()!==m){m=d.getMonth();y=d.getFullYear();}draw();};})(k,d);days.append(b);}
+    days.style.gridTemplateRows='auto repeat(6,1fr)';
+    var sd=new Date(sel+'T12:00:00');document.getElementById('sel').textContent=sd.toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+    var hh=holidays(sd.getFullYear())[sel];document.getElementById('hol').textContent=hh?'★ '+hh:'';note.value=notes[sel]||'';
+  }
+  function saveNote(){if(note.value.trim())notes[sel]=note.value;else delete notes[sel];try{localStorage.setItem(KEY,JSON.stringify(notes));}catch(e){}if(note.value.trim()){try{parent.GHShell.emit('calendar:note');}catch(e){}}}
+  note.addEventListener('input',function(){saveNote();var b=days.querySelector('.s');if(b){var dot=b.querySelector('i');if(notes[sel]&&!dot)b.append(document.createElement('i'));if(!notes[sel]&&dot)dot.remove();}});
+  document.getElementById('pv').onclick=function(){m--;if(m<0){m=11;y--;}draw();};document.getElementById('nx').onclick=function(){m++;if(m>11){m=0;y++;}draw();};
+  document.getElementById('tdy').onclick=function(){var t=new Date();y=t.getFullYear();m=t.getMonth();sel=iso(t);draw();};
+  document.getElementById('clr').onclick=function(){note.value='';saveNote();draw();};
+  draw();
+})();
+</script></body></html>

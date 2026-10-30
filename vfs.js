@@ -1,7 +1,8 @@
 /* vfs.js — ColtonOS virtual file system (IndexedDB "ColtonOS-fs").
  * Shared by the desktop shell and applets (Notepad, Paint, MS-DOS Prompt).
  * Roots: 'docs' = My Documents, 'desktop' = files/folders on the desktop.
- * Node meta: { id, parent, name, kind:'folder'|'text'|'image', mime, size, mtime, ctime }.
+ * Node meta: { id, parent, name, kind:'folder'|'text'|'image'|'file', mime, size, mtime, ctime }.
+ * kind 'file' = any other file (documents made in WordPad, sound recordings, imported files...).
  * File bytes live in a separate store so listing is cheap. */
 (function (g) {
   'use strict';
@@ -64,11 +65,24 @@
       if (kind === 'image' && !/\.png$/i.test(name)) name += '.png';
       return name;
     },
+    /* guess the node kind for a file name / mime type: text -> 'text', PNG -> 'image', everything else -> 'file' */
+    kindOf: function (name, mime) {
+      name = String(name || '').toLowerCase(); mime = String(mime || '').toLowerCase();
+      if (/\.(txt|log|ini|bat|cfg|md|csv)$/.test(name) || mime === 'text/plain') return 'text';
+      if (/\.png$/.test(name) || mime === 'image/png') return 'image';
+      return 'file';
+    },
+    mimeOf: function (name, fallback) {
+      var e = (/\.([a-z0-9]+)$/i.exec(name || '') || [])[1]; e = e && e.toLowerCase();
+      var M = { txt: 'text/plain', md: 'text/plain', csv: 'text/plain', htm: 'text/html', html: 'text/html', rtf: 'text/html', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', webm: 'audio/webm', m4a: 'audio/mp4', mp4: 'video/mp4', pdf: 'application/pdf', json: 'application/json', zip: 'application/zip' };
+      return (e && M[e]) || fallback || 'application/octet-stream';
+    },
     create: function (o) {
       return FS.ready().then(db).then(function (d) {
         var now = Date.now(), kind = o.kind || 'text';
-        var meta = { id: uid(), parent: o.parent || 'docs', name: FS.uniqueName(o.parent || 'docs', FS.clean(o.name, kind)), kind: kind, mime: o.mime || (kind === 'image' ? 'image/png' : 'text/plain'), size: 0, ctime: now, mtime: now };
+        var meta = { id: uid(), parent: o.parent || 'docs', name: FS.uniqueName(o.parent || 'docs', FS.clean(o.name, kind)), kind: kind, mime: o.mime || (kind === 'image' ? 'image/png' : kind === 'file' ? FS.mimeOf(o.name) : 'text/plain'), size: 0, ctime: now, mtime: now };
         var data = kind === 'folder' ? null : (o.data == null ? (kind === 'text' ? '' : new Blob([])) : o.data);
+        if (kind === 'file' && typeof data === 'string') data = new Blob([data], { type: meta.mime });
         meta.size = data == null ? 0 : (typeof data === 'string' ? data.length : data.size || 0);
         var tx = d.transaction(['nodes', 'data'], 'readwrite'); tx.objectStore('nodes').put(meta);
         if (data != null) tx.objectStore('data').put(data, meta.id);
@@ -115,6 +129,65 @@
       });
     },
 
+    /* ---- extra file-system helpers (File Manager, desktop menus, MS-DOS) ---- */
+    isInside: function (id, ancestor) { for (var p = id, n = 0; p && n < 60; n++) { if (p === ancestor) return true; var m = cache.get(p); p = m && m.parent; } return false; },
+    /* copy a node (recursively for folders) into another folder; resolves with the new top-level meta */
+    copy: function (id, parent, newName) {
+      var src = cache.get(id); if (!src) return Promise.resolve(null);
+      if (src.kind === 'folder') {
+        if (FS.isInside(parent, id)) return Promise.resolve(null);
+        return FS.create({ parent: parent, name: newName || src.name, kind: 'folder' }).then(function (top) {
+          var kids = FS.children(id), chain = Promise.resolve();
+          kids.forEach(function (k) { chain = chain.then(function () { return FS.copy(k.id, top.id); }); });
+          return chain.then(function () { return top; });
+        });
+      }
+      return FS.read(id).then(function (data) { return FS.create({ parent: parent, name: newName || src.name, kind: src.kind, mime: src.mime, data: data }); });
+    },
+    sizeOf: function (id) { var m = cache.get(id); if (!m) return 0; if (m.kind !== 'folder') return m.size || 0; return FS.children(id).reduce(function (a, c) { return a + FS.sizeOf(c.id); }, 0); },
+    countIn: function (id) { var f = 0, d = 0; (function walk(i) { FS.children(i).forEach(function (c) { if (c.kind === 'folder') { d++; walk(c.id); } else f++; }); })(id); return { files: f, folders: d }; },
+    usage: function () { var b = 0, n = 0; cache.forEach(function (m) { if (m.kind !== 'folder') { b += m.size || 0; n++; } }); return { bytes: b, files: n, folders: cache.size - n }; },
+    search: function (q, scope) {
+      q = String(q || '').toLowerCase().trim(); if (!q) return [];
+      var rx = null; if (q.indexOf('*') >= 0 || q.indexOf('?') >= 0) rx = new RegExp('^' + q.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
+      return FS.all().filter(function (m) { return (!scope || FS.isInside(m.id, scope)) && (rx ? rx.test(m.name.toLowerCase()) : m.name.toLowerCase().indexOf(q) >= 0); });
+    },
+    /* turn a browser File into a node (text -> .txt, PNG -> picture, anything else -> generic file) */
+    importFile: function (file, parent) {
+      var kind = FS.kindOf(file.name, file.type);
+      var done = kind === 'text' ? file.text() : Promise.resolve(file);
+      return done.then(function (data) { return FS.create({ parent: parent || 'docs', name: file.name, kind: kind, mime: file.type || FS.mimeOf(file.name), data: data }); });
+    },
+    /* hand a file to the user as a download */
+    download: function (id) {
+      var m = cache.get(id); if (!m || m.kind === 'folder') return Promise.resolve(false);
+      return FS.read(id).then(function (data) {
+        var blob = data instanceof Blob ? data : new Blob([data == null ? '' : data], { type: m.mime || 'text/plain' });
+        var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = m.name; document.body.appendChild(a); a.click();
+        setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1500); return true;
+      });
+    },
+    /* zip a whole folder tree (needs minizip.js / JSZip on the page) */
+    zipFolder: function (id) {
+      if (!g.JSZip) return Promise.reject(new Error('ZIP support is not loaded.'));
+      var z = new g.JSZip(), jobs = [];
+      (function walk(i, pre) { FS.children(i).forEach(function (c) { if (c.kind === 'folder') walk(c.id, pre + c.name + '/'); else jobs.push(FS.read(c.id).then(function (d) { z.file(pre + c.name, d == null ? '' : d); })); }); })(id, '');
+      return Promise.all(jobs).then(function () { return z.generateAsync({ type: 'blob' }); });
+    },
+    unzipInto: function (blob, parent) {
+      if (!g.JSZip) return Promise.reject(new Error('ZIP support is not loaded.'));
+      return g.JSZip.loadAsync(blob).then(function (z) {
+        var names = Array.from(z.files.keys()), made = {}, n = 0, chain = Promise.resolve();
+        function dirFor(parts) {
+          var cur = parent, key = '', p = Promise.resolve(parent);
+          parts.forEach(function (seg) { key += '/' + seg; p = p.then(function (par) { if (made[key]) return made[key]; return FS.create({ parent: par, name: seg, kind: 'folder' }).then(function (m) { made[key] = m.id; return m.id; }); }); });
+          return p;
+        }
+        names.forEach(function (nm) { chain = chain.then(function () { var parts = nm.split('/').filter(Boolean), file = parts.pop(); if (!file) return; return dirFor(parts).then(function (par) { return z.file(nm).async('arraybuffer').then(function (buf) { var kind = FS.kindOf(file); var mime = FS.mimeOf(file); var data = kind === 'text' ? new TextDecoder().decode(buf) : new Blob([buf], { type: mime }); n++; return FS.create({ parent: par, name: file, kind: kind, mime: mime, data: data }); }); }); }); });
+        return chain.then(function () { return n; });
+      });
+    },
+
     /* Open / Save As dialog drawn inside the calling document.
        opts: { mode:'open'|'save', kind:'text'|'image', name:'', title:'' } -> Promise<{meta?, parent, name}|null> */
     dialog: function (opts) {
@@ -143,10 +216,10 @@
           function close(v) { ov.remove(); resolve(v); }
           function paint() {
             path.textContent = FS.pathOf(cur); list.replaceChildren(); sel = null;
-            var kids = FS.children(cur).filter(function (m) { return m.kind === 'folder' || m.kind === kind; });
+            var kinds = opts.kinds || [kind], kids = FS.children(cur).filter(function (m) { return m.kind === 'folder' || kinds.indexOf(m.kind) >= 0; });
             if (!kids.length) { var e = doc.createElement('div'); e.textContent = '(empty)'; e.style.cssText = 'color:#808080;padding:4px'; list.append(e); }
             kids.forEach(function (m) {
-              var it = doc.createElement('div'); it.textContent = (m.kind === 'folder' ? '📁 ' : m.kind === 'image' ? '🖼 ' : '📄 ') + m.name; it.style.cssText = 'padding:2px 4px;cursor:default;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+              var it = doc.createElement('div'); it.textContent = (m.kind === 'folder' ? '📁 ' : m.kind === 'image' ? '🖼 ' : m.kind === 'file' ? '📎 ' : '📄 ') + m.name; it.style.cssText = 'padding:2px 4px;cursor:default;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
               it.onclick = function () {
                 Array.from(list.children).forEach(function (c) { c.style.background = ''; c.style.color = ''; });
                 it.style.background = '#000080'; it.style.color = '#fff'; sel = m; if (m.kind !== 'folder') nameIn.value = m.name;
@@ -158,7 +231,7 @@
           function go() {
             if (save) {
               var nm = FS.clean(nameIn.value, kind); if (!nameIn.value.trim()) { nameIn.focus(); return; }
-              var ex = FS.children(cur).filter(function (m) { return m.kind === kind && m.name.toLowerCase() === nm.toLowerCase(); })[0];
+              var ex = FS.children(cur).filter(function (m) { return m.name.toLowerCase() === nm.toLowerCase(); })[0];
               if (ex && !doc.defaultView.confirm('"' + nm + '" already exists.\nDo you want to replace it?')) return;
               close({ parent: cur, name: nm, meta: ex || null });
             } else {

@@ -17,8 +17,10 @@
   const rm = () => I.reducedMotion();
 
   /* ===================== virtual file system -> items ===================== */
-  const KIND = { folder: 'File Folder', text: 'Text Document', image: 'Bitmap Image' };
-  const fsIcon = m => m.kind === 'folder' ? IC('folder') : m.kind === 'image' ? 'images/icons/paint.png' : IC('document');
+  const KIND = { folder: 'File Folder', text: 'Text Document', image: 'Bitmap Image', file: 'File' };
+  const extOf = n => ((/\.([a-z0-9]+)$/i.exec(n || '') || [])[1] || '').toLowerCase();
+  const kindLabel = m => m.kind !== 'file' ? KIND[m.kind] : ({ htm: 'WordPad Document', html: 'WordPad Document', rtf: 'WordPad Document', wav: 'Sound Recording', webm: 'Sound Recording', mp3: 'MP3 Audio', ogg: 'Ogg Audio', m4a: 'Audio File', mp4: 'Video Clip', jpg: 'JPEG Image', jpeg: 'JPEG Image', gif: 'GIF Image', webp: 'WebP Image', bmp: 'Bitmap Image', pdf: 'PDF Document', zip: 'Compressed Folder' }[extOf(m.name)] || (extOf(m.name) ? extOf(m.name).toUpperCase() + ' File' : 'File'));
+  const fsIcon = m => m.kind === 'folder' ? IC('folder') : m.kind === 'image' ? 'images/icons/paint.png' : m.kind === 'file' ? (/^audio|^video/.test(m.mime || '') ? IC('speaker') : /^image/.test(m.mime || '') ? 'images/icons/paint.png' : IC('document')) : IC('document');
   const sizeText = n => n < 1024 ? n + ' bytes' : (n / 1024).toFixed(1) + ' KB';
   const appById = id => I.APPS.find(a => a.id === id);
 
@@ -28,13 +30,23 @@
     const W = I.createWindow({ id, title: m.name + ' - ' + a.title, icon: a.icon, kind: 'window', width: a.w || 600, height: a.h || 460, frame: { src: a.src + (a.src.includes('?') ? '&' : '?') + 'open=' + encodeURIComponent(m.id) }, minWidth: 260, minHeight: 160 });
     I.showWin(W);
   }
+  /* choose the right program for a file */
+  function openVfsFile(m) {
+    m = FS.meta(m.id) || m; const mime = m.mime || '', e = extOf(m.name);
+    if (m.kind === 'image') return openFileIn('paint', m);
+    if (m.kind === 'text') return openFileIn('notepad', m);
+    if (/^(htm|html|rtf)$/.test(e)) return openFileIn('wordpad', m);
+    if (/^(audio|video|image)\//.test(mime)) return openFileIn('mediaplayer', m);
+    I.msgBox('Windows cannot open this file:\n\n' + m.name + '\n\nThere is no program associated with this type of file.\nDo you want to save a copy to your computer?', { title: 'Open With', icon: 'question', buttons: ['Yes', 'No'], def: 1, cancel: 'no' }).then(r => { if (r === 'yes') FS.download(m.id); });
+  }
+  GH.openFile = id => { const m = FS.meta(id); if (m) openVfsFile(m); };
   function syncItems() {
     const all = FS.all(), live = new Set(all.map(m => 'vfs:' + m.id));
     Array.from(ITEMS.keys()).forEach(k => { if (k.startsWith('vfs:') && !live.has(k)) { ITEMS.delete(k); delete FOLDERS[k]; } });
     all.forEach(m => {
       const id = 'vfs:' + m.id, folder = m.kind === 'folder';
-      const it = { id, title: m.name, type: KIND[m.kind] || 'File', icon: fsIcon(m), desc: folder ? 'Folder' : sizeText(m.size || 0), keywords: m.name + ' ' + (KIND[m.kind] || ''), vfs: m, vfsFolder: folder,
-        open: o => folder ? I.openExplorer(id, o) : openFileIn(m.kind === 'image' ? 'paint' : 'notepad', FS.meta(m.id) || m) };
+      const it = { id, title: m.name, type: kindLabel(m), icon: fsIcon(m), desc: folder ? 'Folder' : sizeText(m.size || 0), keywords: m.name + ' ' + kindLabel(m), vfs: m, vfsFolder: folder,
+        open: o => folder ? I.openExplorer(id, o) : openVfsFile(FS.meta(m.id) || m) };
       ITEMS.set(id, it);
       if (folder) FOLDERS[id] = { title: m.name, icon: IC('folder'), path: FS.pathOf(m.id), parent: m.parent === 'docs' ? 'documents' : m.parent === 'desktop' ? 'drive-c' : 'vfs:' + m.parent, items: () => FS.children(m.id).map(c => 'vfs:' + c.id) };
     });
@@ -142,51 +154,65 @@
   function noiseBuf(c) { const b = c.createBuffer(1, c.sampleRate, c.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; return b; }
   const vol = () => Math.max(0, Math.min(100, S().uiVolume)) / 100;
   function bus(c, gain) { master = c.createGain(); master.gain.value = gain; master.connect(c.destination); return master; }
-  function fxStop() { if (master && actx) { try { master.gain.setTargetAtTime(0, actx.currentTime, 0.04); } catch (e) {} } }
-  function hddSound() {
-    if (!S().theaterSounds) return 0; const c = ctx(); if (!c) return 0;
-    const out = bus(c, vol() * 0.35), t0 = c.currentTime, nb = noiseBuf(c); let t = 0.02;
-    for (let i = 0; i < 26; i++) {
-      const src = c.createBufferSource(); src.buffer = nb; const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 500 + Math.random() * 2600; bp.Q.value = 2 + Math.random() * 4;
-      const g = c.createGain(); const len = 0.015 + Math.random() * 0.05; g.gain.setValueAtTime(0.0001, t0 + t); g.gain.exponentialRampToValueAtTime(0.9, t0 + t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t0 + t + len);
-      src.connect(bp); bp.connect(g); g.connect(out); src.start(t0 + t, Math.random() * 0.5, len + 0.02);
-      if (i % 5 === 0) { const o = c.createOscillator(), og = c.createGain(); o.type = 'square'; o.frequency.value = 55 + Math.random() * 40; og.gain.setValueAtTime(0.0001, t0 + t); og.gain.exponentialRampToValueAtTime(0.35, t0 + t + 0.005); og.gain.exponentialRampToValueAtTime(0.0001, t0 + t + 0.06); o.connect(og); og.connect(out); o.start(t0 + t); o.stop(t0 + t + 0.08); }
-      t += 0.02 + Math.random() * 0.075;
-    }
-    return t;
+  function fxStop() { if (spin) spin.stop(); dialStop(); if (master && actx) { try { master.gain.setTargetAtTime(0, actx.currentTime, 0.04); } catch (e) {} } }
+  /* Hard drive spin-up: a rising motor whine + low rumble, no clicks. Only plays when
+     "Play sounds for windows and messages" AND the theater sounds are on. */
+  function spinUp(hold, quiet) {
+    const st = S(); if (!st.theaterSounds || !st.uiSounds) return { secs: 0, stop() {} };
+    const c = ctx(); if (!c) return { secs: 0, stop() {} };
+    const t0 = c.currentTime, peak = vol() * (quiet ? 0.16 : 0.3), out = c.createGain(), up = 1.25, end = up + (hold || 0.5);
+    out.gain.setValueAtTime(0.0001, t0); out.gain.exponentialRampToValueAtTime(Math.max(peak, 0.0002), t0 + 0.35); out.gain.setValueAtTime(Math.max(peak, 0.0002), t0 + up); out.gain.exponentialRampToValueAtTime(Math.max(peak * 0.45, 0.0001), t0 + up + 0.4);
+    out.connect(c.destination);
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 700; lp.connect(out);
+    const motor = c.createOscillator(); motor.type = 'sawtooth'; motor.frequency.setValueAtTime(34, t0); motor.frequency.exponentialRampToValueAtTime(122, t0 + up); motor.connect(lp);
+    const whine = c.createOscillator(), wg = c.createGain(); whine.type = 'sine'; whine.frequency.setValueAtTime(260, t0); whine.frequency.exponentialRampToValueAtTime(1350, t0 + up); wg.gain.value = 0.07; whine.connect(wg); wg.connect(out);
+    const nb = noiseBuf(c), ns = c.createBufferSource(); ns.buffer = nb; ns.loop = true; const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.setValueAtTime(140, t0); bp.frequency.exponentialRampToValueAtTime(520, t0 + up); bp.Q.value = 0.8; const ng = c.createGain(); ng.gain.value = 0.55; ns.connect(bp); bp.connect(ng); ng.connect(out);
+    [motor, whine, ns].forEach(n => n.start(t0));
+    let stopped = false;
+    const stop = () => { if (stopped) return; stopped = true; try { const t = c.currentTime; out.gain.cancelScheduledValues(t); out.gain.setValueAtTime(Math.max(out.gain.value, 0.0001), t); out.gain.exponentialRampToValueAtTime(0.0001, t + 0.35); [motor, whine, ns].forEach(n => n.stop(t + 0.4)); } catch (e) {} };
+    const timer = setTimeout(stop, (end + 0.3) * 1000);
+    return { secs: end, stop() { clearTimeout(timer); stop(); } };
   }
+  let spin = null;
+  function hddSound() { if (spin) spin.stop(); spin = spinUp(0.35); return spin.secs; }
+  /* Dial-up: plays images/dial.mp3 (if present). Resolves with its length in seconds (0 = unavailable). */
+  let dialAudio = null;
+  function dialStop() { const a = dialAudio; dialAudio = null; if (!a) return; try { const v0 = a.volume; let n = 0; const iv = setInterval(() => { n++; a.volume = Math.max(0, v0 * (1 - n / 6)); if (n >= 6) { clearInterval(iv); a.pause(); } }, 25); } catch (e) {} }
   function modemSound() {
-    if (!S().theaterSounds) return 0; const c = ctx(); if (!c) return 0;
-    const out = bus(c, vol() * 0.16), t0 = c.currentTime;
-    const tone = (f1, f2, at, dur, type) => { const o = c.createOscillator(), g = c.createGain(); o.type = type || 'sine'; o.frequency.setValueAtTime(f1, t0 + at); if (f2) o.frequency.linearRampToValueAtTime(f2, t0 + at + dur); g.gain.setValueAtTime(0.0001, t0 + at); g.gain.linearRampToValueAtTime(1, t0 + at + 0.01); g.gain.setValueAtTime(1, t0 + at + dur - 0.01); g.gain.linearRampToValueAtTime(0.0001, t0 + at + dur); o.connect(g); g.connect(out); o.start(t0 + at); o.stop(t0 + at + dur + 0.02); };
-    const rows = [697, 770, 852, 941], cols = [1209, 1336, 1477]; let t = 0.2;
-    for (let i = 0; i < 8; i++) { const r = rows[(Math.random() * 4) | 0], k = cols[(Math.random() * 3) | 0]; tone(r, 0, t, 0.07); tone(k, 0, t, 0.07); t += 0.12; }
-    t += 0.5; tone(2100, 0, t, 0.5); tone(1100, 0, t + 0.55, 0.12); tone(2100, 0, t + 0.7, 0.2); t += 1.0;
-    const nb = noiseBuf(c);
-    for (let i = 0; i < 16; i++) { const f = 900 + Math.random() * 1800; tone(f, f + (Math.random() - .5) * 1600, t, 0.09 + Math.random() * 0.12, i % 3 ? 'sine' : 'sawtooth'); const src = c.createBufferSource(); src.buffer = nb; const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 1; const g = c.createGain(); g.gain.value = 0.5; src.connect(bp); bp.connect(g); g.connect(out); src.start(t0 + t, 0, 0.18); t += 0.1 + Math.random() * 0.08; }
-    tone(1650, 0, t, 0.3); t += 0.35;
-    return t;
+    if (!S().theaterSounds) return Promise.resolve(0);
+    dialStop();
+    return new Promise(res => {
+      let done = false; const fin = v => { if (!done) { done = true; res(v); } };
+      try {
+        const a = new Audio('images/dial.mp3'); a.preload = 'auto'; a.volume = Math.max(0.05, vol()); dialAudio = a;
+        a.addEventListener('loadedmetadata', () => fin(isFinite(a.duration) ? a.duration : 0));
+        a.addEventListener('error', () => { if (dialAudio === a) dialAudio = null; fin(0); });
+        setTimeout(() => fin(0), 2500);
+        const p = a.play(); if (p && p.catch) p.catch(() => { if (dialAudio === a) dialAudio = null; fin(0); });
+      } catch (e) { fin(0); }
+    });
   }
   function tick() { if (!S().uiSounds) return; const c = ctx(); if (!c) return; const o = c.createOscillator(), g = c.createGain(); o.type = 'square'; o.frequency.value = 1400; const v = vol() * 0.04; g.gain.setValueAtTime(v, c.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 0.025); o.connect(g); g.connect(c.destination); o.start(); o.stop(c.currentTime + 0.03); }
   D.addEventListener('pointerdown', e => { if (e.target.closest && e.target.closest('.mi, .btn, .tb-btn, .start-btn')) tick(); }, true);
-  GH.fx = { hdd: hddSound, modem: modemSound, tick };
+  GH.fx = { hdd: hddSound, modem: modemSound, dialStop, tick };
 
   /* ===================== busy state + copy / dial dialogs ===================== */
   let busyN = 0;
   function busy(on) { busyN = Math.max(0, busyN + (on ? 1 : -1)); H.classList.toggle('busy', busyN > 0 && !!S().busyCursor); }
   let launching = false;
-  function progressDialog(title, icon, lines, ms, onDone, abort) {
+  function progressDialog(title, icon, lines, ms, onDone, abort, skippable) {
     const bar = h('i'), txt = h('div', { class: 'msg', style: { whiteSpace: 'pre-line' }, text: lines[0] });
     const body = h('div', { class: 'dialog-pad', style: { minWidth: '300px' } }, h('div', { class: 'row', style: { alignItems: 'center', gap: '10px' } }, h('img', { src: icon, alt: '', width: 32, height: 32 }), txt), h('div', { class: 'copy-bar' }, bar));
     const W = I.openDialog({ title, icon, content: body, width: 360, buttons: [{ label: 'Cancel', value: 'cancel' }], cancelValue: 'cancel' });
     busy(true);
-    const t0 = performance.now(); let dead = false;
+    let t0 = performance.now(), dead = false;
+    if (skippable) { txt.title = 'Click to skip'; body.append(h('div', { style: { fontSize: '11px', opacity: '.7', marginTop: '6px' }, text: 'Click anywhere in this window to skip.' })); W.el.addEventListener('click', e => { if (!e.target.closest('button') && !dead) { t0 = -1e9; } }); }
     W.result.then(r => { if (r === 'cancel' && !dead) { dead = true; busy(false); launching = false; fxStop(); abort && abort(); } });
     (function step() {
       if (dead) return;
       const f = Math.min(1, (performance.now() - t0) / ms); bar.style.width = Math.round(f * 100) + '%';
       txt.textContent = lines[Math.min(lines.length - 1, Math.floor(f * lines.length))];
-      if (f < 1) setTimeout(step, 40); else { dead = true; busy(false); launching = false; W.finish('done'); onDone(); }
+      if (f < 1) setTimeout(step, 40); else { dead = true; busy(false); launching = false; if (skippable) dialStop(); W.finish('done'); onDone(); }
     })();
   }
   HOOKS.beforeOpen = (it, go) => {
@@ -194,7 +220,7 @@
     const s = S();
     if (it.id.startsWith('game:') && !wins.has('game-win-' + slug(it.id.slice(5))) && (s.copyDialog || s.theaterSounds)) {
       launching = true;
-      const ms = rm() ? 350 : 900 + Math.random() * 700; const secs = hddSound();
+      const ms = rm() ? 350 : 1100 + Math.random() * 600; const secs = hddSound();
       if (!s.copyDialog) { busy(true); setTimeout(() => { busy(false); launching = false; go(); }, Math.min(900, (secs || 0.6) * 1000)); return true; }
       progressDialog('Copying Files…', IC('floppy'), ['Reading ' + it.title + '…', 'Copying ' + it.title + ' to memory…', 'Starting ' + it.title + '…'], ms, go);
       return true;
@@ -203,9 +229,8 @@
     if ((it.id === 'app:browser' && !wins.has('app-browser')) || first) {
       if (!s.theaterSounds && !s.copyDialog) return false;
       if (first) store.sset('gh-modem-chat', '1');
-      launching = true;
-      const secs = modemSound(); const ms = rm() ? 400 : Math.max(2500, (secs || 3.2) * 1000);
-      progressDialog('Dial-Up Networking', IC('network'), ['Dialing ColtonNet…', 'Verifying user name and password…', 'Connected at 28800 bps'], ms, go);
+      launching = true; busy(true);
+      modemSound().then(secs => { busy(false); const ms = rm() ? 400 : (secs > 0 ? secs * 1000 : 3200); progressDialog('Dial-Up Networking', IC('network'), ['Dialing ColtonNet…', 'Verifying user name and password…', 'Connected at 28800 bps'], ms, go, null, true); });
       return true;
     }
     return false;

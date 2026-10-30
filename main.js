@@ -156,6 +156,7 @@
   function setSetting(key, value, silent) {
     if (!(key in DEFAULTS)) return;
     settings[key] = value; saveSettings(); applySettings();
+    EMIT('setting', { key, value });
     if (!silent) notifyFrames();
   }
   function notifyFrames() {
@@ -451,6 +452,7 @@
 
   /* cascade / tile (taskbar right-click menu) */
   function arrangeWindows(mode) {
+    EMIT('arrange');
     const list = Array.from(wins.values()).filter(w => !w.o.dialog && isVisible(w)).sort((a, b) => (+a.el.style.zIndex || 0) - (+b.el.style.zIndex || 0));
     if (!list.length) return;
     const d = deskSize();
@@ -616,6 +618,7 @@
       }
       if (settings.windowAnim && !reducedMotion()) { W.el.classList.add('opening'); setTimeout(() => W.el.classList.remove('opening'), 160); }
       addTaskButton(W);
+      EMIT('win_open', W);
       announce(W.title + ' opened');
       if (!W.o.dialog) playSound('open');
     } else if (W.minimized) {
@@ -694,6 +697,7 @@
     if (activeWin === W) { activeWin = null; }
     fullscreenLow.delete(W.id); nativeFullscreen.delete(W.id);
     saveGeo(W); playSound('close');
+    EMIT('win_close', W);
     removeTaskButton(W);
     W.visible = false; W.minimized = false;
     if (keep) { W.el.hidden = true; W.el.classList.remove('active'); if (W.maximized) { setMax(W, false); } }
@@ -939,6 +943,7 @@
     focusWin(nx, false);
   }
   function showDesktop() {
+    EMIT('minall');
     const open = Array.from(wins.values()).filter(w => !w.o.dialog && isVisible(w));
     if (open.length) { open.forEach(w => { w._wasShown = true; minimizeWinQuiet(w); }); announce('Desktop shown'); }
     else { wins.forEach(w => { if (w._wasShown && w.visible && w.minimized) { w._wasShown = false; w.minimized = false; w.el.classList.remove('minimized'); } }); const t = topVisible(); if (t) focusWin(t); updateTaskButtons(); refreshState(); }
@@ -1070,7 +1075,8 @@
    * ===================================================================== */
   const ITEMS = new Map();
   /* extension points used by os-extras.js (virtual file system, DOS prompt, themes, sounds…) */
-  const HOOKS = { desktopIds: () => [], children: () => [], vfsParent: () => null, newMenu: () => [], beforeOpen: null, shutdown: null, dropOnto: null, presence: null, deleteVfs: null, renameVfs: null };
+  const EMIT = (name, data) => { try { if (HOOKS.emit) HOOKS.emit(name, data); } catch (e) {} };
+  const HOOKS = { emit: null, itemMenu: null, desktopExtra: null, pasteMenu: null, startPrograms: null, startSettings: null, desktopIds: () => [], children: () => [], vfsParent: () => null, newMenu: () => [], beforeOpen: null, shutdown: null, dropOnto: null, presence: null, deleteVfs: null, renameVfs: null };
   const addItem = it => { ITEMS.set(it.id, it); return it; };
   const track2 = (name, p) => track(name, p);
 
@@ -1114,7 +1120,7 @@
   const recents = () => { const r = store.json(LEGACY.recents, []); return Array.isArray(r) ? r : []; };
   const favorites = () => { const f = store.json(LEGACY.favorites, []); return Array.isArray(f) ? f : []; };
   const isFav = u => favorites().includes(u);
-  function toggleFav(u) { const f = favorites(); const n = f.includes(u) ? f.filter(x => x !== u) : [...f, u].slice(-100); store.setJson(LEGACY.favorites, n); favChanged(); return n.includes(u); }
+  function toggleFav(u) { EMIT('fav', { url: u }); const f = favorites(); const n = f.includes(u) ? f.filter(x => x !== u) : [...f, u].slice(-100); store.setJson(LEGACY.favorites, n); favChanged(); return n.includes(u); }
   function addRecent(url, title, type) {
     if (!url) return;
     const e = { url, title: title || 'Project', type: type || 'Game', timestamp: Date.now() };
@@ -1123,8 +1129,15 @@
   const favListeners = new Set();
   function favChanged() { favListeners.forEach(f => { try { f(); } catch (e) {} }); }
 
+  /* Random Game: picks something playable (skips abandoned prototypes and engine tests) */
+  function pickRandomGame(avoidUrl) {
+    const pool = PROJECTS.filter(p => p.statusKey !== 'abandoned' && !/missing\.png$/.test(p.image || '')).map(p => ({ url: p.url, title: p.title, classic: false })).concat(CLASSICS.map(c => ({ url: c.url, title: c.title, classic: true })));
+    const choices = pool.filter(p => p.url !== avoidUrl); const arr = choices.length ? choices : pool;
+    return arr[Math.floor(Math.random() * arr.length)] || null;
+  }
   function openGame(url, title, image, opener) {
     addRecent(url, title, 'Game');
+    EMIT('game', { url, title, classic: CLASSICS.some(c => c.url === url) });
     const id = 'game-win-' + slug(url);
     if (wins.has(id)) { showWin(wins.get(id)); return wins.get(id); }
     const W = createWindow({ id, title, icon: image || IC('gamepad'), kind: 'game', fillPct: [0.96, 0.95], frame: { src: url }, minWidth: 280, minHeight: 200 });
@@ -1284,6 +1297,7 @@
       const it = ITEMS.get(iid);
       const m = [{ label: '&Open', onClick: () => openOrNav(iid) }];
       if (def.recycle) m.unshift({ label: '&Restore', onClick: () => restore([...selected]) });
+      if (it.vfs && HOOKS.itemMenu) m.push({ sep: true }, ...HOOKS.itemMenu(it, false));
       if (it.vfs) m.push({ sep: true }, { label: 'Rena&me', onClick: () => HOOKS.renameVfs(it) }, { label: '&Delete', onClick: () => HOOKS.deleteVfs([it.id]) });
       m.push({ sep: true }, { label: 'P&roperties', onClick: () => itemProperties(it) });
       return m;
@@ -1355,7 +1369,7 @@
     });
     const ctx = (e, b, x, y) => {
       if (b) { if (!selected.has(b.dataset.id)) select(new Set([b.dataset.id])); showContextMenu(itemMenu(b.dataset.id), x, y); }
-      else showContextMenu(viewItems().concat([{ sep: true }, { label: 'Arrange &Icons', submenu: arrange() }]).concat(HOOKS.vfsParent(curFid) ? [{ sep: true }, { label: 'Ne&w', submenu: HOOKS.newMenu(HOOKS.vfsParent(curFid)) }] : []).concat([{ label: '&Refresh', onClick: render }]), x, y);
+      else showContextMenu(viewItems().concat([{ sep: true }, { label: 'Arrange &Icons', submenu: arrange() }]).concat(HOOKS.vfsParent(curFid) ? [{ sep: true }, { label: 'Ne&w', submenu: HOOKS.newMenu(HOOKS.vfsParent(curFid)) }].concat(HOOKS.pasteMenu ? HOOKS.pasteMenu(HOOKS.vfsParent(curFid)) : []) : []).concat([{ label: '&Refresh', onClick: render }]), x, y);
     };
     scroller.addEventListener('contextmenu', e => { e.preventDefault(); ctx(e, e.target.closest('.ex-item'), e.clientX, e.clientY); });
     longPress(scroller, '.ex-item', (e, b, x, y) => ctx(e, b, x, y));
@@ -1439,6 +1453,7 @@
     if (id === 'sys:recycle') m.push({ label: 'Empty Recycle &Bin', disabled: !trashState().items.length, onClick: () => { const W = wins.get('explorer-recycle'); openExplorer('recycle'); setTimeout(() => { const w = wins.get('explorer-recycle'); w && w.menubar && w.menubar._btns[0].click(); }, 50); } });
     if (it.vfs) m.push({ label: 'Explore', disabled: it.vfs.kind !== 'folder', onClick: () => openItem(id) });
     if (it.project) m.push({ label: isFav(it.project.url) ? 'Remove from &Favorites' : 'Add to &Favorites', onClick: () => toggleFav(it.project.url) });
+    if (HOOKS.itemMenu) { const x = HOOKS.itemMenu(it, many); if (x && x.length) m.push({ sep: true }, ...x); }
     m.push({ sep: true });
     if (id !== 'sys:recycle') m.push({ label: '&Delete', accel: 'Del', onClick: () => trashSelected() });
     m.push({ label: 'Rena&me', accel: 'F2', disabled: many, onClick: () => startRename(id) });
@@ -1451,6 +1466,7 @@
       { label: 'Arrange &Icons', submenu: [{ label: 'by &Name', onClick: () => arrangeIcons('name') }, { label: 'by &Type', onClick: () => arrangeIcons('type') }, { label: 'by &Status', onClick: () => arrangeIcons('status') }, { sep: true }, { label: 'Auto &Arrange', checked: !!settings.autoArrange, onClick: () => { setSetting('autoArrange', !settings.autoArrange); layoutIcons(false); } }] },
       { label: 'Line &up Icons', onClick: () => { const s = settings.snap; settings.snap = true; layoutIcons(false); persistIcons(); settings.snap = s; } },
       { sep: true }, { label: '&Refresh', onClick: () => { buildIcons(); announce('Desktop refreshed'); } },
+      ...(HOOKS.desktopExtra ? [{ sep: true }].concat(HOOKS.desktopExtra()) : []),
       { sep: true }, { label: 'Find…', onClick: () => openFind() }, { label: 'Run…', onClick: () => openRun() },
       { sep: true }, { label: 'P&roperties', onClick: () => openControl('display') }
     ];
@@ -1705,10 +1721,10 @@
         { label: 'Windows &Explorer', icon: IC('my-computer'), onClick: () => openItem('sys:my-computer') },
         { label: 'MS-&DOS Prompt', icon: IC('run'), onClick: () => openItem('app:msdos', startBtn) },
         { label: 'My Doc&uments', icon: IC('documents-folder'), onClick: () => openItem('folder:documents', startBtn) }
-      ] },
+      ].concat(HOOKS.startPrograms ? [{ sep: true }].concat(HOOKS.startPrograms()) : []) },
       { label: 'F&avorites', icon: IC('star'), submenu: () => (favs.length ? favs : empty) },
       { label: '&Documents', icon: IC('documents-folder'), submenu: () => (recs.length ? recs : empty).concat([{ sep: true }, { label: '&Clear Documents', disabled: !recs.length, onClick: () => { store.setJson(LEGACY.recents, []); announce('Documents list cleared'); } }]) },
-      { label: '&Settings', icon: IC('control-panel'), submenu: [{ label: '&Control Panel', icon: IC('control-panel'), onClick: () => openControl() }, { label: '&Taskbar && Start Menu…', icon: IC('programs'), onClick: () => openControl('taskbar') }, { label: '&Display…', icon: IC('my-computer'), onClick: () => openControl('display') }] },
+      { label: '&Settings', icon: IC('control-panel'), submenu: [{ label: '&Control Panel', icon: IC('control-panel'), onClick: () => openControl() }, { label: '&Taskbar && Start Menu…', icon: IC('programs'), onClick: () => openControl('taskbar') }, { label: '&Display…', icon: IC('my-computer'), onClick: () => openControl('display') }].concat(HOOKS.startSettings ? HOOKS.startSettings() : []) },
       { label: '&Find', icon: IC('find'), submenu: [{ label: '&Files or Folders… ', icon: IC('find'), accel: 'Ctrl+K', onClick: () => openFind() }] },
       { label: '&Help', icon: IC('help'), onClick: () => openHelp() },
       { label: '&Run…', icon: IC('run'), onClick: () => openRun() },
@@ -1753,6 +1769,7 @@
    *  CLOSE PROGRAM (task manager)
    * ===================================================================== */
   function openTaskManager() {
+    EMIT('taskman');
     const list = h('div', { class: 'find-results sunken', role: 'listbox', 'aria-label': 'Programs', style: { height: '190px', overflow: 'auto' }, tabindex: '0' });
     let sel = null, rows = [];
     const progs = () => Array.from(wins.values()).filter(w => !w.o.dialog && w.visible);
@@ -1830,6 +1847,7 @@
     if (id === 'saver') GH.previewSaver(); else if (id === 'about') showAbout(); else if (id === 'help') openHelp(); else if (id === 'find') openFind(); else if (id === 'shutdown') openShutdown(); else openItem(id, opener);
   }
   function openRun() {
+    EMIT('run');
     const hist = store.json(KEYS.runHistory, []);
     const input = h('input', { type: 'text', class: 'field', id: 'run-input', list: 'run-list', autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Open', style: { width: '100%' } });
     const dl = h('datalist', { id: 'run-list' }, hist.map(x => h('option', { value: x })));
@@ -1852,6 +1870,7 @@
     openDialog({ title: 'Shut Down ColtonOS', icon: IC('shutdown'), content: body, width: 380, focus: W => $('input:checked', W.el), buttons: [{ label: 'Yes', value: 'yes', default: true, onClick: () => { setTimeout(() => doShutdown(choice), 0); } }, { label: 'No', value: 'no' }, { label: 'Help', value: 'help', onClick: () => { setTimeout(() => openHelp('start'), 0); return false; } }] });
   }
   function doShutdown(mode) {
+    if (mode !== 'close') EMIT('shutdown', mode);
     if (mode === 'close') { Array.from(wins.values()).forEach(w => { if (!w.o.dialog) w.close(true); }); return; }
     store.set('gh-dirty', '0');
     if (HOOKS.shutdown && HOOKS.shutdown(mode)) return;
@@ -1871,6 +1890,7 @@
    *  FIND (replaces the old Quick Launch palette)
    * ===================================================================== */
   function openFind(q) {
+    EMIT('find');
     if (wins.has('find')) { const w = wins.get('find'); showWin(w); const i = $('input', w.el); i && (i.focus(), q !== undefined && (i.value = q, i.dispatchEvent(new Event('input')))); return; }
     const input = h('input', { type: 'search', class: 'field grow', 'aria-label': 'Named', autocomplete: 'off', placeholder: 'Type a game, app or folder name…' });
     const results = h('div', { class: 'find-results sunken', role: 'listbox', 'aria-label': 'Search results' });
@@ -1915,7 +1935,8 @@
     const sortS = h('select', { class: 'field', 'aria-label': 'Sort order' }, h('option', { value: 'default', text: 'Curated order' }), h('option', { value: 'type', text: 'Sort by type' }));
     const mkMode = (v, l) => h('button', { type: 'button', class: 'btn small', 'aria-pressed': 'false', text: l, dataset: { mode: v } });
     const bFav = mkMode('favorites', '☆ Favorites'), bRec = mkMode('recent', 'Recent'), bClr = h('button', { type: 'button', class: 'btn small', text: 'Clear' });
-    const tools = h('div', { class: 'lib-tools' }, searchI, statusS, sortS, bFav, bRec, bClr);
+    const bRand = h('button', { type: 'button', class: 'btn small', title: 'Launch a random game', text: '🎲 Random Game' });
+    const tools = h('div', { class: 'lib-tools' }, searchI, statusS, sortS, bFav, bRec, bClr, bRand);
     const tbody = h('tbody'); const table = h('table', { class: 'lib-table', role: 'grid', 'aria-label': 'Projects', 'aria-rowcount': '0' }, h('thead', {}, h('tr', { role: 'row' }, h('th', { role: 'columnheader', text: 'Name' }), h('th', { role: 'columnheader', text: 'Type' }), h('th', { role: 'columnheader', text: 'Status' }), h('th', { role: 'columnheader', class: 'hide-s', text: 'Tags' }))), tbody);
     const listBox = h('div', { class: 'lib-list sunken' }, table);
     const detail = h('div', { class: 'lib-detail sunken', 'aria-live': 'polite' });
@@ -1955,7 +1976,7 @@
           h('button', { type: 'button', class: 'btn', text: 'Copy link', on: { click: () => { const u = new URL(p.url, location.href).href; (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(() => announce('Link copied'), () => msgBox(u, { title: 'Project link', icon: 'info' })); } } })));
     }
     W = createWindow({ id: 'library', title: 'Project Library', icon: IC('documents-folder'), content, status: ['grow', ''], width: 760, height: 500, minWidth: 340, minHeight: 260,
-      menubar: [{ label: '&File', items: () => [{ label: '&Launch', onClick: () => cur && openItem('game:' + cur, W.sys) }, { sep: true }, { label: '&Close', onClick: () => W.requestClose() }] },
+      menubar: [{ label: '&File', items: () => [{ label: '&Launch', onClick: () => cur && openItem('game:' + cur, W.sys) }, { label: '&Random Game', onClick: rollRandom }, { sep: true }, { label: '&Close', onClick: () => W.requestClose() }] },
         { label: '&View', items: () => [{ label: '&All projects', radio: true, on: mode === 'all', onClick: () => { mode = 'all'; renderRows(); } }, { label: '&Favorites', radio: true, on: mode === 'favorites', onClick: () => { mode = 'favorites'; renderRows(); } }, { label: '&Recent', radio: true, on: mode === 'recent', onClick: () => { mode = 'recent'; renderRows(); } }] },
         { label: '&Help', items: () => [{ label: '&Help Topics', onClick: () => openHelp('library') }, { label: '&About ColtonOS…', onClick: showAbout }] }] });
     const fl = () => renderRows(); favListeners.add(fl); W.onClosed = () => favListeners.delete(fl);
@@ -1963,6 +1984,8 @@
     statusS.addEventListener('change', () => { status = statusS.value; renderRows(); });
     sortS.addEventListener('change', () => { sort = sortS.value; renderRows(); });
     [bFav, bRec].forEach(b => b.addEventListener('click', () => { mode = mode === b.dataset.mode ? 'all' : b.dataset.mode; renderRows(); }));
+    const rollRandom = () => { const p = pickRandomGame(); if (!p) return; EMIT('random', p); if (!PROJECTS.some(x => x.url === p.url)) { openItem('game:' + p.url, W.sys); return; } search = ''; status = 'all'; mode = 'all'; searchI.value = ''; statusS.value = 'all'; cur = p.url; renderRows(); const t = $('tr[data-url="' + CSS.escape(cur) + '"]', tbody); t && t.scrollIntoView({ block: 'nearest' }); toast('Random pick: ' + p.title + '!'); setTimeout(() => openItem('game:' + p.url, W.sys), 650); };
+    bRand.addEventListener('click', rollRandom);
     bClr.addEventListener('click', () => { search = ''; status = 'all'; sort = 'default'; mode = 'all'; searchI.value = ''; statusS.value = 'all'; sortS.value = 'default'; renderRows(); });
     tbody.addEventListener('click', e => { const tr = e.target.closest('tr[data-url]'); if (!tr) return; cur = tr.dataset.url; renderRows(); const n = $('tr[data-url="' + CSS.escape(cur) + '"]', tbody); n && n.focus(); if (e.detail && shouldOpen('lib:' + cur)) openItem('game:' + cur, W.sys); });
     tbody.addEventListener('keydown', e => {
@@ -2200,6 +2223,7 @@
     startSaver(settings.saver);
   }
   function startSaver(kind) {
+    EMIT('saver');
     if (saverEl || kind === 'none') return;
     closeMenus(false);
     const el = h('div', { id: 'saver', role: 'dialog', 'aria-label': 'Screen saver. Press any key or tap to return.', tabindex: '-1' });
@@ -2382,7 +2406,7 @@
       const th = OLD_THEME_MAP[pack.theme] || (SCHEMES[pack.theme] ? pack.theme : null); if (!th) return false;
       GH.setMany({ scheme: th, reducedMotion: !!pack.reducedMotion, compact: !!pack.compactMode, highContrast: !!pack.highContrast, lowPower: !!pack.lowPower, crt: pack.crt === false ? 'off' : 'standard' }); return true;
     },
-    playSound, previewSaver: k => { if (saverEl) return; startSaver(k || settings.saver === 'none' ? (k || 'logo') : settings.saver); }, arrangeWindows, minimizeAll,
+    pickRandomGame, playSound, previewSaver: k => { if (saverEl) return; startSaver(k || settings.saver === 'none' ? (k || 'logo') : settings.saver); }, arrangeWindows, minimizeAll,
     catalog: () => ({ games: PROJECTS.map(p => ({ title: p.title, url: p.url })), classics: CLASSICS.map(c => ({ title: c.title, url: c.url })), applets: APPLETS.map(a => ({ title: a.title, url: a.src })) }),
     launchByUrl: url => { const id = ITEMS.has('game:' + url) ? 'game:' + url : (APPLETS.find(a => a.src === url) ? 'app:' + APPLETS.find(a => a.src === url).id : null); if (id) openItem(id); return !!id; },
     hooks: HOOKS, rebuildIcons: () => { buildIcons(); }, refreshViews: () => refreshTrashViews(),
