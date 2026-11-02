@@ -15,8 +15,27 @@
 <body><pre id="t">Loading…</pre>
 <script>
 (function(){
-  var q=new URLSearchParams(location.search).get('src')||'';
-  var t=document.getElementById('t');
+  var qs=new URLSearchParams(location.search), t=document.getElementById('t');
+  /* a save slot from the File Manager: C:\Games\<Game>\saves\<slot>.sav (read-only view of the slot's stored data) */
+  if(qs.has('slot')){
+    var url=qs.get('slot')||'', n=qs.get('n')||'1', all={};
+    try{all=JSON.parse(localStorage.getItem('gh-slots-v1')||'{}')||{};}catch(e){}
+    var s=(all[url]||{})[n], title=url, P=null;
+    try{P=parent.GHShell;var g=P.catalog().games.filter(function(x){return x.url===url;})[0];if(g)title=g.title;}catch(e){}
+    if(!s){t.textContent='This save slot no longer exists.\n\nIt may have been deleted or renamed in the File Manager.';return;}
+    var line=new Array(61).join('-'), keys=Object.keys(s.data||{}), out=['ColtonOS save slot (read-only view)',line,
+      'Game:   '+title,'Slot:    '+n+'  "'+s.name+'"','Saved:   '+new Date(s.ts).toLocaleString(),'Size:    '+(s.size||0)+' bytes in '+keys.length+' key'+(keys.length===1?'':'s'),
+      'Source: '+url,line,'This is the data the game stored in this browser. Editing it here does not change the real slot.','Use Load in the game window to restore it.',''];
+    keys.forEach(function(k){
+      var v=s.data[k], txt=v;
+      try{var j=JSON.parse(v);if(j&&typeof j==='object')txt=JSON.stringify(j,null,2);}catch(e){}
+      txt=String(txt); if(txt.length>6000)txt=txt.slice(0,6000)+'\n... ('+(txt.length-6000)+' more characters)';
+      out.push('['+k+']',txt,'');
+    });
+    if(!keys.length)out.push('(this slot is empty)');
+    t.textContent=out.join('\n'); document.title=title+' - '+s.name+'.sav'; return;
+  }
+  var q=qs.get('src')||'';
   if(!/^[A-Za-z0-9_\-][A-Za-z0-9_\-.\/]*\.txt$/.test(q)||q.indexOf('..')>-1){t.textContent='Cannot open this file.';return;}
   fetch('../'+q).then(function(r){if(!r.ok)throw new Error(r.status);return r.text();})
    .then(function(s){t.textContent=s;})

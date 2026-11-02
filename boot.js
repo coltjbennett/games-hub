@@ -303,6 +303,10 @@
   var audio = new Audio();
   audio.preload = 'auto';
   var blobUrl = '';
+  // ScanDisk runs only after a real Start > Shut Down. The flag is read (and cleared) once, right here,
+  // so later page activity can never turn it into a false alarm.
+  var scanPending = false;
+  try { scanPending = window.localStorage.getItem('gh-shutdown') === '1'; window.localStorage.removeItem('gh-shutdown'); } catch (e) {}
 
   // ---------- State ----------
   var phase = 'loading'; // loading -> waiting (power screen) -> running -> done
@@ -319,9 +323,11 @@
   var cursorEl = null;
   var barTimer = null;
 
-  function playAttempt() {
+  function playAttempt(silent) {
     // Resolves 'ok' | 'blocked' (needs a user gesture) | 'fail' (missing/unsupported file).
+    // silent = true plays muted: it unlocks audio inside a click without anything being heard.
     try {
+      audio.muted = !!silent;
       var p = audio.play();
       if (p && typeof p.then === 'function') {
         return p.then(
@@ -442,17 +448,35 @@
     }, FADE_MS + 50);
   }
 
-  // ---------- ScanDisk (shown when the previous session never used Shut Down) ----------
+  // ---------- ScanDisk (a quick routine check, only after the previous session ended with Start > Shut Down) ----------
   var scanDone = false;
   function needScanDisk() {
     try {
-      if (window.localStorage.getItem('gh-dirty') !== '1') return false;
+      if (!scanPending) return false;
       var st = JSON.parse(window.localStorage.getItem('gh-desktop-v2') || '{}');
       return st.scandisk !== false;
     } catch (e) { return false; }
   }
   /* hard-drive spin-up for ScanDisk (needs "Play sounds for windows" + theater sounds) */
+  /* plays images/drive.mp3 if it exists; otherwise (missing file) the synthesized spin-up below */
   function scanSpin() {
+    try {
+      var st0 = JSON.parse(window.localStorage.getItem('gh-desktop-v2') || '{}');
+      if (!st0.uiSounds || st0.theaterSounds === false) return function () {};
+      var vol = Math.max(0.05, Math.min(1, (st0.uiVolume == null ? 50 : st0.uiVolume) / 100));
+      var clip = new Audio(assetUrl('images/drive.mp3')), synthStop = null, stopped = false, fell = false;
+      clip.volume = vol; clip.loop = true;
+      var fallback = function () { if (fell || stopped) return; fell = true; synthStop = scanSynth(); };
+      clip.addEventListener('error', fallback);
+      try { var pr = clip.play(); if (pr && pr.catch) pr.catch(function (err) { if (err && err.name === 'NotSupportedError') fallback(); }); } catch (e) { fallback(); }
+      return function () {
+        stopped = true;
+        try { var v0 = clip.volume, n = 0, iv = setInterval(function () { n++; clip.volume = Math.max(0, v0 * (1 - n / 8)); if (n >= 8) { clearInterval(iv); clip.pause(); } }, 25); } catch (e) {}
+        if (synthStop) synthStop();
+      };
+    } catch (e) { return function () {}; }
+  }
+  function scanSynth() {
     try {
       var st = JSON.parse(window.localStorage.getItem('gh-desktop-v2') || '{}');
       if (!st.uiSounds || st.theaterSounds === false) return function () {};
@@ -470,7 +494,7 @@
     } catch (e) { return function () {}; }
   }
   function runScanDisk(next) {
-    try { audio.pause(); audio.currentTime = 0; } catch (e) {}
+    try { audio.pause(); audio.currentTime = 0; audio.muted = true; } catch (e) {}
     var stopSpin = scanSpin();
     var box = document.createElement('div');
     box.style.cssText = 'position:absolute;inset:0;z-index:20;background:#0000a8;color:#fff;padding:28px 36px;font-size:16px;line-height:1.35;overflow:hidden;cursor:default;text-align:left;justify-content:flex-start;align-items:flex-start;flex-direction:column;display:flex';
@@ -479,7 +503,7 @@
     title.textContent = ' ColtonOS ScanDisk ';
     var msg = document.createElement('div');
     msg.style.cssText = 'white-space:pre-line;max-width:640px';
-    msg.textContent = 'Your computer was not shut down properly.\nScanDisk is now checking drive C for errors.\n\nTo avoid this in the future, always choose Shut Down from the Start menu.';
+    msg.textContent = 'ColtonOS was shut down normally.\nScanDisk is running a quick routine check of drive C.';
     var step = document.createElement('div'); step.style.cssText = 'margin-top:18px';
     var bar = document.createElement('div'); bar.style.cssText = 'border:2px solid #fff;height:18px;width:min(520px,80vw);margin:10px 0';
     var fill = document.createElement('div'); fill.style.cssText = 'height:100%;width:0;background:#fff'; bar.appendChild(fill);
@@ -492,18 +516,17 @@
       if (finished) return; finished = true; clearTimeout(timer); stopSpin();
       document.removeEventListener('keydown', skip, true); box.removeEventListener('click', skip);
       if (box.parentNode) box.parentNode.removeChild(box);
-      try { window.localStorage.setItem('gh-dirty', '0'); } catch (e) {}
-      try { var pr = audio.play(); if (pr && pr.catch) pr.catch(function () {}); } catch (e) {}
-      next();
+      // The startup sound belongs to the splash screen only: it starts now, after ScanDisk.
+      playAttempt(false).then(function (r) { next(r === 'ok' || audioIsPlaying(), r); });
     }
     function skip(e) { if (e && e.stopPropagation) { e.stopPropagation(); if (e.preventDefault) e.preventDefault(); } end(); }
     document.addEventListener('keydown', skip, true); box.addEventListener('click', skip);
-    var per = reduceMotion ? 40 : 520;
+    var per = reduceMotion ? 40 : 300;
     (function tickStep() {
       if (finished) return;
       if (k >= steps.length) {
-        step.textContent = 'ScanDisk did not find any problems on drive C.'; hintLine.textContent = 'Starting ColtonOS…';
-        timer = setTimeout(end, reduceMotion ? 100 : 1300); return;
+        step.textContent = 'ScanDisk did not find any problems on drive C. Everything is all good.'; hintLine.textContent = 'Starting ColtonOS…';
+        timer = setTimeout(end, reduceMotion ? 100 : 1000); return;
       }
       step.textContent = 'Checking ' + steps[k] + '…'; k++;
       fill.style.width = Math.round(k / steps.length * 100) + '%';
@@ -513,7 +536,7 @@
 
   function beginBoot(soundIsPlaying) {
     if (phase === 'done' || phase === 'running') return;
-    if (!scanDone && needScanDisk()) { scanDone = true; runScanDisk(function () { beginBoot(soundIsPlaying); }); return; }
+    if (!scanDone && needScanDisk()) { scanDone = true; runScanDisk(function (playing) { beginBoot(playing); }); return; }
     phase = 'running';
     bootStartedAt = Date.now();
     skipAllowedAt = bootStartedAt + SKIP_GUARD_MS;
@@ -558,9 +581,10 @@
     stopPost();
 
     // play() must run synchronously inside the user's click/key event.
-    playAttempt().then(function (result) {
+    var scanFirst = !scanDone && needScanDisk();
+    playAttempt(scanFirst).then(function (result) {
       // Trust what the audio element is really doing, not just the promise result.
-      var playing = result === 'ok' || audioIsPlaying();
+      var playing = !scanFirst && (result === 'ok' || audioIsPlaying());
       phase = 'waiting';
       beginBoot(playing);
     });
@@ -923,6 +947,15 @@
     started = true;
     clearTimeout(assetsTimer);
 
+    if (!scanDone && needScanDisk()) {
+      scanDone = true;
+      runScanDisk(function (playing, r) {
+        if (phase !== 'loading') return;
+        if (r === 'blocked') showPowerScreen(); /* the browser wants a click before it allows the startup sound */
+        else beginBoot(playing);
+      });
+      return;
+    }
     playAttempt().then(function (result) {
       if (phase !== 'loading') return; // skipped with Escape meanwhile
       if (result === 'blocked') showPowerScreen();

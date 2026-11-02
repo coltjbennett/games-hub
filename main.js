@@ -1076,7 +1076,7 @@
   const ITEMS = new Map();
   /* extension points used by os-extras.js (virtual file system, DOS prompt, themes, sounds…) */
   const EMIT = (name, data) => { try { if (HOOKS.emit) HOOKS.emit(name, data); } catch (e) {} };
-  const HOOKS = { emit: null, itemMenu: null, desktopExtra: null, pasteMenu: null, startPrograms: null, startSettings: null, desktopIds: () => [], children: () => [], vfsParent: () => null, newMenu: () => [], beforeOpen: null, shutdown: null, dropOnto: null, presence: null, deleteVfs: null, renameVfs: null };
+  const HOOKS = { emit: null, itemMenu: null, desktopExtra: null, pasteMenu: null, startPrograms: null, startSettings: null, desktopIds: () => [], children: () => [], vfsParent: () => null, newMenu: () => [], beforeOpen: null, shutdown: null, dropOnto: null, presence: null, deleteVfs: null, renameVfs: null, fm: null };
   const addItem = it => { ITEMS.set(it.id, it); return it; };
   const track2 = (name, p) => track(name, p);
 
@@ -1255,6 +1255,7 @@
 
   function openExplorer(fid, opener) {
     let def = FOLDERS[fid]; if (!def) return;
+    if (HOOKS.fm && HOOKS.fm(fid, opener)) return; /* os-plus.js: the File Manager is the system explorer (Recycle Bin keeps this one) */
     const id = 'explorer-' + fid; let curFid = fid; const hist = [];
     if (wins.has(id)) { showWin(wins.get(id)); return; }
     let view = store.get(KEYS.explorerView, 'large'), sortBy = 'none', selected = new Set(), W;
@@ -1871,6 +1872,7 @@
   }
   function doShutdown(mode) {
     if (mode !== 'close') EMIT('shutdown', mode);
+    if (mode === 'shutdown') store.set('gh-shutdown', '1'); /* boot.js: run the (all-good) ScanDisk check next time, only after a real shut down */
     if (mode === 'close') { Array.from(wins.values()).forEach(w => { if (!w.o.dialog) w.close(true); }); return; }
     store.set('gh-dirty', '0');
     if (HOOKS.shutdown && HOOKS.shutdown(mode)) return;

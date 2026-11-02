@@ -25,16 +25,21 @@
 
   /* ===================== styles ===================== */
   const css = `
-  #tapey{position:fixed;z-index:9500;right:18px;bottom:calc(var(--taskbar-h,28px) + 14px);width:var(--tp-size,96px);touch-action:none;user-select:none;-webkit-user-select:none}
+  #tapey{position:fixed;z-index:9500;right:18px;bottom:calc(var(--taskbar-h,28px) + 14px);width:var(--tp-size,80px);touch-action:none;user-select:none;-webkit-user-select:none;transition:transform .55s steps(11,end)}
   #tapey[hidden]{display:none}
+  #tapey.tucked{transform:translateX(var(--tp-tuck,0px));pointer-events:none}
+  #tapey.tucked.gone{visibility:hidden;transition:none}
+  #tapey .tp-art svg,#tapey .tp-art img,#tapey .tp-acc{image-rendering:pixelated;image-rendering:crisp-edges;shape-rendering:crispEdges}
+  #tapey .tp-acc{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;-webkit-user-drag:none}
+  #tapey .tp-acc[hidden]{display:none}
   #tapey .tp-body{display:block;width:100%;aspect-ratio:1;background:none;border:0;padding:0;cursor:pointer;position:relative}
   #tapey .tp-body:focus-visible{outline:2px dotted #000;outline-offset:2px}
-  #tapey img{width:100%;height:100%;display:block;pointer-events:none;-webkit-user-drag:none;filter:drop-shadow(1px 3px 2px rgba(0,0,0,.35))}
-  #tapey.bob .tp-body img{animation:tpBob 2.6s ease-in-out infinite}
-  @keyframes tpBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
-  #tapey.dance .tp-body img{animation:tpDance .5s ease-in-out infinite}
-  @keyframes tpDance{0%,100%{transform:rotate(-6deg) translateY(0)}50%{transform:rotate(6deg) translateY(-8px)}}
-  #tapey.drag img{transform:rotate(-8deg) scale(1.06)}
+  #tapey img{width:100%;height:100%;display:block;pointer-events:none;-webkit-user-drag:none;filter:drop-shadow(2px 2px 0 rgba(0,0,0,.3))}
+  #tapey.bob .tp-body{animation:tpBob 2.4s steps(1,end) infinite}
+  @keyframes tpBob{0%,54%{transform:translateY(0)}55%,100%{transform:translateY(calc(var(--tp-size,80px) / -40))}}
+  #tapey.dance .tp-body{animation:tpDance .5s steps(1,end) infinite}
+  @keyframes tpDance{0%{transform:translateY(0)}50%{transform:translateY(calc(var(--tp-size,80px) / -20))}}
+  #tapey.drag .tp-body{transform:translateY(calc(var(--tp-size,80px) / -20))}
   .tp-bal{position:absolute;bottom:100%;margin-bottom:8px;min-width:190px;max-width:min(300px,82vw);width:max-content;background:#ffffe1;color:#000;border:1px solid #000;padding:8px 10px;font:13px/1.35 W95FA,"MS Sans Serif",Tahoma,sans-serif;box-shadow:2px 2px 0 rgba(0,0,0,.4);z-index:2}
   .tp-bal.l{left:0}.tp-bal.r{right:0}.tp-bal.below{bottom:auto;top:100%;margin:8px 0 0}
   .tp-bal::after{content:"";position:absolute;bottom:-9px;width:0;height:0;border:8px solid transparent;border-top:9px solid #000;border-bottom:0}
@@ -74,9 +79,8 @@
   .slot-row .sb{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
   .slot-row .sb button{font:inherit;font-size:12px;color:#000;background:#c0c0c0;border:2px outset #fff;padding:1px 8px;min-height:22px;cursor:pointer}
   .slot-row .sb button:disabled{color:#808080}
-  @media (max-width:700px){#tapey{--tp-size:72px}}
-  @media (prefers-reduced-motion:reduce){#tapey.bob .tp-body img{animation:none}}
-  html.reduced-motion #tapey.bob .tp-body img{animation:none}
+  @media (prefers-reduced-motion:reduce){#tapey.bob .tp-body,#tapey.dance .tp-body{animation:none}#tapey{transition:none}}
+  html.reduced-motion #tapey.bob .tp-body,html.reduced-motion #tapey.dance .tp-body{animation:none}html.reduced-motion #tapey{transition:none}
   `;
   const st = D.createElement('style'); st.id = 'gh-more-css'; st.textContent = css; D.head.append(st);
 
@@ -257,18 +261,20 @@
   const TKEY = 'gh-tapey-v2';
   const TDEF = {
     enabled: true, tone: 'c', userName: '',
-    size: 96, opacity: 100, hue: 0, saturate: 100, flip: false, shadow: true, glow: false,
+    size: 80, opacity: 100, hue: 0, saturate: 100, flip: false, shadow: true, glow: false,
     onTop: true, snap: true, hideSmall: false, pos: null,
     balloon: 'classic', fontSize: 13, balloonPos: 'auto', readSpeed: 100, showClose: true,
     eyes: true, eyeStrength: 100, eyeSmooth: 55, eyeFrames: true, crossEyed: true, eyeBlink: true,
     bob: true, blink: true, poseAnim: true, sleep: true, sleepAfter: 150,
-    chatty: 60, interval: 150, greeting: true, reactions: true, appTips: true, gameTips: true, achTalk: true, clippyOffers: true,
-    quietGames: true, quietDialogs: true,
+    chatty: 45, interval: 240, greeting: true, reactions: true, appTips: true, gameTips: true, achTalk: true, clippyOffers: true,
+    quietGames: true, quietDialogs: true, dodge: true, polite: true, maxPerHour: 6, accessories: true, smartHints: true,
     catTip: true, catJoke: true, catFact: true, catChat: true, catCompliment: true, catNudge: true, catContext: true,
     sounds: false, soundVol: 40, voicePitch: 100
   };
   let T = Object.assign({}, TDEF, LS.get(TKEY, {}) || {});
   if (!(T.tone in { c: 1, s: 1, w: 1, n: 1, q: 1 })) T.tone = 'c';
+  /* v4.5 migration: smaller default size (pixel-perfect 80px) and a gentler chattiness for anyone still on the old defaults */
+  if (!T._m2) { if (T.size === 96) T.size = 80; if (T.chatty === 60 && T.interval === 150) { T.chatty = 45; T.interval = 240; } T._m2 = 1; LS.set(TKEY, T); }
   const tsubs = [];
   const saveT = () => LS.set(TKEY, T);
   const TS = LS.get('gh-tapey-state-v1', null) || { seen: {}, muted: {}, played: {}, visits: 0, eyesIntro: false, firstRun: true };
@@ -283,7 +289,7 @@
   function loadDialogs() {
     return (window.TAPEY_DIALOGS ? Promise.resolve(true) : loadScript('images/tapey-dialogs.js')).then(ok => {
       if (!ok || !window.TAPEY_DIALOGS) { DLG = FALLBACK; return; }
-      return loadScript('images/tapey-dialogs-more.js').then(() => { DLG = window.TAPEY_DIALOGS; });
+      return loadScript('images/tapey-dialogs-more.js').then(() => loadScript('images/tapey-dialogs-plus.js')).then(() => { DLG = window.TAPEY_DIALOGS; });
     });
   }
   const ENTRY_RX = /^(?:([csnwq]):\s*)?([\s\S]*?)(?:\s+~([a-z]+))?\s*$/;
@@ -332,6 +338,7 @@
   const root = h('div', { id: 'tapey', class: 'bob', role: 'complementary', 'aria-label': 'Tapey the tape roll, desktop assistant', hidden: true });
   const art = h('div', { class: 'tp-art', style: { width: '100%', height: '100%' } });
   const body = h('button', { type: 'button', class: 'tp-body', 'aria-label': 'Tapey. Press Enter to ask for help.', title: 'Tapey (click for help, drag to move)' }, art);
+  const acc = h('img', { class: 'tp-acc', alt: '', draggable: 'false', hidden: true }); body.append(acc);
   root.append(body); D.body.append(root);
   let bal = null, balTimer = 0, curPose = 'idle', basePose = 'idle', poseTimer = 0, speaking = false, sleeping = false, lastSpoke = 0, lastActivity = Date.now();
   const svgCache = {}, svgLoading = {};
@@ -356,7 +363,7 @@
       art.replaceChildren(node);
       pupils = Array.from(node.querySelectorAll('.pupil')).map(p => {
         const eyeEl = p.parentNode.querySelector('ellipse'), face = p.closest('.face');
-        return { el: p, eye: eyeEl, bx: +p.dataset.bx || 0, by: +p.dataset.by || 0, mx: +p.dataset.mx || 4, my: +p.dataset.my || 5, rot: face ? (+face.dataset.rot || 0) : 0, cx: 0, cy: 0 };
+        return { el: p, eye: eyeEl, bx: +p.dataset.bx || 0, by: +p.dataset.by || 0, mx: +p.dataset.mx || 4, my: +p.dataset.my || 5, px: +p.dataset.px || 0, rot: face ? (+face.dataset.rot || 0) : 0, cx: 0, cy: 0 };
       });
       applyEyes(true);
     });
@@ -369,7 +376,7 @@
     if (hold && name !== 'idle') poseTimer = setTimeout(() => { if (!sleeping) setPose('idle'); }, hold);
   }
   /* ---- eye tracking ---- */
-  let tx = innerWidth / 2, ty = innerHeight / 2, lastMove = 0, shakeAcc = 0, shakeAt = 0, eyeRaf = 0, hoverSince = 0, lastEyeLine = 0, px0 = null, py0 = null;
+  let lastKeyAt = 0, lastDragAt = 0, tx = innerWidth / 2, ty = innerHeight / 2, lastMove = 0, shakeAcc = 0, shakeAt = 0, eyeRaf = 0, hoverSince = 0, lastEyeLine = 0, px0 = null, py0 = null;
   function setTarget(x, y) {
     tx = x; ty = y; lastMove = Date.now();
     if (px0 != null) { shakeAcc += Math.abs(x - px0) + Math.abs(y - py0); }
@@ -382,7 +389,9 @@
     try {
       const w = fr.contentWindow; if (!w || w.__tpEyes) return; w.__tpEyes = true;
       const f = e => { if (!T.eyes || !T.eyeFrames) return; const r = fr.getBoundingClientRect(); setTarget(e.clientX + r.left, e.clientY + r.top); };
-      w.addEventListener('pointermove', f, { passive: true });
+      w.addEventListener('pointermove', e => { f(e); if (e.buttons) { lastKeyAt = Date.now(); lastActivity = lastKeyAt; } }, { passive: true });
+      w.addEventListener('keydown', () => { lastKeyAt = Date.now(); lastActivity = lastKeyAt; }, { passive: true });
+      w.addEventListener('pointerdown', () => { lastActivity = Date.now(); }, { passive: true });
     } catch (e) { /* cross-origin frame: eyes simply stop following inside it */ }
   }
   D.addEventListener('load', e => { if (e.target && e.target.tagName === 'IFRAME') watchFrame(e.target); }, true);
@@ -403,7 +412,9 @@
       const sm = snap ? 0 : clampN(T.eyeSmooth, 0, 95) / 100;
       p.cx += (wantX - p.cx) * (1 - sm); p.cy += (wantY - p.cy) * (1 - sm);
       if (snap) { p.cx = wantX; p.cy = wantY; }
-      p.el.setAttribute('transform', 'translate(' + p.cx.toFixed(2) + ' ' + p.cy.toFixed(2) + ')');
+      /* pixel art: pupils hop whole art pixels instead of gliding */
+      const ox = p.px ? Math.round(p.cx / p.px) * p.px : p.cx, oy = p.px ? Math.round(p.cy / p.px) * p.px : p.cy;
+      p.el.setAttribute('transform', 'translate(' + ox.toFixed(2) + ' ' + oy.toFixed(2) + ')');
       p._done = Math.abs(wantX - p.cx) < 0.05 && Math.abs(wantY - p.cy) < 0.05;
     });
   }
@@ -432,15 +443,15 @@
     root.style.setProperty('--tp-size', clampN(T.size, 48, 200) + 'px'); root.style.width = clampN(T.size, 48, 200) + 'px';
     root.style.opacity = String(clampN(T.opacity, 25, 100) / 100);
     const f = []; if (T.hue) f.push('hue-rotate(' + (+T.hue) + 'deg)'); if (T.saturate !== 100) f.push('saturate(' + (+T.saturate / 100) + ')'); if (T.glow) f.push('drop-shadow(0 0 8px rgba(255,235,120,.9))');
-    art.style.filter = f.join(' '); art.style.transform = T.flip ? 'scaleX(-1)' : '';
-    root.classList.toggle('bob', !!T.bob && !rm()); body.querySelectorAll('svg,img').forEach(n => { n.style.filter = T.shadow ? 'drop-shadow(1px 3px 2px rgba(0,0,0,.35))' : 'none'; });
+    art.style.filter = f.join(' '); art.style.transform = T.flip ? 'scaleX(-1)' : ''; acc.style.transform = T.flip ? 'scaleX(-1)' : '';
+    root.classList.toggle('bob', !!T.bob && !rm()); body.querySelectorAll('svg,img').forEach(n => { n.style.filter = T.shadow ? 'drop-shadow(2px 2px 0 rgba(0,0,0,.3))' : 'none'; });
     root.style.zIndex = T.onTop ? '9500' : '1';
     if (T.onTop) { if (root.parentNode !== D.body) { D.body.append(root); root.style.position = 'fixed'; } } else if (desk && root.parentNode !== desk) { desk.append(root); root.style.position = 'absolute'; }
     root.style.setProperty('--tp-fs', clampN(T.fontSize, 10, 22) + 'px');
     if (bal) bal.dataset.theme = T.balloon;
     const small = innerWidth < 640 && T.hideSmall;
     root.hidden = !T.enabled || small;
-    place();
+    place(); accUpdate(); if (tucked) setTuckVar();
   }
   window.addEventListener('resize', () => { place(); });
   /* ---- balloon themes (extra css) ---- */
@@ -475,9 +486,11 @@
   }
   function say(text, o) {
     o = o || {}; if (!T.enabled || root.hidden) return null;
+    if (tucked) { if (o.force) summon(); else return null; }
     closeBal(false); clearTimeout(poseTimer);
     const c = h('div', { class: 'tp-t', text: text }); bal = h('div', { class: 'tp-bal', role: 'status', 'aria-live': 'polite', 'data-theme': T.balloon }, c);
-    if (T.showClose || o.actions || o.input) bal.append(h('button', { type: 'button', class: 'tp-x', 'aria-label': 'Close speech balloon', text: '×', on: { click: () => closeBal() } }));
+    bal.dataset.t = String(Date.now()); if (o.unsol) bal.dataset.unsol = '1';
+    if (T.showClose || o.actions || o.input) bal.append(h('button', { type: 'button', class: 'tp-x', 'aria-label': 'Close speech balloon', text: '×', on: { click: () => userClose() } }));
     if (o.title) bal.insertBefore(h('div', { class: 'tp-h', text: o.title }), c);
     let inputEl = null;
     if (o.input) {
@@ -490,35 +503,116 @@
       o.actions.forEach(x => a.append(h('button', { type: 'button', text: x.label, on: { click: () => { if (!x.keep) closeBal(false); x.fn && x.fn(); } } })));
       bal.append(a);
     }
-    bal.addEventListener('keydown', e => { if (e.key === 'Escape') { closeBal(); body.focus(); } });
+    bal.addEventListener('keydown', e => { if (e.key === 'Escape') { userClose(); body.focus(); } });
     root.append(bal); placeBal();
     speaking = true; lastSpoke = Date.now();
     setPose(o.pose || 'idle', 0); blip(/celebrate|excited|dance|love/.test(o.pose || '') ? 'cheer' : /sad|angry/.test(o.pose || '') ? 'sad' : 'talk');
     if (inputEl) setTimeout(() => inputEl.focus(), 30);
-    const sticky = o.sticky || o.input || (o.actions && o.actions.length);
+    const sticky = o.sticky || o.input || (o.actions && o.actions.length && !o.autoHide);
     if (!sticky && o.ttl !== 0) {
-      const ms = (o.ttl || (2600 + text.length * 55)) * (clampN(T.readSpeed, 40, 300) / 100);
+      const ms = (o.ttl || (2600 + text.length * 55 + (o.autoHide ? 5000 : 0))) * (clampN(T.readSpeed, 40, 300) / 100);
       const arm = () => { clearTimeout(balTimer); balTimer = setTimeout(() => { if (bal && (bal.matches(':hover') || bal.contains(D.activeElement))) { arm(); return; } closeBal(); }, ms); };
       arm();
     }
     return bal;
   }
   function placeBal() {
-    if (!bal) return; const r = root.getBoundingClientRect(); bal.classList.remove('l', 'r', 'below');
-    bal.classList.add(r.left + r.width / 2 < innerWidth / 2 ? 'l' : 'r');
-    const below = T.balloonPos === 'below' || (T.balloonPos === 'auto' && r.top < 170); if (T.balloonPos === 'above') bal.classList.remove('below'); else if (below) bal.classList.add('below');
+    if (!bal) return; const r = root.getBoundingClientRect();
+    const near = r.left + r.width / 2 < innerWidth / 2 ? 'l' : 'r', far = near === 'l' ? 'r' : 'l';
+    const vert = T.balloonPos === 'below' ? ['below'] : T.balloonPos === 'above' ? ['above'] : (r.top < 170 ? ['below', 'above'] : ['above', 'below']);
+    const rs = T.dodge && T.onTop ? winRects() : [], fixed = T.balloonPos !== 'auto'; let done = false;
+    for (const v of vert) { for (const sd of [near, far]) {
+      bal.classList.remove('l', 'r', 'below'); bal.classList.add(sd); if (v === 'below') bal.classList.add('below');
+      const b = bal.getBoundingClientRect();
+      if (b.left < 0 || b.right > innerWidth || b.top < 0 || b.bottom > innerHeight - taskH()) continue;
+      if (rs.some(w => rectsOverlap(b, w, 3))) continue;
+      done = true; break; } if (done) break; }
+    if (!done) { bal.classList.remove('l', 'r', 'below'); bal.classList.add(near); if (vert[0] === 'below') bal.classList.add('below'); }
   }
+
+  /* ---- manners: slide off-screen when a window covers him or his balloon ---- */
+  let tucked = false, tuckTimer = 0, clearSince = 0, summonUntil = 0, dodgeAt = 0, tuckToldOnce = false;
+  const rectsOverlap = (a, b, pad) => a.left < b.right + pad && a.right > b.left - pad && a.top < b.bottom + pad && a.bottom > b.top - pad;
+  function winRects() {
+    const out = [];
+    wins.forEach(w => { if (!w || !w.el || w.closed || !w.visible || w.minimized || w.el.hidden) return; const r = w.el.getBoundingClientRect(); if (r.width > 24 && r.height > 24) out.push(r); });
+    return out;
+  }
+  function homeRect() { const sz = root.offsetWidth || clampN(T.size, 48, 200), l = parseFloat(root.style.left) || 0, t = parseFloat(root.style.top) || 0; return { left: l, top: t, right: l + sz, bottom: t + sz }; }
+  function setTuckVar() { const h0 = homeRect(), left = (h0.left + h0.right) / 2 < innerWidth / 2; root.style.setProperty('--tp-tuck', (left ? -(h0.right + 18) : (innerWidth - h0.left + 18)) + 'px'); }
+  function tuck() {
+    if (tucked) return; setTuckVar(); tucked = true; closeBal(false); root.classList.add('tucked'); root.setAttribute('aria-hidden', 'true'); body.tabIndex = -1;
+    clearTimeout(tuckTimer); tuckTimer = setTimeout(() => { if (tucked) root.classList.add('gone'); }, rm() ? 0 : 650);
+    GH.emit('tapey:tuck', { tucked: true });
+    if (!tuckToldOnce && !TS.tuckTold && T.reactions) { tuckToldOnce = true; TS.tuckTold = 1; saveTS(); I.toast('Tapey stepped aside so he isn\u2019t covering your window. Click the Tapey icon in the tray to call him back.'); }
+  }
+  function untuck(quiet) {
+    if (!tucked) return; tucked = false; clearTimeout(tuckTimer); root.classList.remove('gone'); void root.offsetWidth; root.classList.remove('tucked'); root.removeAttribute('aria-hidden'); body.tabIndex = 0;
+    GH.emit('tapey:tuck', { tucked: false }); if (!quiet && !sleeping) setPose('wave', 1300);
+  }
+  function summon() { summonUntil = Date.now() + 15000; if (tucked) untuck(true); }
+  function overlapsNow() { const h0 = homeRect(); return winRects().some(r => rectsOverlap(h0, r, 4)); }
+  function checkDodge() {
+    if (!T.enabled || root.hidden) { if (tucked) untuck(true); return; }
+    if (!T.dodge || !T.onTop) { if (tucked) untuck(true); return; }
+    if (dragging) return;
+    const now = Date.now(), h0 = homeRect(), rs = winRects(); let hit = rs.some(r => rectsOverlap(h0, r, 4));
+    if (!hit && bal && !tucked) { placeBal(); const b = bal.getBoundingClientRect(); hit = rs.some(r => rectsOverlap(b, r, 3)); }
+    if (summonUntil > now) hit = false;
+    if (hit) { clearSince = 0; if (!tucked) tuck(); }
+    else if (tucked) { if (!clearSince) clearSince = now; else if (now - clearSince > 1400) { clearSince = 0; untuck(false); } }
+  }
+  const dodgeSoon = () => { clearTimeout(dodgeSoon.t); dodgeSoon.t = setTimeout(checkDodge, 50); };
+  setInterval(checkDodge, 400);
+  addEventListener('resize', () => { if (tucked) setTuckVar(); dodgeSoon(); });
+  D.addEventListener('pointerup', dodgeSoon, true);
+  D.addEventListener('pointermove', e => { if (e.buttons) { lastDragAt = Date.now(); const n = performance.now(); if (n - dodgeAt > 120) { dodgeAt = n; checkDodge(); } } }, { passive: true, capture: true });
+
+  /* ---- accessories: small pixel-art hats that follow the season and what you are doing ---- */
+  let accUntil = 0, accKind = '', accTimer = 0;
+  function accPick() {
+    const now = new Date(), m = now.getMonth(), d = now.getDate(), hr = now.getHours();
+    if (Date.now() < accUntil && accKind) return accKind;
+    try { if (GH.ach && GH.ach.total && GH.ach.count() >= GH.ach.total()) return 'crown'; } catch (e) {}
+    if (sleeping) return 'nightcap';
+    if (m === 9 && d >= 24) return 'pumpkin';
+    if (m === 11 && d >= 1 && d <= 26) return 'santa';
+    if (m === 0 && d === 1) return 'party';
+    return '';
+  }
+  function accUpdate() {
+    const k = T.accessories && T.enabled ? accPick() : '';
+    if (k) { const src = 'images/tapey/acc-' + k + '.svg'; if (acc.getAttribute('src') !== src) acc.src = src; acc.hidden = false; } else acc.hidden = true;
+  }
+  function accTemp(kind, ms) { accKind = kind; accUntil = Date.now() + ms; accUpdate(); clearTimeout(accTimer); accTimer = setTimeout(accUpdate, ms + 50); }
+  setInterval(accUpdate, 30000);
   /* ---- when may Tapey talk? ---- */
   function openDialogs() { return Array.from(wins.values()).some(w => w.o && w.o.dialog && w.visible); }
+  const spokeLog = []; let quietUntil = 0, dismissals = 0, lastDismiss = 0;
+  const userBusy = () => Date.now() - lastKeyAt < 5000 || Date.now() - lastDragAt < 2500;
   function canSpeak(kind) {
     if (!T.enabled || root.hidden || sleeping && kind !== 'user') return false;
     if (kind === 'user') return true;
+    if (tucked) return false;
     if (T.tone === 'q' && !/^(greet|ach|crash|shutdown|eyes0)$/.test(kind)) return false;
     if (T.quietGames && isGameWin(activeWin()) && !/^(ach|crash|shutdown|greet)$/.test(kind)) return false;
     if (T.quietDialogs && openDialogs() && !/^(crash|ach)$/.test(kind)) return false;
     if (balOpen() && !/^(ach|crash|shutdown|user)$/.test(kind)) return false;
+    if (T.polite && !/^(ach|crash|shutdown|greet)$/.test(kind)) {
+      const now = Date.now();
+      if (D.hidden || D.fullscreenElement || now < quietUntil || userBusy()) return false;
+      while (spokeLog.length && now - spokeLog[0] > 3600000) spokeLog.shift();
+      if (T.maxPerHour >= 0 && spokeLog.length >= T.maxPerHour) return false;
+      if (now - lastSpoke < (kind === 'idle' || kind === 'eyes' ? 60000 : 6000)) return false;
+    }
     return true;
   }
+  /* a quick dismissal of an unprompted balloon is a hint to back off for a while */
+  function noteDismiss() {
+    const now = Date.now(); if (now - lastDismiss > 7200000) dismissals = 0; lastDismiss = now; dismissals++;
+    quietUntil = now + (dismissals === 1 ? 10 : dismissals === 2 ? 30 : 240) * 60000;
+  }
+  function userClose() { const un = bal && bal.dataset.unsol, age = bal ? Date.now() - (+bal.dataset.t || 0) : 99999; closeBal(); if (un && age < 7000) noteDismiss(); }
   /* say a line from a pool; chance (0..1) is scaled by the chattiness setting */
   function react(poolName, extra, o) {
     o = o || {}; if (!T.enabled) return false;
@@ -526,7 +620,8 @@
     if (!canSpeak(o.kind || 'react')) return false;
     const c = ctx(extra), L = pickLine(poolName, c); if (!L) return false;
     let text = L.text; if (T.userName && /^greet\./.test(poolName) && Math.random() < 0.45) text = text.replace(/^(Good (?:morning|afternoon|evening)|Welcome back|Hi there|Hello)(!?)/, (m, a) => a + ', ' + T.userName + '!');
-    say(text, Object.assign({ pose: L.pose || o.pose || 'idle' }, o.say || {})); return true;
+    const unsol = o.kind !== 'user' && o.kind !== 'ach' && o.kind !== 'crash'; if (unsol && !/^(greet)$/.test(o.kind || '')) spokeLog.push(Date.now());
+    say(text, Object.assign({ pose: L.pose || o.pose || 'idle', unsol }, o.say || {})); return true;
   }
   const afterDelay = (fn, ms) => setTimeout(fn, rm() ? Math.min(ms, 400) : ms);
 
@@ -589,6 +684,7 @@
       if (p === 'knock1') { pending = { s: 'knock2', t: Date.now() }; const L = pickLine('tp.say.knock.2', ctx({ x: q.replace(/[?.!]+$/, '') })); return say(L ? L.text : '…who?', { pose: 'think', input: ask, placeholder: 'Finish the joke…', sticky: true }); }
       if (p === 'knock2') return sayPool('tp.say.knock.3');
     }
+    const sm = smartAsk(low); if (sm) return;
     const calc = tryCalc(low); if (calc != null) return calc === 'NaN' ? sayPool('tp.say.calcfail') : sayPool('tp.say.calc', { x: calc });
     if (/^(joke|tell me a joke|make me laugh|another joke|one more joke|more jokes)\b/.test(low) || /\btell (me )?(a )?joke\b/.test(low)) return tellJoke();
     if (/^(tip|hint|advice|give me a tip|another tip|tips)\b/.test(low) || /\b(give|tell) me (a )?(tip|hint)\b/.test(low)) return tellTip();
@@ -615,24 +711,67 @@
     const intro = pickLine('tp.results', c);
     say(topics.length ? topics[0].x.t : (intro ? intro.text : 'Here you go:'), { pose: 'idea', actions: actions.slice(0, 5), title: topics.length && intro ? intro.text : '' });
   }
+
+  /* ---- context-aware helpers ---- */
+  const fmtAge = ms => { const m = Math.round(ms / 60000); return m < 1 ? 'less than a minute' : m < 60 ? m + ' minute' + (m === 1 ? '' : 's') : m < 1440 ? Math.round(m / 60) + ' hour' + (Math.round(m / 60) === 1 ? '' : 's') : Math.round(m / 1440) + ' day' + (Math.round(m / 1440) === 1 ? '' : 's'); };
+  const slotCountFor = url => { try { const m = (GH.slots.list() || {})[url] || {}; const ks = Object.keys(m); return { n: ks.length, last: ks.reduce((a, k) => Math.max(a, m[k].ts || 0), 0) }; } catch (e) { return { n: 0, last: 0 }; } };
+  function winGameUrl(w) { return w && isGameWin(w) ? gameSrc(w) : ''; }
+  function smartIntent(kind) {
+    summon();
+    if (kind === 'saves') {
+      const g = winGameUrl(activeWin());
+      if (GH.openSaves) GH.openSaves(g || '');
+      return g ? sayPool('tp.say.saves.open', { game: gameTitle(activeWin()) }, { pose: 'point', ttl: 3500 }) : sayPool('tp.say.saves.none', {}, { pose: 'point', ttl: 5000 });
+    }
+    if (kind === 'files') { GH.openItem('sys:my-computer'); return sayPool('tp.say.files.open', {}, { pose: 'point', ttl: 2600 }); }
+    if (kind === 'disk') {
+      const fsb = (window.ColtonFS && ColtonFS.usage) ? ColtonFS.usage().bytes : 0; let sl = 0; try { const a = GH.slots.list(); Object.keys(a).forEach(u => Object.keys(a[u]).forEach(i => { sl += (a[u][i].size || 0); })); } catch (e) {}
+      return sayPool('tp.say.disk', { x: fmtSize(fsb + sl) }, { pose: 'read', ttl: 4500 });
+    }
+    return null;
+  }
+  function smartAsk(low) {
+    if (/\b(where|find|show|open|see|view|look at)\b.*\b(saves?|save ?slots?|save ?files?|save ?states?|saved games?)\b/.test(low) || /^(my )?(saves?|save ?states?|saved games)$/.test(low)) return smartIntent('saves'), true;
+    if (/\b(open|show|launch)\b.*\b(file ?manager|my computer|explorer|my files)\b/.test(low) || /^(file ?manager|my computer|files)$/.test(low)) return smartIntent('files'), true;
+    if (/\b(disk|storage|space)\b.*(left|used|much|usage|full)|how much (space|storage)/.test(low)) return smartIntent('disk'), true;
+    if (/^(what'?s|what is) (this|that)( window| app| game| program)?$|^explain (this|that|it)\b|^what am i (looking at|in)\b/.test(low)) return explainActive(), true;
+    if (/(annoying|interrupt|too (chatty|talkative|much)|stop (talking|bugging|nagging)|less (chatty|talk)|shut up)/.test(low) && !/^(shut up)$/.test(low)) { setT({ maxPerHour: 2, chatty: Math.min(T.chatty, 20), interval: Math.max(T.interval, 480) }, true); sayPool('tp.say.politer', {}, { pose: 'sad', ttl: 5200 }); return true; }
+    return false;
+  }
+  function explainActive() {
+    const w = activeWin(); summon();
+    if (!w) return sayPool('tp.say.explain.none', {}, { pose: 'wave', ttl: 4200 });
+    let it = null, url = winGameUrl(w);
+    if (url) it = ITEMS.get('game:' + url); else if (/^app-/.test(w.id)) it = ITEMS.get('app:' + w.id.replace(/^app-/, '').replace(/-\d+$/, ''));
+    const lines = ['<<' + w.title + '>>']; const desc = it && it.desc; if (desc) lines.push(desc);
+    const acts = [];
+    if (url) {
+      const sl = slotCountFor(url), pl = TS.played[slug(url)] || 0;
+      lines.push('Played ' + pl + ' time' + (pl === 1 ? '' : 's') + (sl.n ? '. ' + sl.n + ' save slot' + (sl.n === 1 ? '' : 's') + ', last saved ' + fmtAge(Date.now() - sl.last) + ' ago.' : '. No save slots yet.'));
+      acts.push({ label: '📂 Open its saves folder', fn: () => GH.openSaves && GH.openSaves(url) });
+    } else if (/filemanager/.test(w.id)) lines.push('Everything on this computer is in here. Games have a saves folder.');
+    const title = lines.shift().replace(/^<<|>>$/g, '');
+    say(lines.join('\n') || 'No details on file for this one.', { pose: 'read', title, actions: acts, autoHide: true, ttl: 9000 });
+  }
   function labelFor(o) { if (o === 'action:random') return 'Random Game'; if (o === 'action:widgets') return 'Widgets'; if (o === 'action:taskman') return 'Task Manager'; if (o === 'action:find') return 'Find'; if (o === 'action:library') return 'Project Library'; const it = ITEMS.get(o); return it ? it.title : o; }
   function menu() {
-    GH.emit('tapey:talk'); const c = ctx(), L = pickLine('tp.menu.title', c), P = pickLine('tp.menu.placeholder', c);
+    summon(); GH.emit('tapey:talk'); const c = ctx(), L = pickLine('tp.menu.title', c), P = pickLine('tp.menu.placeholder', c);
     say(L ? L.text : 'What would you like to do?', {
       pose: 'wave', input: ask, placeholder: P ? P.text : 'Ask me something…', sticky: true,
       actions: [
         { label: '💡 Tip', fn: () => tellTip() }, { label: '😄 Tell me a joke', fn: () => tellJoke() },
+        { label: '🔎 What\'s this window?', fn: () => explainActive() }, { label: '📂 My Computer & saves', fn: () => smartIntent('saves') },
         { label: '🎲 Random game', fn: () => GH.randomGame() }, { label: '🏆 Achievements', fn: () => GH.openItem('app:achievements') },
-        { label: '🧩 Widgets…', fn: () => GH.widgets.menu() }, { label: '⚙ Tapey Settings…', fn: () => GH.openItem('app:tapey') }, { label: '🙈 Hide Tapey', fn: () => hideT(true) }]
+        { label: '⚙ Tapey Settings…', fn: () => GH.openItem('app:tapey') }, { label: '🙈 Hide Tapey', fn: () => hideT(true) }]
     });
   }
   function tellJoke() { const c = ctx(), i = pickLine('idle.joke.intro', c), j = pickLine('idle.joke', c); if (!j) return; say((i ? i.text + '\n\n' : '') + j.text, { pose: j.pose || 'excited', actions: [{ label: 'Another one!', fn: () => tellJoke(), keep: false }], ttl: 0, sticky: true }); }
   function tellTip() { const c = ctx(Object.assign({ n: (TS.tipN = (TS.tipN || 0) + 1) })), i = pickLine('idle.tip.intro', c), j = pickLine('idle.tip', c); saveTS(); if (!j) return; say((i ? fill(i.text, c) + '\n' : '') + j.text, { pose: j.pose || 'idea', actions: [{ label: 'Another tip', fn: () => tellTip() }], sticky: true }); }
   function tellFact() { const j = pickLine('idle.fact'); if (j) say(j.text, { pose: j.pose || 'read', actions: [{ label: 'Another fact', fn: () => tellFact() }], sticky: true }); }
   function dance(text) { GH.emit('tapey:dance'); const L = pickLine('tp.dance'); sleeping = false; root.classList.remove('sleeping'); root.classList.add('dance'); say(text || (L ? L.text : 'Dance!'), { pose: 'dance', ttl: 4200 }); blip('cheer'); setTimeout(() => { root.classList.remove('dance'); setPose('idle'); }, 5200); }
-  function gotoSleep() { if (sleeping) return; sleeping = true; closeBal(false); const L = pickLine('tp.sleep'); setPose('sleep'); root.classList.add('sleeping'); if (L && T.tone !== 'q') { /* a last mumble before dozing off */ const b = say(L.text, { pose: 'sleep', ttl: 2200 }); } }
+  function gotoSleep() { if (sleeping) return; sleeping = true; closeBal(false); const L = pickLine('tp.sleep'); setPose('sleep'); root.classList.add('sleeping'); accUpdate(); if (L && T.tone !== 'q') { /* a last mumble before dozing off */ const b = say(L.text, { pose: 'sleep', ttl: 2200 }); } }
   function wake(silent) {
-    if (!sleeping) return; sleeping = false; root.classList.remove('sleeping'); setPose('idle');
+    if (!sleeping) return; sleeping = false; root.classList.remove('sleeping'); setPose('idle'); accUpdate();
     if (!silent && T.tone !== 'q' && T.reactions && Math.random() < 0.8) { const L = pickLine('tp.wake'); if (L) say(L.text, { pose: L.pose || 'shocked' }); }
   }
   function hideT(say_) {
@@ -663,7 +802,7 @@
     reset: () => { const keep = { enabled: T.enabled }; T = Object.assign({}, TDEF, keep); saveT(); styleT(); const L = pickLine('tp.reset'); tsubs.slice().forEach(f => f(T, T)); if (L) say(L.text, { pose: L.pose || 'excited' }); },
     resetPosition: () => { setT({ pos: null }, true); },
     show: showT, hide: () => hideT(false), toggle: () => (T.enabled ? hideT(true) : showT()), isOn: () => T.enabled,
-    say: (t, o) => say(t, o), pose: (n, ms) => { wake(true); setPose(n, ms || 3500); }, poses: POSES.slice(), menu, ask, joke: tellJoke, tip: tellTip, fact: tellFact, dance, sleep: gotoSleep, wake: () => wake(false),
+    say: (t, o) => say(t, o), pose: (n, ms) => { wake(true); setPose(n, ms || 3500); }, poses: POSES.slice(), menu, ask, joke: tellJoke, tip: tellTip, fact: tellFact, dance, sleep: gotoSleep, wake: () => wake(false), summon, isTucked: () => tucked, explain: explainActive, accessory: accTemp,
     test: () => { const L = pickLine(pickRand(['idle.chat', 'idle.joke', 'idle.compliment'])); const C = pickLine('tp.test'); say((C ? C.text + '\n\n' : '') + (L ? L.text : ''), { pose: L && L.pose || 'wave' }); },
     tones: () => (DLG && DLG.tones) || {}, stats: () => ({ seen: Object.assign({}, TS.seen), visits: TS.visits, lines: DLG ? Object.keys(DLG.pools).reduce((a, k) => a + DLG.pools[k].length, 0) : 0, pools: DLG ? Object.keys(DLG.pools).length : 0 }),
     forgetTips: () => { TS.seen = {}; TS.muted = {}; saveTS(); }, onChange: fn => { tsubs.push(fn); return () => { const i = tsubs.indexOf(fn); if (i >= 0) tsubs.splice(i, 1); }; }, ready: () => dlgReady
@@ -674,6 +813,7 @@
   body.addEventListener('pointerdown', e => {
     if (e.button > 0) return; const sx = e.clientX, sy = e.clientY, r = root.getBoundingClientRect(), ox = r.left, oy = r.top; let moved = false;
     try { body.setPointerCapture(e.pointerId); } catch (x) {}
+    const prevPos = T.pos ? Object.assign({}, T.pos) : null;
     const mv = ev => {
       const dx = ev.clientX - sx, dy = ev.clientY - sy;
       if (!moved) { if (Math.hypot(dx, dy) < 6) return; moved = true; dragging = true; root.classList.add('drag'); closeBal(false); if (sleeping) wake(true); setPose('shocked'); const L = Math.random() < 0.5 && pickLine('tp.drag.start'); if (L) say(L.text, { pose: 'shocked', ttl: 1600 }); }
@@ -681,7 +821,7 @@
     };
     const up = () => {
       body.removeEventListener('pointermove', mv); body.removeEventListener('pointerup', up); body.removeEventListener('pointercancel', up);
-      if (moved) { dragging = false; root.classList.remove('drag'); savePos(); setPose('excited', 1600); const L = Math.random() < 0.6 && pickLine('tp.drag.drop'); if (L) say(L.text, { pose: L.pose || 'excited', ttl: 2200 }); }
+      if (moved) { dragging = false; root.classList.remove('drag'); savePos(); if (T.dodge && T.onTop && overlapsNow()) { setT({ pos: prevPos }, true); setPose('confused', 1600); dodgeSoon(); return; } setPose('excited', 1600); const L = Math.random() < 0.6 && pickLine('tp.drag.drop'); if (L) say(L.text, { pose: L.pose || 'excited', ttl: 2200 }); }
       else poke();
     };
     body.addEventListener('pointermove', mv); body.addEventListener('pointerup', up); body.addEventListener('pointercancel', up);
@@ -704,9 +844,9 @@
   body.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); menu(); } else if (e.key === 'Escape') closeBal(); else if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) { e.preventDefault(); const r = root.getBoundingClientRect(); ctxMenu(r.left + r.width / 2, r.top + r.height / 2); } });
   function ctxMenu(x, y) {
     I.showContextMenu([
-      { label: '&Ask Tapey…', onClick: () => menu() }, { label: 'Tip of the &Day', onClick: () => tellTip() }, { label: 'Tell a &Joke', onClick: () => tellJoke() }, { label: '&Animate!', onClick: () => animate() }, { sep: true },
+      { label: '&Ask Tapey…', onClick: () => menu() }, { label: 'What\'s &this window?', onClick: () => { summon(); explainActive(); } }, { label: 'Tip of the &Day', onClick: () => tellTip() }, { label: 'Tell a &Joke', onClick: () => tellJoke() }, { label: '&Animate!', onClick: () => animate() }, { sep: true },
       { label: 'Play &Random Game', onClick: () => GH.randomGame() }, { label: '&Widgets', submenu: () => GH.widgets.menuItems() }, { sep: true },
-      { label: 'Eyes &Follow Cursor', checked: !!T.eyes, onClick: () => setT({ eyes: !T.eyes }) }, { label: '&Quiet Mode', checked: T.tone === 'q', onClick: () => setT({ tone: T.tone === 'q' ? 'c' : 'q' }) },
+      { label: 'Eyes &Follow Cursor', checked: !!T.eyes, onClick: () => setT({ eyes: !T.eyes }) }, { label: '&Quiet Mode', checked: T.tone === 'q', onClick: () => setT({ tone: T.tone === 'q' ? 'c' : 'q' }) }, { label: 'Slide Away from &Windows', checked: !!T.dodge, onClick: () => setT({ dodge: !T.dodge }, true) },
       { label: '&Personality', submenu: () => Object.keys((DLG && DLG.tones) || {}).map(k => ({ label: DLG.tones[k].name, checked: T.tone === k, onClick: () => setT({ tone: k }) })) }, { sep: true },
       { label: 'Tapey &Settings…', onClick: () => GH.openItem('app:tapey') }, { label: '&Hide Tapey', onClick: () => hideT(true) }
     ], x, y);
@@ -770,18 +910,28 @@
       }
       case 'win_close': {
         const W = d; if (!W || !isGameWin(W)) return; const t0 = gameStart[W.id]; delete gameStart[W.id];
+        const url = gameSrc(W), sl = slotCountFor(url);
+        if (t0 && Date.now() - t0 > 900000 && T.smartHints && SLOT_GAMES[slug(url)] && (!sl.last || sl.last < t0) && cool('nosave.' + slug(url), 86400000)) { react('game.close.nosave', { game: W.title, x: Math.round((Date.now() - t0) / 60000) }, { kind: 'react', chance: 1 }); break; }
         if (t0 && Date.now() - t0 > 180000 && T.reactions) react('game.close', { game: W.title }, { kind: 'react', chance: 0.5 });
         break;
       }
       case 'ach': {
+        accTemp('party', 15000);
         if (!T.achTalk) return; const total = GH.ach.total(), n = GH.ach.count(), hidden = d.hidden;
         const pn = n >= total ? 'ev.ach.all' : n === 1 ? 'ev.first.ach' : (n === 10 || n === 20 || n === 30) ? 'ev.ach.' + n : hidden ? 'ev.ach.hidden' : 'ev.ach';
         const chance = pn === 'ev.ach' ? 0.75 : 1; afterDelay(() => react(pn, { app: d.n }, { kind: 'ach', chance: chance, pose: 'celebrate' }), 900); break;
       }
+      case 'fm:open': if (!TS.fmFirst) { TS.fmFirst = 1; saveTS(); } break;
+      case 'fm:saves': if (T.smartHints && cool('fmsaves', 600000)) afterDelay(() => react(d && d.n ? 'ev.fm.saves' : 'ev.fm.saves.empty', {}, { kind: 'react', chance: 0.9 }), 900); break;
+      case 'fm:slotview': if (T.smartHints && cool('fmslotview', 900000)) afterDelay(() => react('ev.fm.slotview', {}, { kind: 'react', chance: 0.7 }), 1200); break;
+      case 'fm:slotdel': react('ev.fm.slotdel', {}, { kind: 'react', chance: 0.8 }); break;
+      case 'fm:drive': if (cool('fmdrive', 900000)) react('ev.fm.drive', {}, { kind: 'react', chance: 0.6 }); break;
+      case 'regedit:edit': if (cool('regedit', 300000)) react('ev.regedit.edit', {}, { kind: 'react', chance: 0.8 }); break;
+      case 'regedit:export': react('ev.regedit.export', {}, { kind: 'react', chance: 0.8 }); break;
+      case 'media:play': accTemp('headphones', 600000); if (cool('media', 600000)) react('ev.media', {}, { kind: 'react', chance: 0.5 }); break;
       case 'random': react('game.random', { game: d && d.title }, { kind: 'react', chance: 1 }); break;
       case 'slot:save': case 'slot:load': case 'slot:empty': { const first = name === 'slot:save' && !TS.slotFirst; if (first) { TS.slotFirst = 1; saveTS(); } react(first ? 'ev.slot.first' : 'ev.' + name.replace(':', '.'), {}, { kind: 'react', chance: 0.95 }); break; }
       case 'widget:add': case 'widget:remove': { const first = name === 'widget:add' && !TS.widgetFirst; if (first) { TS.widgetFirst = 1; saveTS(); } if (cool('widget', 6000)) react(first ? 'ev.widget.first' : 'ev.' + name.replace(':', '.'), {}, { kind: 'react', chance: first ? 1 : 0.7 }); break; }
-      case 'media:play': if (cool('media', 600000)) react('ev.media', {}, { kind: 'react', chance: 0.5 }); break;
       case 'soundrec:save': react('ev.soundrec', {}, { kind: 'react', chance: 0.8 }); break;
       case 'wordpad:save': if (cool('wpsave', 300000)) react('ev.wordpad.save', {}, { kind: 'react', chance: 0.5 }); break;
       case 'phone:dial': if (cool('phone', 300000)) react('ev.phone', {}, { kind: 'react', chance: 0.6 }); break;
@@ -865,7 +1015,7 @@
     nextIdle = now + nextDelay(); if (!o.length) return;
     const bag = []; o.forEach(x => { for (let i = 0; i < x[1]; i++) bag.push(x[0]); }); const choice = pick(bag);
     const ex = { game: /^idle\.nudge$/.test(choice) ? (unplayedGame() || 'a game') : (c.game || unplayedGame() || 'a game'), min: c.min, n: c.n, ach: c.ach };
-    if (choice === 'idle.tip' || choice === 'idle.joke') { const L = pickLine(choice, c), I2 = Math.random() < 0.5 && pickLine(choice + '.intro', c); if (L && canSpeak('idle')) say((I2 ? I2.text + '\n\n' : '') + L.text, { pose: L.pose || (choice === 'idle.joke' ? 'excited' : 'idea') }); return; }
+    if (choice === 'idle.tip' || choice === 'idle.joke') { const L = pickLine(choice, c), I2 = Math.random() < 0.5 && pickLine(choice + '.intro', c); if (L && canSpeak('idle')) { spokeLog.push(Date.now()); say((I2 ? I2.text + '\n\n' : '') + L.text, { pose: L.pose || (choice === 'idle.joke' ? 'excited' : 'idea'), unsol: true }); } return; }
     react(choice, ex, { kind: 'idle', chance: 1 });
   }
   setInterval(tickIdle, 5000);
@@ -1028,7 +1178,7 @@
       const all = slotsAll(), prev = (all[url] || {})[i]; const nm = prev ? prev.name : 'Slot ' + i;
       (all[url] = all[url] || {})[i] = { name: nm, ts: Date.now(), data, size: JSON.stringify(data).length };
       if (!LS.set(SLKEY, all)) return I.msgBox('There is not enough browser storage left to save this slot.', { title: 'Save Slots', icon: 'error' });
-      I.toast('Saved to slot ' + i + '.'); GH.emit('slot:save', { url }); redraw();
+      I.toast('Saved to slot ' + i + '.'); GH.emit('slot:save', { url }); GH.emit('slot:change', { url }); redraw();
     });
   }
   function doLoad(W, i) {
@@ -1050,21 +1200,21 @@
         const sb = h('div', { class: 'sb' },
           h('button', { type: 'button', text: 'Save', on: { click: () => { if (s) { I.msgBox('Overwrite "' + s.name + '"?', { title: 'Save Slot', icon: 'question', buttons: ['Yes', 'No'], def: 1, cancel: 'no' }).then(r => { if (r === 'yes') doSave(W, i, draw); }); } else doSave(W, i, draw); } } }),
           h('button', { type: 'button', text: 'Load', disabled: !s, on: { click: () => doLoad(W, i) } }),
-          h('button', { type: 'button', text: 'Rename', disabled: !s, on: { click: () => { const n = prompt('Name for this slot:', s.name); if (n) { const a = slotsAll(); a[url][i].name = n.slice(0, 40); LS.set(SLKEY, a); draw(); } } } }),
+          h('button', { type: 'button', text: 'Rename', disabled: !s, on: { click: () => { const n = prompt('Name for this slot:', s.name); if (n) { const a = slotsAll(); a[url][i].name = n.slice(0, 40); LS.set(SLKEY, a); GH.emit('slot:change', { url }); draw(); } } } }),
           h('button', { type: 'button', text: 'Export', disabled: !s, on: { click: () => { const blob = new Blob([JSON.stringify({ format: 'gh-save-slot', version: 1, game: url, title: W.title, slot: s })], { type: 'application/json' }); const a = h('a', { href: URL.createObjectURL(blob), download: (W.title + ' - ' + s.name).replace(/[^\w .-]+/g, '') + '.json' }); D.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); } } }),
-          h('button', { type: 'button', text: 'Delete', disabled: !s, on: { click: () => { I.msgBox('Delete "' + s.name + '"? This cannot be undone.', { title: 'Delete Slot', icon: 'warning', buttons: ['Yes', 'No'], def: 1, cancel: 'no' }).then(r => { if (r === 'yes') { const a = slotsAll(); delete a[url][i]; LS.set(SLKEY, a); draw(); } }); } } }));
+          h('button', { type: 'button', text: 'Delete', disabled: !s, on: { click: () => { I.msgBox('Delete "' + s.name + '"? This cannot be undone.', { title: 'Delete Slot', icon: 'warning', buttons: ['Yes', 'No'], def: 1, cancel: 'no' }).then(r => { if (r === 'yes') { const a = slotsAll(); delete a[url][i]; LS.set(SLKEY, a); GH.emit('slot:change', { url }); draw(); } }); } } }));
         row.append(info, sb); list.append(row);
       }
     };
     imp.addEventListener('change', () => {
       const f = imp.files[0]; imp.value = ''; if (!f) return;
-      f.text().then(t => { const j = JSON.parse(t); if (!j || j.format !== 'gh-save-slot' || j.game !== url || !j.slot || !j.slot.data) throw 0; const a = slotsAll(); const mine = a[url] = a[url] || {}; let i = 1; while (i <= NSLOT && mine[i]) i++; if (i > NSLOT) i = 1; mine[i] = Object.assign({}, j.slot, { name: (j.slot.name || 'Imported') }); LS.set(SLKEY, a); I.toast('Imported into slot ' + i + '.'); draw(); }).catch(() => I.msgBox('That file is not a save slot for ' + W.title + '.', { title: 'Import Slot', icon: 'warning' }));
+      f.text().then(t => { const j = JSON.parse(t); if (!j || j.format !== 'gh-save-slot' || j.game !== url || !j.slot || !j.slot.data) throw 0; const a = slotsAll(); const mine = a[url] = a[url] || {}; let i = 1; while (i <= NSLOT && mine[i]) i++; if (i > NSLOT) i = 1; mine[i] = Object.assign({}, j.slot, { name: (j.slot.name || 'Imported') }); LS.set(SLKEY, a); GH.emit('slot:change', { url }); I.toast('Imported into slot ' + i + '.'); draw(); }).catch(() => I.msgBox('That file is not a save slot for ' + W.title + '.', { title: 'Import Slot', icon: 'warning' }));
     });
     draw();
-    const body = h('div', { class: 'dialog-pad', style: { minWidth: '320px', maxHeight: '60vh', overflow: 'auto' } }, note, list, h('div', { style: { marginTop: '4px' } }, h('button', { type: 'button', class: 'btn', text: 'Import slot file…', on: { click: () => imp.click() } }), imp));
+    const body = h('div', { class: 'dialog-pad', style: { minWidth: '320px', maxHeight: '60vh', overflow: 'auto' } }, note, list, h('div', { style: { marginTop: '4px' } }, h('button', { type: 'button', class: 'btn', text: 'Import slot file…', on: { click: () => imp.click() } }), imp, ' ', h('button', { type: 'button', class: 'btn', text: 'Open saves folder', on: { click: () => { if (GH.openSaves) GH.openSaves(url); } } })));
     I.openDialog({ title: 'Save Slots - ' + W.title, icon: IC('save-slot'), content: body, width: 470, buttons: [{ label: 'Close', value: 'close', default: true }] });
   }
-  GH.slots = { open: id => { const W = wins.get(id); if (W) openSlots(W); }, list: () => slotsAll() };
+  GH.slots = { open: id => { const W = wins.get(id); if (W) openSlots(W); }, list: () => slotsAll(), key: SLKEY, count: NSLOT };
 
   /* ===================== file-system extras ===================== */
   const clip = () => (window.__ghClip = window.__ghClip || { mode: null, ids: [] });

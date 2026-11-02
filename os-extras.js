@@ -173,8 +173,26 @@
     const timer = setTimeout(stop, (end + 0.3) * 1000);
     return { secs: end, stop() { clearTimeout(timer); stop(); } };
   }
+  /* Hard drive: plays images/drive.mp3 when that file exists, otherwise the synthesized spin-up above.
+     The file is probed once at startup (null = still checking, false = missing). Same switches as before:
+     it only plays with "Play sounds for windows and messages" and the theater sounds on. */
+  let driveClip = null;
+  (function probeDrive() {
+    try { const a = new Audio(); a.preload = 'metadata'; a.addEventListener('loadedmetadata', () => { driveClip = { dur: isFinite(a.duration) && a.duration > 0 ? a.duration : 2 }; }); a.addEventListener('error', () => { driveClip = false; }); a.src = 'images/drive.mp3'; }
+    catch (e) { driveClip = false; }
+  })();
+  function driveSound() {
+    const st = S(); if (!st.theaterSounds || !st.uiSounds) return { secs: 0, stop() {} };
+    let a; try { a = new Audio('images/drive.mp3'); } catch (e) { return spinUp(0.35); }
+    a.volume = Math.max(0.05, Math.min(1, vol())); let stopped = false, fallback = null;
+    const secs = Math.min(driveClip.dur, 4.5);
+    const fade = () => { if (stopped) return; stopped = true; try { const v0 = a.volume; let n = 0; const iv = setInterval(() => { n++; a.volume = Math.max(0, v0 * (1 - n / 8)); if (n >= 8) { clearInterval(iv); a.pause(); } }, 25); } catch (e) {} if (fallback) fallback.stop(); };
+    const timer = setTimeout(fade, secs * 1000 + 200);
+    try { const pr = a.play(); if (pr && pr.catch) pr.catch(err => { if (!stopped && err && err.name === 'NotSupportedError') { driveClip = false; fallback = spinUp(0.35); } }); } catch (e) {}
+    return { secs, stop() { clearTimeout(timer); fade(); } };
+  }
   let spin = null;
-  function hddSound() { if (spin) spin.stop(); spin = spinUp(0.35); return spin.secs; }
+  function hddSound() { if (spin) spin.stop(); spin = driveClip ? driveSound() : spinUp(0.35); return spin.secs; }
   /* Dial-up: plays images/dial.mp3 (if present). Resolves with its length in seconds (0 = unavailable). */
   let dialAudio = null;
   function dialStop() { const a = dialAudio; dialAudio = null; if (!a) return; try { const v0 = a.volume; let n = 0; const iv = setInterval(() => { n++; a.volume = Math.max(0, v0 * (1 - n / 6)); if (n >= 6) { clearInterval(iv); a.pause(); } }, 25); } catch (e) {} }

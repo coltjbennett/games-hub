@@ -1,7 +1,7 @@
 // data.js
 
 const siteData = {
-  version: "v4.4.0",
+  version: "v4.5.0",
   author: "COLTON BENNETT",
   location: "Waukesha, WI",
   heroTitle: "Project Launcher",
@@ -13,6 +13,10 @@ const siteData = {
 };
 
 const announcements = [
+  {
+    title: "v4.5.0 — A real File Manager, pixel Tapey and a Registry Editor",
+    content: "<b>My Computer, My Documents, Games and every drive now open in the File Manager</b>, with a folder tree, preview pane, search and drag and drop. Every game has its own folder with a <b>saves</b> folder inside it: double-click a save slot to read it in the Text Viewer. <b>Tapey</b> is redrawn as pixel art, defaults to 80px and now slides off-screen when a window covers him. New <b>Registry Editor</b>, Alt+Shift+Arrow window snapping and a quieter, friendlier ScanDisk."
+  },
   {
     title: "v4.4.0 — Tapey, achievements, widgets and a lot of classics",
     content: "Meet <b>Tapey</b>, a roll of tape with eyes that follow your cursor, almost 1,900 lines of dialog, five personalities and loads of settings. Also new: <b>achievements</b>, desktop <b>widgets</b>, <b>save slots</b> for the local games (💾 in the title bar), a <b>Random Game</b> button in the Project Library, File Manager, WordPad, Media Player, Sound Recorder, Calendar, Character Map, Phone Dialer, Disk Defragmenter, FreeCell, Reversi and text games. Internet Explorer got a retro makeover and a ColtonNet start page, and the MS-DOS Prompt no longer loses the keyboard on phones."
@@ -274,7 +278,8 @@ const applets = [
   { title: 'Weather', description: 'Weather dashboard', icon: 'images/icons/weather.png', url: 'applets/weather.html', w: 660, h: 580 },
   { title: 'Timer', description: 'Countdown timer', icon: 'images/icons/hourglass.svg', url: 'applets/timer.html', w: 460, h: 520, keep: true },
   { title: 'Internet Explorer', description: 'Retro proxy web browser with a ColtonNet start page, favorites and history', icon: 'images/icons/globe.svg', url: 'applets/web_proxy_browser_applet.html', w: 940, h: 660 },
-  { title: 'File Manager', description: 'Copy, move, import, export and search your files', icon: 'images/icons/filemanager.svg', url: 'applets/filemanager.html', w: 760, h: 520 },
+  { title: 'File Manager', description: 'Explore every drive and folder, read your save slots, copy, move, import, export and search', icon: 'images/icons/filemanager.svg', url: 'applets/filemanager.html', w: 800, h: 540 },
+  { title: 'Registry Editor', description: 'regedit: browse, edit, back up and restore the settings and saves this site stores', icon: 'images/icons/regedit.svg', url: 'applets/regedit.html', w: 720, h: 460 },
   { title: 'WordPad', description: 'Word processor with fonts, colors and lists', icon: 'images/icons/wordpad.svg', url: 'applets/wordpad.html', w: 660, h: 520 },
   { title: 'Character Map', description: 'Copy symbols, arrows and emoji', icon: 'images/icons/charmap.svg', url: 'applets/charmap.html', w: 520, h: 440 },
   { title: 'Calendar', description: 'Month view with notes and holidays', icon: 'images/icons/calendar.svg', url: 'applets/calendar.html', w: 620, h: 440 },
