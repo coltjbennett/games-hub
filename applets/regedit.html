@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Registry Editor</title>
+<link rel="stylesheet" href="w95.css">
+<style>
+  body{overflow:hidden;user-select:none;-webkit-user-select:none}
+  #bar{display:flex;gap:4px;padding:3px 4px;border-bottom:1px solid #808080;box-shadow:0 1px #fff;flex:none;align-items:center}
+  #bar button{min-width:0;padding:2px 8px}#bar input{flex:1;min-width:60px;height:22px}
+  #warn{background:#ffffe1;border-bottom:1px solid #808080;padding:3px 8px;flex:none;font-size:12px}
+  #main{flex:1;display:flex;min-height:0;padding:3px;gap:3px}
+  #tree{width:230px;overflow:auto;background:#fff;border:2px inset #808080;flex:none;padding:2px 0}
+  #vals{flex:1;overflow:auto;background:#fff;border:2px inset #808080;min-width:0}
+  .tr{height:20px;display:flex;align-items:center;white-space:nowrap;cursor:default;padding-right:6px}.tr img{width:16px;height:16px;margin-right:4px}
+  .tr span{padding:1px 3px;border:1px dotted transparent}.tr.cur span{background:#000080;color:#fff}
+  table{border-collapse:collapse;width:100%;table-layout:fixed}
+  th{position:sticky;top:0;background:#c0c0c0;text-align:left;font-weight:normal;padding:2px 6px;border-right:1px solid #808080;box-shadow:inset 1px 1px #fff;border-bottom:1px solid #808080}
+  td{padding:1px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:19px;cursor:default}
+  tr.sel td{background:#000080;color:#fff}
+  td img{width:14px;height:14px;vertical-align:-2px;margin-right:5px}
+  #st{padding:2px 6px;border-top:1px solid #fff;flex:none;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  #ov{position:fixed;inset:0;background:rgba(0,0,0,.25);display:none;align-items:center;justify-content:center;z-index:50}#ov.on{display:flex}
+  .dlg{background:#c0c0c0;border:2px outset #fff;padding:2px;width:min(440px,94vw)}.dlg .tb{background:linear-gradient(90deg,#000080,#1084d0);color:#fff;font-weight:bold;padding:2px 5px}
+  .dlg .bd{padding:10px;display:flex;flex-direction:column;gap:6px}.dlg textarea,.dlg input{width:100%;box-sizing:border-box;user-select:text}.dlg textarea{height:140px;font-family:monospace;font-size:12px}
+  .dlg .ft{display:flex;gap:6px;justify-content:flex-end;padding:0 10px 10px}.dlg .ft button{min-width:76px}
+</style></head><body>
+<div id="bar"><button id="bNew">New Value</button><button id="bEdit">Edit</button><button id="bDel">Delete</button><button id="bExp">Export .reg</button><button id="bImp">Import .reg</button><input id="q" type="search" placeholder="Find name or data" aria-label="Find"></div>
+<div id="warn">Careful: these are the real settings, saves and progress stored by this site in your browser. Export a .reg backup before changing anything.</div>
+<div id="main"><div id="tree" role="tree"></div><div id="vals"><table><thead><tr><th style="width:38%">Name</th><th style="width:16%">Type</th><th>Data</th></tr></thead><tbody id="rows"></tbody></table></div></div>
+<div id="st"></div><input type="file" id="pick" accept=".reg,text/plain" hidden>
+<div id="ov"><div class="dlg" role="dialog" aria-modal="true"><div class="tb" id="dt"></div><div class="bd" id="db"></div><div class="ft" id="df"></div></div></div>
+<script>
+(function(){
+  'use strict';
+  var P=null,I=null;try{P=parent.GHShell;I=P&&P.internals;}catch(e){}
+  var $=function(s){return document.querySelector(s);},LS=localStorage;
+  var el=function(t,a,c){var n=document.createElement(t);Object.keys(a||{}).forEach(function(k){if(k==='text')n.textContent=a[k];else n.setAttribute(k,a[k]);});(c||[]).forEach(function(x){n.append(x);});return n;};
+  var emit=function(n,d){try{P.emit(n,d);}catch(e){}};
+  var ROOT='HKEY_LOCAL_MACHINE\\SOFTWARE\\ColtonOS';
+  var GROUPS=[['Desktop',/^gh-(desktop|settings|wallpaper|icons|pos|scheme)/i],['Tapey',/^gh-tapey/i],['SaveSlots',/^gh-slots/i],['FileManager',/^gh-fm-/i],['System',/^gh-/i],['Games and Apps',/.*/]];
+  var groupOf=function(k){for(var i=0;i<GROUPS.length;i++)if(GROUPS[i][1].test(k))return GROUPS[i][0];return 'Games and Apps';};
+  var cur='*',selK=null;
+  function keys(){var a=[];for(var i=0;i<LS.length;i++)a.push(LS.key(i));return a.sort(function(x,y){return x.localeCompare(y);});}
+  function typeOf(v){if(/^-?\d+$/.test(v)&&v.length<10)return 'REG_DWORD';if(/^\s*[\[{]/.test(v)){try{JSON.parse(v);return 'REG_JSON';}catch(e){}}return 'REG_SZ';}
+  var short=function(v){v=String(v).replace(/\s+/g,' ');return v.length>160?v.slice(0,160)+'… ('+v.length+' chars)':v;};
+  function tree(){
+    var t=$('#tree');t.textContent='';var all=keys(),counts={};all.forEach(function(k){var g=groupOf(k);counts[g]=(counts[g]||0)+1;});
+    var row=function(id,label,depth,icon){var r=el('div',{'class':'tr'+(cur===id?' cur':''),style:'padding-left:'+(depth*14+4)+'px','data-g':id},[el('img',{src:'../images/icons/'+icon+'.svg',alt:''}),el('span',{text:label})]);r.onclick=function(){cur=id;selK=null;draw();};t.append(r);};
+    row('*','My Computer',0,'my-computer');row('**',ROOT.replace(/^HKEY_LOCAL_MACHINE\\/,'HKEY_LOCAL_MACHINE\\'),1,'folder-open');
+    GROUPS.forEach(function(g){row(g[0],g[0]+' ('+(counts[g[0]]||0)+')',2,'folder');});
+  }
+  function list(){var q=$('#q').value.toLowerCase();return keys().filter(function(k){var g=cur==='*'||cur==='**'||groupOf(k)===cur;if(!g)return false;if(!q)return true;return k.toLowerCase().indexOf(q)>=0||String(LS.getItem(k)).toLowerCase().indexOf(q)>=0;});}
+  function draw(){
+    tree();var rows=$('#rows');rows.textContent='';var ks=list();
+    ks.forEach(function(k){var v=LS.getItem(k)||'',ty=typeOf(v),tr=el('tr',{'class':k===selK?'sel':'','data-k':k},[el('td',{},[el('img',{src:'../images/icons/'+(ty==='REG_SZ'?'document':'info')+'.svg',alt:''}),document.createTextNode(k)]),el('td',{text:ty}),el('td',{text:short(v),title:short(v)})]);
+      tr.onclick=function(){selK=k;draw();};tr.ondblclick=function(){selK=k;editDlg(k);};rows.append(tr);});
+    $('#st').textContent=(cur==='*'||cur==='**'?ROOT:ROOT+'\\'+cur)+'   -   '+ks.length+' value(s)';
+    ['bEdit','bDel'].forEach(function(id){$('#'+id).disabled=!selK;});
+  }
+  function dlg(title,body,btns){$('#dt').textContent=title;var b=$('#db'),f=$('#df');b.textContent='';f.textContent='';body.forEach(function(x){b.append(x);});btns.forEach(function(o,i){var x=el('button',{type:'button',text:o.t});x.onclick=function(){if(o.f&&o.f()===false)return;$('#ov').classList.remove('on');};f.append(x);if(i===0)setTimeout(function(){var i0=b.querySelector('input,textarea');(i0||x).focus();},10);});$('#ov').classList.add('on');}
+  var sure=function(msg){return I?I.msgBox(msg,{title:'Registry Editor',icon:'warning',buttons:['Yes','No'],def:1,cancel:'no'}).then(function(r){return r==='yes';}):Promise.resolve(confirm(msg));};
+  function save(k,v){try{LS.setItem(k,v);}catch(e){alert('Not enough storage to save this value.');return false;}emit('regedit:edit',{key:k});return true;}
+  function editDlg(k){
+    var isNew=k==null,name=el('input',{type:'text',value:isNew?'':k,spellcheck:'false','aria-label':'Value name'}),data=el('textarea',{spellcheck:'false','aria-label':'Value data'});data.value=isNew?'':(LS.getItem(k)||'');if(!isNew)name.readOnly=true;
+    dlg(isNew?'New Value':'Edit Value',[el('label',{text:'Value name:'}),name,el('label',{text:'Value data:'}),data],[{t:'OK',f:function(){var n=name.value.trim();if(!n)return false;if(isNew&&LS.getItem(n)!=null){alert('That value already exists.');return false;}if(save(n,data.value)){selK=n;draw();}}},{t:'Cancel'}]);
+  }
+  $('#bNew').onclick=function(){editDlg(null);};$('#bEdit').onclick=function(){if(selK)editDlg(selK);};
+  $('#bDel').onclick=function(){if(!selK)return;var k=selK;sure('Deleting "'+k+'" may reset a setting or erase saved progress.\n\nAre you sure you want to delete this value?').then(function(ok){if(!ok)return;LS.removeItem(k);selK=null;emit('regedit:edit',{key:k});draw();});};
+  var q0=0;$('#q').addEventListener('input',function(){clearTimeout(q0);q0=setTimeout(draw,150);});
+  $('#bExp').onclick=function(){
+    var out='Windows Registry Editor Version 5.00\r\n\r\n',g={};list().forEach(function(k){(g[groupOf(k)]=g[groupOf(k)]||[]).push(k);});
+    Object.keys(g).forEach(function(n){out+='['+ROOT+'\\'+n+']\r\n';g[n].forEach(function(k){out+='"'+k.replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"="'+String(LS.getItem(k)).replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/\r?\n/g,'\\n')+'"\r\n';});out+='\r\n';});
+    var a=el('a',{href:URL.createObjectURL(new Blob([out],{type:'text/plain'})),download:'ColtonOS-registry.reg'});document.body.append(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},1500);emit('regedit:export',{});
+  };
+  $('#bImp').onclick=function(){$('#pick').click();};
+  $('#pick').addEventListener('change',function(e){var f=e.target.files[0];e.target.value='';if(!f)return;f.text().then(function(t){
+    if(!/^Windows Registry Editor/.test(t)){alert('That is not a .reg file exported from this Registry Editor.');return;}
+    var re=/^"((?:[^"\\]|\\.)*)"="((?:[^"\\]|\\.)*)"\s*$/gm,m,n=0,un=function(s){return s.replace(/\\n/g,'\n').replace(/\\"/g,'"').replace(/\\\\/g,'\\');};
+    var pairs=[];while((m=re.exec(t))){pairs.push([un(m[1]),un(m[2])]);}
+    sure('Import '+pairs.length+' value(s)? Existing values with the same names will be overwritten.').then(function(ok){if(!ok)return;pairs.forEach(function(p){try{LS.setItem(p[0],p[1]);n++;}catch(x){}});emit('regedit:edit',{});draw();});
+  });});
+  window.addEventListener('keydown',function(e){if(e.target&&/INPUT|TEXTAREA/.test(e.target.tagName))return;if(e.key==='Delete')$('#bDel').click();else if(e.key==='Enter'&&selK)editDlg(selK);else if(e.key==='F5'){e.preventDefault();draw();}else if(e.ctrlKey&&e.key.toLowerCase()==='f'){e.preventDefault();$('#q').focus();}});
+  window.addEventListener('storage',draw);draw();
+})();
+</script></body></html>
