@@ -1,7 +1,7 @@
 // data.js
 
 const siteData = {
-  version: "v4.6.0",
+  version: "v4.5.0",
   author: "COLTON BENNETT",
   location: "Waukesha, WI",
   heroTitle: "Project Launcher",
@@ -9,14 +9,10 @@ const siteData = {
   heroNote: "These are all made by me over the last year, and I do hope you enjoy!<br>Please excuse any bugs you find; I am still ironing things out.",
   marqueeText: "★★★ WELCOME TO COLTON'S PROJECT LAUNCHER ★★★ &nbsp;|&nbsp; BEST VIEWED IN 1024x768 &nbsp;|&nbsp; NETSCAPE NAVIGATOR 4.0 RECOMMENDED &nbsp;|&nbsp; ★★★ SIGN MY GUESTBOOK ★★★",
   footerCopyright: "© 2026 Colton Bennett",
-  footerLastUpdated: "November 3, 2026"
+  footerLastUpdated: "October 29, 2026"
 };
 
 const announcements = [
-  {
-    title: "v4.6.0 — Five deep text adventures, Wordle, 3D Pinball and a dozen new classics",
-    content: "<b>The text adventures are now huge:</b> The Copper Key has three storylines and six endings, plus four brand-new adventures (Station Omega, Murder at Blackwood Manor, The Dragon's Tooth, Neon Heist) with ASCII art, automatic saving and every ending tracked. <b>Wordle</b> with a 10,000-word dictionary, <b>3D Pinball: Space Cadet</b> with touch controls, and 2048, Block Drop, Connect Four, Sudoku, Memory Match, Simon, Lights Out, Code Breaker, Tape Dash and Flap Tape. Minesweeper, Solitaire, Reversi and FreeCell now have Help (press F1). Games flagged unfinished live in <b>Games &gt; Unfinished / Poor Quality</b>. Zooming is disabled everywhere, ScanDisk runs after POST (and sometimes at random), and Tapey has parallel eyes, faster reactions and a cap-free chat frequency."
-  },
   {
     title: "v4.5.0 — A real File Manager, pixel Tapey and a Registry Editor",
     content: "<b>My Computer, My Documents, Games and every drive now open in the File Manager</b>, with a folder tree, preview pane, search and drag and drop. Every game has its own folder with a <b>saves</b> folder inside it: double-click a save slot to read it in the Text Viewer. <b>Tapey</b> is redrawn as pixel art, defaults to 80px and now slides off-screen when a window covers him. New <b>Registry Editor</b>, Alt+Shift+Arrow window snapping and a quieter, friendlier ScanDisk."
@@ -47,8 +43,6 @@ const announcements = [
   }
 ];
 
-/* Each project below has 'desktop-feature': true|false. Set it to false to keep a low-quality or unfinished game off the desktop
- * (it moves to Games > "Unfinished / Poor Quality" and out of Tapey's random picks). */
 const projects = [
   {
     title: 'Asphalt Rush',
@@ -59,8 +53,7 @@ const projects = [
     type: 'Racing',
     tags: ['Street Racing', 'Customization', 'Driving', 'Racing', 'City', 'Underground', 'Under development', 'Top Pick'],
     description: 'Race through the night city to earn your respect amongst the other racers, take down the corrupt police, and buy, customize, and upgrade your rides to stay competitive!',
-    featured: false,
-    'desktop-feature': true
+    featured: false
   },
   {
     title: 'Pixel Ops',
@@ -71,8 +64,7 @@ const projects = [
     type: 'FPS',
     tags: ['Shooter', 'Military', 'Top Pick'],
     description: 'A shoot-em-up FPS across conquered lands. Pick your deployment location and take out as many hostiles as possible using your vast arsenal!',
-    featured: false,
-    'desktop-feature': true
+    featured: false
   },
   {
     title: 'Ghengis Khan Simulator',
@@ -83,8 +75,7 @@ const projects = [
     type: 'Simulation',
     tags: ['War', 'Historical', 'Under development', 'Top Pick'],
     description: 'Become the legendary Mongol leader and lead the Mongol Horde to conquer China! Use strategic placements to ensure your victory!',
-    featured: true,
-    'desktop-feature': true
+    featured: true
   },
   {
     title: 'MEGALITH',
@@ -95,8 +86,7 @@ const projects = [
     type: 'Endless',
     tags: ['Endless', 'Mobile', 'Top Pick'],
     description: 'Roll through a void of platforms, collect crystals, navigate changing sectors, and go for high scores in this fast-paced endless runner!',
-    featured: false,
-    'desktop-feature': true
+    featured: false
   },
   {
     title: 'City Striker',
@@ -107,8 +97,7 @@ const projects = [
     type: 'Driving',
     tags: ['Driving', 'Chase'],
     description: 'The police are after you! Weave through traffic and between buildings to make them crash! Keep driving for as long as possible and your score will skyrocket!',
-    featured: false,
-    'desktop-feature': true
+    featured: false
   },
   {
     title: 'Chronostrike',
@@ -119,8 +108,7 @@ const projects = [
     type: 'FPS',
     tags: ['FPS', 'Time Control'],
     description: 'Time only moves when you move! Use it to dodge, weave, or just line up a shot in this (definetly not a clone of another game that I can\'t name due to copyright) unique game!',
-    featured: false,
-    'desktop-feature': true
+    featured: false
   },
   {
     title: 'Labyrinthine',
@@ -131,8 +119,7 @@ const projects = [
     type: 'Horror',
     tags: ['Horror', 'Survival', 'Development on hold'],
     description: 'You are trapped in a maze with entities that want only one thing: your head... on a plate! Shine your flashlight to freeze them, and use your weapons to survive.',
-    featured: false,
-    'desktop-feature': false
+    featured: false
   },
   {
     title: 'Goblin Hut Clicker',
@@ -143,8 +130,7 @@ const projects = [
     type: 'Clicker',
     tags: ['Clicker', 'Idle'],
     description: 'Click to get goblins and grow your tribe! Buy buildings, sacrifice goblins to science, and conquer the universe! Note: Progress saves to your browser automatically.',
-    featured: false,
-    'desktop-feature': true
+    featured: false
   },
   {
     title: 'Legacy Racing Sim',
@@ -155,8 +141,7 @@ const projects = [
     type: 'Racing',
     tags: ['Racing', 'Tracks', 'Sim'],
     description: 'Playable racing sim with classic arcade physics, a real track, and timing. The graphics are mimicking 3d using 2d (this was made before i knew about three.js)',
-    featured: false,
-    'desktop-feature': true
+    featured: false
   },
   {
     title: 'Royal Clash',
@@ -167,8 +152,7 @@ const projects = [
     type: 'Tower Defense',
     tags: ['Strategy', 'Defense', 'Clash'],
     description: 'The very first HTML game I ever made, long before this website. It\'s a very archaic clone of a certain popular mobile game, with some gameplay tweaks.',
-    featured: false,
-    'desktop-feature': true
+    featured: false
   },
   {
     title: 'Engine Sim',
@@ -179,8 +163,7 @@ const projects = [
     type: 'Sim',
     tags: ['Sim', 'Physics'],
     description: 'You can tune anything, from the shape and cylinder count down to the turbo tuning (yes, there is turbo flutter!), and it will all affect your engine! Warning: the engine DOES have sound effects, be mindful of your device\'s volume.',
-    featured: false,
-    'desktop-feature': true
+    featured: false
   },
   {
     title: 'Warzone',
@@ -191,8 +174,7 @@ const projects = [
     type: 'Military',
     tags: ['Military', 'Vehicles'],
     description: 'Pick a famous wartime vehicle, get a target lock and destroy enemies, and use maneuvers and flares to avoid missiles in this action-packed military sim!',
-    featured: false,
-    'desktop-feature': false
+    featured: false
   },
   {
     title: 'Gang Wars',
@@ -203,8 +185,7 @@ const projects = [
     type: 'Arcade',
     tags: ['Arcade', 'Top-Down'],
     description: 'Your gang has sent you on a mission: clear out the rivals. Drop all the thugs, take their straps, and make your way to the bottom right to advance!',
-    featured: false,
-    'desktop-feature': false
+    featured: false
   },
   {
     title: 'Racing Sim',
@@ -215,8 +196,7 @@ const projects = [
     type: 'Driving',
     tags: ['Driving', 'Physics'],
     description: 'Not much to talk about here: It\'s extremely incomplete. If you want a playable racing game, play the legacy one.',
-    featured: false,
-    'desktop-feature': false
+    featured: false
   },
   {
     title: 'FPS beta',
@@ -227,8 +207,7 @@ const projects = [
     type: 'FPS',
     tags: ['Shooter', 'Multiplayer', 'Under development'],
     description: 'THIS IS NOT A COMPLETE GAME; THIS IS A TEST OF A NEW ENGINE I AM ROLLING OUT FOR MULTIPLAYER FPS GAMES',
-    featured: false,
-    'desktop-feature': false
+    featured: false
   },
   {
     title: 'Fieldkit 3D Engine',
@@ -239,137 +218,46 @@ const projects = [
     type: 'Engine / Sandbox',
     tags: ['3D', 'Physics', 'Sandbox', 'Game Engine', 'Under development'],
     description: 'A single-file 3D game engine and physics sandbox with rendering, character and vehicle controllers, object interaction, touch controls, and a configurable world. Built as a starting point for creating more games.',
-    featured: false,
-    'desktop-feature': true
+    featured: false
   }
 ];
 
 const classics = [
   {
-    title: "3D Pinball: Space Cadet",
-    url: "games/classics/pinball.html",
-    image: "images/pinball.png",
-    alt: "3D Pinball: Space Cadet",
-    "desktop-feature": true
-  },
-  {
-    title: "Wordle",
-    url: "games/classics/wordle.html",
-    image: "images/classics/wordle.png",
-    alt: "Wordle",
-    "desktop-feature": true
-  },
-  {
-    title: "2048",
-    url: "games/classics/2048.html",
-    image: "images/classics/2048.png",
-    alt: "2048",
-    "desktop-feature": true
-  },
-  {
-    title: "Connect Four",
-    url: "games/classics/connect4.html",
-    image: "images/classics/connect4.png",
-    alt: "Connect Four",
-    "desktop-feature": true
-  },
-  {
-    title: "Block Drop",
-    url: "games/classics/blockdrop.html",
-    image: "images/classics/blockdrop.png",
-    alt: "Block Drop",
-    "desktop-feature": true
-  },
-  {
-    title: "Memory Match",
-    url: "games/classics/memory.html",
-    image: "images/classics/memory.png",
-    alt: "Memory Match",
-    "desktop-feature": true
-  },
-  {
-    title: "Simon Says",
-    url: "games/classics/simon.html",
-    image: "images/classics/simon.png",
-    alt: "Simon Says",
-    "desktop-feature": true
-  },
-  {
-    title: "Lights Out",
-    url: "games/classics/lightsout.html",
-    image: "images/classics/lightsout.png",
-    alt: "Lights Out",
-    "desktop-feature": true
-  },
-  {
-    title: "Code Breaker",
-    url: "games/classics/codebreaker.html",
-    image: "images/classics/codebreaker.png",
-    alt: "Code Breaker",
-    "desktop-feature": true
-  },
-  {
-    title: "Sudoku",
-    url: "games/classics/sudoku.html",
-    image: "images/classics/sudoku.png",
-    alt: "Sudoku",
-    "desktop-feature": true
-  },
-  {
-    title: "Tape Dash",
-    url: "games/classics/tapedash.html",
-    image: "images/classics/tapedash.png",
-    alt: "Tape Dash",
-    "desktop-feature": true
-  },
-  {
-    title: "Flap Tape",
-    url: "games/classics/flaptape.html",
-    image: "images/classics/flaptape.png",
-    alt: "Flap Tape",
-    "desktop-feature": true
-  },
-  {
     title: "Alien Invaders",
     url: "games/classics/alieninvaders.html",
     image: "images/IMG_1802.jpeg",
-    alt: "Alien Invaders",
-    "desktop-feature": true
+    alt: "Alien Invaders"
   },
   {
     title: "Break Through",
     url: "games/classics/breakthrough.html",
     image: "images/IMG_1806.jpeg",
-    alt: "Classic placeholder 2",
-    "desktop-feature": true
+    alt: "Classic placeholder 2"
   },
   {
     title: "Meteors",
     url: "games/classics/meteors.html",
     image: "images/IMG_1671.jpeg",
-    alt: "Meteors",
-    "desktop-feature": true
+    alt: "Meteors"
   },
   {
     title: "Neon Pong",
     url: "games/classics/neonpong.html",
     image: "images/IMG_1808.jpeg",
-    alt: "Neon Pong",
-    "desktop-feature": true
+    alt: "Neon Pong"
   },
   {
     title: "Pellet Muncher",
     url: "games/classics/pelletmuncher.html",
     image: "images/IMG_1803.jpeg",
-    alt: "Pellet Muncher",
-    "desktop-feature": true
+    alt: "Pellet Muncher"
   },
   {
     title: "Snake",
     url: "games/classics/snake.html",
     image: "images/IMG_1804.jpeg",
-    alt: "Snake",
-    "desktop-feature": true
+    alt: "Snake"
   }
 ];
 
@@ -380,33 +268,30 @@ const classics = [
  * (Applet mode) to generate new ones.
  *   title, description, icon (path), url (applets/xxx.html)
  *   optional: w, h (window size), keep (stay loaded when closed), group ('games' puts it in Start > Programs > Games)
- *   'desktop-feature': true | false  (games, classics and applets; default true). false = NOT on the desktop, never picked by
- *     Tapey's random game suggestions or the Random Game button, and filed under Games > "Unfinished / Poor Quality" in the Start
- *     menu and File Manager. It still appears in the Project Library, Find and the MS-DOS Prompt.
  * ------------------------------------------------------------------ */
 const applets = [
-  { title: 'Calculator', description: 'Scientific calculator', icon: 'images/icons/calculator.png', url: 'applets/calculator.html', w: 360, h: 520, 'desktop-feature': true },
-  { title: 'Clock', description: 'Clock, stopwatch and alarms', icon: 'images/icons/clock.png', url: 'applets/clock.html', w: 600, h: 480, 'desktop-feature': true },
-  { title: 'Notepad', description: 'Create and save .txt files into My Documents', icon: 'images/icons/notes.png', url: 'applets/notepad.html', w: 520, h: 420, 'desktop-feature': true },
-  { title: 'Paint', description: 'Canvas drawing program; save pictures to My Documents', icon: 'images/icons/paint.png', url: 'applets/paint.html', w: 780, h: 580, 'desktop-feature': true },
-  { title: 'MS-DOS Prompt', description: 'Command line: DIR your games and type a name to launch it', icon: 'images/icons/run.svg', url: 'applets/msdos.html', w: 640, h: 400, 'desktop-feature': true },
-  { title: 'Weather', description: 'Weather dashboard', icon: 'images/icons/weather.png', url: 'applets/weather.html', w: 660, h: 580, 'desktop-feature': true },
-  { title: 'Timer', description: 'Countdown timer', icon: 'images/icons/hourglass.svg', url: 'applets/timer.html', w: 460, h: 520, keep: true, 'desktop-feature': true },
-  { title: 'Internet Explorer', description: 'Retro proxy web browser with a ColtonNet start page, favorites and history', icon: 'images/icons/globe.svg', url: 'applets/web_proxy_browser_applet.html', w: 940, h: 660, 'desktop-feature': true },
-  { title: 'File Manager', description: 'Explore every drive and folder, read your save slots, copy, move, import, export and search', icon: 'images/icons/filemanager.svg', url: 'applets/filemanager.html', w: 800, h: 540, 'desktop-feature': true },
-  { title: 'Registry Editor', description: 'regedit: browse, edit, back up and restore the settings and saves this site stores', icon: 'images/icons/regedit.svg', url: 'applets/regedit.html', w: 720, h: 460, 'desktop-feature': true },
-  { title: 'WordPad', description: 'Word processor with fonts, colors and lists', icon: 'images/icons/wordpad.svg', url: 'applets/wordpad.html', w: 660, h: 520, 'desktop-feature': true },
-  { title: 'Character Map', description: 'Copy symbols, arrows and emoji', icon: 'images/icons/charmap.svg', url: 'applets/charmap.html', w: 520, h: 440, 'desktop-feature': true },
-  { title: 'Calendar', description: 'Month view with notes and holidays', icon: 'images/icons/calendar.svg', url: 'applets/calendar.html', w: 620, h: 440, 'desktop-feature': true },
-  { title: 'Sound Recorder', description: 'Record from your microphone and save to My Documents', icon: 'images/icons/soundrec.svg', url: 'applets/soundrec.html', w: 380, h: 340, 'desktop-feature': true },
-  { title: 'Media Player', description: 'Play audio, video and pictures, plus built-in tunes', icon: 'images/icons/mediaplayer.svg', url: 'applets/mediaplayer.html', w: 640, h: 440, 'desktop-feature': true },
-  { title: 'Phone Dialer', description: 'Dial with real touch tones and speed dial', icon: 'images/icons/phone.svg', url: 'applets/phonedialer.html', w: 360, h: 560, 'desktop-feature': true },
-  { title: 'Disk Defragmenter', description: 'Watch your imaginary disk get tidy', icon: 'images/icons/defrag.svg', url: 'applets/defrag.html', w: 560, h: 420, 'desktop-feature': true },
-  { title: 'Achievements', description: 'Trophies you earn by exploring ColtonOS', icon: 'images/icons/achievements.svg', url: 'applets/achievements.html', w: 640, h: 520, 'desktop-feature': true },
-  { title: 'Tapey Settings', description: 'Customize Tapey, your tape-roll desktop assistant', icon: 'images/tapey/tapey-idle.svg', url: 'applets/tapey.html', w: 560, h: 600, 'desktop-feature': true },
-  { title: 'Text Games', description: 'Text adventure, Hangman, Mad Libs, Blackjack and more', icon: 'images/icons/textgames.svg', url: 'applets/textgames.html', w: 700, h: 460, group: 'games', 'desktop-feature': true },
-  { title: 'FreeCell', description: 'Classic card solitaire with numbered deals', icon: 'images/icons/freecell.svg', url: 'applets/freecell.html', w: 720, h: 560, group: 'games', 'desktop-feature': true },
-  { title: 'Reversi', description: 'Flip discs and take the corners', icon: 'images/icons/reversi.svg', url: 'applets/reversi.html', w: 460, h: 540, group: 'games', 'desktop-feature': true },
-  { title: 'Minesweeper', description: 'Find the mines without stepping on one', icon: 'images/icons/warning.svg', url: 'applets/minesweeper.html', w: 340, h: 420, group: 'games', 'desktop-feature': true },
-  { title: 'Solitaire', description: 'Klondike card game (original card art)', icon: 'images/icons/star.svg', url: 'applets/solitaire.html', w: 620, h: 540, group: 'games', 'desktop-feature': true }
+  { title: 'Calculator', description: 'Scientific calculator', icon: 'images/icons/calculator.png', url: 'applets/calculator.html', w: 360, h: 520 },
+  { title: 'Clock', description: 'Clock, stopwatch and alarms', icon: 'images/icons/clock.png', url: 'applets/clock.html', w: 600, h: 480 },
+  { title: 'Notepad', description: 'Create and save .txt files into My Documents', icon: 'images/icons/notes.png', url: 'applets/notepad.html', w: 520, h: 420 },
+  { title: 'Paint', description: 'Canvas drawing program; save pictures to My Documents', icon: 'images/icons/paint.png', url: 'applets/paint.html', w: 780, h: 580 },
+  { title: 'MS-DOS Prompt', description: 'Command line: DIR your games and type a name to launch it', icon: 'images/icons/run.svg', url: 'applets/msdos.html', w: 640, h: 400 },
+  { title: 'Weather', description: 'Weather dashboard', icon: 'images/icons/weather.png', url: 'applets/weather.html', w: 660, h: 580 },
+  { title: 'Timer', description: 'Countdown timer', icon: 'images/icons/hourglass.svg', url: 'applets/timer.html', w: 460, h: 520, keep: true },
+  { title: 'Internet Explorer', description: 'Retro proxy web browser with a ColtonNet start page, favorites and history', icon: 'images/icons/globe.svg', url: 'applets/web_proxy_browser_applet.html', w: 940, h: 660 },
+  { title: 'File Manager', description: 'Explore every drive and folder, read your save slots, copy, move, import, export and search', icon: 'images/icons/filemanager.svg', url: 'applets/filemanager.html', w: 800, h: 540 },
+  { title: 'Registry Editor', description: 'regedit: browse, edit, back up and restore the settings and saves this site stores', icon: 'images/icons/regedit.svg', url: 'applets/regedit.html', w: 720, h: 460 },
+  { title: 'WordPad', description: 'Word processor with fonts, colors and lists', icon: 'images/icons/wordpad.svg', url: 'applets/wordpad.html', w: 660, h: 520 },
+  { title: 'Character Map', description: 'Copy symbols, arrows and emoji', icon: 'images/icons/charmap.svg', url: 'applets/charmap.html', w: 520, h: 440 },
+  { title: 'Calendar', description: 'Month view with notes and holidays', icon: 'images/icons/calendar.svg', url: 'applets/calendar.html', w: 620, h: 440 },
+  { title: 'Sound Recorder', description: 'Record from your microphone and save to My Documents', icon: 'images/icons/soundrec.svg', url: 'applets/soundrec.html', w: 380, h: 340 },
+  { title: 'Media Player', description: 'Play audio, video and pictures, plus built-in tunes', icon: 'images/icons/mediaplayer.svg', url: 'applets/mediaplayer.html', w: 640, h: 440 },
+  { title: 'Phone Dialer', description: 'Dial with real touch tones and speed dial', icon: 'images/icons/phone.svg', url: 'applets/phonedialer.html', w: 360, h: 560 },
+  { title: 'Disk Defragmenter', description: 'Watch your imaginary disk get tidy', icon: 'images/icons/defrag.svg', url: 'applets/defrag.html', w: 560, h: 420 },
+  { title: 'Achievements', description: 'Trophies you earn by exploring ColtonOS', icon: 'images/icons/achievements.svg', url: 'applets/achievements.html', w: 640, h: 520 },
+  { title: 'Tapey Settings', description: 'Customize Tapey, your tape-roll desktop assistant', icon: 'images/tapey/tapey-idle.svg', url: 'applets/tapey.html', w: 560, h: 600 },
+  { title: 'Text Games', description: 'Text adventure, Hangman, Mad Libs, Blackjack and more', icon: 'images/icons/textgames.svg', url: 'applets/textgames.html', w: 700, h: 460, group: 'games' },
+  { title: 'FreeCell', description: 'Classic card solitaire with numbered deals', icon: 'images/icons/freecell.svg', url: 'applets/freecell.html', w: 720, h: 560, group: 'games' },
+  { title: 'Reversi', description: 'Flip discs and take the corners', icon: 'images/icons/reversi.svg', url: 'applets/reversi.html', w: 460, h: 540, group: 'games' },
+  { title: 'Minesweeper', description: 'Find the mines without stepping on one', icon: 'images/icons/warning.svg', url: 'applets/minesweeper.html', w: 340, h: 420, group: 'games' },
+  { title: 'Solitaire', description: 'Klondike card game (original card art)', icon: 'images/icons/star.svg', url: 'applets/solitaire.html', w: 620, h: 540, group: 'games' }
 ];

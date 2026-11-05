@@ -1,14 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>MS-DOS Prompt</title>
 <style>
   @font-face{font-family:W95FA;src:url('../images/w95f.woff2') format('woff2'),url('../images/w95f.woff') format('woff')}
   :root{color-scheme:dark}
   html,body{margin:0;height:100%;background:#000;overflow:hidden;overscroll-behavior:none}
   body{display:flex;flex-direction:column;position:fixed;inset:0}
-  #scr .art{display:block;margin:4px 0;font:13px/1.1 "Courier New",Courier,monospace;white-space:pre}
   #scr{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:6px 8px;color:#c0c0c0;font:16px/1.15 W95FA,"Courier New",monospace;white-space:pre-wrap;word-break:break-all;cursor:text;-webkit-font-smoothing:none;-webkit-user-select:text;user-select:text;-webkit-overflow-scrolling:touch}
   #cur{display:inline-block;width:.6em;height:1em;background:currentColor;vertical-align:text-bottom;animation:b 1s steps(1) infinite}
   @keyframes b{50%{opacity:0}}
@@ -26,9 +25,6 @@
 <div id="kb" role="toolbar" aria-label="On-screen keys"><button type="button" data-k="kbd">⌨ Keyboard</button><button type="button" data-k="up">▲</button><button type="button" data-k="down">▼</button><button type="button" data-k="tab">Tab</button><button type="button" data-k="esc">Esc</button><button type="button" data-k="ent">Enter</button></div>
 <input id="in" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send" inputmode="text" aria-label="MS-DOS command line">
 <script src="../vfs.js"></script>
-<script src="words.js"></script>
-<script src="textadv.js"></script>
-<script src="textadv-games.js"></script>
 <script src="textgames-core.js"></script>
 <script>
 (function(){
@@ -64,9 +60,8 @@
   function fmtS(n){return String(n).replace(/\B(?=(\d{3})+(?!\d))/g,',');}
   function prompt(){return 'C:\\'+cwd.join('\\')+'>';}
   function print(s){out+=(s==null?'':s)+'\n';}
-  function art(s){out+='\u0001'+s+'\u0002';}
   function render(){
-    scr.textContent='';out.split(/(\u0001[\s\S]*?\u0002)/).forEach(function(seg){if(!seg)return;var t=document.createElement('span');if(seg.charCodeAt(0)===1){t.textContent=seg.slice(1,-1);t.className='art';}else t.textContent=seg;scr.append(t);});
+    scr.textContent='';var t=document.createElement('span');t.textContent=out;scr.append(t);
     var l=document.createElement('span');l.textContent=(busy?'':(playing?'':prompt())+line);scr.append(l);
     if(!busy){var c=document.createElement('span');c.id='cur';scr.append(c);}
     scr.style.color=color;scr.scrollTop=scr.scrollHeight;
@@ -77,9 +72,9 @@
   function globalFind(name){var c=cat();var up=name.toUpperCase().replace(/\.EXE$/,'');var hit=null;['games','classics','applets'].forEach(function(k){(c[k]||[]).forEach(function(p){var b=(p.url||'').split('/').pop().replace(/\.html$/,'').toUpperCase();if(!hit&&(b===up||tag(p.title)===tag(up)||short(b)===up))hit=p;});});return hit;}
   var JOKES=['Why did the programmer quit? He didn\'t get arrays.','There are 10 kinds of people: those who understand binary and those who don\'t.','Macrohard: hard by name, hard by nature.','A SQL query walks into a bar, walks up to two tables and asks: "Can I join you?"','Tapey says: I\'m sticking with you.','Why was the tape roll good at poker? It knew how to hold things together.'];
   var TAPEY='   .-""""-.\n  / (o)(o) \\\n |  .----.  |    "It looks like you are\n |  | __ |  |     typing in MS-DOS.\n  \\  \'----\'  /      Would you like help?"\n   \'-.____.-\'  \n     /_||_\\\n';
-  var GAMEIDS={advent:'adventure',adventure:'adventure',station:'station',omega:'station',manor:'manor',murder:'manor',dragon:'dragon',heist:'heist',hangman:'hangman',guess:'guess',madlibs:'madlibs',scramble:'scramble',blackjack:'blackjack',jack:'blackjack'};
+  var GAMEIDS={advent:'adventure',adventure:'adventure',hangman:'hangman',guess:'guess',madlibs:'madlibs',scramble:'scramble',blackjack:'blackjack',jack:'blackjack'};
   function startGame(id){
-    playing=TextGames.start(id,{print:print,art:art,event:function(n,d){emit('dos:'+n);if(/^(adv:|win:)/.test(n))try{window.parent.GHShell&&window.parent.GHShell.emit(n,d);}catch(e){}}});emit('textgame:'+id);playing.intro();endCheck();
+    playing=TextGames.start(id,{print:print,event:function(n){emit('dos:'+n);}});emit('textgame:'+id);playing.intro();endCheck();
   }
   function endCheck(){if(playing&&playing.done){playing=null;print('');}}
   function docsTarget(){var id=docsId(cwd);return id;}

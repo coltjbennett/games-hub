@@ -87,7 +87,7 @@
   /* ===================== event bus ===================== */
   const subs = [];
   GH.on = fn => { subs.push(fn); return () => { const i = subs.indexOf(fn); if (i >= 0) subs.splice(i, 1); }; };
-  GH.emit = (name, data) => { name = String(name || '').slice(0, 60); try { GH.report && GH.report(name, data); } catch (e) { /* analytics must never break the shell */ } subs.slice().forEach(f => { try { f(name, data); } catch (e) { /* a listener must never break the shell */ } }); };
+  GH.emit = (name, data) => { name = String(name || '').slice(0, 60); subs.slice().forEach(f => { try { f(name, data); } catch (e) { /* a listener must never break the shell */ } }); };
   HOOKS.emit = (n, d) => GH.emit(n, d);
   /* applets running inside iframes may also postMessage { gh:'event', name } */
   window.addEventListener('message', e => { if (e.origin !== location.origin || !e.data || e.data.gh !== 'event') return; GH.emit(e.data.name, e.data.data); });
@@ -148,44 +148,7 @@
     { id: 'night_owl', n: 'Night Owl', d: 'Be here between midnight and 4 a.m.', i: '🦉', hidden: true },
     { id: 'xyzzy', n: 'Nothing Happens', d: 'Say the magic word.', i: '✨', hidden: true },
     { id: 'tapey_angry', n: 'Sticky Fingers', d: 'Poke Tapey way too many times.', i: '😠', hidden: true },
-    /* ---- v4.6 additions ---- */
-    { id: 'wordle', n: 'Five Letter Wizard', d: 'Solve a Wordle.', i: '🔤' },
-    { id: 'wordle_fast', n: 'Mind Reader', d: 'Solve a Wordle in two guesses.', i: '🔮', hidden: true },
-    { id: 'wordle_diver', n: 'Dictionary Diver', d: 'Solve a Wordle in Dictionary Diver mode.', i: '📖' },
-    { id: 'g2048', n: 'Power of Two', d: 'Reach the 2048 tile.', i: '🔢' },
-    { id: 'connect4', n: 'Four in a Row', d: 'Beat the computer at Connect Four.', i: '🔴' },
-    { id: 'tetris4', n: 'Block Party', d: 'Clear four lines at once in Block Drop.', i: '🧱' },
-    { id: 'memory', n: 'Photographic Memory', d: 'Clear a Memory Match board.', i: '🧠' },
-    { id: 'simon10', n: 'Simon\'s Apprentice', d: 'Repeat ten rounds of Simon.', i: '🎵' },
-    { id: 'lightsout', n: 'Lights Out', d: 'Solve a Lights Out puzzle.', i: '💡' },
-    { id: 'codebreaker', n: 'Code Cracker', d: 'Crack the Code Breaker secret code.', i: '🕵️' },
-    { id: 'sudoku', n: 'Number Cruncher', d: 'Solve a Sudoku.', i: '🔟' },
-    { id: 'tapedash500', n: 'Tape Runner', d: 'Score 500 in Tape Dash.', i: '🏃' },
-    { id: 'flap10', n: 'Flappy Ten', d: 'Pass ten pipes in Flap Tape.', i: '🐤' },
-    { id: 'pinball', n: 'Space Cadet', d: 'Launch 3D Pinball.', i: '🚀' },
-    { id: 'minesweeper', n: 'Mine Sweeper', d: 'Win a game of Minesweeper.', i: '💣' },
-    { id: 'mines_expert', n: 'Bomb Squad', d: 'Win Minesweeper on Expert.', i: '🧨', hidden: true },
-    { id: 'solitaire', n: 'Patience', d: 'Win a game of Solitaire.', i: '🃏' },
-    { id: 'rtfm', n: 'Read the Manual', d: 'Open the Help in Minesweeper, Solitaire, Reversi and FreeCell.', i: '❓' },
-    { id: 'adv_first', n: 'The End. Or Is It?', d: 'Reach any ending in a text adventure.', i: '📜' },
-    { id: 'adv_copper', n: 'Master of the Copper Key', d: 'Find all six endings of The Copper Key.', i: '🗝️' },
-    { id: 'adv_station', n: 'Station Survivor', d: 'Survive Station Omega.', i: '🛰️' },
-    { id: 'adv_manor', n: 'Sherlock Mode', d: 'Solve Murder at Blackwood Manor.', i: '🔍' },
-    { id: 'adv_dragon', n: 'Dragon Tamer', d: 'Win The Dragon\'s Tooth by any route.', i: '🐉' },
-    { id: 'adv_heist', n: 'Ghost in the Neon', d: 'Pull off Neon Heist without being seen.', i: '🕶️', hidden: true },
-    { id: 'adv_bad', n: 'That Went Badly', d: 'Reach a terrible ending in a text adventure.', i: '💀', hidden: true },
-    { id: 'adv_five', n: 'Adventurer', d: 'Play all five text adventures.', i: '🧭' },
-    { id: 'adv_all', n: 'Story Collector', d: 'See every ending of any text adventure.', i: '📚' },
-    { id: 'scandisk', n: 'Disk Jockey', d: 'Watch ScanDisk check your drive.', i: '💾', hidden: true },
-    { id: 'shaker', n: 'Shaky Hands', d: 'Shake a window to minimize the others.', i: '🫨', hidden: true },
-    { id: 'redpill', n: 'Red Pill', d: 'Follow the white rabbit.', i: '💊', hidden: true },
-    { id: 'bsod', n: 'Blue Screen of Fun', d: 'Cause a fatal exception (on purpose).', i: '🟦', hidden: true },
-    { id: 'party', n: 'Party Time', d: 'Throw a party on the desktop.', i: '🎉', hidden: true },
-    { id: 'wordsmith', n: 'Secret Handshake', d: 'Find three secret desktop words.', i: '🤫', hidden: true },
-    { id: 'archivist', n: 'Archivist', d: 'Export a complete system backup.', i: '🗄️' },
-    { id: 'restorer', n: 'Time Traveler', d: 'Restore a complete system backup.', i: '⏪' },
-    { id: 'chat_archive', n: 'Chat Historian', d: 'Export every chat channel.', i: '🗂️' },
-    { id: 'completionist', n: 'Completionist', d: 'Unlock 50 achievements.', i: '🏆' }
+    { id: 'completionist', n: 'Completionist', d: 'Unlock 30 achievements.', i: '🏆' }
   ];
   const AIDX = {}; ACH.forEach(a => { AIDX[a.id] = a; });
   let unlocked = LS.get(AKEY, {}), stats = LS.get(SKEY, null) || { games: [], classics: [], favs: [], dos: 0, clicks: 0, pokes: 0, minutes: 0, days: [], widgets: 0 };
@@ -207,7 +170,7 @@
     unlocked[id] = Date.now(); LS.set(AKEY, unlocked);
     queue.push(a); pop(); I.playSound && I.playSound('tada');
     GH.emit('ach', a);
-    if (Object.keys(unlocked).length >= 50) unlock('completionist');
+    if (Object.keys(unlocked).length >= 30) unlock('completionist');
     return true;
   }
   GH.ach = {
@@ -232,7 +195,7 @@
       if (id === 'arcade') unlock('arcade_goer');
       if (Array.from(wins.values()).filter(w => w.visible && !w.minimized && !w.o.dialog).length >= 5) unlock('multitasker');
     } else if (name === 'game') {
-      unlock('first_game'); if (/pinball/.test(d.url)) unlock('pinball'); addTo(stats.games, d.url); if (d.classic) addTo(stats.classics, d.url); saveStats();
+      unlock('first_game'); addTo(stats.games, d.url); if (d.classic) addTo(stats.classics, d.url); saveStats();
       if (stats.games.length >= 5) unlock('sampler'); if (stats.games.length >= 12) unlock('explorer');
       if (catalog.classics.length && catalog.classics.every(c => stats.classics.indexOf(c.url) >= 0)) unlock('classic_fan');
     } else if (name === 'random') unlock('lucky');
@@ -268,37 +231,6 @@
     else if (name === 'tapey:poke') { stats.pokes++; saveStats(); if (stats.pokes >= 3) unlock('tapey_angry'); }
     else if (name === 'tapey:dance') unlock('tapey_dance');
     else if (name === 'widget:add') { unlock('widget_fan'); if (GH.widgets && GH.widgets.count() >= 4) unlock('widget_wall'); }
-    else if (name === 'win:wordle') { unlock('wordle'); if (d && d.tries <= 2) unlock('wordle_fast'); if (d && d.mode === 'diver') unlock('wordle_diver'); }
-    else if (name === 'win:2048') unlock('g2048');
-    else if (name === 'win:connect4') unlock('connect4');
-    else if (name === 'blockdrop:tetris') unlock('tetris4');
-    else if (name === 'win:memory') unlock('memory');
-    else if (name === 'simon:10') unlock('simon10');
-    else if (name === 'win:lightsout') unlock('lightsout');
-    else if (name === 'win:codebreaker') unlock('codebreaker');
-    else if (name === 'win:sudoku') unlock('sudoku');
-    else if (name === 'tapedash:500') unlock('tapedash500');
-    else if (name === 'flaptape:10') unlock('flap10');
-    else if (name === 'win:minesweeper') { unlock('minesweeper'); if (d && /expert/i.test(d.level || '')) unlock('mines_expert'); }
-    else if (name === 'win:solitaire') unlock('solitaire');
-    else if (name === 'help:open') { if (d && d.id && addTo(stats.help = stats.help || [], d.id)) saveStats(); if (['minesweeper', 'solitaire', 'reversi', 'freecell'].every(x => (stats.help || []).indexOf(x) >= 0)) unlock('rtfm'); }
-    else if (name === 'adv:ending') {
-      unlock('adv_first'); if (!d) return;
-      if (d.total && d.n >= d.total) { unlock('adv_all'); if (d.adv === 'adventure') unlock('adv_copper'); }
-      const good = { station: ['hero', 'merge', 'escape'], manor: ['justice'], dragon: ['slay', 'peace', 'thief', 'bound'] };
-      if (d.adv === 'station' && good.station.indexOf(d.ending) >= 0) unlock('adv_station');
-      if (d.adv === 'manor' && d.ending === 'justice') unlock('adv_manor');
-      if (d.adv === 'dragon' && good.dragon.indexOf(d.ending) >= 0) unlock('adv_dragon');
-      if (d.adv === 'heist' && d.ending === 'ghost') unlock('adv_heist');
-      if (/^(sticky|oops|death|spaced|caught|wrong|betrayed|suffocate|supernova)$/.test(d.ending)) unlock('adv_bad');
-    }
-    else if (name === 'adv:allendings') unlock('adv_all');
-    else if (/^textgame:(adventure|station|manor|dragon|heist)$/.test(name)) { if (addTo(stats.advs = stats.advs || [], name.slice(9))) saveStats(); if (stats.advs.length >= 5) unlock('adv_five'); }
-    else if (name === 'shake') unlock('shaker');
-    else if (name === 'secret:word') { if (d && d.v && addTo(stats.words = stats.words || [], d.v)) saveStats(); if ((stats.words || []).length >= 3) unlock('wordsmith'); if (d && d.v === 'matrix') unlock('redpill'); if (d && d.v === 'bsod') unlock('bsod'); if (d && d.v === 'party') unlock('party'); }
-    else if (name === 'sys:export') unlock('archivist');
-    else if (name === 'sys:restore') unlock('restorer');
-    else if (name === 'chat:export') unlock('chat_archive');
     if (/^dos:tapey$/.test(name)) unlock('tapey_hi');
   });
   if (FS) { FS.ready().then(() => { checkFiles(); FS.onChange(() => setTimeout(checkFiles, 200)); }); }
@@ -307,22 +239,16 @@
     const today = new Date().toISOString().slice(0, 10);
     if (addTo(stats.days, today)) { stats.days = stats.days.slice(-60); saveStats(); }
     if (stats.days.length >= 5) unlock('regular');
-    try { if (parseInt(window.localStorage.getItem('gh-scan-count'), 10) > 0) unlock('scandisk'); } catch (e) {}
     const tickA = () => {
       if (!D.hidden) { stats.minutes += 0.5; saveStats(); if (stats.minutes >= 120) unlock('marathon'); }
       const hr = new Date().getHours(); if (hr < 4) unlock('night_owl');
     };
     setInterval(tickA, 30000); setTimeout(tickA, 4000);
     const code = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a']; let pos = 0;
-    /* one feeder for keyboards AND the File Manager's on-screen pad (so touch-only devices can earn it too) */
-    const feedKonami = key => {
-      const k = key.length === 1 ? key.toLowerCase() : key;
-      if (k === code[pos]) { pos++; if (pos === code.length) { pos = 0; unlock('konami'); GH.emit('konami'); GH.tapey && GH.tapey.dance('↑↑↓↓←→←→BA — 30 extra lives!'); } } else pos = k === code[0] ? 1 : 0;
-    };
-    GH.konami = feedKonami;
     D.addEventListener('keydown', e => {
       if (/^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '') || (e.target && e.target.isContentEditable)) { pos = 0; return; }
-      feedKonami(e.key);
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      if (k === code[pos]) { pos++; if (pos === code.length) { pos = 0; unlock('konami'); GH.tapey && GH.tapey.dance('↑↑↓↓←→←→BA — 30 extra lives!'); } } else pos = k === code[0] ? 1 : 0;
     });
   })();
 
@@ -338,10 +264,10 @@
     size: 80, opacity: 100, hue: 0, saturate: 100, flip: false, shadow: true, glow: false,
     onTop: true, snap: true, hideSmall: false, pos: null,
     balloon: 'classic', fontSize: 13, balloonPos: 'auto', readSpeed: 100, showClose: true,
-    eyes: true, eyeStrength: 100, eyeSmooth: 22, eyeFrames: true, crossEyed: false, eyeBlink: true,
-    bob: false, blink: true, poseAnim: true, sleep: true, sleepAfter: 150,
+    eyes: true, eyeStrength: 100, eyeSmooth: 55, eyeFrames: true, crossEyed: true, eyeBlink: true,
+    bob: true, blink: true, poseAnim: true, sleep: true, sleepAfter: 150,
     chatty: 45, interval: 240, greeting: true, reactions: true, appTips: true, gameTips: true, achTalk: true, clippyOffers: true,
-    quietGames: true, quietDialogs: true, dodge: true, polite: true, accessories: true, smartHints: true,
+    quietGames: true, quietDialogs: true, dodge: true, polite: true, maxPerHour: 6, accessories: true, smartHints: true,
     catTip: true, catJoke: true, catFact: true, catChat: true, catCompliment: true, catNudge: true, catContext: true,
     sounds: false, soundVol: 40, voicePitch: 100
   };
@@ -349,8 +275,6 @@
   if (!(T.tone in { c: 1, s: 1, w: 1, n: 1, q: 1 })) T.tone = 'c';
   /* v4.5 migration: smaller default size (pixel-perfect 80px) and a gentler chattiness for anyone still on the old defaults */
   if (!T._m2) { if (T.size === 96) T.size = 80; if (T.chatty === 60 && T.interval === 150) { T.chatty = 45; T.interval = 240; } T._m2 = 1; LS.set(TKEY, T); }
-  /* v4.6 migration: no bobbing by default, parallel (non cross-eyed) gaze with snappier eyes, and no hourly cap on comments (frequency only) */
-  if (!T._m3) { T.bob = false; if (T.eyeSmooth === 55) T.eyeSmooth = 22; if (T.crossEyed === true) T.crossEyed = false; delete T.maxPerHour; T._m3 = 1; LS.set(TKEY, T); }
   const tsubs = [];
   const saveT = () => LS.set(TKEY, T);
   const TS = LS.get('gh-tapey-state-v1', null) || { seen: {}, muted: {}, played: {}, visits: 0, eyesIntro: false, firstRun: true };
@@ -411,7 +335,7 @@
 
   /* ---- DOM ---- */
   const desk = $('#desktop');
-  const root = h('div', { id: 'tapey', class: T.bob ? 'bob' : '', role: 'complementary', 'aria-label': 'Tapey the tape roll, desktop assistant', hidden: true });
+  const root = h('div', { id: 'tapey', class: 'bob', role: 'complementary', 'aria-label': 'Tapey the tape roll, desktop assistant', hidden: true });
   const art = h('div', { class: 'tp-art', style: { width: '100%', height: '100%' } });
   const body = h('button', { type: 'button', class: 'tp-body', 'aria-label': 'Tapey. Press Enter to ask for help.', title: 'Tapey (click for help, drag to move)' }, art);
   const acc = h('img', { class: 'tp-acc', alt: '', draggable: 'false', hidden: true }); body.append(acc);
@@ -424,7 +348,7 @@
     return (svgLoading[name] = fetch('images/tapey/tapey-' + name + '.svg').then(r => r.ok ? r.text() : Promise.reject()).then(t => {
       const doc = new DOMParser().parseFromString(t, 'image/svg+xml'), el = doc.documentElement;
       if (!el || el.nodeName.toLowerCase() !== 'svg') throw 0;
-      const node = D.importNode(el, true); node.setAttribute('width', '100%'); node.setAttribute('height', '100%'); node.setAttribute('aria-hidden', 'true'); node.setAttribute('data-pose', name); node.style.display = 'block'; node.style.overflow = 'visible';
+      const node = D.importNode(el, true); node.setAttribute('width', '100%'); node.setAttribute('height', '100%'); node.setAttribute('aria-hidden', 'true'); node.style.display = 'block'; node.style.overflow = 'visible';
       // unique gradient ids per pose so inline SVGs never collide
       const html = node.outerHTML.replace(/id="(tg|cg)"/g, (m, i) => 'id="' + i + '-' + name + '"').replace(/url\(#(tg|cg)\)/g, (m, i) => 'url(#' + i + '-' + name + ')');
       const holder = D.createElement('div'); holder.innerHTML = html; return (svgCache[name] = holder.firstChild);
@@ -444,18 +368,13 @@
       applyEyes(true);
     });
   }
-  /* A pose never sticks: unless a duration of 0 is given (held while a balloon is open / while dragging), it falls back to idle. */
   function setPose(name, hold) {
     if (POSES.indexOf(name) < 0) name = 'idle';
-    clearTimeout(poseTimer); poseTimer = 0;
+    clearTimeout(poseTimer);
     if (!T.poseAnim && name !== 'sleep' && name !== 'idle') name = 'idle';
     basePose = name; renderPose(name);
-    if (name === 'idle' || name === 'sleep') return;
-    if (hold === undefined) hold = 5000;
-    if (hold > 0) poseTimer = setTimeout(() => { poseTimer = 0; if (!sleeping && !dragging) setPose('idle'); }, hold);
+    if (hold && name !== 'idle') poseTimer = setTimeout(() => { if (!sleeping) setPose('idle'); }, hold);
   }
-  /* safety net: if nothing is holding a pose (no balloon, no timer, not dancing or dragging), go back to idle */
-  setInterval(() => { if (!sleeping && !bal && !poseTimer && !dragging && basePose !== 'idle' && !root.classList.contains('dance')) setPose('idle'); }, 700);
   /* ---- eye tracking ---- */
   let lastKeyAt = 0, lastDragAt = 0, tx = innerWidth / 2, ty = innerHeight / 2, lastMove = 0, shakeAcc = 0, shakeAt = 0, eyeRaf = 0, hoverSince = 0, lastEyeLine = 0, px0 = null, py0 = null;
   function setTarget(x, y) {
@@ -477,33 +396,20 @@
   }
   D.addEventListener('load', e => { if (e.target && e.target.tagName === 'IFRAME') watchFrame(e.target); }, true);
   setInterval(() => { D.querySelectorAll('iframe').forEach(watchFrame); }, 4000);
-  let lastEyeT = 0, glanceT = 0;
-  /* look somewhere without it counting as mouse movement (used for little glances at new windows) */
-  function glance(x, y, ms) {
-    if (!T.eyes || sleeping || root.hidden || tucked) return;
-    tx = x; ty = y; lastMove = Date.now(); if (!eyeRaf) eyeRaf = requestAnimationFrame(eyeStep);
-    clearTimeout(glanceT); glanceT = setTimeout(() => { if (px0 != null) { tx = px0; ty = py0; lastMove = Date.now(); if (!eyeRaf) eyeRaf = requestAnimationFrame(eyeStep); } }, ms || 900);
-  }
-  function applyEyes(snap, dt) {
+  function applyEyes(snap) {
     if (!pupils.length) return;
     const size = root.getBoundingClientRect().width || T.size, k = clampN(T.eyeStrength, 0, 100) / 100;
-    /* both eyes share ONE gaze direction, measured from the middle of the face, so the pupils can never point apart */
-    let gx = 0, gy = 0, n = 0;
-    pupils.forEach(p => { if (!p.eye) return; const r = p.eye.getBoundingClientRect(); p._ex = r.left + r.width / 2; p._ey = r.top + r.height / 2; gx += p._ex; gy += p._ey; n++; });
-    if (!n) return; gx /= n; gy /= n;
-    const frames = snap ? 1 : Math.max(0.5, Math.min(4, (dt || 16.7) / 16.7));
     pupils.forEach(p => {
       if (!p.eye) return;
-      let dx = tx - gx, dy = ty - gy;
-      if (T.crossEyed) { dx = dx * 0.75 + (tx - p._ex) * 0.25; dy = dy * 0.75 + (ty - p._ey) * 0.25; } /* a slight, symmetric convergence when the cursor is close */
-      const dist = Math.hypot(dx, dy) || 1;
+      const r = p.eye.getBoundingClientRect(); const ex = r.left + r.width / 2, ey = r.top + r.height / 2;
+      let dx = tx - ex, dy = ty - ey; const dist = Math.hypot(dx, dy) || 1;
       let mag = T.eyes ? Math.min(1, dist / (size * (T.crossEyed ? 0.7 : 1.4))) : 0;
       let ux = dx / dist * mag, uy = dy / dist * mag;
       if (T.flip) ux = -ux;
       // undo the face rotation and the mirror so the pupil moves toward the cursor on screen
       const a = -p.rot * Math.PI / 180, rx = ux * Math.cos(a) - uy * Math.sin(a), ry = ux * Math.sin(a) + uy * Math.cos(a);
       const tr = T.eyes ? 1 : 0, wantX = p.bx * (1 - k * tr) + rx * p.mx * k * tr, wantY = p.by * (1 - k * tr) + ry * p.my * k * tr;
-      const sm = snap ? 0 : Math.pow(clampN(T.eyeSmooth, 0, 95) / 100, frames); /* frame-rate independent smoothing */
+      const sm = snap ? 0 : clampN(T.eyeSmooth, 0, 95) / 100;
       p.cx += (wantX - p.cx) * (1 - sm); p.cy += (wantY - p.cy) * (1 - sm);
       if (snap) { p.cx = wantX; p.cy = wantY; }
       /* pixel art: pupils hop whole art pixels instead of gliding */
@@ -512,12 +418,11 @@
       p._done = Math.abs(wantX - p.cx) < 0.05 && Math.abs(wantY - p.cy) < 0.05;
     });
   }
-  function eyeStep(ts) {
+  function eyeStep() {
     eyeRaf = 0;
     if (root.hidden || sleeping || D.hidden) return;
-    const t = typeof ts === 'number' ? ts : performance.now(), dt = lastEyeT ? t - lastEyeT : 16.7; lastEyeT = t;
-    applyEyes(false, dt);
-    if (pupils.some(p => !p._done) || Date.now() - lastMove < 200) eyeRaf = requestAnimationFrame(eyeStep); else lastEyeT = 0;
+    applyEyes(false);
+    if (pupils.some(p => !p._done) || Date.now() - lastMove < 200) eyeRaf = requestAnimationFrame(eyeStep);
     // hovering over Tapey / wiggling the mouse
     const r = root.getBoundingClientRect(), over = tx >= r.left && tx <= r.right && ty >= r.top && ty <= r.bottom, now = Date.now();
     if (over && !dragging) { if (!hoverSince) hoverSince = now; else if (now - hoverSince > 4000 && now - lastEyeLine > 90000 && !balOpen()) { lastEyeLine = now; react('eyes.close', {}, { chance: 1, kind: 'eyes' }); } } else hoverSince = 0;
@@ -601,7 +506,7 @@
     bal.addEventListener('keydown', e => { if (e.key === 'Escape') { userClose(); body.focus(); } });
     root.append(bal); placeBal();
     speaking = true; lastSpoke = Date.now();
-    setPose(o.pose || 'idle', (o.sticky || o.input || (o.actions && o.actions.length && !o.autoHide)) ? 9000 : 0); blip(/celebrate|excited|dance|love/.test(o.pose || '') ? 'cheer' : /sad|angry/.test(o.pose || '') ? 'sad' : 'talk');
+    setPose(o.pose || 'idle', 0); blip(/celebrate|excited|dance|love/.test(o.pose || '') ? 'cheer' : /sad|angry/.test(o.pose || '') ? 'sad' : 'talk');
     if (inputEl) setTimeout(() => inputEl.focus(), 30);
     const sticky = o.sticky || o.input || (o.actions && o.actions.length && !o.autoHide);
     if (!sticky && o.ttl !== 0) {
@@ -697,7 +602,8 @@
       const now = Date.now();
       if (D.hidden || D.fullscreenElement || now < quietUntil || userBusy()) return false;
       while (spokeLog.length && now - spokeLog[0] > 3600000) spokeLog.shift();
-      if (now - lastSpoke < (kind === 'idle' || kind === 'eyes' ? 45000 : 3500)) return false;
+      if (T.maxPerHour >= 0 && spokeLog.length >= T.maxPerHour) return false;
+      if (now - lastSpoke < (kind === 'idle' || kind === 'eyes' ? 60000 : 6000)) return false;
     }
     return true;
   }
@@ -829,7 +735,7 @@
     if (/\b(open|show|launch)\b.*\b(file ?manager|my computer|explorer|my files)\b/.test(low) || /^(file ?manager|my computer|files)$/.test(low)) return smartIntent('files'), true;
     if (/\b(disk|storage|space)\b.*(left|used|much|usage|full)|how much (space|storage)/.test(low)) return smartIntent('disk'), true;
     if (/^(what'?s|what is) (this|that)( window| app| game| program)?$|^explain (this|that|it)\b|^what am i (looking at|in)\b/.test(low)) return explainActive(), true;
-    if (/(annoying|interrupt|too (chatty|talkative|much)|stop (talking|bugging|nagging)|less (chatty|talk)|shut up)/.test(low) && !/^(shut up)$/.test(low)) { setT({ chatty: Math.min(T.chatty, 15), interval: Math.max(T.interval, 600) }, true); sayPool('tp.say.politer', {}, { pose: 'sad', ttl: 5200 }); return true; }
+    if (/(annoying|interrupt|too (chatty|talkative|much)|stop (talking|bugging|nagging)|less (chatty|talk)|shut up)/.test(low) && !/^(shut up)$/.test(low)) { setT({ maxPerHour: 2, chatty: Math.min(T.chatty, 20), interval: Math.max(T.interval, 480) }, true); sayPool('tp.say.politer', {}, { pose: 'sad', ttl: 5200 }); return true; }
     return false;
   }
   function explainActive() {
@@ -893,10 +799,10 @@
   }
   GH.tapey = {
     get: () => Object.assign({}, T), defaults: () => Object.assign({}, TDEF), set: (k, v, silent) => setT({ [k]: v }, silent), setMany: (o, silent) => setT(o, silent),
-    reset: () => { const keep = { enabled: T.enabled, _m2: 1, _m3: 1 }; T = Object.assign({}, TDEF, keep); saveT(); styleT(); const L = pickLine('tp.reset'); tsubs.slice().forEach(f => f(T, T)); if (L) say(L.text, { pose: L.pose || 'excited' }); },
+    reset: () => { const keep = { enabled: T.enabled }; T = Object.assign({}, TDEF, keep); saveT(); styleT(); const L = pickLine('tp.reset'); tsubs.slice().forEach(f => f(T, T)); if (L) say(L.text, { pose: L.pose || 'excited' }); },
     resetPosition: () => { setT({ pos: null }, true); },
     show: showT, hide: () => hideT(false), toggle: () => (T.enabled ? hideT(true) : showT()), isOn: () => T.enabled,
-    say: (t, o) => say(t, o), pose: (n, ms) => { wake(true); setPose(n, ms || 3500); }, poses: POSES.slice(), menu, ask, joke: tellJoke, tip: tellTip, fact: tellFact, dance, sleep: gotoSleep, wake: () => wake(false), summon, glance, isTucked: () => tucked, explain: explainActive, accessory: accTemp,
+    say: (t, o) => say(t, o), pose: (n, ms) => { wake(true); setPose(n, ms || 3500); }, poses: POSES.slice(), menu, ask, joke: tellJoke, tip: tellTip, fact: tellFact, dance, sleep: gotoSleep, wake: () => wake(false), summon, isTucked: () => tucked, explain: explainActive, accessory: accTemp,
     test: () => { const L = pickLine(pickRand(['idle.chat', 'idle.joke', 'idle.compliment'])); const C = pickLine('tp.test'); say((C ? C.text + '\n\n' : '') + (L ? L.text : ''), { pose: L && L.pose || 'wave' }); },
     tones: () => (DLG && DLG.tones) || {}, stats: () => ({ seen: Object.assign({}, TS.seen), visits: TS.visits, lines: DLG ? Object.keys(DLG.pools).reduce((a, k) => a + DLG.pools[k].length, 0) : 0, pools: DLG ? Object.keys(DLG.pools).length : 0 }),
     forgetTips: () => { TS.seen = {}; TS.muted = {}; saveTS(); }, onChange: fn => { tsubs.push(fn); return () => { const i = tsubs.indexOf(fn); if (i >= 0) tsubs.splice(i, 1); }; }, ready: () => dlgReady
@@ -910,7 +816,7 @@
     const prevPos = T.pos ? Object.assign({}, T.pos) : null;
     const mv = ev => {
       const dx = ev.clientX - sx, dy = ev.clientY - sy;
-      if (!moved) { if (Math.hypot(dx, dy) < 6) return; moved = true; dragging = true; root.classList.add('drag'); closeBal(false); if (sleeping) wake(true); setPose('shocked', 0); const L = Math.random() < 0.5 && pickLine('tp.drag.start'); if (L) say(L.text, { pose: 'shocked', ttl: 1600 }); }
+      if (!moved) { if (Math.hypot(dx, dy) < 6) return; moved = true; dragging = true; root.classList.add('drag'); closeBal(false); if (sleeping) wake(true); setPose('shocked'); const L = Math.random() < 0.5 && pickLine('tp.drag.start'); if (L) say(L.text, { pose: 'shocked', ttl: 1600 }); }
       const s = r.width; root.style.left = clampN(ox + dx, 0, innerWidth - s) + 'px'; root.style.top = clampN(oy + dy, 0, innerHeight - taskH() - s) + 'px'; if (bal) placeBal();
     };
     const up = () => {
@@ -919,12 +825,6 @@
       else poke();
     };
     body.addEventListener('pointermove', mv); body.addEventListener('pointerup', up); body.addEventListener('pointercancel', up);
-  });
-  /* a small friendly reaction when the cursor lingers on him */
-  let hoverWaveAt = 0;
-  body.addEventListener('pointerenter', e => {
-    if (e.pointerType !== 'mouse') return;
-    setTimeout(() => { const n = Date.now(); if (!body.matches(':hover') || sleeping || dragging || bal || curPose !== 'idle' || !T.poseAnim || tucked || n - hoverWaveAt < 25000) return; hoverWaveAt = n; setPose(pick(['wave', 'love', 'excited']), 1400); }, 450);
   });
   function savePos() {
     const r = root.getBoundingClientRect(), W = innerWidth, Hh = innerHeight - taskH(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
@@ -983,7 +883,6 @@
     switch (name) {
       case 'win_open': {
         const W = d; if (!W) return;
-        setTimeout(() => { try { if (W.el && !W.closed) { const r = W.el.getBoundingClientRect(); if (r.width > 40) glance(r.left + r.width / 2, r.top + Math.min(r.height / 2, 120), 1100); } } catch (e) {} }, 140);
         if (W.o && W.o.dialog) { if (/error\.svg/.test(String(W.o.icon || '')) && T.reactions) react('game.crash', {}, { kind: 'crash', chance: 1, pose: 'shocked' }); return; }
         if (isGameWin(W)) { gameStart[W.id] = Date.now(); return; }
         if (!T.appTips || !T.reactions) return;
@@ -991,7 +890,7 @@
         if ((k === 'wordpad' || k === 'notepad') && T.clippyOffers && !TS.muted['offer.' + k] && cool('offer.' + k, 1800000)) { afterDelay(() => { if (canSpeak('react') && !isGameWin(activeWin())) writingOffer(k); }, 1400); return; }
         const pn = seen === 0 ? 'app.' + k + '.first' : 'app.' + k + '.again'; if (!hasPool(pn)) return;
         if (seen > 0 && (seen > 6 || !cool('again.' + k, 600000))) return;
-        afterDelay(() => react(pn, { app: W.title }, { kind: 'app', chance: seen === 0 ? 0.95 : 0.3 }), 600);
+        afterDelay(() => react(pn, { app: W.title }, { kind: 'app', chance: seen === 0 ? 0.95 : 0.3 }), 1100);
         break;
       }
       case 'game': {
@@ -1006,7 +905,7 @@
         if (st && /beta|wip|legacy/i.test(st) && played === 0) plan.push(['game.beta', 0.8]);
         if (SLOT_GAMES[sl] && (TS.slotHints || 0) < 4 && played < 3) plan.push(['game.slots', 0.9]);
         else if (d.classic === false && !SLOT_GAMES[sl] && sl !== 'fps' && played === 0 && cool('noslots', 1200000)) plan.push(['game.noslots', 0.3]);
-        plan.forEach((p, i) => afterDelay(() => { if (p[0] === 'game.slots') { TS.slotHints = (TS.slotHints || 0) + 1; saveTS(); } react(p[0], ex, { kind: 'react', chance: p[1] }); }, 700 + i * 7000));
+        plan.forEach((p, i) => afterDelay(() => { if (p[0] === 'game.slots') { TS.slotHints = (TS.slotHints || 0) + 1; saveTS(); } react(p[0], ex, { kind: 'react', chance: p[1] }); }, 1600 + i * 9000));
         break;
       }
       case 'win_close': {
@@ -1020,7 +919,7 @@
         accTemp('party', 15000);
         if (!T.achTalk) return; const total = GH.ach.total(), n = GH.ach.count(), hidden = d.hidden;
         const pn = n >= total ? 'ev.ach.all' : n === 1 ? 'ev.first.ach' : (n === 10 || n === 20 || n === 30) ? 'ev.ach.' + n : hidden ? 'ev.ach.hidden' : 'ev.ach';
-        const chance = pn === 'ev.ach' ? 0.75 : 1; afterDelay(() => react(pn, { app: d.n }, { kind: 'ach', chance: chance, pose: 'celebrate' }), 450); break;
+        const chance = pn === 'ev.ach' ? 0.75 : 1; afterDelay(() => react(pn, { app: d.n }, { kind: 'ach', chance: chance, pose: 'celebrate' }), 900); break;
       }
       case 'fm:open': if (!TS.fmFirst) { TS.fmFirst = 1; saveTS(); } break;
       case 'fm:saves': if (T.smartHints && cool('fmsaves', 600000)) afterDelay(() => react(d && d.n ? 'ev.fm.saves' : 'ev.fm.saves.empty', {}, { kind: 'react', chance: 0.9 }), 900); break;
@@ -1070,7 +969,7 @@
   });
   /* ---- idle chatter, sleeping and blinking ---- */
   let nextIdle = Date.now() + 60000; const nextDelay = () => { const base = clampN(T.interval, 15, 900) * 1000, f = 1.5 - clampN(T.chatty, 0, 100) / 100; return base * f * (0.75 + Math.random() * 0.5); };
-  function unplayedGame() { const all = (catalog.games || []).concat(catalog.classics || []).filter(g => g.featured !== false && !TS.played[slug(g.url)] && !/badracing|fieldkit/.test(g.url)); const g = all.length ? pick(all) : null; return g ? g.title : ''; }
+  function unplayedGame() { const all = (catalog.games || []).concat(catalog.classics || []).filter(g => !TS.played[slug(g.url)] && !/badracing|fieldkit/.test(g.url)); const g = all.length ? pick(all) : null; return g ? g.title : ''; }
   /* date / time / situation contexts (each returns [pool, weight] pairs; cooldowns stop repeats) */
   function dateCtx(c) {
     const now = new Date(), mo = now.getMonth(), dt = now.getDate(), dow = now.getDay(), hr = now.getHours(), out = [];
@@ -1368,75 +1267,6 @@
     { label: '&Tapey Settings…', icon: 'images/tapey/tapey-idle.svg', onClick: () => GH.openItem('app:tapey') },
     { label: 'A&chievements', icon: IC('achievements'), onClick: () => GH.openItem('app:achievements') }
   ];
-
-  /* =====================================================================
-   *  v4.6 deep touches (nothing here adds UI: it is all for people who go looking)
-   *   - type a secret word on the bare desktop: matrix, bsod, party, tapey, clippy, rosebud
-   *   - Start > Run: winver, uptime, stats, msinfo32, scandisk [chance], matrix, bsod, party
-   *   - localStorage 'gh-scan-chance' (0-100) tunes the random ScanDisk at startup
-   * ===================================================================== */
-  (function () {
-    const css = h('style', { text: '@keyframes ghParty{0%{filter:hue-rotate(0deg) saturate(1.6)}100%{filter:hue-rotate(360deg) saturate(1.6)}}body.gh-party #desktop{animation:ghParty 1.2s linear infinite}' +
-      '#gh-bsod{position:fixed;inset:0;z-index:2147483000;background:#0000aa;color:#fff;font:16px/1.35 "Courier New",monospace;padding:6vh 7vw;white-space:pre-wrap;cursor:none}#gh-bsod b{background:#aaa;color:#0000aa;padding:0 .6em}' +
-      '#gh-matrix{position:fixed;inset:0;z-index:2147482000;pointer-events:none;transition:opacity .8s}' });
-    D.head.appendChild(css);
-    const say = t => { try { GH.tapey && GH.tapey.say && GH.tapey.say(t, { ttl: 5200, force: true }); } catch (e) {} };
-    function matrix() {
-      if (D.getElementById('gh-matrix')) return;
-      const c = h('canvas', { id: 'gh-matrix' }); D.body.appendChild(c); const x = c.getContext('2d');
-      const W = c.width = innerWidth, Hh = c.height = innerHeight, cols = Math.ceil(W / 16), drops = new Array(cols).fill(0).map(() => Math.random() * -40);
-      const glyphs = 'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄ0123456789ABCDEF'; let t0 = performance.now();
-      (function tick(now) {
-        if (now - t0 > 7000) { c.style.opacity = '0'; setTimeout(() => c.remove(), 900); return; }
-        x.fillStyle = 'rgba(0,0,0,.08)'; x.fillRect(0, 0, W, Hh); x.font = '15px monospace';
-        drops.forEach((d, i) => { x.fillStyle = d > 0 && Math.random() < .03 ? '#fff' : '#0f0'; x.fillText(glyphs[Math.floor(Math.random() * glyphs.length)], i * 16, d * 16); drops[i] = d * 16 > Hh && Math.random() > .975 ? 0 : d + 1; });
-        requestAnimationFrame(tick);
-      })(t0);
-      say('Wake up. The tape has you.');
-    }
-    function bsod() {
-      if (D.getElementById('gh-bsod')) return;
-      const el = h('div', { id: 'gh-bsod', role: 'alertdialog', 'aria-label': 'Fatal exception (just kidding)' });
-      el.textContent = '\n  ColtonOS 95\n\n  A fatal exception 0E has occurred at 0028:C0034B23 in VXD VTAPEY(01) +\n  00010E36. The current application will be terminated.\n\n  *  Press any key to terminate the current application.\n  *  Press CTRL+ALT+DEL again to restart your computer. You will\n     lose any unsaved information in all applications.\n\n  (Just kidding. Nothing was harmed.)\n\n                         Press any key to continue _';
-      D.body.appendChild(el);
-      const off = () => { el.remove(); D.removeEventListener('keydown', off, true); D.removeEventListener('pointerdown', off, true); say('Phew. That was close.'); };
-      setTimeout(() => { D.addEventListener('keydown', off, true); D.addEventListener('pointerdown', off, true); }, 600);
-    }
-    function party() { D.body.classList.add('gh-party'); say('PARTY TIME!'); GH.tapey && GH.tapey.dance && GH.tapey.dance('🎉'); setTimeout(() => D.body.classList.remove('gh-party'), 8000); }
-    const WORDS = {
-      matrix, bsod, party,
-      tapey: () => { try { GH.tapey && GH.tapey.summon && GH.tapey.summon(); } catch (e) {} say('You called?'); },
-      clippy: () => say('It looks like you are typing a secret word. I am NOT Clippy.'),
-      rosebud: () => say('Rosebud... is just a roll of tape in this timeline.'),
-      idkfa: () => say('All keys found. (There were no keys.)')
-    };
-    let buf = '';
-    D.addEventListener('keydown', e => {
-      const t = e.target; if ((t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) || e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) { if (t && /^(INPUT|TEXTAREA)$/.test(t.tagName)) buf = ''; return; }
-      buf = (buf + e.key.toLowerCase()).slice(-10);
-      for (const w of Object.keys(WORDS)) if (buf.endsWith(w)) { buf = ''; WORDS[w](); GH.emit('secret:word', { v: w }); break; }
-    });
-    /* Start > Run extras. Returns true when it handled the command. */
-    const up0 = Date.now();
-    HOOKS.runSecret = raw => {
-      const [cmd, arg] = raw.trim().toLowerCase().split(/\s+/);
-      const mb = (t, title, icon) => I.msgBox(t, { title: title || 'ColtonOS', icon: icon || 'info' });
-      switch (cmd) {
-        case 'winver': case 'ver': GH.showAbout(); return true;
-        case 'msinfo32': case 'sysinfo': GH.showSystemProperties(); return true;
-        case 'matrix': case 'bsod': case 'party': WORDS[cmd](); GH.emit('secret:word', { v: cmd }); return true;
-        case 'uptime': { const m = Math.floor((Date.now() - up0) / 60000); mb('This session has been running for ' + m + ' minute' + (m === 1 ? '' : 's') + '.\n\nTotal time on ColtonOS: ' + Math.round(stats.minutes) + ' minutes across ' + stats.days.length + ' day(s).', 'Uptime'); return true; }
-        case 'stats': mb('Games launched: ' + stats.games.length + '\nClassics launched: ' + stats.classics.length + '\nAchievements: ' + Object.keys(unlocked).length + ' of ' + ACH.length + '\nMS-DOS commands: ' + stats.dos + '\nSecret words found: ' + (stats.words || []).length, 'Your Stats'); return true;
-        case 'scandisk': {
-          if (arg && /^\d+$/.test(arg)) { const n = Math.max(0, Math.min(100, parseInt(arg, 10))); try { localStorage.setItem('gh-scan-chance', String(n)); } catch (e) {} mb('The chance of a routine ScanDisk at startup is now ' + n + '%.\n(Stored as gh-scan-chance; 7% is the default.)', 'ScanDisk'); }
-          else { try { localStorage.setItem('gh-scandisk-next', '1'); } catch (e) {} mb('ScanDisk will run the next time ColtonOS starts.', 'ScanDisk'); }
-          return true;
-        }
-        case 'konami': mb('Some doors only open for people who know the code.\n\nHint: the File Manager has a pad of arrow buttons. Up, up, down, down...', 'Old School'); return true;
-      }
-      return false;
-    };
-  })();
   /* a few Run-box / Find aliases */
   if (GH.fx) GH.fx.randomGame = GH.randomGame;
   GH.emit('os-more:ready');

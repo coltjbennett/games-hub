@@ -9,21 +9,96 @@
   var rnd = function (n) { return Math.floor(Math.random() * n); };
   var pick = function (a) { return a[rnd(a.length)]; };
   var WORDS = ['COMPUTER', 'KEYBOARD', 'MONITOR', 'FLOPPY', 'MODEM', 'WINDOW', 'DESKTOP', 'PROGRAM', 'CURSOR', 'ICON', 'FOLDER', 'DIALUP', 'NETWORK', 'PIXEL', 'JOYSTICK', 'ARCADE', 'CARTRIDGE', 'SCREEN', 'MEMORY', 'BROWSER', 'SCOTCH', 'CLIPBOARD', 'TASKBAR', 'SHORTCUT', 'POLYGON', 'ANTIVIRUS', 'SPREADSHEET', 'BACKUP', 'WALLPAPER', 'HIGHSCORE'];
-  /* Big word pool: applets/words.js (25,000+ words) when loaded, otherwise the small themed list above. */
-  function bigWord(min, max) {
-    var P = g.GH_WORDS && g.GH_WORDS.p;
-    if (!P || rnd(6) === 0) return pick(WORDS).toUpperCase();      /* now and then, a computer-themed word */
-    for (var i = 0; i < 40; i++) { var w = pick(P); if (w.length >= min && w.length <= max) return w.toUpperCase(); }
-    return pick(WORDS).toUpperCase();
+
+  /* ---------------- The Copper Key (adventure) ---------------- */
+  function adventure(io) {
+    var R = {
+      porch: { n: 'Front Porch', d: 'You stand on the creaky porch of an abandoned workshop. A sign reads: "BACK IN 5 MINUTES" (it has clearly been longer). The front door is open to the north. A gravel path leads east.', x: { n: 'hall', e: 'garden' } },
+      garden: { n: 'Overgrown Garden', d: 'Weeds crowd a broken fountain. Something shiny winks at the bottom of the fountain. A shed stands to the south; the porch is west.', x: { w: 'porch', s: 'shed' }, items: ['coin'] },
+      shed: { n: 'Tool Shed', d: 'Rusty tools hang from hooks. A coil of rope sits in the corner. The garden is north.', x: { n: 'garden' }, items: ['rope', 'lamp'] },
+      hall: { n: 'Entrance Hall', d: 'Dusty portraits of famous tape dispensers line the walls. Doors lead east and west; stairs go up. The porch is south. A trapdoor in the floor is boarded shut... mostly.', x: { s: 'porch', e: 'kitchen', w: 'study', u: 'attic', d: 'cellar' }, items: [] },
+      kitchen: { n: 'Kitchen', d: 'Pots hang from the ceiling. A bowl of surprisingly fresh apples sits on the counter. The hall is west.', x: { w: 'hall' }, items: ['apple'] },
+      study: { n: 'Study', d: 'A big desk, a bigger bookshelf. A faded NOTE is pinned to the desk. The hall is east.', x: { e: 'hall' }, items: ['note'] },
+      attic: { n: 'Attic', d: 'Cobwebs everywhere. A tiny window lets in a beam of light. Something glints in a trunk. The stairs lead down.', x: { d: 'hall' }, items: ['key'] },
+      cellar: { n: 'Dark Cellar', d: 'The air is cold and damp. Tunnels lead north. Stairs go up.', x: { u: 'hall', n: 'tunnel' }, dark: true },
+      tunnel: { n: 'Narrow Tunnel', d: 'The tunnel narrows. A grumpy TROLL blocks the way north, chewing on nothing in particular. The cellar is south.', x: { s: 'cellar', n: 'vault' }, dark: true, troll: true },
+      vault: { n: 'The Vault', d: 'A heavy iron door stands open. Inside, on a velvet cushion, rests the legendary GOLDEN TAPE ROLL!', x: { s: 'tunnel' }, items: ['treasure'], locked: true }
+    };
+    var NAMES = { lamp: 'a brass lamp', rope: 'a coil of rope', coin: 'a gold coin', apple: 'a shiny apple', note: 'a faded note', key: 'a copper key', treasure: 'the Golden Tape Roll' };
+    var cur = 'porch', inv = [], moves = 0, lit = false, trollGone = false, doorOpen = false, score = 0, ended = false;
+    R.hall.locked = false; var cellarDoor = false;
+    var self = { done: false };
+    function p(s) { io.print(s); }
+    function describe(full) {
+      var r = R[cur];
+      if (r.dark && !(inv.indexOf('lamp') >= 0 && lit)) { p('\n== ' + 'Darkness' + ' ==\nIt is pitch black. You might be eaten by a grue. (Try LIGHT LAMP, or go back.)'); return; }
+      p('\n== ' + r.n + ' ==');
+      if (full !== false) p(r.d);
+      if (cur === 'tunnel' && trollGone) p('(The troll has wandered off, munching happily.)');
+      var it = (r.items || []).filter(Boolean); if (it.length) p('You see: ' + it.map(function (i) { return NAMES[i]; }).join(', ') + '.');
+      var ex = Object.keys(r.x).join(', ').toUpperCase(); p('Exits: ' + ex);
+    }
+    function find(word) { word = (word || '').toLowerCase(); if (!word) return null; for (var k in NAMES) { if (k === word || NAMES[k].indexOf(word) >= 0) return k; } return null; }
+    function go(dir) {
+      var d = { n: 'n', s: 's', e: 'e', w: 'w', u: 'u', d: 'd', north: 'n', south: 's', east: 'e', west: 'w', up: 'u', down: 'd' }[dir]; var r = R[cur];
+      if (!d || !r.x[d]) { p("You can't go that way."); return; }
+      var to = r.x[d];
+      if (cur === 'hall' && d === 'd' && !cellarDoor) { p('The trapdoor is held shut by a copper lock. You need a key.'); return; }
+      if (cur === 'tunnel' && d === 'n' && !trollGone) { p('The troll growls and blocks your way. "NOBODY PASSES WITHOUT A SNACK!"'); return; }
+      if (to === 'vault' && !doorOpen) { p('The vault door is shut tight.'); return; }
+      cur = to; moves++; describe();
+    }
+    function take(w) {
+      var r = R[cur], k = find(w); if (!k) { p('Take what?'); return; }
+      if (r.dark && !lit) { p("You can't see a thing."); return; }
+      var i = (r.items || []).indexOf(k); if (i < 0) { p("You don't see that here."); return; }
+      if (cur === 'garden' && k === 'coin' && inv.indexOf('rope') < 0 && !self._fount) { p('The coin is at the bottom of the fountain, just out of reach. If only you had a rope to lower yourself... (hint: bring rope)'); return; }
+      r.items.splice(i, 1); inv.push(k); p('Taken: ' + NAMES[k] + '.');
+      if (k === 'treasure') { score += 50; win(); }
+    }
+    function win() {
+      ended = true; p('\n*** You grab the Golden Tape Roll. It hums with sticky power! ***\nThe floor trembles, and you sprint out of the workshop into the sunshine.\nIt was worth every step.\n\nYou finished in ' + moves + ' moves, score ' + (score + Math.max(0, 40 - moves)) + '/100.\nTHE END. (Tapey is very proud of you.)');
+      io.event && io.event('win:adventure'); self.done = true;
+    }
+    self.intro = function () { p('THE COPPER KEY\nA tiny text adventure. Type HELP for commands, QUIT to leave.'); describe(); };
+    self.input = function (line) {
+      if (self.done) return;
+      var w = line.trim().toLowerCase().split(/\s+/), v = w[0], o = w.slice(1).join(' ');
+      if (!v) return;
+      if (/^(n|s|e|w|u|d|north|south|east|west|up|down)$/.test(v)) return go(v);
+      switch (v) {
+        case 'go': case 'walk': case 'move': return go(o);
+        case 'look': case 'l': return describe();
+        case 'inventory': case 'i': case 'inv': return p(inv.length ? 'You carry: ' + inv.map(function (x) { return NAMES[x]; }).join(', ') + '.' : 'You are empty-handed.');
+        case 'take': case 'get': case 'grab': return take(o);
+        case 'drop': { var k = find(o); var i = inv.indexOf(k); if (i < 0) return p("You don't have that."); inv.splice(i, 1); (R[cur].items = R[cur].items || []).push(k); return p('Dropped.'); }
+        case 'read': if (find(o) === 'note' && inv.indexOf('note') >= 0) return p('The note says: "Trolls love apples. The vault never opens without the copper key. Light your way below." -T'); return p('Read what?');
+        case 'light': case 'turn': case 'use': {
+          var t = find(o.replace(/^on\s+/, ''));
+          if (t === 'lamp' && inv.indexOf('lamp') >= 0) { lit = true; p('The lamp glows warmly.'); if (R[cur].dark) describe(); return; }
+          if (t === 'key' && inv.indexOf('key') >= 0) { if (cur === 'hall') { cellarDoor = true; return p('Click! The trapdoor lock springs open.'); } if (cur === 'tunnel' && trollGone) { doorOpen = true; return p('Click! The vault door swings open.'); } return p('Nothing to unlock here.'); }
+          if (t === 'rope' && inv.indexOf('rope') >= 0 && cur === 'garden') { self._fount = true; return p('You tie the rope to the fountain and fish out the coin. Now you can TAKE COIN.'); }
+          return p("That doesn't do anything.");
+        }
+        case 'unlock': case 'open': if (inv.indexOf('key') < 0) return p('You need a key.'); if (cur === 'hall') { cellarDoor = true; return p('Click! The trapdoor lock springs open.'); } if (cur === 'tunnel') { if (!trollGone) return p('The troll is in the way.'); doorOpen = true; return p('Click! The vault door swings open.'); } return p('Nothing to open here.');
+        case 'give': case 'feed': case 'throw': { var k2 = find(o.replace(/ to .*$/, '')); if (cur !== 'tunnel') return p('There is no one here to give things to.'); if (k2 === 'apple' && inv.indexOf('apple') >= 0) { inv.splice(inv.indexOf('apple'), 1); trollGone = true; score += 20; return p('The troll snatches the apple. "MMM. CRUNCH." He wanders off, happy. The way north is clear!'); } if (k2 === 'coin' && inv.indexOf('coin') >= 0) return p('The troll bites the coin and spits it out. "NOT A SNACK."'); return p("The troll isn't interested."); }
+        case 'help': case '?': return p('Commands: N S E W U D, LOOK, TAKE/DROP item, INVENTORY, READ item, LIGHT LAMP, USE item, OPEN, GIVE item, QUIT.');
+        case 'quit': case 'exit': case 'q': p('You wander off. Goodbye!'); self.done = true; return;
+        case 'xyzzy': return p('A hollow voice says "Fool."');
+        case 'tape': case 'tapey': return p('A friendly roll of tape peeks out from a crack in the wall and gives you a thumbs-up. (You have no thumbs, but you feel encouraged.)');
+        default: p("I don't understand that. Type HELP.");
+      }
+    };
+    return self;
   }
 
   /* ---------------- Hangman ---------------- */
   function hangman(io) {
-    var word = bigWord(5, 12), got = {}, miss = 0, MAX = 7, self = { done: false };
+    var word = pick(WORDS), got = {}, miss = 0, MAX = 7, self = { done: false };
     var ART = ['', '  O', '  O\n  |', '  O\n /|', '  O\n /|\\', '  O\n /|\\\n /', '  O\n /|\\\n / \\', '  X\n /|\\\n / \\   (hanged!)'];
     function show() { return word.split('').map(function (c) { return got[c] ? c : '_'; }).join(' '); }
     function status() { io.print('\n' + (miss ? ART[miss] + '\n' : '') + '\nWord: ' + show() + '\nMisses: ' + Object.keys(got).filter(function (c) { return word.indexOf(c) < 0; }).join(' ') + '  (' + (MAX - miss) + ' left)'); }
-    self.intro = function () { io.print('HANGMAN\nGuess the word one letter at a time (the pool has thousands of words, so there are no repeats to memorise). Type QUIT to leave.'); status(); };
+    self.intro = function () { io.print('HANGMAN\nGuess the computer-themed word one letter at a time. Type QUIT to leave.'); status(); };
     self.input = function (line) {
       var s = line.trim().toUpperCase(); if (!s) return;
       if (s === 'QUIT') { io.print('The word was ' + word + '.'); self.done = true; return; }
@@ -74,7 +149,7 @@
   /* ---------------- Word scramble ---------------- */
   function scramble(io) {
     var round = 0, score = 0, word = '', self = { done: false }, ROUNDS = 5;
-    function nextWord() { word = bigWord(5, 9); var a = word.split(''), s; do { for (var i = a.length - 1; i > 0; i--) { var j = rnd(i + 1), t = a[i]; a[i] = a[j]; a[j] = t; } s = a.join(''); } while (s === word); round++; io.print('\nWord ' + round + '/' + ROUNDS + ':  ' + s + '   (type SKIP to pass)'); }
+    function nextWord() { word = pick(WORDS); var a = word.split(''), s; do { for (var i = a.length - 1; i > 0; i--) { var j = rnd(i + 1), t = a[i]; a[i] = a[j]; a[j] = t; } s = a.join(''); } while (s === word); round++; io.print('\nWord ' + round + '/' + ROUNDS + ':  ' + s + '   (type SKIP to pass)'); }
     self.intro = function () { io.print('WORD SCRAMBLE\nUnscramble ' + ROUNDS + ' words. Type QUIT to leave.'); nextWord(); };
     self.input = function (line) {
       var s = line.trim().toUpperCase(); if (!s) return;
@@ -114,18 +189,13 @@
   }
 
   var G = {
-    hangman: { name: 'Hangman', desc: 'Guess the word, thousands to pick from', make: hangman },
+    adventure: { name: 'The Copper Key', desc: 'A tiny text adventure', make: adventure },
+    hangman: { name: 'Hangman', desc: 'Guess the computer word', make: hangman },
     guess: { name: 'Guess the Number', desc: '1 to 100 in 8 tries', make: guess },
     madlibs: { name: 'Mad Libs', desc: 'Fill in the blanks', make: madlibs },
     scramble: { name: 'Word Scramble', desc: 'Unscramble 5 words', make: scramble },
     blackjack: { name: 'Blackjack', desc: 'Beat the dealer', make: blackjack }
   };
-  /* The text adventures live in textadv.js / textadv-games.js */
-  var ADV = { adventure: 'Multi-path puzzle adventure, 6 endings', station: 'Sci-fi survival: oxygen, power and a lonely AI', manor: 'Detective mystery: clues, suspects, an accusation', dragon: 'Fantasy RPG: three classes, combat, six endings', heist: 'Cyber stealth: heat, hacking and a betrayal' };
-  if (g.TextAdv && g.TextAdv.games) {
-    var AG = {}; Object.keys(ADV).forEach(function (id) { var d = g.TextAdv.games[id]; if (d) AG[id] = { name: d.title, desc: ADV[id], make: function (io) { return g.TextAdv.make(d, io); } }; });
-    Object.keys(G).forEach(function (k) { AG[k] = G[k]; }); G = AG;
-  }
   g.TextGames = {
     list: function () { return Object.keys(G).map(function (k) { return { id: k, name: G[k].name, desc: G[k].desc }; }); },
     has: function (id) { return !!G[id]; },
