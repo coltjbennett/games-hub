@@ -1,0 +1,20 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no"><title>Connect Four</title>
+<style>#b{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;padding:6px;background:#c0c0c0;border:2px solid #000080;width:min(94vw,62vh*1.16,520px);box-shadow:0 0 20px #808080}
+.c{aspect-ratio:1;border-radius:50%;background:#000;border:2px solid #808080;cursor:pointer;transition:background .15s}.c.r{background:#f33;box-shadow:0 0 10px #f33}.c.y{background:#ff3;box-shadow:0 0 10px #ff3}.c.w{outline:3px solid #fff}.c.h{border-color:#000080}</style></head><body>
+<div class="hud"><span>You <b style="color:#f33">●</b> vs CPU <b style="color:#ff3">●</b></span><label>Level <select id="lv"><option value="2">Easy</option><option value="4" selected>Normal</option><option value="6">Hard</option></select></label><button class="ab" id="nw" type="button">New Game</button></div><div id="b" role="grid" aria-label="Connect Four board"></div><div class="msg" id="m">Your move. Click a column.</div>
+<script src="_arcade.js"></script><script>
+(function(){var R=6,C=7,B,turn,over,bd=document.getElementById('b'),msg=document.getElementById('m'),busy=false;
+function init(){B=[];for(var r=0;r<R;r++)B.push(new Array(C).fill(0));turn=1;over=false;busy=false;msg.textContent='Your move. Click a column.';draw();}
+function drop(b,c,p){for(var r=R-1;r>=0;r--)if(!b[r][c]){b[r][c]=p;return r;}return -1;}
+function line(b,r,c,p){var D=[[0,1],[1,0],[1,1],[1,-1]];for(var k=0;k<4;k++){var dr=D[k][0],dc=D[k][1],cells=[[r,c]];for(var s=1;s<4;s++){var rr=r+dr*s,cc=c+dc*s;if(rr<0||rr>=R||cc<0||cc>=C||b[rr][cc]!==p)break;cells.push([rr,cc]);}for(var s2=1;s2<4;s2++){var r2=r-dr*s2,c2=c-dc*s2;if(r2<0||r2>=R||c2<0||c2>=C||b[r2][c2]!==p)break;cells.push([r2,c2]);}if(cells.length>=4)return cells;}return null;}
+function score(b,p){var s=0,q=-p;for(var r=0;r<R;r++)for(var c=0;c<C;c++){if(b[r][c]===p)s+=3-Math.abs(c-3);else if(b[r][c]===q)s-=3-Math.abs(c-3);}return s;}
+function ab(b,d,al,be,max,me){var moves=[];for(var c=0;c<C;c++)if(!b[0][c])moves.push(c);moves.sort(function(a,z){return Math.abs(a-3)-Math.abs(z-3);});if(!moves.length)return [0,-1];
+ var best=max?-1e9:1e9,bc=moves[0];for(var i=0;i<moves.length;i++){var c=moves[i],bb=b.map(function(r){return r.slice();}),p=max?me:-me,r=drop(bb,c,p),v;
+  if(line(bb,r,c,p))v=(max?1:-1)*(10000+d);else if(d<=1)v=score(bb,me);else v=ab(bb,d-1,al,be,!max,me)[0];
+  if(max?v>best:v<best){best=v;bc=c;}if(max)al=Math.max(al,best);else be=Math.min(be,best);if(al>=be)break;}return [best,bc];}
+function draw(win){bd.textContent='';for(var r=0;r<R;r++)for(var c=0;c<C;c++){var d=document.createElement('div');d.className='c'+(B[r][c]===1?' r':B[r][c]===-1?' y':'');if(win&&win.some(function(x){return x[0]===r&&x[1]===c;}))d.className+=' w';d.dataset.c=c;d.onclick=function(){play(+this.dataset.c);};bd.appendChild(d);}}
+function finish(p,cells){over=true;draw(cells);if(p===1){msg.textContent='You win!';Arc.emit('win:connect4');}else msg.textContent='The CPU wins. Try again!';}
+function play(c){if(over||busy||turn!==1||B[0][c])return;var r=drop(B,c,1),w=line(B,r,c,1);draw();if(w)return finish(1,w);if(B[0].every(Boolean)){over=true;msg.textContent='A draw!';return;}turn=-1;busy=true;msg.textContent='CPU is thinking...';setTimeout(cpu,350);}
+function cpu(){var d=+document.getElementById('lv').value,m=ab(B,d,-1e9,1e9,true,-1),c=m[1];if(Math.random()<(d===2?.3:0)){var o=[];for(var i=0;i<C;i++)if(!B[0][i])o.push(i);c=o[Math.random()*o.length|0];}var r=drop(B,c,-1),w=line(B,r,c,-1);draw();busy=false;if(w)return finish(-1,w);if(B[0].every(Boolean)){over=true;msg.textContent='A draw!';return;}turn=1;msg.textContent='Your move. Click a column.';}
+document.getElementById('nw').onclick=init;init();})();
+</script></body></html>

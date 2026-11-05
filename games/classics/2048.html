@@ -1,0 +1,21 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no"><title>2048</title>
+<style>#b{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:8px;background:#c0c0c0;border:2px solid #000080;width:min(86vw,60vh,380px);aspect-ratio:1;box-shadow:0 0 20px #808080}
+.t{display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:clamp(18px,6vw,34px);border-radius:6px;background:#c0c0c0;color:#000080;transition:transform .08s}.t.n{animation:pop .15s}@keyframes pop{from{transform:scale(.4)}to{transform:scale(1)}}</style></head><body>
+<div class="hud"><span>SCORE <b id="s">0</b></span><span>BEST <b id="h">0</b></span><button class="ab" id="nw" type="button">New Game</button></div><div id="b" role="grid" aria-label="2048 board"></div><div class="msg" id="m"></div><div class="dim">Arrow keys, WASD or swipe. Merge equal tiles to reach 2048.</div>
+<script src="_arcade.js"></script><script>
+(function(){var N=4,G,score=0,over=false,won=false,hs=Arc.hs('2048'),bd=document.getElementById('b');
+var COL={0:['#c0c0c0','#c0c0c0'],2:['#c0c0c0','#000'],4:['#dfdfdf','#000'],8:['#ffff80','#fff'],16:['#ffcc66','#fff'],32:['#ff9966','#000'],64:['#ff6666','#000'],128:['#ff6699','#000'],256:['#cc66ff','#000'],512:['#6699ff','#000'],1024:['#33cccc','#000'],2048:['#ffcc00','#000']};
+function add(){var e=[];G.forEach(function(r,i){r.forEach(function(v,j){if(!v)e.push([i,j]);});});if(!e.length)return null;var c=e[Math.random()*e.length|0];G[c[0]][c[1]]=Math.random()<.9?2:4;return c;}
+function init(){G=[[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];score=0;over=won=false;add();var c=add();draw(c);document.getElementById('m').textContent='';}
+function draw(nw){bd.textContent='';G.forEach(function(r,i){r.forEach(function(v,j){var t=document.createElement('div');t.className='t'+(nw&&nw[0]===i&&nw[1]===j?' n':'');var c=COL[v]||['#ff3c3c','#fff'];t.style.background=c[0];t.style.color=c[1];t.textContent=v||'';bd.appendChild(t);});});document.getElementById('s').textContent=score;document.getElementById('h').textContent=hs.get();}
+function slide(row){var a=row.filter(Boolean),o=[];for(var i=0;i<a.length;i++){if(a[i]===a[i+1]){o.push(a[i]*2);score+=a[i]*2;i++;}else o.push(a[i]);}while(o.length<N)o.push(0);return o;}
+function move(d){if(over)return;var before=JSON.stringify(G);
+ if(d==='left')G=G.map(slide);else if(d==='right')G=G.map(function(r){return slide(r.slice().reverse()).reverse();});
+ else{for(var j=0;j<N;j++){var col=G.map(function(r){return r[j];});if(d==='down')col.reverse();col=slide(col);if(d==='down')col.reverse();for(var i=0;i<N;i++)G[i][j]=col[i];}}
+ if(JSON.stringify(G)===before)return;var c=add();hs.set(score);draw(c);
+ if(!won&&G.some(function(r){return r.indexOf(2048)>=0;})){won=true;document.getElementById('m').textContent='2048! You win! Keep going for a higher score.';Arc.emit('win:2048');}
+ if(!G.some(function(r,i){return r.some(function(v,j){return !v||(G[i][j+1]===v)||(G[i+1]&&G[i+1][j]===v);});})){over=true;document.getElementById('m').textContent='No more moves. Game over!';}}
+var K={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down',a:'left',d:'right',w:'up',s:'down'};
+document.addEventListener('keydown',function(e){var d=K[e.key];if(d){e.preventDefault();move(d);}});Arc.swipe(document.body,move);
+document.getElementById('nw').onclick=init;init();})();
+</script></body></html>
