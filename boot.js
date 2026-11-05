@@ -307,25 +307,6 @@
   // so later page activity can never turn it into a false alarm.
   var scanPending = false;
   try { scanPending = window.localStorage.getItem('gh-shutdown') === '1'; window.localStorage.removeItem('gh-shutdown'); } catch (e) {}
-  // Rolled once per boot: a small chance (about 1 in 14) of a "routine" ScanDisk even after a normal startup.
-  var scanRandom = false;
-  try {
-    /* Advanced: localStorage 'gh-scan-chance' (0-100, percent) tunes the random ScanDisk; 'gh-scandisk-next' = '1' forces one on the next boot
-       (also reachable from Start > Run > "scandisk" or "scandisk 25"). */
-    var chance = parseFloat(window.localStorage.getItem('gh-scan-chance')); if (!(chance >= 0 && chance <= 100)) chance = 7;
-    var forced = window.localStorage.getItem('gh-scandisk-next') === '1'; if (forced) window.localStorage.removeItem('gh-scandisk-next');
-    scanRandom = forced || (!scanPending && Math.random() * 100 < chance);
-  } catch (e) {}
-
-  // The theme-color meta tints the browser's tab/address bar. ScanDisk is a full-screen blue page, which
-  // some browsers pick up and then never let go of, so ScanDisk sets it explicitly and ALWAYS puts it back.
-  function setThemeColor(color) {
-    try {
-      var head = document.head || document.documentElement, old = document.querySelector('meta[name="theme-color"]');
-      var m = document.createElement('meta'); m.name = 'theme-color'; m.content = color;
-      if (old && old.parentNode) old.parentNode.replaceChild(m, old); else head.appendChild(m); // a fresh element forces browsers to re-read it
-    } catch (e) {}
-  }
 
   // ---------- State ----------
   var phase = 'loading'; // loading -> waiting (power screen) -> running -> done
@@ -421,16 +402,6 @@
     barTimer = 0;
   }
 
-  // Does the browser allow sound without a click? Tries a real play() at volume 0, then rewinds.
-  function probeAutoplay(cb) {
-    var vol = 1;
-    try { vol = audio.volume; audio.volume = 0; } catch (e) {}
-    playAttempt(false).then(function (r) {
-      try { audio.pause(); audio.currentTime = 0; audio.volume = vol; } catch (e) {}
-      cb(r === 'blocked');
-    });
-  }
-
   function audioIsPlaying() {
     return !audio.paused && !audio.ended && audio.readyState > 2;
   }
@@ -446,7 +417,6 @@
     stopBar();
     bar.style.width = '100%';
     stopPost();
-    setThemeColor('#000000');
     try { audio.pause(); } catch (e) {}
 
     document.removeEventListener('keydown', onKeyDown, true);
@@ -482,7 +452,7 @@
   var scanDone = false;
   function needScanDisk() {
     try {
-      if (!scanPending && !scanRandom) return false;
+      if (!scanPending) return false;
       var st = JSON.parse(window.localStorage.getItem('gh-desktop-v2') || '{}');
       return st.scandisk !== false;
     } catch (e) { return false; }
@@ -525,8 +495,6 @@
   }
   function runScanDisk(next) {
     try { audio.pause(); audio.currentTime = 0; audio.muted = true; } catch (e) {}
-    setThemeColor('#0000a8'); // match the blue screen while it is up; restored in end()
-    try { window.localStorage.setItem('gh-scan-count', String((parseInt(window.localStorage.getItem('gh-scan-count'), 10) || 0) + 1)); } catch (e) {}
     var stopSpin = scanSpin();
     var box = document.createElement('div');
     box.style.cssText = 'position:absolute;inset:0;z-index:20;background:#0000a8;color:#fff;padding:28px 36px;font-size:16px;line-height:1.35;overflow:hidden;cursor:default;text-align:left;justify-content:flex-start;align-items:flex-start;flex-direction:column;display:flex';
@@ -535,8 +503,7 @@
     title.textContent = ' ColtonOS ScanDisk ';
     var msg = document.createElement('div');
     msg.style.cssText = 'white-space:pre-line;max-width:640px';
-    msg.textContent = scanPending ? 'ColtonOS was shut down normally.\nScanDisk is running a quick routine check of drive C.'
-      : 'It has been a while since drive C was last checked.\nScanDisk is running a routine check of drive C.';
+    msg.textContent = 'ColtonOS was shut down normally.\nScanDisk is running a quick routine check of drive C.';
     var step = document.createElement('div'); step.style.cssText = 'margin-top:18px';
     var bar = document.createElement('div'); bar.style.cssText = 'border:2px solid #fff;height:18px;width:min(520px,80vw);margin:10px 0';
     var fill = document.createElement('div'); fill.style.cssText = 'height:100%;width:0;background:#fff'; bar.appendChild(fill);
@@ -549,7 +516,6 @@
       if (finished) return; finished = true; clearTimeout(timer); stopSpin();
       document.removeEventListener('keydown', skip, true); box.removeEventListener('click', skip);
       if (box.parentNode) box.parentNode.removeChild(box);
-      setThemeColor('#000000'); // never leave the tab bar blue
       // The startup sound belongs to the splash screen only: it starts now, after ScanDisk.
       playAttempt(false).then(function (r) { next(r === 'ok' || audioIsPlaying(), r); });
     }
@@ -982,17 +948,11 @@
     clearTimeout(assetsTimer);
 
     if (!scanDone && needScanDisk()) {
-      // POST always comes first. Probe autoplay silently-at-volume-0: if the browser wants a click, show the
-      // POST screen now; ScanDisk then runs after the click (see powerOn/beginBoot), never before POST.
-      probeAutoplay(function (blocked) {
+      scanDone = true;
+      runScanDisk(function (playing, r) {
         if (phase !== 'loading') return;
-        if (blocked) { showPowerScreen(); return; }
-        scanDone = true;
-        runScanDisk(function (playing, r) {
-          if (phase !== 'loading') return;
-          if (r === 'blocked') showPowerScreen(); /* the browser wants a click before it allows the startup sound */
-          else beginBoot(playing);
-        });
+        if (r === 'blocked') showPowerScreen(); /* the browser wants a click before it allows the startup sound */
+        else beginBoot(playing);
       });
       return;
     }
