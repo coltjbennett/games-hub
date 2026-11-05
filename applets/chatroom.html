@@ -4,14 +4,14 @@
     <!--YES, I AM AWARE THAT THIS HAS EXTREMELY LOOSE SECURITY PRACTICES, I AM AWARE THE MODERATION IS NOT STRICTLY ENFORCED, I AM AWARE THE OASSOWRD SYSTEM IS VERY VERY UNSECURE. THIS IS A NON-ISSUE GIVEN THE SUTE'S USER BASE.-->
     <base href="../">
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
     <title>Universal MQTT Chat</title>
     <style>
         /* ===== CUSTOM FONTS (Crisp Win95 Style) ===== */
         @font-face {
             font-family: "W95FA";
-            src: url('images/w95f.woff2') format('woff2'),
-                 url('images/w95f.woff') format('woff');
+            src: url('../images/w95f.woff2') format('woff2'),
+                 url('../images/w95f.woff') format('woff');
             font-weight: normal;
             font-style: normal;
         }
@@ -480,7 +480,9 @@
 
             <button onclick="exportChat()" style="width: 100%; margin-bottom: 6px;">Export Chat History (Current Tab)</button>
             <button onclick="document.getElementById('settings-merge-input').click()" style="width: 100%; margin-bottom: 8px;">Merge from Export...</button>
-            <button onclick="manualGithubRestore()" style="width: 100%; margin-bottom: 8px;">Restore from GitHub Backup</button>
+            <button onclick="exportChatJSON()" style="width: 100%; margin-bottom: 6px;" title="Every channel: the global forum, all DMs, open tabs, read marks, blocks and attachments">Export ALL Chats (JSON)</button>
+            <button onclick="document.getElementById('chat-json-input').click()" style="width: 100%; margin-bottom: 8px;" title="Only ever adds what is missing. Nothing is erased.">Import Chats (JSON, merges)...</button>
+            <input id="chat-json-input" type="file" accept=".json,application/json" style="display:none" onchange="importChatJSON(event)">
             <input id="settings-merge-input" type="file" accept=".txt,text/plain" style="display:none" onchange="mergeExportFromSettings(event)">
 
             <div style="display: flex; gap: 4px; align-items: center; margin-bottom: 6px;">
@@ -2213,6 +2215,89 @@
                 if (currentTab === "global") scheduleRenderActiveTabMessages();
                 customAlert(`Merged export: ${result.added} new messages/events, ${result.matched} matched existing records.`);
             }).catch(() => customAlert("Could not merge that chat export."));
+        }
+
+        /* ---- structured export / additive import of EVERY chat channel ---------------------------------------------------------
+           Export: one JSON file with the global forum, every DM, open DM tabs, read marks, blocks, settings and attachments.
+           Import: strictly additive. It only adds messages / attachments / tabs that are missing; it never erases or overwrites
+           anything already in this browser. (A full system restore from System Monitor is the only destructive path.) */
+        const CHAT_EXPORT_SETTINGS = [USERNAME_KEY, CHAT_RETENTION_KEY, CHAT_HISTORY_MODE_KEY, 'mqtt_notify', 'mqtt_hide_presence', 'mqtt_mute_sounds'];
+        function chatBytesToB64(u8) { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); }
+        function chatB64ToBytes(b) { const s = atob(b), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
+        async function chatEncode(v) {
+            if (v instanceof Blob) return { $blob: true, type: v.type, data: chatBytesToB64(new Uint8Array(await v.arrayBuffer())) };
+            if (v instanceof ArrayBuffer) return { $buf: true, data: chatBytesToB64(new Uint8Array(v)) };
+            if (ArrayBuffer.isView(v)) return { $buf: true, data: chatBytesToB64(new Uint8Array(v.buffer, v.byteOffset, v.byteLength)) };
+            if (Array.isArray(v)) { const o = []; for (const x of v) o.push(await chatEncode(x)); return o; }
+            if (v && typeof v === 'object') { const o = {}; for (const k of Object.keys(v)) o[k] = await chatEncode(v[k]); return o; }
+            return v;
+        }
+        function chatDecode(v) {
+            if (v && typeof v === 'object') {
+                if (v.$blob) return new Blob([chatB64ToBytes(v.data)], { type: v.type || '' });
+                if (v.$buf) return chatB64ToBytes(v.data).buffer;
+                if (Array.isArray(v)) return v.map(chatDecode);
+                const o = {}; for (const k of Object.keys(v)) o[k] = chatDecode(v[k]); return o;
+            }
+            return v;
+        }
+        function chatNotice(t) { try { if (ui.activityStatus) ui.activityStatus.innerText = t; } catch (e) {} }
+        async function exportChatJSON() {
+            try {
+                chatNotice('Building the full chat export...');
+                flushPersist(); await Promise.all(Array.from(persistChain.values()));
+                const db = await dbOpen();
+                const out = { format: 'coltonos-chatroom-export', version: 1, exportedAt: new Date().toISOString(), username: myUsername || '', activeTab: currentTab, channels: [], attachments: [], kv: [], tabs: {}, settings: {} };
+                const ids = new Set(['global']); (await dbListChannels('')).forEach(c => ids.add(c));
+                Object.keys(dmHistories).forEach(o => ids.add(`dm:${myUsername}:${o}`));
+                for (const ch of ids) {
+                    const byId = new Map(); (await dbLoadChannel(ch)).forEach(r => { if (r.m && r.m.id) byId.set(r.m.id, r.m); });
+                    const mem = ch === 'global' ? messageHistory : (/^dm:/.test(ch) ? dmHistories[ch.split(':').slice(2).join(':')] : null) || [];
+                    mem.forEach(m => { if (m && m.id) byId.set(m.id, m); });
+                    const messages = Array.from(byId.values()).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+                    if (!messages.length && ch !== 'global') continue;
+                    out.channels.push({ id: ch, type: ch === 'global' ? 'global' : /^dm:/.test(ch) ? 'dm' : 'other', peer: /^dm:/.test(ch) ? ch.split(':').slice(2).join(':') : '', count: messages.length, messages: await chatEncode(messages) });
+                }
+                out.attachments = await chatEncode(await idbReq(db.transaction('atts').objectStore('atts').getAll()));
+                out.kv = (await idbReq(db.transaction('kv').objectStore('kv').getAll())).filter(r => !/^(migrated:|maintenance)/.test(String(r.key)));
+                const names = Array.from(document.querySelectorAll('[id^="tab-dm-"]')).map(el => el.id.slice('tab-dm-'.length)).filter(u => isValidUsername(u));
+                let saved = []; try { saved = JSON.parse(localStorage.getItem(SAVED_DM_TABS_KEY) || '[]') || []; } catch (e) {}
+                out.tabs = { openDmTabs: Array.from(new Set(names.concat(saved))), closedDms: Array.from(closedDMs), dmReadMarks: dmReadWatermarks, blocked: Array.from(blockedUsers) };
+                CHAT_EXPORT_SETTINGS.forEach(k => { const v = localStorage.getItem(k); if (v !== null) out.settings[k] = v; });
+                const blob = new Blob([JSON.stringify(out)], { type: 'application/json' }), a = document.createElement('a');
+                a.href = URL.createObjectURL(blob); a.download = `coltonos-chatroom-export-${new Date().toISOString().replace(/[:.]/g, '-')}.json`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+                try { window.parent.GHShell.emit('chat:export'); } catch (e) {}
+                chatNotice(`Exported ${out.channels.length} channel(s), ${out.channels.reduce((n, c) => n + c.count, 0)} message(s).`);
+            } catch (e) { console.error(e); chatNotice('Export failed: ' + (e && e.message || e)); alert('Chat export failed: ' + (e && e.message || e)); }
+        }
+        async function importChatJSON(ev) {
+            const f = ev.target.files && ev.target.files[0]; ev.target.value = ''; if (!f) return;
+            try {
+                if (dbBroken) throw new Error('Chat storage is unavailable in this browser.');
+                const j = JSON.parse(await f.text());
+                if (!j || j.format !== 'coltonos-chatroom-export' || !Array.isArray(j.channels)) throw new Error('That is not a ColtonOS chatroom export.');
+                chatNotice('Merging chats...'); let added = 0, kept = 0, atts = 0;
+                for (const c of j.channels) {
+                    if (!c || typeof c.id !== 'string' || !Array.isArray(c.messages)) continue;
+                    const have = new Set((await dbLoadChannel(c.id)).map(r => r.m && r.m.id)); const puts = [];
+                    for (const m0 of chatDecode(c.messages)) { if (!m0 || !m0.id || have.has(m0.id)) { kept++; continue; } have.add(m0.id); puts.push({ k: `${c.id}|${m0.id}`, ch: c.id, ts: clampTs(m0.timestamp), m: m0 }); }
+                    if (puts.length) { await dbWrite(['msgs'], tx => { const st = tx.objectStore('msgs'); puts.forEach(p => st.put(p)); }); added += puts.length; }
+                }
+                const db = await dbOpen();
+                for (const a0 of chatDecode(j.attachments || [])) {
+                    if (!a0 || a0.id === undefined) continue;
+                    if (await idbReq(db.transaction('atts').objectStore('atts').getKey(a0.id)) === undefined) { await dbWrite(['atts'], tx => tx.objectStore('atts').put(a0)); atts++; }
+                }
+                for (const r of j.kv || []) { if (r && r.key !== undefined && await kvGet(r.key) === undefined) await kvSet(r.key, r.value); }
+                const t = j.tabs || {}, uniq = (a, b) => Array.from(new Set((a || []).concat(b || [])));
+                const rd = (k, d) => { try { return JSON.parse(localStorage.getItem(k) || 'null') || d; } catch (e) { return d; } };
+                safeSet(SAVED_DM_TABS_KEY, JSON.stringify(uniq(rd(SAVED_DM_TABS_KEY, []), (t.openDmTabs || []).filter(isValidUsername))));
+                safeSet(BLOCKED_KEY, JSON.stringify(uniq(rd(BLOCKED_KEY, []), (t.blocked || []).filter(isValidUsername))));
+                const marks = rd(DM_READ_STATE_KEY, {}); Object.keys(t.dmReadMarks || {}).forEach(u => { marks[u] = Math.max(Number(marks[u]) || 0, Number(t.dmReadMarks[u]) || 0); }); safeSet(DM_READ_STATE_KEY, JSON.stringify(marks));
+                Object.keys(j.settings || {}).forEach(k => { if (CHAT_EXPORT_SETTINGS.indexOf(k) >= 0 && localStorage.getItem(k) === null) safeSet(k, String(j.settings[k])); });
+                chatNotice(`Merged: ${added} new message(s), ${atts} attachment(s); ${kept} already here. Reloading...`);
+                setTimeout(() => location.reload(), 900);
+            } catch (e) { console.error(e); chatNotice('Import failed: ' + (e && e.message || e)); alert('Chat import failed: ' + (e && e.message || e) + '\nNothing was changed or erased.'); }
         }
 
         function exportChat() {
@@ -4494,8 +4579,6 @@
         const TOMBSTONE_KEY = "mqtt_tombstones_v1";
 
         const BACKUP_STATE_KEY = "mqtt_chat_backup_state_v1";
-        const BACKUP_ROOT_NAME = "chat_export_global.txt";
-        const BACKUP_FALLBACK_PROBE_MAX = 20;
 
         function hashStringStable(value) {
             let h1 = 2166136261 >>> 0;
@@ -5061,58 +5144,8 @@
             } catch (e) { return null; }
         }
 
-        async function discoverGithubBackupUrl() {
-            const host = location.hostname || "";
-            if (!host.endsWith(".github.io")) return null;
-            const owner = host.split(".")[0];
-            const segments = location.pathname.split("/").filter(Boolean);
-            const repos = [];
-            if (segments.length) repos.push(segments[0]);
-            repos.push(`${owner}.github.io`);
-
-            for (const repo of Array.from(new Set(repos))) {
-                try {
-                    const apiUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/`;
-                    const response = await fetch(apiUrl, { cache: "no-store", headers: { "Accept": "application/vnd.github+json" } });
-                    if (!response.ok) continue;
-                    const entries = await response.json();
-                    if (!Array.isArray(entries)) continue;
-                    const matches = entries
-                        .filter(x => x && x.type === "file" && /^chat_export_global(?: \d+)?\.txt$/i.test(x.name || ""))
-                        .sort((a,b) => {
-                            const num = n => { const m = String(n || "").match(/ (\d+)\.txt$/i); return m ? parseInt(m[1],10) : 0; };
-                            return num(b.name) - num(a.name);
-                        });
-                    if (matches.length) return matches[0].download_url || new URL(matches[0].name, document.baseURI).href;
-                } catch (e) {}
-            }
-            return null;
-        }
-
-        async function discoverBackupUrl() {
-            const state = (() => { try { return JSON.parse(localStorage.getItem(BACKUP_STATE_KEY) || "null"); } catch(e) { return null; } })();
-            if (state && state.url) {
-                const known = await headBackup(state.url);
-                if (known) return known;
-            }
-
-            const rootUrl = new URL(BACKUP_ROOT_NAME, document.baseURI).href;
-            const root = await headBackup(rootUrl);
-            if (root) return root;
-
-            const githubUrl = await discoverGithubBackupUrl();
-            if (githubUrl) return await headBackup(githubUrl) || { url: githubUrl, signature: "" };
-
-            // Static hosts do not expose directory listings.  On non-GitHub/custom mirrors,
-            // probe a modest numbered range as a fallback; GitHub Pages itself uses the API path above.
-            for (let i = 1; i <= BACKUP_FALLBACK_PROBE_MAX; i++) {
-                const url = new URL(`chat_export_global ${i}.txt`, document.baseURI).href;
-                const found = await headBackup(url);
-                if (found) return found;
-            }
-            return null;
-        }
-
+        /* The repo-hosted chat_export_global.txt auto-restore was removed (privacy). Chat history is only ever restored from the user's own
+           export/backup files via Import, which merges and never erases. */
         function backupStateNeedsRepair(state) {
             if (!state || !Array.isArray(state.entries) || !state.entries.length) return true;
             const localIds = new Set(messageHistory.map(m => m.id).filter(Boolean));
@@ -5220,6 +5253,9 @@
         }
 
         async function autoRestoreGitHubBackup(force = false) {
+            try { localStorage.removeItem(BACKUP_STATE_KEY); } catch (e) {}   /* removed: no remote chat export is fetched any more */
+            return null;
+            /* eslint-disable no-unreachable */
             let rawState = null;
             try { rawState = JSON.parse(localStorage.getItem(BACKUP_STATE_KEY) || "null"); } catch(e) {}
             const needsRepair = backupStateNeedsRepair(rawState);

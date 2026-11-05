@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no">
 <title>Minesweeper</title>
 <style>
   @font-face{font-family:W95FA;src:url('../images/w95f.woff2') format('woff2'),url('../images/w95f.woff') format('woff')}
@@ -62,8 +62,12 @@
   }
   function chord(i){var c=cells[i];if(!c.open||!c.n||over)return;var ns=nb(i);if(ns.filter(function(j){return cells[j].flag;}).length!==c.n)return;ns.forEach(function(j){reveal(j);});}
   function boom(k){over=true;clearInterval(timer);face.textContent='😵';cells.forEach(function(c,i){if(c.mine&&!c.flag){c.el.classList.add('o');c.el.textContent='💣';}else if(c.flag&&!c.mine){c.el.textContent='❌';}});cells[k].el.classList.add('x');}
-  function win(){over=true;clearInterval(timer);face.textContent='😎';cells.forEach(function(c){if(c.mine&&!c.flag){c.flag=true;c.el.textContent='🚩';}});flags=M;upd();}
+  function win(){over=true;clearInterval(timer);try{parent.GHShell.emit('win:minesweeper',{level:(document.getElementById('lv').selectedOptions[0]||{}).text,secs:+(document.getElementById('tm')||{}).textContent||0});}catch(e){}face.textContent='😎';cells.forEach(function(c){if(c.mine&&!c.flag){c.flag=true;c.el.textContent='🚩';}});flags=M;upd();}
   face.onclick=init;document.getElementById('lv').onchange=init;init();
 })();
+</script>
+<script src="apphelp.js"></script>
+<script>
+AppHelp.attach({id:"minesweeper",title:"Minesweeper Help",mount:document.getElementById("bar"),sections:[{"h": "Goal", "p": ["Uncover every square that is **not** hiding a mine. Uncover a mine and the game is over."]}, {"h": "Reading the board", "ul": ["A number tells you how many of the 8 squares touching it contain mines.", "A blank square has no mines around it, so its neighbours open automatically.", "The **first click is always safe** (and so are its neighbours), so you always start with an opening.", "The counter on the left is mines minus flags placed. The counter on the right is your time in seconds; it starts on your first click.", "The face is a new game button: 🙂 playing, 😵 you hit a mine, 😎 you won."]}, {"h": "Controls", "ul": ["**Click** a square to open it.", "**Right-click** (or **long-press** on a touch screen) to plant or remove a flag 🚩.", "**Chording:** click an opened number, or **middle-click** it, when it already has that many flags around it. The remaining neighbours open at once. A wrong flag will still set off a mine!", "Choose **Beginner** (9×9, 10 mines), **Intermediate** (16×16, 40 mines) or **Expert** (24×16, 70 mines) from the Level menu. Changing it starts a new game."]}, {"h": "Tips", "ul": ["A number with exactly as many hidden neighbours as its value: every one of them is a mine, so flag them.", "A number that already has all its mines flagged: every other neighbour is safe, so chord it.", "Compare neighbouring numbers. If a 1 and a 2 share hidden squares, the extra mine in the 2 must be in the squares only it touches.", "Only guess when there is truly nothing certain left, and guess the square with the lowest chance of a mine.", "Flags are only reminders. Wrong flags show as ❌ when the game ends."]}]});
 </script>
 </body></html>
