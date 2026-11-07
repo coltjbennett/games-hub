@@ -1,0 +1,14 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no"><title>Simon Says</title>
+<style>#p{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:min(80vw,56vh,340px);aspect-ratio:1}.p{border:3px solid #fff3;border-radius:18px;opacity:.45;cursor:pointer;transition:opacity .1s,box-shadow .1s}.p.on{opacity:1;box-shadow:0 0 30px currentColor}#g{background:#008000;color:#008000}#r{background:#e22;color:#e22}#y{background:#ee2;color:#ee2}#bl{background:#28f;color:#28f}</style></head><body>
+<div class="hud"><span>ROUND <b id="r1">0</b></span><span>BEST <b id="bs">0</b></span><button class="ab" id="nw" type="button">Start</button></div><div id="p"><div class="p" id="g" data-i="0"></div><div class="p" id="r" data-i="1"></div><div class="p" id="y" data-i="2"></div><div class="p" id="bl" data-i="3"></div></div><div class="msg" id="m">Watch the pattern, then repeat it.</div>
+<script src="_arcade.js"></script><script>
+(function(){var seq=[],pos=0,ok=false,hs=Arc.hs('simon'),ps=document.querySelectorAll('.p'),ac=null,F=[330,440,550,660];
+function beep(i,ms){try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();var o=ac.createOscillator(),g=ac.createGain();o.type='square';o.frequency.value=F[i];g.gain.value=.06;o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+ms/1000);}catch(e){}}
+function lit(i,ms){return new Promise(function(r){ps[i].classList.add('on');beep(i,ms);setTimeout(function(){ps[i].classList.remove('on');setTimeout(r,120);},ms);});}
+async function show(){ok=false;document.getElementById('m').textContent='Watch...';await new Promise(function(r){setTimeout(r,500);});var sp=Math.max(180,480-seq.length*18);for(var i=0;i<seq.length;i++)await lit(seq[i],sp);pos=0;ok=true;document.getElementById('m').textContent='Your turn!';}
+function next(){seq.push(Math.random()*4|0);document.getElementById('r1').textContent=seq.length;show();}
+function start(){seq=[];document.getElementById('r1').textContent=0;next();}
+ps.forEach(function(p){p.addEventListener('pointerdown',async function(){if(!ok)return;var i=+p.dataset.i;lit(i,160);if(i!==seq[pos]){ok=false;var r=seq.length-1;hs.set(r);document.getElementById('bs').textContent=hs.get();document.getElementById('m').textContent='Wrong! You reached round '+r+'. Press Start to try again.';if(r>=10)Arc.emit('simon:10');return;}pos++;if(pos===seq.length){ok=false;if(seq.length>=10)Arc.emit('simon:10');setTimeout(next,700);}});});
+document.addEventListener('keydown',function(e){var i='qwas'.indexOf(e.key.toLowerCase());if(i>=0)ps[[0,1,3,2][i]].dispatchEvent(new Event('pointerdown'));});
+document.getElementById('nw').onclick=start;document.getElementById('bs').textContent=hs.get();})();
+</script></body></html>
