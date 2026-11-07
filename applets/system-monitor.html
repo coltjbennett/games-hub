@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>System Monitor</title>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no"><title>System Monitor</title>
   <style>
     @font-face{font-family:W95FA;src:url('../images/w95f.woff2') format('woff2'),url('../images/w95f.woff') format('woff')}
     *{box-sizing:border-box}body{margin:0;background:#c0c0c0;color:#000;font-family:W95FA,"MS Sans Serif",Tahoma,Arial,sans-serif;padding:8px;font-size:12px}.bar{background:#000080;color:#fff;padding:5px 8px;font-weight:bold}.panel{border:2px outset #fff;padding:8px;margin-bottom:9px;background:#c0c0c0}.meter{height:18px;background:#fff;border:2px inset #808080;overflow:hidden}.meter>span{display:block;height:100%;width:0;background:#000080}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:7px}.stat{background:#fff;border:2px inset #808080;padding:7px;min-width:0}.label{display:block;color:#555;font:10px Arial,sans-serif;text-transform:uppercase}.value{font-size:15px;font-weight:bold;word-break:break-word}.tiny{font:11px Arial,sans-serif;color:#444;line-height:1.4}.good{color:#006600}.warn{color:#8b6500}.bad{color:#990000}.storage-table{width:100%;border-collapse:collapse;background:#fff}.storage-table th,.storage-table td{border:1px solid #808080;padding:4px;text-align:left;vertical-align:top}.storage-table th{background:#d4d0c8}.actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.btn{font:inherit;background:#c0c0c0;border:2px outset #fff;padding:4px 8px}.btn:active{border-style:inset}.danger{background:#ffcccc}.scroll{max-height:170px;overflow:auto;border:2px inset #808080;background:#fff}.bucket-size{font-weight:bold;white-space:nowrap}
@@ -27,7 +27,7 @@
       <button class="btn danger" id="clear-idb">Delete site IndexedDB</button>
     </div>
     <div class="tiny" id="storage-note" style="margin-top:7px"></div>
-    <div class="tiny" id="backup-note" role="status" aria-live="polite" style="margin-top:7px">Backup includes accessible localStorage, IndexedDB, and Origin Private File System (OPFS) data. Session storage and Cache Storage are excluded.</div>
+    <div class="tiny" id="backup-note" role="status" aria-live="polite" style="margin-top:7px">Backup includes everything this site stores: all localStorage (settings, stats, saves, TOS and boot state), sessionStorage, script-readable cookies, every IndexedDB database (My Documents, chat channels, DMs and tabs, wallpapers), OPFS files and user caches. The backup JSON (site-data.json) lists every entry and which storage area it belongs to. Restoring is destructive and verified.</div>
   </div>
 
   <div class="panel"><div class="bar">CACHE / DATABASE DIAGNOSTICS</div><div class="scroll"><table class="storage-table"><thead><tr><th>Name</th><th>Type</th><th>Estimate</th></tr></thead><tbody id="detail-rows"></tbody></table></div></div>
@@ -158,9 +158,17 @@ function openDatabase(name, version, upgrade) {
     req.onblocked=()=>reject(new Error('Database open blocked: '+name+' (close other tabs using this site)'));
   });
 }
+/* Every database this origin owns. Older Firefox has no indexedDB.databases(), so probe the names the site is known to use
+   (opening with an aborted upgrade tells us whether one exists without creating it). */
+const KNOWN_DBS=['ColtonOS-fs','ColtonOS-wallpaper','chatroom_v3','localforage','keyval-store'];
+function dbExists(name){return new Promise(res=>{let existed=true;const r=indexedDB.open(name);r.onupgradeneeded=()=>{existed=false;try{r.transaction.abort();}catch(e){}};r.onsuccess=()=>{r.result.close();res(existed);};r.onerror=()=>res(false);r.onblocked=()=>res(existed);});}
+async function listDatabases(){
+  if(indexedDB.databases){ try{ return (await indexedDB.databases()).filter(d=>d&&d.name); }catch(e){} }
+  const out=[]; for(const n of KNOWN_DBS) if(await dbExists(n)) out.push({name:n}); return out;
+}
 async function exportDatabases(zip) {
   const result=[];
-  const infos=indexedDB.databases ? await indexedDB.databases() : ['ColtonOS-fs','ColtonOS-wallpaper'].map(n=>({name:n}));
+  const infos=await listDatabases();
   for(const info of infos) {
     if(!info.name) continue;
     const db=await openDatabase(info.name);
@@ -193,16 +201,49 @@ async function exportOPFS(zip) {
   try { await walk(await navigator.storage.getDirectory()); return {supported:true,files}; }
   catch(e) { return {supported:true,files,error:String(e)}; }
 }
+const USER_CACHE_PREFIX='games-hub-'; // the service worker's own app-shell caches are rebuilt automatically and are not user data
+function readCookies(){return document.cookie? document.cookie.split(/;\s*/).filter(Boolean).map(c=>{const i=c.indexOf('=');return i<0?{name:c,value:''}:{name:c.slice(0,i),value:c.slice(i+1)};}):[];}
+function clearCookies(){for(const c of readCookies()){for(const path of ['/',location.pathname.replace(/[^/]*$/,'')]) document.cookie=c.name+'=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path='+path;}}
+async function exportCaches(zip){
+  const out=[]; if(typeof caches==='undefined') return out;
+  try{ for(const name of await caches.keys()){ if(name.startsWith(USER_CACHE_PREFIX)) continue;
+    const cache=await caches.open(name), entries=[]; let n=0;
+    for(const req of await cache.keys()){ const res=await cache.match(req); if(!res) continue; const path='caches/'+out.length+'/'+(n++);
+      zip.file(path,await res.clone().arrayBuffer()); entries.push({url:req.url,method:req.method,status:res.status,statusText:res.statusText,headers:[...res.headers.entries()],path}); }
+    out.push({name,entries}); } }catch(e){ console.warn('cache export',e); }
+  return out;
+}
+async function restoreCaches(list,zip){
+  if(typeof caches==='undefined') return;
+  for(const name of await caches.keys()) if(!name.startsWith(USER_CACHE_PREFIX)) await caches.delete(name);
+  for(const c of list||[]){ const cache=await caches.open(c.name);
+    for(const e of c.entries||[]){ const f=zip.file(e.path); if(!f) continue; const body=await f.async('uint8array');
+      try{ await cache.put(new Request(e.url,{method:e.method||'GET'}),new Response([204,205,304].includes(e.status)?null:body,{status:e.status,statusText:e.statusText,headers:e.headers})); }catch(x){ console.warn('cache restore',e.url,x); } } }
+}
+async function buildIndex(local,session,cookies,dbs){
+  const idx=[], clip=v=>{let t;try{t=typeof v==='string'?v:JSON.stringify(v);}catch(e){t=String(v);}return String(t).slice(0,120);};
+  Object.keys(local).forEach(k=>idx.push({area:'localStorage',key:k,bytes:(local[k]||'').length}));
+  Object.keys(session).forEach(k=>idx.push({area:'sessionStorage',key:k,bytes:(session[k]||'').length}));
+  cookies.forEach(c=>idx.push({area:'cookie',key:c.name,bytes:c.value.length}));
+  for(const d of dbs) for(const st of d.stores) for(const r of st.records) idx.push({area:'indexedDB',database:d.name,objectStore:st.name,key:clip(r.key)});
+  return idx;
+}
 async function exportSiteData() {
   if(!window.JSZip) throw new Error('ZIP support is unavailable in this browser.');
   const zip=new JSZip();
+  try{ window.parent.GHShell.releaseFrames(window); }catch(e){}
   const local={}; for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);local[k]=localStorage.getItem(k);}
-  const manifest={format:'system-monitor-site-data-backup',version:1,createdAt:new Date().toISOString(),
-    origin:location.origin,localStorage:local,indexedDB:await exportDatabases(zip),
-    opfs:await exportOPFS(zip),limitations:[
-      'Session storage and Cache Storage are intentionally excluded.',
-      'Only storage accessible to this page for this origin can be included.',
-      'Cookies, especially HttpOnly cookies, browser-managed data, and other origins are not accessible to webpage JavaScript.'
+  const session={}; try{ for(let i=0;i<sessionStorage.length;i++){const k=sessionStorage.key(i);session[k]=sessionStorage.getItem(k);} }catch(e){}
+  const cookies=readCookies(), dbs=await exportDatabases(zip), opfs=await exportOPFS(zip), cachesOut=await exportCaches(zip);
+  const manifest={format:'system-monitor-site-data-backup',version:2,createdAt:new Date().toISOString(),
+    origin:location.origin,appVersion:(()=>{try{return window.parent.GHShell.version;}catch(e){return '';}})(),
+    schema:{localStorage:'object: key -> string. Restored with localStorage.setItem after clearing.',sessionStorage:'object: key -> string.',cookies:'array of {name,value} (script-readable cookies only).',indexedDB:'array of databases {name,version,stores[{name,keyPath,autoIncrement,indexes,records[{key,value}]}]}. Each database is deleted, recreated and refilled.',opfs:'files under opfs/ in this ZIP.',caches:'non-app-shell Cache Storage entries, bodies under caches/ in this ZIP.',index:'flat list of every entry in the backup, tagged with the area it belongs to (localStorage, sessionStorage, cookie, indexedDB).'},
+    summary:{localStorage:Object.keys(local).length,sessionStorage:Object.keys(session).length,cookies:cookies.length,indexedDBDatabases:dbs.length,indexedDBRecords:dbs.reduce((n,d)=>n+d.stores.reduce((m,st)=>m+st.records.length,0),0),opfsFiles:opfs.files.length,cacheEntries:cachesOut.reduce((n,c)=>n+c.entries.length,0)},
+    index:await buildIndex(local,session,cookies,dbs),
+    localStorage:local,sessionStorage:session,cookies,indexedDB:dbs,opfs,caches:cachesOut,limitations:[
+      'Only storage reachable by this page for this origin is included.',
+      'HttpOnly cookies and browser-managed data (passwords, autofill) cannot be read by a web page.',
+      'The service worker app-shell cache is rebuilt automatically and is not part of the backup.'
     ]};
   zip.file('site-data.json',JSON.stringify(manifest));
   const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
@@ -222,7 +263,7 @@ function deleteDatabase(name) {
   });
 }
 async function restoreDatabases(entries, zip) {
-  const existing=indexedDB.databases ? await indexedDB.databases() : ['ColtonOS-fs','ColtonOS-wallpaper'].map(n=>({name:n}));
+  const existing=await listDatabases();
   for(const info of existing) if(info.name) await deleteDatabase(info.name);
   for(const item of entries) {
     const db=await openDatabase(item.name,item.version,(created,tx)=>{
@@ -235,11 +276,10 @@ async function restoreDatabases(entries, zip) {
     try {
       for(const st of item.stores) {
         if(!db.objectStoreNames.contains(st.name)) throw new Error('Missing object store '+st.name+' in '+item.name);
+        /* decode everything FIRST: awaiting a ZIP read inside an open transaction would let it auto-commit and fail */
+        const decoded=[]; for(const record of st.records) decoded.push([await decodeFromZip(record.key,zip), await decodeFromZip(record.value,zip)]);
         const tx=db.transaction(st.name,'readwrite'), store=tx.objectStore(st.name);
-        for(const record of st.records) {
-          const key=await decodeFromZip(record.key,zip), value=await decodeFromZip(record.value,zip);
-          if(store.keyPath===null) store.put(value,key); else store.put(value);
-        }
+        for(const [key,value] of decoded) { if(store.keyPath===null) store.put(value,key); else store.put(value); }
         await transactionDone(tx);
       }
     } finally { db.close(); }
@@ -267,7 +307,7 @@ async function restoreOPFS(info, zip) {
 }
 $('export-data').onclick=async()=>{
   $('export-data').disabled=true; backupNote('Creating backup ZIP…');
-  try { const m=await exportSiteData(); backupNote(`Backup downloaded. Included ${Object.keys(m.localStorage).length} localStorage entries, ${m.indexedDB.length} IndexedDB database(s), and ${m.opfs.files.length} OPFS file(s).`); }
+  try { const m=await exportSiteData(); try{window.parent.GHShell.emit('sys:export');}catch(e){} backupNote(`Backup downloaded. ${m.summary.localStorage} localStorage, ${m.summary.sessionStorage} sessionStorage, ${m.summary.cookies} cookie(s), ${m.summary.indexedDBRecords} IndexedDB record(s) in ${m.summary.indexedDBDatabases} database(s), ${m.summary.opfsFiles} OPFS file(s), ${m.summary.cacheEntries} cache entr${m.summary.cacheEntries===1?'y':'ies'}.`); }
   catch(e) { backupNote('Export failed: '+(e?.message||e)); console.error(e); alert('Export failed: '+(e?.message||e)); }
   finally { $('export-data').disabled=false; }
 };
@@ -275,21 +315,32 @@ $('import-data').onclick=()=>{ $('import-file').value=''; $('import-file').click
 $('import-file').onchange=async event=>{
   const file=event.target.files?.[0]; if(!file) return;
   if(!window.JSZip) { alert('ZIP support is unavailable in this browser.'); return; }
-  if(!confirm('Importing replaces this origin’s localStorage, IndexedDB databases, and OPFS files with the backup. This can overwrite saves and chat history. Cache Storage and sessionStorage are not changed. Continue?')) return;
+  if(!confirm('A system restore is DESTRUCTIVE: it completely overwrites every localStorage entry, sessionStorage entry, cookie, IndexedDB database (documents, chat, wallpapers), OPFS file and user cache on this origin with the contents of the backup. Anything not in the backup is deleted. Continue?')) return;
   try{ window.parent.GHShell.releaseFrames(window); }catch(e){}
   backupNote('Reading backup ZIP…');
   try {
     const zip=await JSZip.loadAsync(file), mf=zip.file('site-data.json');
     if(!mf) throw new Error('This ZIP does not contain site-data.json and is not a recognized backup.');
     const manifest=JSON.parse(await mf.async('text'));
-    if(manifest.format!=='system-monitor-site-data-backup'||manifest.version!==1) throw new Error('Unsupported or invalid backup format.');
+    if(manifest.format!=='system-monitor-site-data-backup'||![1,2].includes(manifest.version)) throw new Error('Unsupported or invalid backup format.');
     if(manifest.origin!==location.origin && !confirm(`This backup was created for ${manifest.origin}, but this page is ${location.origin}. Restore it here anyway?`)) { backupNote('Import cancelled.'); return; }
     if(!confirm('Final confirmation: current localStorage and all current IndexedDB databases will be deleted before restoration. Make sure you have a backup of the current site data if needed.')) { backupNote('Import cancelled.'); return; }
     backupNote('Restoring localStorage…');
     localStorage.clear(); for(const [k,v] of Object.entries(manifest.localStorage||{})) localStorage.setItem(k,v);
+    if(manifest.version>=2){
+      backupNote('Restoring sessionStorage and cookies…');
+      try{ sessionStorage.clear(); for(const [k,v] of Object.entries(manifest.sessionStorage||{})) sessionStorage.setItem(k,v); }catch(e){}
+      try{ clearCookies(); for(const c of manifest.cookies||[]) document.cookie=c.name+'='+c.value+'; path=/; max-age=31536000; SameSite=Lax'; }catch(e){}
+    }
     backupNote('Restoring IndexedDB…'); await restoreDatabases(manifest.indexedDB||[],zip);
     backupNote('Restoring OPFS files…'); await restoreOPFS(manifest.opfs,zip);
-    backupNote('Import completed. Reload the page so other site components reload their restored data.');
+    if(manifest.version>=2){ backupNote('Restoring cached data…'); await restoreCaches(manifest.caches,zip); }
+    backupNote('Verifying the restore…');
+    const problems=[]; if(Object.keys(manifest.localStorage||{}).length!==localStorage.length) problems.push('localStorage entry count differs');
+    for(const d of manifest.indexedDB||[]){ try{ const db=await openDatabase(d.name); try{ for(const st of d.stores){ if(!db.objectStoreNames.contains(st.name)){problems.push(d.name+'/'+st.name+' missing');continue;} const n=await requestResult(db.transaction(st.name).objectStore(st.name).count()); if(n!==st.records.length) problems.push(d.name+'/'+st.name+': '+n+' of '+st.records.length+' records'); } } finally{ db.close(); } }catch(e){ problems.push(d.name+': '+(e&&e.message||e)); } }
+    try{window.parent.GHShell.emit('sys:restore');}catch(e){}
+    backupNote(problems.length?'Import finished with problems: '+problems.join('; '):'Import completed and verified: every entry matches the backup. Reload so every app reloads its restored data.');
+    if(problems.length) alert('Restore finished, but verification found problems:\n'+problems.join('\n'));
     if(confirm('Import completed. Reload ColtonOS now so everything picks up the restored data?')){ try{ window.parent.location.reload(); }catch(e){ location.reload(); } }
     await refreshStorage();
   } catch(e) { backupNote('Import failed: '+(e?.message||e)); console.error(e); alert('Import failed: '+(e?.message||e)+'. Some data may already have been replaced; reload and inspect the site.'); }

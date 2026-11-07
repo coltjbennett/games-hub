@@ -175,6 +175,10 @@
   };
   const statusLabel = k => (STATUS_META[k] || { label: k || 'Unknown' }).label;
   const slug = u => String(u).replace(/[^a-z0-9]/gi, '-').toLowerCase();
+  /* data.js flag: 'desktop-feature': false keeps an entry off the desktop and out of Tapey/Random picks, and files it under
+     Games > "Unfinished / Poor Quality" (Start menu + File Manager). Anything else (or no flag) = a normal, featured entry. */
+  const isFeatured = e => !(e && (e['desktop-feature'] === false || e.desktopFeature === false));
+  const POOR_TITLE = 'Unfinished / Poor Quality';
 
   /* ---------- geometry helpers ---------- */
   const desk = $('#desktop'), layer = $('#windows-layer'), iconLayer = $('#icon-layer');
@@ -194,7 +198,67 @@
   }
 
   /* ---------- analytics hook (only fires if consent loaded gtag) ---------- */
-  function track(name, params) { try { if (typeof window.gtag === 'function') window.gtag('event', name, params || {}); } catch (e) {} }
+  /* GA4 event names are lowercase snake_case (<= 40 chars). Parameters are primitives only, trimmed, and never carry chat text,
+     usernames, file names or typed input: only ids, titles of built-in items, counts and modes. Events are dropped unless the
+     visitor accepted the Terms (index.html only defines gtag after consent). */
+  const gaName = x => { x = String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40); return /^[a-z]/.test(x) ? x : 'e_' + x; };
+  const gaVal = v => typeof v === 'number' ? (isFinite(v) ? Math.round(v * 100) / 100 : undefined) : typeof v === 'boolean' ? (v ? 1 : 0) : typeof v === 'string' ? v.replace(/\s+/g, ' ').slice(0, 80) : undefined;
+  let sessionLaunches = 0, sessionEvents = 0; const sessionStart = Date.now();
+  function track(name, params) {
+    try {
+      if (typeof window.gtag !== 'function' || !window.__siteAnalyticsLoaded) return;
+      const p = {}; Object.keys(params || {}).slice(0, 24).forEach(k => { const v = gaVal(params[k]); if (v !== undefined) p[gaName(k)] = v; });
+      sessionEvents++; window.gtag('event', gaName(name), p);
+    } catch (e) {}
+  }
+  const PRIVATE_KEY = /name|user|text|msg|message|pass|mail|body|content|path|file/i;
+  /* every shell/applet event (GH.emit) flows through here */
+  function reportEvent(name, data) {
+    name = String(name || ''); const d = data && typeof data === 'object' ? data : { v: data }; let m;
+    if (name === 'win_open' || name === 'win_close' || name === 'game') return;             /* launches are tracked in openItem */
+    if (name === 'ach') return track('unlock_achievement', { achievement_id: d.id, achievement_name: d.n, points: d.pts });
+    if (name === 'ach_reset') return track('achievements_reset');
+    if (name === 'shutdown') return track('system_shutdown', { mode: d.v });
+    if (name === 'run') return track('run_dialog');
+    if (name === 'find') return track('find_used');
+    if (name === 'taskman') return track('task_manager_opened');
+    if (name === 'minall') return track('minimize_all');
+    if (name === 'arrange') return track('arrange_icons');
+    if (name === 'saver') return track('screensaver_started');
+    if (name === 'shake') return track('window_shake', { windows_minimized: d.n });
+    if (name === 'fav') return track('favorite_toggled', { game_url: d.url });
+    if (name === 'random') return track('random_game', { game_title: d.title, game_url: d.url });
+    if (name === 'setting') return track('setting_changed', { setting_key: d.key, setting_value: PRIVATE_KEY.test(String(d.key || '')) ? undefined : d.value });
+    if (name === 'adv:ending') return track('adventure_ending', { adventure: d.adv, ending: d.ending, endings_found: d.n, endings_total: d.total });
+    if (/^adv:/.test(name)) return;
+    if (name === 'help:open') return track('open_help', { game: d.id });
+    if ((m = /^win:(.+)$/.exec(name))) return track('game_win', { game: m[1], tries: d.tries, level: d.level || d.lvl, mode: d.mode, seconds: d.secs });
+    if ((m = /^textgame:(.+)$/.exec(name))) return track('play_text_game', { game: m[1] });
+    if ((m = /^dos:(.+)$/.exec(name))) return track('dos_command', { command: m[1].slice(0, 20) });
+    if ((m = /^tapey:(.+)$/.exec(name))) return track('tapey_interaction', { action: m[1] });
+    if ((m = /^slot:(.+)$/.exec(name))) return track('save_slot', { action: m[1], game_url: d.url });
+    if ((m = /^widget:(.+)$/.exec(name))) return track('widget_change', { action: m[1], widget: d.v });
+    if ((m = /^regedit:(.+)$/.exec(name))) return track('registry_action', { action: m[1] });
+    if ((m = /^fm:(.+)$/.exec(name))) return track('file_manager', { action: m[1], location: String(d.loc || '').split(':')[0] });
+    if ((m = /^fs:(.+)$/.exec(name))) return track('file_system', { action: m[1] });
+    if (name === 'wordpad:save' || name === 'soundrec:save' || name === 'calendar:note' || name === 'charmap:copy' || name === 'media:play' || name === 'phone:dial' || name === 'defrag:complete') return track('accessory_action', { action: name });
+    if (name === 'secret:word') return track('secret_word', { word: d.v });
+    if (name === 'sys:export' || name === 'sys:restore') return track('system_backup', { action: name.slice(4) });
+    if (name === 'chat:export') return track('chat_export_all');
+    if (name === 'konami' || name === 'konami_pad') return track(name);
+    track('app_event', { event: name.slice(0, 40) });
+  }
+  function trackLaunch(it) {
+    const id = String(it.id || '');
+    if (id.startsWith('app:')) { sessionLaunches++; track('launch_accessory', { accessory_name: it.title, accessory_id: id.slice(4), event_category: 'Accessories' }); }
+    else if (id.startsWith('folder:')) track('open_folder', { folder_name: it.title });
+    else if (!id.startsWith('game:')) track('open_item', { item_type: it.type });
+  }
+  window.addEventListener('pagehide', () => { track('session_summary', { minutes: Math.round((Date.now() - sessionStart) / 6000) / 10, launches: sessionLaunches, events: sessionEvents }); });
+  window.addEventListener('error', e => { track('js_error', { file: String(e.filename || '').split('/').pop().slice(0, 40), line: e.lineno }); });
+  window.addEventListener('appinstalled', () => track('pwa_installed'));
+  window.addEventListener('offline', () => track('went_offline'));
+  window.addEventListener('online', () => track('back_online'));
 
   /* =====================================================================
    *  MENUS
@@ -618,6 +682,7 @@
       }
       if (settings.windowAnim && !reducedMotion()) { W.el.classList.add('opening'); setTimeout(() => W.el.classList.remove('opening'), 160); }
       addTaskButton(W);
+      if (!W.o.dialog) { const r = W.el.getBoundingClientRect(); wireframe(taskRect(W), r, 150); }
       EMIT('win_open', W);
       announce(W.title + ' opened');
       if (!W.o.dialog) playSound('open');
@@ -697,6 +762,7 @@
     if (activeWin === W) { activeWin = null; }
     fullscreenLow.delete(W.id); nativeFullscreen.delete(W.id);
     saveGeo(W); playSound('close');
+    if (!W.o.dialog && W.el && W.el.isConnected) { const r = W.el.getBoundingClientRect(); wireframe(r, taskRect(W), 130); }
     EMIT('win_close', W);
     removeTaskButton(W);
     W.visible = false; W.minimized = false;
@@ -813,12 +879,23 @@
       if (W.maximized) return;
       const el = W.el, sx = e.clientX, sy = e.clientY, ox = el.offsetLeft, oy = el.offsetTop;
       let moving = false, nx = ox, ny = oy, raf = 0;
+      /* shake the window left and right (4 quick reversals) to minimize everything else, like Aero Shake */
+      const shk = { dir: 0, ex: sx, hits: [] };
+      const shake = x => {
+        if (!shk.dir) { if (Math.abs(x - shk.ex) > 10) { shk.dir = x > shk.ex ? 1 : -1; shk.ex = x; } return; }
+        if ((x - shk.ex) * shk.dir > 0) shk.ex = x;
+        else if (Math.abs(x - shk.ex) > 40) {
+          shk.dir = -shk.dir; shk.ex = x; const n = performance.now(); shk.hits = shk.hits.filter(t => n - t < 1100).concat(n);
+          if (shk.hits.length >= 4) { shk.hits = []; let k = 0; Array.from(wins.values()).forEach(w => { if (w !== W && !w.o.dialog && isVisible(w)) { minimizeWin(w); k++; } }); if (k) EMIT('shake', { n: k }); }
+        }
+      };
       const b = bounds(W);
       try { t.setPointerCapture(e.pointerId); } catch (err) {}
       const apply = () => { raf = 0; el.style.transform = 'translate3d(' + (nx - ox) + 'px,' + (ny - oy) + 'px,0)'; };
       const move = ev => {
         const dx = ev.clientX - sx, dy = ev.clientY - sy;
         if (!moving) { if (Math.hypot(dx, dy) < 4) return; moving = true; el.classList.add('moving'); if (!settings.opaqueDrag) el.classList.add('outline-drag'); H.classList.add('dragging-ui'); }
+        shake(ev.clientX);
         nx = clamp(ox + dx, 70 - el.offsetWidth, b.w - 70); ny = clamp(oy + dy, 0, Math.max(0, b.h - 24));
         if (!raf) raf = requestAnimationFrame(apply);
       };
@@ -912,6 +989,17 @@
   }
 
   /* ----- taskbar buttons ----- */
+  /* Windows 95 style wireframe zoom: a dotted rectangle races between the taskbar and the window */
+  function wireframe(from, to, ms) {
+    try {
+      if (!settings.windowAnim || reducedMotion()) return;
+      const el = h('div', { 'aria-hidden': 'true', style: { position: 'fixed', zIndex: 2147480000, pointerEvents: 'none', border: '2px dotted #fff', mixBlendMode: 'difference', boxSizing: 'border-box' } });
+      document.body.appendChild(el); const steps = 7; let i = 0;
+      const put = t => { el.style.left = (from.left + (to.left - from.left) * t) + 'px'; el.style.top = (from.top + (to.top - from.top) * t) + 'px'; el.style.width = (from.width + (to.width - from.width) * t) + 'px'; el.style.height = (from.height + (to.height - from.height) * t) + 'px'; };
+      put(0); const iv = setInterval(() => { i++; if (i > steps) { clearInterval(iv); el.remove(); return; } put(i / steps); }, (ms || 150) / steps);
+    } catch (e) {}
+  }
+  const taskRect = W => { const b = W.btn || (W.taskBtn) || document.querySelector('#task-buttons .active, #taskbar-buttons .active, .task-btn'); const r = b && b.getBoundingClientRect ? b.getBoundingClientRect() : null; return r && r.width ? r : { left: 80, top: innerHeight - 28, width: 150, height: 24 }; };
   function addTaskButton(W) {
     if (W.o.dialog || W.o.noTask || W.taskBtn) return;
     const b = h('button', { type: 'button', class: 'tb-btn tb-task', title: W.title, 'aria-pressed': 'false' },
@@ -1076,7 +1164,7 @@
   const ITEMS = new Map();
   /* extension points used by os-extras.js (virtual file system, DOS prompt, themes, sounds…) */
   const EMIT = (name, data) => { try { if (HOOKS.emit) HOOKS.emit(name, data); } catch (e) {} };
-  const HOOKS = { emit: null, itemMenu: null, desktopExtra: null, pasteMenu: null, startPrograms: null, startSettings: null, desktopIds: () => [], children: () => [], vfsParent: () => null, newMenu: () => [], beforeOpen: null, shutdown: null, dropOnto: null, presence: null, deleteVfs: null, renameVfs: null, fm: null };
+  const HOOKS = { runSecret: null, emit: null, itemMenu: null, desktopExtra: null, pasteMenu: null, startPrograms: null, startSettings: null, desktopIds: () => [], children: () => [], vfsParent: () => null, newMenu: () => [], beforeOpen: null, shutdown: null, dropOnto: null, presence: null, deleteVfs: null, renameVfs: null, fm: null };
   const addItem = it => { ITEMS.set(it.id, it); return it; };
   const track2 = (name, p) => track(name, p);
 
@@ -1090,7 +1178,7 @@
   const SLUG_FIX = { 'web-proxy-browser-applet': 'browser' };
   const appletSlug = u => { const b = String(u).split('/').pop().replace(/\.html?$/i, '').replace(/[^a-z0-9]+/gi, '-').toLowerCase(); return SLUG_FIX[b] || b; };
   const APPLET_DATA = (typeof applets !== 'undefined' && Array.isArray(applets)) ? applets : [];
-  const APPLETS = APPLET_DATA.filter(a => a && a.url && a.title).map(a => ({ id: a.id || appletSlug(a.url), title: a.title, icon: a.icon || IC('programs'), src: a.url, w: a.w, h: a.h, keep: !!a.keep, desc: a.description || '', group: a.group || '', applet: true }));
+  const APPLETS = APPLET_DATA.filter(a => a && a.url && a.title).map(a => ({ id: a.id || appletSlug(a.url), title: a.title, icon: a.icon || IC('programs'), src: a.url, w: a.w, h: a.h, keep: !!a.keep, desc: a.description || '', group: a.group || '', applet: true, featured: isFeatured(a) }));
   const APPS = APPLETS.concat(SYSTEM_APPS);
   const TEXT_FILES = [
     { id: 'changelog', title: 'Changelog.txt', src: 'applets/textviewer.html?src=changelog.txt', desc: 'What changed in each version' },
@@ -1131,7 +1219,7 @@
 
   /* Random Game: picks something playable (skips abandoned prototypes and engine tests) */
   function pickRandomGame(avoidUrl) {
-    const pool = PROJECTS.filter(p => p.statusKey !== 'abandoned' && !/missing\.png$/.test(p.image || '')).map(p => ({ url: p.url, title: p.title, classic: false })).concat(CLASSICS.map(c => ({ url: c.url, title: c.title, classic: true })));
+    const pool = PROJECTS.filter(p => isFeatured(p) && p.statusKey !== 'abandoned' && !/missing\.png$/.test(p.image || '')).map(p => ({ url: p.url, title: p.title, classic: false })).concat(CLASSICS.filter(isFeatured).map(c => ({ url: c.url, title: c.title, classic: true })));
     const choices = pool.filter(p => p.url !== avoidUrl); const arr = choices.length ? choices : pool;
     return arr[Math.floor(Math.random() * arr.length)] || null;
   }
@@ -1148,12 +1236,12 @@
     id: 'game:' + p.url, title: p.title, type: 'Game', icon: p.image || 'images/missing.png', thumb: true, shortcut: true, project: p,
     desc: p.description, keywords: p.title + ' ' + p.type + ' ' + (p.tags || []).join(' ') + ' ' + statusLabel(p.statusKey) + ' game',
     status: statusLabel(p.statusKey), kindLabel: p.type,
-    open: opener => { openGame(p.url, p.title, p.image, opener); track('launch_game', { event_category: 'Games', game_title: p.title, game_url: p.url }); }
+    open: opener => { openGame(p.url, p.title, p.image, opener); sessionLaunches++, track('launch_game', { event_category: 'Games', game_title: p.title, game_url: p.url, game_type: 'project', status: p.statusKey }); }
   }));
   CLASSICS.forEach(c => addItem({
     id: 'game:' + c.url, title: c.title, type: 'Classic Game', icon: c.image || 'images/missing.png', thumb: true, shortcut: true, classic: c,
     desc: 'Classic arcade remake', keywords: c.title + ' classic retro arcade game',
-    open: opener => { openGame(c.url, c.title, c.image, opener); track('launch_game', { event_category: 'Classic Games', game_title: c.title, game_url: c.url }); }
+    open: opener => { openGame(c.url, c.title, c.image, opener); sessionLaunches++, track('launch_game', { event_category: 'Classic Games', game_title: c.title, game_type: 'classic', game_url: c.url }); }
   }));
 
   const driveError = letter => () => msgBox(letter + ':\\ is not accessible.\n\nThe device is not ready.', { title: 'My Computer', icon: 'error', buttons: ['Retry', 'Cancel'], cancel: 'cancel' });
@@ -1161,17 +1249,19 @@
   addItem({ id: 'drive:c', title: 'ColtonOS (C:)', type: 'Local Disk', icon: IC('hard-disk'), desc: 'Programs, games and files', keywords: 'c drive hard disk files', open: o => openExplorer('drive-c', o) });
   addItem({ id: 'drive:d', title: '(D:)', type: 'CD-ROM Disc', icon: IC('cdrom'), desc: 'CD-ROM drive', keywords: 'cd rom d drive', open: driveError('D') });
 
+  const poorIds = () => PROJECTS.filter(p => !isFeatured(p)).map(p => 'game:' + p.url).concat(CLASSICS.filter(c => !isFeatured(c)).map(c => 'game:' + c.url)).concat(APPLETS.filter(a => !a.featured).map(a => 'app:' + a.id));
   const FOLDERS = {
     'my-computer': { title: 'My Computer', icon: IC('my-computer'), items: () => ['drive:a', 'drive:c', 'drive:d', 'sys:network', 'folder:documents', 'app:control', 'app:monitor'] },
     'drive-c': { title: 'ColtonOS (C:)', icon: IC('hard-disk'), items: () => ['folder:games', 'folder:classics', 'folder:accessories', 'folder:documents', 'app:library', 'app:welcome', 'app:help', 'file:changelog', 'file:todo', 'file:license'] },
-    games: { title: 'Games', icon: IC('folder'), items: () => PROJECTS.map(p => 'game:' + p.url) },
-    classics: { title: 'Classic Games', icon: IC('folder'), items: () => CLASSICS.map(c => 'game:' + c.url).concat(APPLETS.filter(a => a.group === 'games').map(a => 'app:' + a.id)) },
-    accessories: { title: 'Accessories', icon: IC('folder'), items: () => APPLETS.map(a => 'app:' + a.id).concat(['app:monitor']) },
+    games: { title: 'Games', icon: IC('folder'), items: () => PROJECTS.filter(isFeatured).map(p => 'game:' + p.url).concat(poorIds().length ? ['folder:poor'] : []) },
+    classics: { title: 'Classic Games', icon: IC('folder'), items: () => CLASSICS.filter(isFeatured).map(c => 'game:' + c.url).concat(APPLETS.filter(a => a.group === 'games' && a.featured).map(a => 'app:' + a.id)) },
+    accessories: { title: 'Accessories', icon: IC('folder'), items: () => APPLETS.filter(a => a.featured).map(a => 'app:' + a.id).concat(['app:monitor']) },
+    poor: { title: POOR_TITLE, icon: IC('folder'), path: 'C:\\Games\\Unfinished - Poor Quality', parent: 'games', items: () => poorIds() },
     documents: { title: 'My Documents', icon: IC('documents-folder'), path: 'C:\\My Documents', parent: 'drive-c', items: () => HOOKS.children('docs') },
     network: { title: 'Network Neighborhood', icon: IC('network'), path: 'Network Neighborhood', parent: 'my-computer', items: () => HOOKS.children('net') },
     recycle: { title: 'Recycle Bin', icon: IC('recycle-bin'), items: () => trashState().items.filter(i => ITEMS.has(i)), recycle: true }
   };
-  [['games', 'Games', 'All of the original games and experiments'], ['classics', 'Classic Games', 'Small classic arcade remakes'], ['accessories', 'Accessories', 'Calculator, Paint, Notepad, MS-DOS Prompt and other tools'], ['documents', 'My Documents', 'Your saved text files and pictures']].forEach(([k, t, d]) =>
+  [['poor', POOR_TITLE, 'Games and tools that are unfinished, abandoned or not up to the usual standard'], ['games', 'Games', 'All of the original games and experiments'], ['classics', 'Classic Games', 'Small classic arcade remakes'], ['accessories', 'Accessories', 'Calculator, Paint, Notepad, MS-DOS Prompt and other tools'], ['documents', 'My Documents', 'Your saved text files and pictures']].forEach(([k, t, d]) =>
     addItem({ id: 'folder:' + k, title: t, type: 'File Folder', icon: IC('folder'), desc: d, keywords: t + ' folder ' + d, open: o => openExplorer(k, o) }));
   addItem({ id: 'sys:my-computer', title: 'My Computer', type: 'System Folder', icon: IC('my-computer'), desc: 'Drives and system tools', keywords: 'my computer drives explorer', open: o => openExplorer('my-computer', o) });
   addItem({ id: 'sys:network', title: 'Network Neighborhood', type: 'System Folder', icon: IC('network'), desc: 'Other computers on the ColtonNet (people in the chatroom)', keywords: 'network neighborhood computers chat people online', open: o => openExplorer('network', o) });
@@ -1194,6 +1284,7 @@
   }
   function openItem(id, opener) {
     const it = ITEMS.get(id); if (!it || !it.open) return;
+    trackLaunch(it);
     closeMenus(false);
     const go = () => it.open(opener || null);
     if (HOOKS.beforeOpen && HOOKS.beforeOpen(it, go)) return;
@@ -1306,8 +1397,8 @@
     const setView = v => { view = v; store.set(KEYS.explorerView, v); scroller.className = 'explorer-view sunken view-' + v; };
     const viewItems = () => [['large', 'Lar&ge Icons'], ['small', 'S&mall Icons'], ['list', '&List'], ['details', '&Details']].map(([v, l]) => ({ label: l, radio: true, on: view === v, onClick: () => setView(v) }));
     const arrange = () => [{ label: 'by &Name', onClick: () => { sortBy = 'name'; render(); } }, { label: 'by &Type', onClick: () => { sortBy = 'type'; render(); } }];
-    const FOLDER_OF = { 'folder:documents': 'documents', 'folder:games': 'games', 'folder:classics': 'classics', 'folder:accessories': 'accessories', 'drive:c': 'drive-c', 'sys:my-computer': 'my-computer', 'sys:recycle': 'recycle' };
-    const PARENT = { games: 'drive-c', classics: 'drive-c', accessories: 'drive-c', 'drive-c': 'my-computer' };
+    const FOLDER_OF = { 'folder:poor': 'poor', 'folder:documents': 'documents', 'folder:games': 'games', 'folder:classics': 'classics', 'folder:accessories': 'accessories', 'drive:c': 'drive-c', 'sys:my-computer': 'my-computer', 'sys:recycle': 'recycle' };
+    const PARENT = { poor: 'games', games: 'drive-c', classics: 'drive-c', accessories: 'drive-c', 'drive-c': 'my-computer' };
     const pathOf = f => (FOLDERS[f] && FOLDERS[f].path) || PATHS[f] || (FOLDERS[f] ? FOLDERS[f].title : '');
     const parentOf = f => (FOLDERS[f] && FOLDERS[f].parent) || PARENT[f];
     const PATHS = { 'my-computer': 'My Computer', 'drive-c': 'C:\\', games: 'C:\\Games', classics: 'C:\\Classic Games', accessories: 'C:\\Accessories', recycle: 'Recycle Bin' };
@@ -1383,7 +1474,7 @@
   /* =====================================================================
    *  DESKTOP ICONS
    * ===================================================================== */
-  const desktopDefault = () => ['sys:my-computer', 'folder:documents', 'sys:network', 'app:library', 'app:arcade', 'app:chat', 'folder:classics', 'folder:accessories', 'sys:recycle'].concat(PROJECTS.map(p => 'game:' + p.url)).concat(HOOKS.desktopIds());
+  const desktopDefault = () => ['sys:my-computer', 'folder:documents', 'sys:network', 'app:library', 'app:arcade', 'app:chat', 'folder:classics', 'folder:accessories', 'sys:recycle'].concat(PROJECTS.filter(isFeatured).map(p => 'game:' + p.url)).concat(HOOKS.desktopIds());
   const iconNames = store.json('gh-icon-names', {}) || {};
   const nameOf = it => iconNames[it.id] || it.title;
   const icons = new Map();
@@ -1707,15 +1798,15 @@
   const ico = (it, size) => it.icon;
   const appItem = (id, label) => { const it = ITEMS.get(id); return { label: label || it.title, icon: it.icon, onClick: () => openItem(id, startBtn) }; };
   function startMenuItems() {
-    const games = PROJECTS.map(p => { const it = ITEMS.get('game:' + p.url); return { label: p.title, icon: it.icon, onClick: () => openItem(it.id, startBtn) }; });
-    const classicsM = CLASSICS.map(c => { const it = ITEMS.get('game:' + c.url); return { label: c.title, icon: it.icon, onClick: () => openItem(it.id, startBtn) }; });
+    const games = PROJECTS.filter(isFeatured).map(p => { const it = ITEMS.get('game:' + p.url); return { label: p.title, icon: it.icon, onClick: () => openItem(it.id, startBtn) }; });
+    const classicsM = CLASSICS.filter(isFeatured).map(c => { const it = ITEMS.get('game:' + c.url); return { label: c.title, icon: it.icon, onClick: () => openItem(it.id, startBtn) }; });
     const favs = favorites().map(u => ITEMS.get('game:' + u)).filter(Boolean).map(it => ({ label: it.title, icon: it.icon, onClick: () => openItem(it.id, startBtn) }));
     const recs = recents().filter(r => r && ITEMS.has('game:' + r.url)).map(r => { const it = ITEMS.get('game:' + r.url); return { label: it.title, icon: it.icon, onClick: () => openItem(it.id, startBtn) }; });
     const empty = [{ label: '(Empty)', disabled: true }];
     return [
       { label: '&Programs', icon: IC('programs'), submenu: () => [
-        { label: '&Accessories', icon: IC('folder'), submenu: APPLETS.filter(a => a.group !== 'games').map(a => appItem('app:' + a.id)).concat([{ sep: true }, appItem('app:monitor')]) },
-        { label: '&Games', icon: IC('folder'), submenu: games.concat([{ sep: true }, { label: 'Classic Games', icon: IC('folder'), submenu: classicsM }]).concat(APPLETS.filter(a => a.group === 'games').length ? [{ sep: true }].concat(APPLETS.filter(a => a.group === 'games').map(a => appItem('app:' + a.id))) : []) },
+        { label: '&Accessories', icon: IC('folder'), submenu: APPLETS.filter(a => a.group !== 'games' && a.featured).map(a => appItem('app:' + a.id)).concat([{ sep: true }, appItem('app:monitor')]) },
+        { label: '&Games', icon: IC('folder'), submenu: games.concat([{ sep: true }, { label: 'Classic Games', icon: IC('folder'), submenu: classicsM }]).concat(APPLETS.filter(a => a.group === 'games' && a.featured).length ? [{ sep: true }].concat(APPLETS.filter(a => a.group === 'games' && a.featured).map(a => appItem('app:' + a.id))) : []).concat(poorIds().length ? [{ sep: true }, { label: POOR_TITLE, icon: IC('folder'), submenu: poorIds().map(id => appItem(id)) }] : []) },
         { label: '&Internet', icon: IC('folder'), submenu: [appItem('app:browser'), appItem('app:chat'), appItem('app:arcade')] },
         { sep: true }, { label: 'Project &Library', icon: IC('documents-folder'), onClick: () => openItem('app:library') },
         { label: '&Welcome', icon: IC('help'), onClick: () => openItem('app:welcome') },
@@ -1856,6 +1947,7 @@
       h('label', { class: 'row' }, h('span', { text: 'Open:' }), h('span', { class: 'grow' }, input), dl));
     const go = W => {
       const v = input.value.trim(); if (!v) return false;
+      if (HOOKS.runSecret && HOOKS.runSecret(v)) { store.setJson(KEYS.runHistory, [v, ...hist.filter(x => x !== v)].slice(0, 10)); return; }
       const id = resolveRun(v);
       if (!id) { msgBox('Cannot find \'' + v + '\'. Make sure you typed the name correctly, and then try again.\n\nTip: use Find (Ctrl+K) to search everything.', { title: v, icon: 'error' }); return false; }
       store.setJson(KEYS.runHistory, [v, ...hist.filter(x => x !== v)].slice(0, 10));
@@ -2394,7 +2486,7 @@
     set: (k, v) => setSetting(k, v), setMany: o => { Object.keys(o).forEach(k => { if (k in DEFAULTS) settings[k] = o[k]; }); saveSettings(); applySettings(); layoutIcons(false); notifyFrames(); },
     resetSettings: () => { settings = Object.assign({}, DEFAULTS); saveSettings(); applySettings(); layoutIcons(false); notifyFrames(); },
     lowPowerAuto: devicePrefersLowPower, lowPowerActive,
-    openItem: id => openItem(id), openControl, openFind, openHelp, openRun, openShutdown, showAbout, showSystemProperties, msgBox, toast,
+    openItem: id => openItem(id), track, report: reportEvent, openControl, openFind, openHelp, openRun, openShutdown, showAbout, showSystemProperties, msgBox, toast,
     saveLayout: () => { saveLayout(); toast('Window layout saved for this session.'); }, restoreLayout: () => toast(restoreLayout() ? 'Window layout restored.' : 'No saved layout in this session.'),
     resetLayout: () => { resetLayout(); toast('Window sizes and positions reset.'); },
     resetIcons: () => { resetIcons(); toast('Desktop icons restored to their defaults.'); },
@@ -2409,7 +2501,7 @@
       GH.setMany({ scheme: th, reducedMotion: !!pack.reducedMotion, compact: !!pack.compactMode, highContrast: !!pack.highContrast, lowPower: !!pack.lowPower, crt: pack.crt === false ? 'off' : 'standard' }); return true;
     },
     pickRandomGame, playSound, previewSaver: k => { if (saverEl) return; startSaver(k || settings.saver === 'none' ? (k || 'logo') : settings.saver); }, arrangeWindows, minimizeAll,
-    catalog: () => ({ games: PROJECTS.map(p => ({ title: p.title, url: p.url })), classics: CLASSICS.map(c => ({ title: c.title, url: c.url })), applets: APPLETS.map(a => ({ title: a.title, url: a.src })) }),
+    catalog: () => ({ games: PROJECTS.map(p => ({ title: p.title, url: p.url, featured: isFeatured(p) })), classics: CLASSICS.map(c => ({ title: c.title, url: c.url, featured: isFeatured(c) })), applets: APPLETS.map(a => ({ title: a.title, url: a.src })) }),
     launchByUrl: url => { const id = ITEMS.has('game:' + url) ? 'game:' + url : (APPLETS.find(a => a.src === url) ? 'app:' + APPLETS.find(a => a.src === url).id : null); if (id) openItem(id); return !!id; },
     hooks: HOOKS, rebuildIcons: () => { buildIcons(); }, refreshViews: () => refreshTrashViews(),
     dumpState: () => ({ windows: Array.from(wins.keys()), active: activeWin && activeWin.id })
@@ -2440,7 +2532,7 @@
       else { const f = icons.get(focusIcon); }
     });
     store.set('gh-dirty', '1');
-    track('desktop_ready', { event_category: 'System' });
+    track('desktop_ready', { event_category: 'System', touch: matchMedia('(pointer:coarse)').matches, standalone: matchMedia('(display-mode: standalone)').matches, viewport: Math.round(innerWidth / 100) * 100 + 'x' + Math.round(innerHeight / 100) * 100, language: (navigator.language || '').slice(0, 5) });
   }
   if (D.readyState === 'loading') D.addEventListener('DOMContentLoaded', init); else init();
 })();

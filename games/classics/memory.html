@@ -1,0 +1,14 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no"><title>Memory Match</title>
+<style>#b{display:grid;gap:8px;padding:8px;width:min(94vw,64vh,460px)}.k{aspect-ratio:1;font-size:clamp(20px,7vw,38px);border:2px solid #000080;border-radius:8px;background:#c0c0c0;color:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform .2s,background .2s;transform-style:preserve-3d}.k.o{background:#808080;color:#fff;transform:rotateY(0)}.k.m{background:#008080;box-shadow:0 0 12px #000080;color:#fff}</style></head><body>
+<div class="hud"><span>MOVES <b id="mv">0</b></span><span>TIME <b id="tm">0</b></span><span>BEST <b id="bs">-</b></span><label>Size <select id="sz"><option value="4">4×4</option><option value="6">6×6</option></select></label><button class="ab" id="nw" type="button">New Game</button></div><div id="b"></div><div class="msg" id="m"></div>
+<script src="_arcade.js"></script><script>
+(function(){var E='🎮 🕹️ 👾 🚀 🛸 ⭐ 🍕 🎲 🧩 🔮 🐙 🦄 🍄 🔥 💎 🎸 🏆 🧲'.split(' '),b=document.getElementById('b'),first=null,lock=false,mv=0,left=0,t0=0,iv=0,N=4,hs;
+function init(){N=+document.getElementById('sz').value;hs=Arc.hs('memory'+N);var a=E.slice(0,N*N/2);a=a.concat(a);for(var i=a.length-1;i>0;i--){var j=Math.random()*(i+1)|0,z=a[i];a[i]=a[j];a[j]=z;}
+ b.textContent='';b.style.gridTemplateColumns='repeat('+N+',1fr)';first=null;lock=false;mv=0;left=a.length/2;t0=0;clearInterval(iv);document.getElementById('mv').textContent=0;document.getElementById('tm').textContent=0;document.getElementById('bs').textContent=hs.get()||'-';document.getElementById('m').textContent='';
+ a.forEach(function(e){var k=document.createElement('button');k.type='button';k.className='k';k.dataset.e=e;k.setAttribute('aria-label','Hidden card');k.onclick=function(){flip(k);};b.appendChild(k);});}
+function flip(k){if(lock||k.classList.contains('o')||k.classList.contains('m'))return;if(!t0){t0=Date.now();iv=setInterval(function(){document.getElementById('tm').textContent=Math.floor((Date.now()-t0)/1000);},500);}
+ k.classList.add('o');k.textContent=k.dataset.e;if(!first){first=k;return;}mv++;document.getElementById('mv').textContent=mv;var a=first;first=null;
+ if(a.dataset.e===k.dataset.e){a.className=k.className='k m';if(--left===0){clearInterval(iv);var s=Math.floor((Date.now()-t0)/1000);var nb=hs.set(s,true);document.getElementById('m').textContent='Cleared in '+mv+' moves and '+s+'s!'+(nb?' New best!':'');document.getElementById('bs').textContent=hs.get();Arc.emit('win:memory',{n:N});}}
+ else{lock=true;setTimeout(function(){a.className=k.className='k';a.textContent=k.textContent='';lock=false;},650);}}
+document.getElementById('nw').onclick=init;document.getElementById('sz').onchange=init;init();})();
+</script></body></html>

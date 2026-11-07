@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>File Manager</title>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no"><title>File Manager</title>
 <link rel="stylesheet" href="w95.css">
 <style>
   :root{--navy:#000080;--face:#c0c0c0}
@@ -96,13 +96,14 @@
   .dlg .pie{display:flex;gap:14px;align-items:center;margin-top:6px}.dlg .pie canvas{image-rendering:pixelated;flex:none}
   .dlg .lg i{display:inline-block;width:10px;height:10px;margin-right:6px;border:1px solid #000}
   .dlg .lg div{margin:2px 0}
+  #npad{display:flex;gap:2px;margin-left:6px;flex:none}#npad button{min-width:24px;height:22px;padding:0 4px;font:13px/1 W95FA,'MS Sans Serif',sans-serif;color:#000;background:#c0c0c0;border:2px solid;border-color:#fff #404040 #404040 #fff;box-shadow:inset -1px -1px 0 #808080;cursor:pointer;touch-action:manipulation}#npad button:active{border-color:#404040 #fff #fff #404040;box-shadow:inset 1px 1px 0 #808080}#npad button.ab{border-radius:50%;min-width:24px;font-weight:bold;margin-left:2px}
   #drop{position:absolute;inset:3px;border:3px dashed #000080;background:rgba(0,0,128,.08);display:none;align-items:center;justify-content:center;font-size:15px;color:#000080;z-index:20;pointer-events:none}
   #drop.on{display:flex}
   @media (max-width:560px){#tree{display:none}#toolbar button{min-width:38px;min-height:30px}#toolbar button span{display:none}}
 </style></head><body>
 <div id="menubar" role="menubar"></div>
 <div id="toolbar" role="toolbar" aria-label="File Manager toolbar"></div>
-<div id="addr"><label for="path">Address</label><input id="path" type="text" spellcheck="false" autocomplete="off"><input id="q" type="search" placeholder="Search C:\" aria-label="Search"></div>
+<div id="addr"><label for="path">Address</label><input id="path" type="text" spellcheck="false" autocomplete="off"><input id="q" type="search" placeholder="Search C:\" aria-label="Search"><div id="npad" role="group" aria-label="Navigation pad"><button type="button" data-p="ArrowLeft" title="Up one folder level (←)" aria-label="Left: up one folder level">&larr;</button><button type="button" data-p="ArrowUp" title="Highlight the previous item (↑)" aria-label="Up: previous item">&uarr;</button><button type="button" data-p="ArrowDown" title="Highlight the next item (↓)" aria-label="Down: next item">&darr;</button><button type="button" data-p="ArrowRight" title="Enter the highlighted folder (→)" aria-label="Right: enter the highlighted folder">&rarr;</button><button type="button" data-p="b" class="ab" title="B: Back" aria-label="B button: back">B</button><button type="button" data-p="a" class="ab" title="A: Open" aria-label="A button: open">A</button></div></div>
 <div id="main"><div id="tree" role="tree" aria-label="All folders"></div><div id="split"></div>
   <div id="right"><div id="view" tabindex="0" class="v-details" role="listbox" aria-multiselectable="true" aria-label="Folder contents"><div class="hd"><div class="c0" data-k="name">Name</div><div class="c1" data-k="size">Size</div><div class="c2" data-k="type">Type</div><div class="c3" data-k="mod">Modified</div></div><div id="items"></div></div><div id="drop">Drop files here to copy them into this folder</div></div>
   <div id="prev" aria-label="Preview"></div></div>
@@ -126,7 +127,7 @@
   var esc = function (s) { return window.CSS && CSS.escape ? CSS.escape(s) : String(s).replace(/"/g, '\\"'); };
 
   /* ---------------- locations: shell:<folder> vfs:<id> gamedir:<url> saves:<url> search:<text> ---------------- */
-  var FOLDER_OF = { 'folder:documents': 'vfs:docs', 'folder:games': 'shell:games', 'folder:classics': 'shell:classics', 'folder:accessories': 'shell:accessories', 'drive:c': 'shell:drive-c', 'sys:my-computer': 'shell:my-computer', 'sys:network': 'shell:network' };
+  var FOLDER_OF = { 'folder:poor': 'shell:poor', 'folder:documents': 'vfs:docs', 'folder:games': 'shell:games', 'folder:classics': 'shell:classics', 'folder:accessories': 'shell:accessories', 'drive:c': 'shell:drive-c', 'sys:my-computer': 'shell:my-computer', 'sys:network': 'shell:network' };
   var games = function () { try { return P.catalog().games; } catch (e) { return []; } };
   var gameTitle = function (url) { var g = games().filter(function (x) { return x.url === url; })[0]; return g ? g.title : url; };
   var allSlots = function () { try { return JSON.parse(localStorage.getItem(SLKEY) || '{}') || {}; } catch (e) { return {}; } };
@@ -164,11 +165,22 @@
       { key: 'savesdir:' + url, name: 'saves', icon: IC('folder'), type: 'File Folder', folder: true, loc: 'saves:' + url, size: -1, mod: ls, desc: 'Save slots for ' + t }
     ];
   }
+  /* featured = the normal Games folder; the rest live in Games > Unfinished / Poor Quality (data.js: 'desktop-feature': false) */
+  var POOR_NAME = 'Unfinished / Poor Quality', POOR_PATH = 'C:\\Games\\Unfinished - Poor Quality';
+  var isPoorGame = function (url) { var g = games().filter(function (x) { return x.url === url; })[0]; return !!g && g.featured === false; };
+  function gameNode(g) {
+    var it = I.ITEMS.get('game:' + g.url);
+    return { key: 'gamedir:' + g.url, name: g.title, icon: it ? A(it.icon) : IC('folder'), type: 'File Folder', folder: true, loc: 'gamedir:' + g.url, size: -1, mod: lastSave(g.url), desc: it ? it.desc : '', thumb: true };
+  }
   function gamesNodes() {
-    return games().map(function (g) {
-      var it = I.ITEMS.get('game:' + g.url);
-      return { key: 'gamedir:' + g.url, name: g.title, icon: it ? A(it.icon) : IC('folder'), type: 'File Folder', folder: true, loc: 'gamedir:' + g.url, size: -1, mod: lastSave(g.url), desc: it ? it.desc : '', thumb: true };
-    });
+    var out = games().filter(function (g) { return g.featured !== false; }).map(gameNode);
+    if (I.FOLDERS.poor && I.FOLDERS.poor.items().length) out.push({ key: 'folder:poor', name: POOR_NAME, icon: IC('folder'), type: 'File Folder', folder: true, loc: 'shell:poor', size: -1, mod: 0, desc: 'Games and tools that are unfinished, abandoned or not up to the usual standard' });
+    return out;
+  }
+  function poorNodes() {
+    var out = games().filter(function (g) { return g.featured === false; }).map(gameNode);
+    I.FOLDERS.poor.items().forEach(function (id) { if (/^game:/.test(id) && isPoorGame(id.slice(5))) return; var n = shellNode(id); if (n) out.push(n); });
+    return out;
   }
   function shellList(fid) {
     var F = I.FOLDERS[fid]; if (!F) return [];
@@ -178,7 +190,7 @@
   }
   function listLoc(l) {
     var m;
-    if ((m = /^shell:(.+)$/.exec(l))) return m[1] === 'games' ? gamesNodes() : shellList(m[1]);
+    if ((m = /^shell:(.+)$/.exec(l))) return m[1] === 'games' ? gamesNodes() : m[1] === 'poor' ? poorNodes() : shellList(m[1]);
     if ((m = /^vfs:(.+)$/.exec(l))) return FS.children(m[1]).map(vfsNode);
     if ((m = /^gamedir:(.+)$/.exec(l))) return gameDirNodes(m[1]);
     if ((m = /^saves:(.+)$/.exec(l))) return slotNodes(m[1]);
@@ -189,15 +201,15 @@
     var m;
     if ((m = /^shell:(.+)$/.exec(l))) {
       var fid = m[1], F = I.FOLDERS[fid] || I.FOLDERS['my-computer'];
-      var path = { 'my-computer': 'My Computer', 'drive-c': 'C:\\', games: 'C:\\Games', classics: 'C:\\Classic Games', accessories: 'C:\\Accessories', network: 'Network Neighborhood' }[fid] || F.title;
-      return { title: fid === 'drive-c' ? 'ColtonOS (C:)' : F.title, icon: A(F.icon), path: path, parent: { 'my-computer': null, 'drive-c': 'shell:my-computer', games: 'shell:drive-c', classics: 'shell:drive-c', accessories: 'shell:drive-c', network: 'shell:my-computer' }[fid] || null, kind: fid === 'drive-c' ? 'Local Disk' : 'System Folder' };
+      var path = { 'my-computer': 'My Computer', 'drive-c': 'C:\\', poor: POOR_PATH, games: 'C:\\Games', classics: 'C:\\Classic Games', accessories: 'C:\\Accessories', network: 'Network Neighborhood' }[fid] || F.title;
+      return { title: fid === 'drive-c' ? 'ColtonOS (C:)' : F.title, icon: A(F.icon), path: path, parent: { 'my-computer': null, 'drive-c': 'shell:my-computer', poor: 'shell:games', games: 'shell:drive-c', classics: 'shell:drive-c', accessories: 'shell:drive-c', network: 'shell:my-computer' }[fid] || null, kind: fid === 'drive-c' ? 'Local Disk' : 'System Folder' };
     }
     if ((m = /^vfs:(.+)$/.exec(l))) {
       var id = m[1], meta = FS.meta(id), par = (id === 'docs' || id === 'desktop' || !meta || !meta.parent) ? 'shell:drive-c' : 'vfs:' + meta.parent;
       return { title: id === 'docs' ? 'My Documents' : id === 'desktop' ? 'Desktop' : meta ? meta.name : 'Folder', icon: id === 'docs' ? IC('documents-folder') : IC('folder'), path: FS.pathOf(id), parent: par, kind: 'File Folder' };
     }
-    if ((m = /^gamedir:(.+)$/.exec(l))) return { title: gameTitle(m[1]), icon: IC('folder'), path: 'C:\\Games\\' + gameTitle(m[1]), parent: 'shell:games', kind: 'File Folder' };
-    if ((m = /^saves:(.+)$/.exec(l))) return { title: 'saves', icon: IC('save-slot'), path: 'C:\\Games\\' + gameTitle(m[1]) + '\\saves', parent: 'gamedir:' + m[1], kind: 'File Folder', saves: m[1] };
+    if ((m = /^gamedir:(.+)$/.exec(l))) return { title: gameTitle(m[1]), icon: IC('folder'), path: (isPoorGame(m[1]) ? POOR_PATH : 'C:\\Games') + '\\' + gameTitle(m[1]), parent: isPoorGame(m[1]) ? 'shell:poor' : 'shell:games', kind: 'File Folder' };
+    if ((m = /^saves:(.+)$/.exec(l))) return { title: 'saves', icon: IC('save-slot'), path: (isPoorGame(m[1]) ? POOR_PATH : 'C:\\Games') + '\\' + gameTitle(m[1]) + '\\saves', parent: 'gamedir:' + m[1], kind: 'File Folder', saves: m[1] };
     if (/^search:/.test(l)) return { title: 'Search Results', icon: IC('find'), path: 'Search Results', parent: null, kind: 'Search', search: l.slice(7) };
     return info('shell:my-computer');
   }
@@ -356,12 +368,33 @@
     if (n.folder && n.loc) { if (newWin) P.openFM(n.loc, null, true); else go(n.loc); return; }
     n.open && n.open();
   }
+
+  /* on-screen navigation pad: left = up a level, right = enter the highlighted folder, up/down = move the highlight, B = back, A = open.
+     Every press also feeds the Konami code, so touch-only devices can earn that achievement. */
+  function padPress(k) {
+    try { P.konami && P.konami(k); } catch (e) {}
+    var ord = order(), sk = selKeys()[0], i = focusKey ? ord.indexOf(focusKey) : (sk ? ord.indexOf(sk) : -1);
+    if (k === 'ArrowUp' || k === 'ArrowDown') {
+      if (!ord.length) return;
+      var j = k === 'ArrowUp' ? (i < 0 ? ord.length - 1 : i - 1) : (i < 0 ? 0 : i + 1); j = Math.max(0, Math.min(ord.length - 1, j));
+      anchor = ord[j]; setSel([ord[j]], ord[j]); var f = itemsEl.querySelector('.foc'); if (f && f.scrollIntoView) f.scrollIntoView({ block: 'nearest' });
+    } else if (k === 'ArrowRight') {
+      var n = selNodes()[0]; if (!n && ord.length) { setSel([ord[0]], ord[0]); n = byKey(ord[0]); }
+      if (n && n.folder && n.loc) go(n.loc);
+    } else if (k === 'ArrowLeft') goUp();
+    else if (k === 'a') selNodes().forEach(function (n) { openNode(n, false); });
+    else if (k === 'b') goBack();
+    viewEl.focus();
+  }
+  $('#npad').addEventListener('click', function (e) { var b = e.target.closest('button[data-p]'); if (b) padPress(b.dataset.p); });
   viewEl.addEventListener('keydown', function (e) {
     var ord = order(), i = focusKey ? ord.indexOf(focusKey) : -1, k = e.key, cols = 1;
     if (view === 'large') { var cw = (itemsEl.firstElementChild && itemsEl.firstElementChild.offsetWidth) || 92; cols = Math.max(1, Math.floor((itemsEl.clientWidth - 12) / cw)); }
     var move = function (j) { if (!ord.length) return; j = Math.max(0, Math.min(ord.length - 1, j)); var key = ord[j]; if (e.shiftKey && anchor) { var a = ord.indexOf(anchor); setSel(ord.slice(Math.min(a, j), Math.max(a, j) + 1), key); } else { anchor = key; setSel([key], key); } var r = itemsEl.querySelector('[data-k="' + esc(key) + '"]'); if (r) r.scrollIntoView({ block: 'nearest', inline: 'nearest' }); };
     if (k === 'ArrowDown') { e.preventDefault(); move(view === 'large' ? i + cols : i + 1); }
     else if (k === 'ArrowUp') { e.preventDefault(); move(view === 'large' ? i - cols : i - 1); }
+    else if (k === 'ArrowRight' && view === 'details') { e.preventDefault(); var sn = selNodes()[0] || (ord.length && byKey(ord[0])); if (sn && sn.folder && sn.loc) go(sn.loc); else if (sn && !selNodes().length) setSel([ord[0]], ord[0]); }
+    else if (k === 'ArrowLeft' && view === 'details' && !e.altKey) { e.preventDefault(); goUp(); }
     else if (k === 'ArrowRight' && view !== 'details') { e.preventDefault(); move(i + (view === 'large' ? 1 : 8)); }
     else if (k === 'ArrowLeft' && view !== 'details' && !e.altKey) { e.preventDefault(); move(i - (view === 'large' ? 1 : 8)); }
     else if (k === 'Home') { e.preventDefault(); move(0); } else if (k === 'End') { e.preventDefault(); move(ord.length - 1); }
@@ -379,6 +412,7 @@
   });
   $('.hd', viewEl).addEventListener('click', function (e) { var d = e.target.closest('[data-k]'); if (!d) return; var k = d.dataset.k; if (sortK === k) sortDir = -sortDir; else { sortK = k; sortDir = 1; } store.set('gh-fm-sort', sortK); store.set('gh-fm-dir', sortDir); render(false); });
   window.addEventListener('keydown', function (e) {
+    if (!/^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '')) { try { P.konami && P.konami(e.key); } catch (x) {} }
     if (e.target === pathEl || e.target === qEl || (e.target.tagName === 'INPUT' && e.target.className === 'rn')) return;
     if (e.ctrlKey && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); qEl.focus(); }
     else if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); goBack(); } else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); goFwd(); }
@@ -591,7 +625,7 @@
     if (/^my computer$/i.test(parts[0])) parts.shift(); else if (/^network neighborhood$/i.test(parts[0])) return 'shell:network';
     else if (/^[a-z]:$/i.test(parts[0])) { if (parts[0][0].toLowerCase() === 'c') { cur = 'shell:drive-c'; parts.shift(); } else return null; }
     else cur = 'shell:drive-c';
-    for (var i = 0; i < parts.length; i++) { var nm = parts[i].toLowerCase(), hit = listLoc(cur).filter(function (n) { return n.folder && n.loc && n.name.toLowerCase() === nm; })[0]; if (!hit) return null; cur = hit.loc; }
+    for (var i = 0; i < parts.length; i++) { var nm = parts[i].toLowerCase(), hit = listLoc(cur).filter(function (n) { return n.folder && n.loc && (n.name.toLowerCase() === nm || n.name.replace(/\s*\/\s*/g, ' - ').toLowerCase() === nm); })[0]; if (!hit) return null; cur = hit.loc; }
     return cur;
   }
   pathEl.addEventListener('keydown', function (e) { e.stopPropagation(); if (e.key === 'Enter') { var l = resolvePath(pathEl.value); if (l) { go(l); viewEl.focus(); } else { note('Cannot find "' + pathEl.value + '".\nCheck the spelling and try again.', 'error'); pathEl.value = info(loc).path; } } else if (e.key === 'Escape') { pathEl.value = info(loc).path; viewEl.focus(); } });
