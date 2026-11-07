@@ -1432,7 +1432,7 @@
           else { try { localStorage.setItem('gh-scandisk-next', '1'); } catch (e) {} mb('ScanDisk will run the next time ColtonOS starts.', 'ScanDisk'); }
           return true;
         }
-        case 'konami': mb('Some doors only open for people who know the code.\n\nHint: the File Manager has a pad of arrow buttons. Up, up, down, down, left, right, left, right...', 'Old School'); return true;
+        case 'konami': mb('Some doors only open for people who know the code.\n\nHint: the File Manager has a pad of arrow buttons. Up, up, down, down...', 'Old School'); return true;
       }
       return false;
     };
