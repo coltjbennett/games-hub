@@ -40,9 +40,6 @@
 			html,body{touch-action:none;-webkit-user-select:none;user-select:none;overscroll-behavior:none}
 			#tc-layer{position:fixed;inset:0;z-index:50;display:none;touch-action:none;-webkit-tap-highlight-color:transparent}
 			body.tc-on #tc-layer{display:block}
-			.tc-flash{position:fixed;top:0;bottom:0;width:50%;z-index:49;pointer-events:none;opacity:0;transition:opacity .08s;background:linear-gradient(90deg,rgba(80,160,255,.28),rgba(80,160,255,0))}
-			#tc-fl{left:0}#tc-fr{right:0;transform:scaleX(-1)}
-			.tc-flash.on{opacity:1}
 			.tc-hint{position:fixed;bottom:8px;z-index:51;color:rgba(255,255,255,.55);font:11px Arial,sans-serif;pointer-events:none;letter-spacing:1px}
 			#tc-hl{left:12px}#tc-hr{right:12px}
 			body:not(.tc-on) .tc-hint{display:none}
@@ -157,7 +154,6 @@
 				document.getElementById("canvas").style.height = (window.innerHeight + 20) + "px";
 				});
 		</script>
-		<div class="tc-flash" id="tc-fl"></div><div class="tc-flash" id="tc-fr"></div>
 		<div id="tc-layer" aria-label="Touch left half for the left flipper, right half for the right flipper"></div>
 		<div class="tc-hint" id="tc-hl">TOUCH LEFT HALF = LEFT FLIPPER</div><div class="tc-hint" id="tc-hr" style="right:84px">TOUCH RIGHT HALF = RIGHT FLIPPER</div>
 		<button class="tc-btn" id="tc-restart" type="button" aria-label="Restart game">&#8635;</button>
@@ -174,12 +170,16 @@
 			function up(n){var k=K[n];fire("keyup",k[0],k[1],k[2]);}
 			/* tell touch players how it works instead of keyboard keys */
 			if(coarse){var c=document.getElementById("gui-controls");if(c)c.innerHTML='<span class="gui_controls_key">LEFT FLIPPER = </span>TOUCH LEFT HALF&nbsp;&nbsp;&nbsp;<span class="gui_controls_key">RIGHT FLIPPER = </span>TOUCH RIGHT HALF<br><span class="gui_controls_key">LAUNCH BALL = </span>PULL THE PLUNGER SLIDER DOWN AND LET GO<br><span class="gui_controls_key">TILT / RESTART / SOUND = </span>ON-SCREEN BUTTONS';B.classList.add("tc-touch");}
-			function enable(){B.classList.add("tc-on");try{window.focus();}catch(e){}}
+			/* keep keyboard focus in the game and stop the browser (Firefox quick find on '/' and ''') or the desktop from reacting to flipper keys */
+			function grab(){try{window.focus();document.body.setAttribute("tabindex","-1");document.body.focus({preventScroll:true});}catch(e){}}
+			document.addEventListener("keydown",function(e){if(e.key==="/"||e.key==="'"||e.key===" "||e.key==="ArrowUp"||e.key==="ArrowDown"||e.key==="ArrowLeft"||e.key==="ArrowRight"){e.preventDefault();}},true);
+			document.addEventListener("pointerdown",grab,true);
+			function enable(){B.classList.add("tc-on");grab();}
 			var st=document.getElementsByClassName("gui_start")[0];if(st)st.addEventListener("click",enable);
 			/* flippers: each finger holds the flipper for the half of the screen it is on */
-			var layer=document.getElementById("tc-layer"),held={},cnt={l:0,r:0},fl={l:document.getElementById("tc-fl"),r:document.getElementById("tc-fr")};
-			function press(s){if(cnt[s]++===0){down(s);fl[s].classList.add("on");}}
-			function release(s){if(cnt[s]>0&&--cnt[s]===0){up(s);fl[s].classList.remove("on");}}
+			var layer=document.getElementById("tc-layer"),held={},cnt={l:0,r:0};
+			function press(s){if(cnt[s]++===0){down(s);}}
+			function release(s){if(cnt[s]>0&&--cnt[s]===0){up(s);}}
 			layer.addEventListener("pointerdown",function(e){e.preventDefault();try{layer.setPointerCapture(e.pointerId);}catch(x){}var s=e.clientX<window.innerWidth/2?"l":"r";held[e.pointerId]=s;press(s);});
 			layer.addEventListener("pointermove",function(e){var s=held[e.pointerId];if(!s)return;var n=e.clientX<window.innerWidth/2?"l":"r";if(n!==s){release(s);held[e.pointerId]=n;press(n);}});
 			function end(e){var s=held[e.pointerId];if(!s)return;delete held[e.pointerId];release(s);}

@@ -96,14 +96,14 @@
   .dlg .pie{display:flex;gap:14px;align-items:center;margin-top:6px}.dlg .pie canvas{image-rendering:pixelated;flex:none}
   .dlg .lg i{display:inline-block;width:10px;height:10px;margin-right:6px;border:1px solid #000}
   .dlg .lg div{margin:2px 0}
-  #npad{display:flex;gap:2px;margin-left:6px;flex:none}#npad button{min-width:24px;height:22px;padding:0 4px;font:13px/1 W95FA,'MS Sans Serif',sans-serif;color:#000;background:#c0c0c0;border:2px solid;border-color:#fff #404040 #404040 #fff;box-shadow:inset -1px -1px 0 #808080;cursor:pointer;touch-action:manipulation}#npad button:active{border-color:#404040 #fff #fff #404040;box-shadow:inset 1px 1px 0 #808080}#npad button.ab{border-radius:50%;min-width:24px;font-weight:bold;margin-left:2px}
+  #npad{display:flex;gap:2px;margin-left:6px;flex:none}#npad button{min-width:24px;height:22px;padding:0 4px;font:13px/1 W95FA,'MS Sans Serif',sans-serif;color:#000;background:#c0c0c0;border:2px solid;border-color:#fff #404040 #404040 #fff;box-shadow:inset -1px -1px 0 #808080;cursor:pointer;touch-action:manipulation}#npad button:active{border-color:#404040 #fff #fff #404040;box-shadow:inset 1px 1px 0 #808080}
   #drop{position:absolute;inset:3px;border:3px dashed #000080;background:rgba(0,0,128,.08);display:none;align-items:center;justify-content:center;font-size:15px;color:#000080;z-index:20;pointer-events:none}
   #drop.on{display:flex}
   @media (max-width:560px){#tree{display:none}#toolbar button{min-width:38px;min-height:30px}#toolbar button span{display:none}}
 </style></head><body>
 <div id="menubar" role="menubar"></div>
 <div id="toolbar" role="toolbar" aria-label="File Manager toolbar"></div>
-<div id="addr"><label for="path">Address</label><input id="path" type="text" spellcheck="false" autocomplete="off"><input id="q" type="search" placeholder="Search C:\" aria-label="Search"><div id="npad" role="group" aria-label="Navigation pad"><button type="button" data-p="ArrowLeft" title="Up one folder level (←)" aria-label="Left: up one folder level">&larr;</button><button type="button" data-p="ArrowUp" title="Highlight the previous item (↑)" aria-label="Up: previous item">&uarr;</button><button type="button" data-p="ArrowDown" title="Highlight the next item (↓)" aria-label="Down: next item">&darr;</button><button type="button" data-p="ArrowRight" title="Enter the highlighted folder (→)" aria-label="Right: enter the highlighted folder">&rarr;</button><button type="button" data-p="b" class="ab" title="B: Back" aria-label="B button: back">B</button><button type="button" data-p="a" class="ab" title="A: Open" aria-label="A button: open">A</button></div></div>
+<div id="addr"><label for="path">Address</label><input id="path" type="text" spellcheck="false" autocomplete="off"><input id="q" type="search" placeholder="Search C:\" aria-label="Search"><div id="npad" role="group" aria-label="Navigation pad"><button type="button" data-p="ArrowLeft" title="Up one folder level (←)" aria-label="Left: up one folder level">&larr;</button><button type="button" data-p="ArrowUp" title="Highlight the previous item (↑)" aria-label="Up: previous item">&uarr;</button><button type="button" data-p="ArrowDown" title="Highlight the next item (↓)" aria-label="Down: next item">&darr;</button><button type="button" data-p="ArrowRight" title="Enter the highlighted folder (→)" aria-label="Right: enter the highlighted folder">&rarr;</button></div></div>
 <div id="main"><div id="tree" role="tree" aria-label="All folders"></div><div id="split"></div>
   <div id="right"><div id="view" tabindex="0" class="v-details" role="listbox" aria-multiselectable="true" aria-label="Folder contents"><div class="hd"><div class="c0" data-k="name">Name</div><div class="c1" data-k="size">Size</div><div class="c2" data-k="type">Type</div><div class="c3" data-k="mod">Modified</div></div><div id="items"></div></div><div id="drop">Drop files here to copy them into this folder</div></div>
   <div id="prev" aria-label="Preview"></div></div>
@@ -362,14 +362,24 @@
     else if (e.ctrlKey || e.metaKey) { var cur = selKeys(), i = cur.indexOf(k); if (i >= 0) cur.splice(i, 1); else cur.push(k); anchor = k; setSel(cur, k); }
     else { anchor = k; setSel([k], k); }
   });
-  itemsEl.addEventListener('dblclick', function (e) { var r = rowOf(e.target); if (!r) return; var n = byKey(r.dataset.k); if (n) openNode(n, e.ctrlKey); });
+  /* Opening an item: a real dblclick, OR two quick clicks/taps on the same row. Touch screens (and browsers with zoom gestures
+     disabled) do not reliably send dblclick, so the second tap is detected here; lastOpen stops the two paths from opening it twice. */
+  var lastOpen = 0, lastTap = { k: null, t: 0, x: 0, y: 0 };
+  function openRow(r, ctrl) { var n = byKey(r.dataset.k); var now = Date.now(); if (!n || now - lastOpen < 600) return; lastOpen = now; openNode(n, !!ctrl); }
+  itemsEl.addEventListener('dblclick', function (e) { var r = rowOf(e.target); if (r) openRow(r, e.ctrlKey); });
+  itemsEl.addEventListener('click', function (e) {
+    var r = rowOf(e.target); if (!r || e.shiftKey || e.metaKey) { lastTap.k = null; return; }
+    var now = Date.now();
+    if (lastTap.k === r.dataset.k && now - lastTap.t < 450 && Math.abs(e.clientX - lastTap.x) < 28 && Math.abs(e.clientY - lastTap.y) < 28) { lastTap.k = null; openRow(r, e.ctrlKey); }
+    else lastTap = { k: r.dataset.k, t: now, x: e.clientX, y: e.clientY };
+  });
   viewEl.addEventListener('click', function (e) { if (e.target === viewEl || e.target.id === 'items') setSel([]); });
   function openNode(n, newWin) {
     if (n.folder && n.loc) { if (newWin) P.openFM(n.loc, null, true); else go(n.loc); return; }
     n.open && n.open();
   }
 
-  /* on-screen navigation pad: left = up a level, right = enter the highlighted folder, up/down = move the highlight, B = back, A = open.
+  /* on-screen navigation pad: left = up a level, right = enter the highlighted folder, up/down = move the highlight.
      Every press also feeds the Konami code, so touch-only devices can earn that achievement. */
   function padPress(k) {
     try { P.konami && P.konami(k); } catch (e) {}
@@ -382,8 +392,6 @@
       var n = selNodes()[0]; if (!n && ord.length) { setSel([ord[0]], ord[0]); n = byKey(ord[0]); }
       if (n && n.folder && n.loc) go(n.loc);
     } else if (k === 'ArrowLeft') goUp();
-    else if (k === 'a') selNodes().forEach(function (n) { openNode(n, false); });
-    else if (k === 'b') goBack();
     viewEl.focus();
   }
   $('#npad').addEventListener('click', function (e) { var b = e.target.closest('button[data-p]'); if (b) padPress(b.dataset.p); });

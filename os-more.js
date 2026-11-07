@@ -313,11 +313,11 @@
       const hr = new Date().getHours(); if (hr < 4) unlock('night_owl');
     };
     setInterval(tickA, 30000); setTimeout(tickA, 4000);
-    const code = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a']; let pos = 0;
+    const code = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight']; let pos = 0;
     /* one feeder for keyboards AND the File Manager's on-screen pad (so touch-only devices can earn it too) */
     const feedKonami = key => {
       const k = key.length === 1 ? key.toLowerCase() : key;
-      if (k === code[pos]) { pos++; if (pos === code.length) { pos = 0; unlock('konami'); GH.emit('konami'); GH.tapey && GH.tapey.dance('↑↑↓↓←→←→BA — 30 extra lives!'); } } else pos = k === code[0] ? 1 : 0;
+      if (k === code[pos]) { pos++; if (pos === code.length) { pos = 0; unlock('konami'); GH.emit('konami'); GH.tapey && GH.tapey.dance('↑↑↓↓←→←→ — 30 extra lives!'); } } else pos = k === code[0] ? 1 : 0;
     };
     GH.konami = feedKonami;
     D.addEventListener('keydown', e => {
