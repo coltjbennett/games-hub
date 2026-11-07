@@ -198,6 +198,7 @@ const IMAGES = [
   "./images/winBG.PNG",
   "./images/win95.mp3",
   "./images/dial.mp3",
+  "./images/drive.mp3",
   "./images/tapey-dialogs.js",
   "./images/tapey-dialogs-more.js",
   "./images/tapey-dialogs-plus.js",
