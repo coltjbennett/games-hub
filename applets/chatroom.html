@@ -410,7 +410,10 @@
         .users-sidebar-title { font-size:12px; white-space:nowrap; }
         .users-online-count { font-size:11px; white-space:nowrap; margin-left:auto; }
         .users-sidebar-toggle { min-width:23px; width:23px; height:21px; padding:0; line-height:1; }
-        #user-list { flex:1 1 auto; min-height:0; overflow-y:auto; margin-top:4px !important; }
+        .users-sidebar.is-side .users-sidebar-toggle { display:none; }
+        #user-list { flex:1 1 auto; min-height:0; overflow-y:auto !important; overscroll-behavior:contain; margin-top:4px !important; }
+        .users-sidebar.is-bottom:not(.is-collapsed) { flex:0 1 38vh !important; width:100%; min-width:0; max-width:none; min-height:66px; max-height:38vh; }
+        .users-sidebar.is-bottom:not(.is-collapsed) #user-list { min-height:24px; }
         .users-sidebar.is-collapsed { padding:3px !important; }
         .users-sidebar.is-collapsed #user-list,
         .users-sidebar.is-collapsed .users-sidebar-title,
@@ -419,7 +422,7 @@
         .users-sidebar.is-collapsed .users-sidebar-toggle { width:100%; min-width:0; height:32px; font-size:11px; font-weight:bold; white-space:nowrap; }
         .users-sidebar.is-collapsed.is-side { flex:0 0 62px !important; min-width:62px; max-width:62px; align-self:stretch; }
         .users-sidebar.is-collapsed.is-side .users-sidebar-toggle { height:auto; min-height:72px; writing-mode:vertical-rl; }
-        .users-sidebar.is-collapsed.is-bottom { flex:0 0 34px !important; width:100%; max-width:none; min-width:0; }
+        .users-sidebar.is-collapsed.is-bottom { flex:0 0 34px !important; width:100%; max-width:none; min-width:0; min-height:34px; max-height:34px; }
         .users-sidebar.is-collapsed.is-bottom .users-sidebar-toggle { height:28px; writing-mode:horizontal-tb; }
         @media (max-width:700px) {
             body { padding:4px; height:100dvh; }
@@ -433,8 +436,9 @@
         @media (max-width:480px) {
             #chat-screen > div[style*="flex: 1; gap: 6px"] { flex-direction:column !important; }
             #chat-screen > div[style*="flex: 1; gap: 6px"] > div:first-child { min-height:0; flex:1 1 auto !important; }
-            #chat-screen > div[style*="flex: 1; gap: 6px"] > .users-sidebar { flex:0 0 34px !important; width:100%; min-width:0; max-width:none; max-height:34px; }
-            .users-sidebar.is-collapsed.is-bottom { max-height:34px; }
+            #chat-screen > div[style*="flex: 1; gap: 6px"] > .users-sidebar { width:100%; min-width:0; max-width:none; }
+            #chat-screen > div[style*="flex: 1; gap: 6px"] > .users-sidebar:not(.is-collapsed) { flex:0 1 38vh !important; min-height:66px; max-height:38vh; }
+            #chat-screen > div[style*="flex: 1; gap: 6px"] > .users-sidebar.is-collapsed { flex:0 0 34px !important; min-height:34px; max-height:34px; }
         }
         @media (max-width:420px) {
             #status { max-width:46vw; }
@@ -576,8 +580,8 @@
                     <option value="DND">Do Not Disturb</option>
                 </select>
                 <button onclick="openConnPanel()">Connection</button>
-                <button onclick="toggleSettings()">Settings</button>
                 <button id="advanced-toggle" onclick="toggleAdvancedMenu()">Advanced</button>
+                <button onclick="toggleSettings()">Settings</button>
                 <button id="admin-clear-btn" onclick="openAdminTools()" style="display: none; background: #8b0000; color: white; font-weight: bold;">Admin Tools</button>
             </div>
         </div>
@@ -1727,6 +1731,7 @@
                 return t;
             }
             if (data.type === 'TYPING' && data.tab === 'dm' && data.target) return [TOPIC_USER(data.target)];
+            if (data.type === 'TYPING' && typeof data.room === 'string' && data.room.startsWith('group:')) return [xGroupTopic(data.room.slice(6))];
             return [ROOM_TOPIC];
         }
         const outbox = new Map();
@@ -1860,22 +1865,35 @@
             return a.length > 40;
         }
 
-        // ---- typing indicator (multi-user, per tab) ----
+        // ---- typing indicator, isolated by global / group / DM conversation ----
         const typingUsers = new Map();
         let typingTick = null, lastTypingTab = '';
-        function noteTyping(author, tab) { typingUsers.set(author, { tab, expires: Date.now() + 3500 }); renderTypingIndicator(); }
+        function typingRoomKey(tab, author = '', target = '') {
+            if (typeof tab === 'string' && tab.startsWith('dm:')) {
+                const other = tab.slice(3);
+                return `dm:${[myUsername, other].sort((a,b)=>a.localeCompare(b)).join(':')}`;
+            }
+            if (typeof tab === 'string' && tab.startsWith('group:')) return tab;
+            return 'global';
+        }
+        function noteTyping(author, room) {
+            const roomKey = room || (currentTab === 'global' ? 'global' : (currentTab.startsWith('group:') ? currentTab : typingRoomKey(currentTab, author)));
+            typingUsers.set(`${roomKey}|${author}`, { author, room:roomKey, expires:Date.now()+3500 });
+            renderTypingIndicator();
+        }
         function renderTypingIndicator() {
             const now = Date.now(), names = [];
-            typingUsers.forEach((v, name) => {
-                if (v.expires <= now) { typingUsers.delete(name); return; }
-                if (blockedUsers.has(name)) return;
-                if ((currentTab === 'global' && v.tab === 'global') || (currentTab === `dm:${name}` && v.tab === 'dm')) names.push(name);
+            const roomKey = typingRoomKey(currentTab);
+            typingUsers.forEach((v, key) => {
+                if (v.expires <= now) { typingUsers.delete(key); return; }
+                if (blockedUsers.has(v.author)) return;
+                if (v.room === roomKey && v.author !== myUsername && !names.includes(v.author)) names.push(v.author);
             });
+            names.sort((a,b)=>a.localeCompare(b));
             let text = '';
             if (names.length === 1) text = `${names[0]} is typing...`;
             else if (names.length === 2) text = `${names[0]} and ${names[1]} are typing...`;
-            else if (names.length === 3) text = `${names[0]}, ${names[1]} and ${names[2]} are typing...`;
-            else if (names.length > 3) text = 'Several people are typing...';
+            else if (names.length > 2) text = `${names.slice(0, -1).join(', ')} and ${names[names.length-1]} are typing...`;
             ui.typing.innerText = text;
             clearTimeout(typingTick);
             if (typingUsers.size) typingTick = setTimeout(renderTypingIndicator, 1000);
@@ -2237,22 +2255,14 @@
         }
 
         function getActivityPresenceBadge(userData) {
-            if (userData.isOnHomepage) {
-                return " <span style='font-size:11px; color:#555;'>[On homepage]</span>";
-            }
-
+            if (userData.isOnHomepage) return " <span style='font-size:11px; color:#555;'>[On homepage]</span>";
             const activity = normalizeActivity(userData.activity, false);
-
-            if (activity.kind === "homepage") {
-                return " <span style='font-size:11px; color:#555;'>[On homepage]</span>";
-            }
-
-            if (activity.kind === "chatroom") {
-                return " <span style='font-size:11px; color:#008000;'>[Online]</span>";
-            }
-
-            const label = escapeHTML(activity.name || "an active window");
-            return ` <span style='font-size:11px; color:#008000;'>[currently active in ${label}]</span>`;
+            if (activity.kind === 'homepage') return " <span style='font-size:11px; color:#555;'>[On homepage]</span>";
+            const room = typeof userData.room === 'string' ? userData.room : 'global';
+            const here = room === currentTab || (room === 'global' && currentTab === 'global');
+            return here
+                ? " <span style='font-size:11px; color:#008000;'>[Online]</span>"
+                : " <span style='font-size:11px; color:#008000;'>[Online - In other room]</span>";
         }
 
         function buildPingNotificationText(author, messageText, isEveryone = false, isOffline = false) {
@@ -3174,7 +3184,8 @@
                 isOnHomepage: isOnHomepage,
                 isGhost: false,
                 status: currentStatus,
-                activity: { ...currentActivity }
+                activity: { ...currentActivity },
+                room: currentTab === 'global' ? 'global' : (currentTab.startsWith('group:') ? currentTab : 'other')
             });
             Object.keys(dmHistories).forEach(u => saveDmHistory(u)); // DM storage keys include our username
             ensureSubscriptions();
@@ -3301,6 +3312,7 @@
             hideNewMsgPopup();
             renderActiveTabMessages();
             renderTypingIndicator();
+            if (isConnected) publishPing(true);
 
             if (tabId.startsWith("dm:")) {
                 const targetUser = tabId.replace("dm:", "");
@@ -3712,7 +3724,8 @@
                 joinTime: uData.joinTime, idle: document.hidden === true,
                 timestamp: Date.now(),
                 status: currentStatus,
-                activity: { ...currentActivity }
+                activity: { ...currentActivity },
+                room: currentTab === 'global' ? 'global' : (currentTab.startsWith('group:') ? currentTab : 'other')
             });
             if (published) lastPingPublishedAt = Date.now();
             return published;
@@ -4235,7 +4248,8 @@
                             activity: incomingActivity,
                             cid: data.cid || (existing ? existing.cid : undefined),
                             sid: data.sid || (existing ? existing.sid : undefined),
-                            idle: data.idle !== undefined ? data.idle === true : ((data.type === "PING" || data.type === "JOIN") ? false : !!(existing && existing.idle))
+                            idle: data.idle !== undefined ? data.idle === true : ((data.type === "PING" || data.type === "JOIN") ? false : !!(existing && existing.idle)),
+                            room: data.type === 'PING' && ['global','other'].includes(data.room) || (data.type === 'PING' && typeof data.room === 'string' && /^group:[A-Za-z0-9_-]{8,64}$/.test(data.room)) ? data.room : (existing && existing.room) || 'global'
                         });
                         { const ue = activeUsers.get(data.author); if (ue) ue.idleSince = ue.idle ? ((existing && existing.idle && existing.idleSince) || Date.now()) : 0; }
                         // someone we never saw arrive (their JOIN was lost or we connected late) still gets a join notice once we've been listening a while
@@ -4330,6 +4344,7 @@
                         const liveMsg = (Date.now() - (msgObj.timestamp || Date.now())) < 90000;
                         messageHistory = mergeHistory(messageHistory, [msgObj], liveMsg); saveLocalHistory();
                         noteAttachmentRefs([msgObj], { live: true }); applyPendingOps(msgObj.id);
+                        if (isNew && data.author !== myUsername && currentTab !== 'global') markUnread('global');
                         if (currentTab === "global" && isNew) {
                             // Only append when the message really was inserted. If it was merged into an
                             // existing placeholder or rejected by a tombstone, re-render instead of
@@ -4464,7 +4479,10 @@
                         messageHistory.push(sysObj); messageHistoryIdSet.add(sysObj.id); saveLocalHistory(); scheduleRenderActiveTabMessages(); 
                     }
                     else if (data.type === "TYPING") {
-                        if (!isGhost && data.author !== myUsername && !blockedUsers.has(data.author)) noteTyping(data.author, data.tab === "dm" ? "dm" : "global");
+                        if (!isGhost && data.author !== myUsername && !blockedUsers.has(data.author)) {
+                            const roomKey = data.room || (data.tab === 'dm' ? `dm:${[myUsername, data.author].sort((a,b)=>a.localeCompare(b)).join(':')}` : 'global');
+                            noteTyping(data.author, roomKey);
+                        }
                     }
                     else if (data.type === "RENAME") {
                         const oldName = data.oldAuthor; const newName = data.author;
@@ -5780,18 +5798,19 @@
                     badge.textContent = ` [${userData.status}]`;
                     item.appendChild(badge);
                 }
-                if (userData.idle || (now - userData.lastSeen > 10000 && user !== myUsername)) {
+                const isInactive = !!userData.idle || (now - userData.lastSeen > 10000 && user !== myUsername);
+                if (isInactive) {
                     const inactive = document.createElement('span');
                     inactive.style.cssText = 'font-size:11px;color:#888;';
-                    inactive.textContent = ' (Inactive)';
+                    inactive.textContent = ' [Inactive]';
                     item.appendChild(inactive);
-                }
-
-                const activityBadge = getActivityPresenceBadge(userData);
-                if (activityBadge) {
-                    const wrapper = document.createElement('span');
-                    wrapper.innerHTML = activityBadge;
-                    item.appendChild(wrapper);
+                } else {
+                    const activityBadge = getActivityPresenceBadge(userData);
+                    if (activityBadge) {
+                        const wrapper = document.createElement('span');
+                        wrapper.innerHTML = activityBadge;
+                        item.appendChild(wrapper);
+                    }
                 }
 
                 item.addEventListener('click', (event) => showUserContextMenu(event, user));
@@ -5851,8 +5870,14 @@
             if (now - lastTypingSentAt < 2000 && lastTypingTab === currentTab) return; // throttle instead of one packet per keystroke
             lastTypingSentAt = now; lastTypingTab = currentTab;
             // DM typing goes only to the other person's inbox; room typing goes to the room.
-            if (currentTab.startsWith("dm:")) publishMessage({ type: "TYPING", author: myUsername, tab: "dm", target: currentTab.slice(3) });
-            else publishMessage({ type: "TYPING", author: myUsername, tab: "global" });
+            if (currentTab.startsWith('dm:')) {
+                const target = currentTab.slice(3);
+                publishMessage({ type:'TYPING', author:myUsername, tab:'dm', target, room:typingRoomKey(currentTab) });
+            } else if (currentTab.startsWith('group:')) {
+                publishMessage({ type:'TYPING', author:myUsername, tab:'global', room:currentTab });
+            } else {
+                publishMessage({ type:'TYPING', author:myUsername, tab:'global', room:'global' });
+            }
         }
 
         function validateChatPayload(data) {
@@ -5873,6 +5898,7 @@
             if (data.idle !== undefined && typeof data.idle !== 'boolean') return false;
             if (data.sig !== undefined && (typeof data.sig !== 'string' || data.sig.length > 200)) return false;
             if (data.tab !== undefined && data.tab !== 'global' && data.tab !== 'dm') return false;
+            if (data.room !== undefined && (typeof data.room !== 'string' || data.room.length > 100)) return false;
             if (data.ids !== undefined && (!Array.isArray(data.ids) || data.ids.length > 400 || data.ids.some(x => typeof x !== 'string' || x.length > 80))) return false;
             if (data.type === 'CMD' && !['KICK','BAN','MUTE','TIMEOUT','UNMUTE'].includes(data.cmd)) return false;
             if (data.type === 'REACT_MSG' && (typeof data.emoji !== 'string' || data.emoji.length > 16)) return false;
@@ -7398,12 +7424,12 @@
             const panel = document.getElementById('users-sidebar');
             const toggle = document.getElementById('users-sidebar-toggle');
             if (!panel || !toggle) return;
+            const wasBottom = panel.classList.contains('is-bottom');
             const isBottom = window.matchMedia('(max-width: 480px)').matches;
             panel.classList.toggle('is-bottom', isBottom);
             panel.classList.toggle('is-side', !isBottom);
-            if (isBottom && !panel.classList.contains('is-collapsed')) {
-                panel.classList.add('is-collapsed');
-            }
+            if (isBottom && !wasBottom) panel.classList.add('is-collapsed');
+            if (!isBottom) panel.classList.remove('is-collapsed');
             xUpdateUsersSidebarCounter();
         }
         function xUpdateUsersSidebarCounter() {
@@ -7421,7 +7447,11 @@
         function toggleUsersSidebar() {
             const panel = document.getElementById('users-sidebar');
             if (!panel) return;
-            panel.classList.toggle('is-collapsed');
+            if (panel.classList.contains('is-side')) {
+                panel.classList.remove('is-collapsed');
+            } else {
+                panel.classList.toggle('is-collapsed');
+            }
             xUpdateUsersSidebarCounter();
         }
         window.addEventListener('resize', () => syncUsersSidebarLayout(true), { passive: true });
@@ -7570,7 +7600,7 @@
             }
             if(wasClosed){closedDMs.delete(oldName);closedDMs.add(newName);saveClosedDMs();}
             if(blockedUsers.has(oldName)){blockedUsers.delete(oldName);blockedUsers.add(newName);safeSet(BLOCKED_KEY,JSON.stringify(Array.from(blockedUsers)));renderBlockedUI();}
-            if(typingUsers.has(oldName)){const typing=typingUsers.get(oldName);typingUsers.delete(oldName);typingUsers.set(newName,typing);}
+            typingUsers.forEach((typing,key)=>{if(typing.author===oldName){typingUsers.delete(key);typing.author=newName;typingUsers.set(`${typing.room}|${newName}`,typing);}});
             if(wasOpen){
                 if(oldTab)oldTab.remove();
                 closedDMs.delete(newName);saveClosedDMs();
