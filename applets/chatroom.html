@@ -3575,7 +3575,7 @@
                 isGhost: isGhost,
                 isOnHomepage: isOnHomepage,
                 chatWindowOpen: isChatWindowOpen,
-                joinTime: uData.joinTime,
+                joinTime: uData.joinTime, idle: document.hidden === true,
                 timestamp: Date.now(),
                 status: currentStatus,
                 activity: { ...currentActivity }
@@ -3832,6 +3832,8 @@
 
         /* ---- presence notices: deterministic ids, derived from observed state, not from a single lossy packet ---- */
         const PRESENCE_TIMEOUT_MS = 45000;
+        const IDLE_GRACE_MS = 5 * 60000 + 20000; // a tabbed-out user is only 'gone' after 5 quiet minutes
+        function willDelay(name) { const u = activeUsers.get(name); return u && u.idle ? Math.max(WILL_GRACE_MS, (u.idleSince || Date.now()) + IDLE_GRACE_MS - Date.now()) : WILL_GRACE_MS; }
         function latestPresenceEvent(user) {
             let best = null, bi = -1;
             messageHistory.forEach((m, i) => {
@@ -3864,7 +3866,7 @@
             if (!isConnected) { joinWanted = true; return; }
             joinWanted = false;
             const now = Date.now();
-            publishMessage({ type: "JOIN", cid: myCid, sid: mySid, author: myUsername, joinTime: (activeUsers.get(myUsername) || {}).joinTime || now, timestamp: now,
+            publishMessage({ type: "JOIN", cid: myCid, sid: mySid, author: myUsername, joinTime: (activeUsers.get(myUsername) || {}).joinTime || now, timestamp: now, idle: document.hidden === true,
                 id: `pj-${myUsername}-${mySid}-${connSeq}`, isOnHomepage: isOnHomepage, chatWindowOpen: isChatWindowOpen, status: currentStatus, activity: { ...currentActivity } });
         }
         const pendingOps = new Map(); // edits/reactions that arrived before their message
@@ -3885,7 +3887,23 @@
             publishPing(true);
             if (historyReadyForSync) requestManifestBroadcast();
         }
-        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wakeUp(false); });
+        let hiddenAt = 0;
+        document.addEventListener('visibilitychange', () => {
+            const me = activeUsers.get(myUsername);
+            if (document.visibilityState === 'hidden') {
+                hiddenAt = Date.now();
+                if (me) { me.idle = true; me.idleSince = hiddenAt; }
+                renderUserList();
+                if (isConnected) publishPing(true); // tell everyone immediately that we're tabbed out, not "gone"
+            } else {
+                const away = hiddenAt ? Date.now() - hiddenAt : 0; hiddenAt = 0;
+                if (me) { me.idle = false; me.idleSince = 0; }
+                renderUserList();
+                wakeUp(away > IDLE_GRACE_MS); // away long enough that others dropped us: announce a fresh join
+                // a socket the OS silently killed while we were away: if nothing arrives shortly, rebuild it
+                setTimeout(() => { if (client && isConnected && activeUsers.size > 1 && Date.now() - lastInboundAt > 9000) forceReconnect('stale after tab return'); }, 9000);
+            }
+        });
         window.addEventListener('online', () => wakeUp(false));
         window.addEventListener('pageshow', (e) => { if (e.persisted) wakeUp(true); });
 
@@ -3902,7 +3920,7 @@
         }
         setInterval(() => {
             if (!client || !isConnected) return;
-            const silent = Date.now() - lastInboundAt, limit = document.visibilityState === 'hidden' ? 150000 : 60000;
+            const silent = Date.now() - lastInboundAt, limit = document.visibilityState === 'hidden' ? IDLE_GRACE_MS + 10000 : 60000;
             if (silent > limit) forceReconnect('no traffic for ' + Math.round(silent / 1000) + 's');
         }, 8000);
         /* Hidden tabs get their timers throttled to ~1/min, which made healthy users look dead (and could starve MQTT keep-alive).
@@ -3937,7 +3955,7 @@
                                 activeUsers.delete(name);
                                 if (!u.isGhost && !name.startsWith('ghost-')) announceLeaveNotice(name, u.sid || data.sid, Date.now(), true);
                                 renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
-                            }, WILL_GRACE_MS));
+                            }, willDelay(name)));
                         });
                         return;
                     }
@@ -3972,8 +3990,10 @@
                             status: data.status || (existing ? existing.status : "Online"),
                             activity: incomingActivity,
                             cid: data.cid || (existing ? existing.cid : undefined),
-                            sid: data.sid || (existing ? existing.sid : undefined)
+                            sid: data.sid || (existing ? existing.sid : undefined),
+                            idle: data.idle !== undefined ? data.idle === true : ((data.type === "PING" || data.type === "JOIN") ? false : !!(existing && existing.idle))
                         });
+                        { const ue = activeUsers.get(data.author); if (ue) ue.idleSince = ue.idle ? ((existing && existing.idle && existing.idleSince) || Date.now()) : 0; }
                         // someone we never saw arrive (their JOIN was lost or we connected late) still gets a join notice once we've been listening a while
                         if (!existing && data.author !== myUsername && data.type !== "JOIN" && data.type !== "LEAVE" && !data.isGhost && !data.author.startsWith("ghost-") &&
                             isConnected && Date.now() - lastConnectedAt > 12000 && (!data.timestamp || Date.now() - data.timestamp < 30000)) {
@@ -5489,7 +5509,7 @@
             if (gap > 20000) { activeUsers.forEach(u => { u.lastSeen = now; }); updateAndBroadcastPresence(); return; } // we were asleep/throttled, so silence proves nothing
             let changed = false;
             activeUsers.forEach((userData, user) => {
-                if (user !== myUsername && now - userData.lastSeen > PRESENCE_TIMEOUT_MS) {
+                if (user !== myUsername && now - userData.lastSeen > (userData.idle ? IDLE_GRACE_MS : PRESENCE_TIMEOUT_MS)) {
                     activeUsers.delete(user);
                     if (!userData.isGhost && !user.startsWith('ghost-')) announceLeaveNotice(user, userData.sid, now, true);
                     changed = true;
@@ -5521,7 +5541,7 @@
                     badge.textContent = ` [${userData.status}]`;
                     item.appendChild(badge);
                 }
-                if (now - userData.lastSeen > 10000 && user !== myUsername) {
+                if (userData.idle || (now - userData.lastSeen > 10000 && user !== myUsername)) {
                     const inactive = document.createElement('span');
                     inactive.style.cssText = 'font-size:11px;color:#888;';
                     inactive.textContent = ' (Inactive)';
@@ -5611,6 +5631,7 @@
             if (data.thumb !== undefined && (typeof data.thumb !== 'string' || data.thumb.length > 70000)) return false;
             if (data.cid !== undefined && (typeof data.cid !== 'string' || data.cid.length > 80)) return false;
             if (data.sid !== undefined && (typeof data.sid !== 'string' || data.sid.length > 80)) return false;
+            if (data.idle !== undefined && typeof data.idle !== 'boolean') return false;
             if (data.sig !== undefined && (typeof data.sig !== 'string' || data.sig.length > 200)) return false;
             if (data.tab !== undefined && data.tab !== 'global' && data.tab !== 'dm') return false;
             if (data.ids !== undefined && (!Array.isArray(data.ids) || data.ids.length > 400 || data.ids.some(x => typeof x !== 'string' || x.length > 80))) return false;
