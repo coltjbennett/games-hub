@@ -363,6 +363,16 @@
         .x-contact-row { padding:3px 5px; border-bottom:1px solid #ddd; font-size:12px; display:flex; justify-content:space-between; gap:8px; }
         .x-contact-row:last-child { border-bottom:0; }
         .x-contact-alias { color:#666; font-size:10px; }
+        .x-name-picker { max-height: min(44vh, 320px); overflow-y:auto; overflow-x:hidden; border:2px inset var(--win-border-dark); background:#fff; padding:4px; margin:5px 0; }
+        .x-name-option { display:flex; align-items:center; gap:7px; min-height:27px; padding:3px 5px; cursor:pointer; border-bottom:1px solid #e4e4e4; }
+        .x-name-option:last-child { border-bottom:0; }
+        .x-name-option:hover { background:#e8f0ff; }
+        .x-name-option input { position:absolute; opacity:0; width:1px; height:1px; }
+        .x-name-check { width:15px; height:15px; flex:0 0 15px; border:2px inset var(--win-border-dark); background:#fff; display:inline-flex; align-items:center; justify-content:center; }
+        .x-name-option input:checked + .x-name-check { background:#fff; border:2px inset var(--win-border-dark); }
+        .x-name-option input:checked + .x-name-check::after { content:'✓'; font-size:13px; line-height:11px; font-weight:bold; color:#000080; }
+        .x-name-option input:focus-visible + .x-name-check { outline:1px dotted #000; outline-offset:2px; }
+        .x-name-empty { padding:8px; color:#666; font-size:12px; }
         .x-section-label { list-style:none; font-weight:bold; border-top:1px solid #808080; margin-top:5px; padding:5px 3px 2px; font-size:11px; color:#333; }
         .x-offline-user { color:#777 !important; cursor:pointer; }
         .x-tab-settings-section { border-top:1px solid #808080; padding-top:7px; margin:8px 0; font-size:12px; }
@@ -386,6 +396,30 @@
         .viewer-nav:active { box-shadow:inset -1px -1px #fff,inset 1px 1px #0a0a0a,inset -2px -2px #dfdfdf,inset 2px 2px #808080; }
         .viewer-nav-left { left:14px; } .viewer-nav-right { right:14px; }
         .viewer-gallery-count { position:fixed; z-index:10055; left:50%; bottom:12px; transform:translateX(-50%); padding:3px 8px; background:#000; color:#fff; font-size:12px; border:1px solid #888; }
+        /* Keep the top controls inside the viewport on narrow screens. */
+        .chat-topbar { min-width:0; gap:6px; }
+        .chat-top-status { flex:1 1 150px; min-width:0; }
+        .chat-top-actions { flex:0 1 auto; min-width:0; max-width:100%; flex-wrap:wrap; justify-content:flex-end; }
+        .chat-top-actions > button, .chat-top-actions > select { flex:0 1 auto; min-width:0; max-width:100%; }
+        #admin-clear-btn { white-space:nowrap !important; overflow-wrap:normal !important; word-break:keep-all !important; }
+        @media (max-width:560px) {
+            .chat-topbar { align-items:flex-start !important; flex-wrap:wrap; }
+            .chat-top-status { flex:1 1 100%; }
+            .chat-top-actions { width:100%; justify-content:flex-start; }
+        }
+        @media (max-width:340px) {
+            .chat-top-actions { gap:3px; }
+            .chat-top-actions > button, .chat-top-actions > select { font-size:10px !important; padding:2px 3px !important; }
+        }
+
+        /* Chat images always derive their size from the current available width. */
+        .chat-image, .x-attachment-item img.chat-image {
+            width:auto !important; height:auto !important; max-width:min(250px, calc(100% - 8px)) !important;
+            max-height:230px; object-fit:contain; flex:0 1 auto;
+        }
+        .x-attachment-item { min-width:0; }
+        .x-multi-attachments { min-width:0; max-width:100%; }
+
         #chat-screen { min-height:0; }
         .users-sidebar {
             flex:0 0 clamp(104px, 13vw, 168px) !important;
@@ -567,13 +601,13 @@
     </div>
 
     <div id="chat-screen" style="display: none; height: 100%; width: 100%; flex-direction: column;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+        <div class="chat-topbar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <div class="chat-top-status" style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
                 <span id="status" style="font-size: 13px; font-weight: bold;">Connecting to chatroom...</span>
                 <span id="connection-status" onclick="openConnPanel()" title="Click for connection details" style="cursor: pointer; display: inline-block; width: fit-content; font-size: 10px; padding: 1px 4px; border: 1px inset #808080; background: #ffffcc; color: #775500;">MQTT: CONNECTING</span>
                 <span id="activity-status" style="font-size: 11px; color: #555;">On homepage</span>
             </div>
-            <div style="display: flex; gap: 4px; align-items: center;">
+            <div class="chat-top-actions" style="display: flex; gap: 4px; align-items: center;">
                 <select id="status-select" onchange="changeStatus()" style="font-size: 12px; height: 22px; padding: 0 4px;">
                     <option value="Online">Online</option>
                     <option value="AFK">AFK</option>
@@ -1315,7 +1349,18 @@
             const B = (typeof Buffer !== 'undefined' && Buffer) || (window.mqtt && window.mqtt.Buffer) || capturedBufferCtor;
             return B && B.from ? B.from(u8.buffer, u8.byteOffset, u8.byteLength) : null;
         }
-        async function sendAttachmentFrame(id, { to = null } = {}) {
+        // New attachments created in the current session use a high-priority queue.
+        // Retroactive ATT_PULL transfers yield between chunks whenever this queue has work.
+        const liveAttQueue = [];
+        let liveAttSending = false;
+        const waitForLiveAttQueue = async () => {
+            while (liveAttSending || liveAttQueue.length) await new Promise(r => setTimeout(r, 40));
+        };
+        async function sendAttachmentFrame(id, { to = null, yieldIfLive = false } = {}) {
+            if (!client || !isConnected || isGhost) return false;
+            // Historical sync must wait even for a one-frame/small attachment. The
+            // chunk-loop check below then keeps yielding between chunks for large files.
+            if (yieldIfLive) await waitForLiveAttQueue();
             if (!client || !isConnected || isGhost) return false;
             const rec = await attGet(id);
             if (!rec || !rec.blob) return false;
@@ -1341,12 +1386,21 @@
                 };
                 attempt(0);
             });
-            if (body.length <= ATT_CHUNK_BYTES) return publishOne(encodeFrame(base, body, gz));
+            if (body.length <= ATT_CHUNK_BYTES) {
+                // Re-check after storage/compression work so a newly queued live batch
+                // can jump ahead of a not-yet-published historical single-frame file.
+                if (yieldIfLive) await waitForLiveAttQueue();
+                if (client !== c0 || !isConnected) return false;
+                return publishOne(encodeFrame(base, body, gz));
+            }
             // Big files: many small frames, a few in flight at once, paced against the socket buffer so keep-alives and chat traffic never starve.
             const cn = Math.ceil(body.length / ATT_CHUNK_BYTES);
             let next = 0, ok = true;
             const lane = async () => {
                 while (ok) {
+                    // Pause a historical/backfill transfer at a chunk boundary while
+                    // current-session attachments are being delivered.
+                    if (yieldIfLive) await waitForLiveAttQueue();
                     const i = next++; if (i >= cn) return;
                     if (client !== c0 || !isConnected) { ok = false; return; }
                     const part = body.subarray(i * ATT_CHUNK_BYTES, (i + 1) * ATT_CHUNK_BYTES);
@@ -1473,7 +1527,9 @@
                 while (attSendQueue.length && isConnected) {
                     const job = attSendQueue.shift();
                     const rec = await attGet(job.id);
-                    await sendAttachmentFrame(job.id, { to: job.to });
+                    // ATT_PULL is retroactive history sync: it is deliberately lower
+                    // priority than attachments being sent in the current session.
+                    await sendAttachmentFrame(job.id, { to: job.to, yieldIfLive: true });
                     await new Promise(r => setTimeout(r, Math.max(200, ((rec && rec.size) || 0) / 1048576 * 500)));
                 }
             } finally { attSending = false; }
@@ -1699,17 +1755,59 @@
             return mediaObserver;
         }
         async function loadMediaElement(el) {
+            if (!el || !el.isConnected || el.dataset.mediaLoading === '1') return;
+            el.dataset.mediaLoading = '1';
             const url = await getAttObjectUrl(el.dataset.att);
-            if (!url || !el.isConnected) return;
+            if (!url || !el.isConnected) { delete el.dataset.mediaLoading; return; }
             el.removeAttribute('data-lazy');
             if (el.tagName === 'VIDEO' || el.tagName === 'AUDIO') el.preload = 'metadata';
+            if (el.tagName === 'IMG') {
+                el.style.width = 'auto'; el.style.height = 'auto';
+                el.decoding = 'async';
+                el.onload = () => { el.style.width = 'auto'; el.style.height = 'auto'; el.classList.remove('att-pending'); };
+                el.onerror = () => { delete el.dataset.mediaLoading; };
+            }
             el.src = url;
-            el.classList.remove('att-pending');
+            if (el.tagName === 'IMG' && el.complete && el.naturalWidth > 0) {
+                el.style.width = 'auto'; el.style.height = 'auto';
+                el.classList.remove('att-pending');
+            }
+            if (el.tagName !== 'IMG') el.classList.remove('att-pending');
+            delete el.dataset.mediaLoading;
         }
         function hydrateMedia(root) {
             if (!root || !root.querySelectorAll) return;
             const obs = getMediaObserver();
-            root.querySelectorAll('[data-att][data-lazy="1"]').forEach(el => { if (obs) obs.observe(el); else loadMediaElement(el); });
+            root.querySelectorAll('[data-att][data-lazy="1"]').forEach(el => {
+                if (obs && ui.chatBox && ui.chatBox.clientHeight > 0) obs.observe(el);
+                else loadMediaElement(el);
+            });
+        }
+        // Re-evaluate image constraints when the chat pane or viewport changes size. This
+        // also retries lazy images whose observer first ran while the chat was hidden.
+        let mediaLayoutFrame = 0;
+        function refreshChatMediaLayout() {
+            if (mediaLayoutFrame) cancelAnimationFrame(mediaLayoutFrame);
+            mediaLayoutFrame = requestAnimationFrame(() => {
+                mediaLayoutFrame = 0;
+                if (!ui.chatBox) return;
+                ui.chatBox.querySelectorAll('img.chat-image').forEach(img => {
+                    img.style.width = 'auto'; img.style.height = 'auto';
+                    if (img.dataset.lazy === '1') {
+                        const obs = getMediaObserver();
+                        if (obs && ui.chatBox.clientHeight > 0) obs.observe(img);
+                        else loadMediaElement(img);
+                    }
+                });
+            });
+        }
+        window.addEventListener('resize', refreshChatMediaLayout, { passive:true });
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshChatMediaLayout(); });
+        if ('ResizeObserver' in window) {
+            const chatMediaResizeObserver = new ResizeObserver(refreshChatMediaLayout);
+            const attachMediaResizeObserver = () => { if (ui.chatBox) chatMediaResizeObserver.observe(ui.chatBox); };
+            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', attachMediaResizeObserver, { once:true });
+            else attachMediaResizeObserver();
         }
         async function downloadAttachment(id, name) {
             const rec = await attGet(id);
@@ -3489,6 +3587,7 @@
                 ui.chatBox.scrollTop = ui.chatBox.scrollHeight - oldDistanceFromBottom;
             }
             hydrateMedia(ui.chatBox);
+            requestAnimationFrame(() => { hydrateMedia(ui.chatBox); refreshChatMediaLayout(); });
             renderTypingIndicator();
         }
 
@@ -6929,33 +7028,47 @@
                 const o=document.createElement('option');o.value=name;o.textContent=name;o.selected=selected.includes(name);select.appendChild(o);
             });
         }
+        function xNameCheckboxList(names, prefix) {
+            if (!names.length) return '<div class="x-name-empty">No known contacts yet. You can enter usernames below.</div>';
+            return `<div class="x-name-picker" role="group" aria-label="Choose usernames">${names.map((name,i)=>
+                `<label class="x-name-option"><input type="checkbox" id="${prefix}-${i}" value="${escapeHTML(name)}"><span class="x-name-check" aria-hidden="true"></span><span>${escapeHTML(name)}</span></label>`
+            ).join('')}</div>`;
+        }
+        function xSelectedNames(body, prefix) {
+            return Array.from(body.querySelectorAll(`.x-name-picker input[type="checkbox"]:checked`)).map(el=>sanitizeUsername(el.value)).filter(isValidUsername);
+        }
         function xOpenCreateGroup() {
-            const {overlay,body}=xCreateModal('x-group-create-modal','Create Group Room',
+            if (isGhost) return;
+            const names=xContactNames().filter(n=>n!==myUsername).sort((a,b)=>(Number(xContacts[b]?.lastSeen)||0)-(Number(xContacts[a]?.lastSeen)||0)).slice(0,500);
+            const {body}=xCreateModal('x-group-create-modal','Create Group Room',
                 `<label>Group name <input id="x-group-name" type="text" maxlength="48" style="width:100%;margin:4px 0 8px;"></label>
-                <label>Pick members from your contact list <select id="x-group-members" multiple size="7" style="width:100%;margin:4px 0;"></select></label>
-                <label>Or type usernames (comma separated) <input id="x-group-extra" type="text" placeholder="username1, username2" style="width:100%;margin-top:4px;"></label>
-                <div class="att-label" style="margin-top:6px;">You are added automatically. Only selected/typed members receive the group room stream.</div>`,
-                [{label:'Create Group',action:(modal,b)=>{
-                    const chosen=Array.from(b.querySelector('#x-group-members').selectedOptions).map(o=>o.value);
-                    const typed=String(b.querySelector('#x-group-extra').value||'').split(',').map(s=>sanitizeUsername(s.trim())).filter(isValidUsername);
+                <div class="att-label">Select members</div>${xNameCheckboxList(names,'x-group-member')}
+                <label>Or add usernames (comma separated) <input id="x-group-extra" type="text" placeholder="username1, username2" style="width:100%;margin-top:4px;"></label>
+                <div class="att-label" style="margin-top:6px;">You are added automatically. Only selected/entered members receive the group room stream.</div>`,
+                [{label:'Cancel',action:modal=>modal.style.display='none'},{label:'OK',action:(modal,b)=>{
+                    const chosen=xSelectedNames(b,'x-group-member');
+                    const typed=String(b.querySelector('#x-group-extra').value||'').split(',').map(v=>sanitizeUsername(v.trim())).filter(isValidUsername);
                     const name=b.querySelector('#x-group-name').value.trim();
-                    modal.style.display='none';xCreateGroup(name,[...chosen,...typed]);
-                }},{label:'Cancel',action:modal=>modal.style.display='none'}]);
-            xPopulateContactSelect(body.querySelector('#x-group-members'));
+                    const members=Array.from(new Set([...chosen,...typed]));
+                    if(!name){customAlert('Enter a group name.');return;}
+                    if(!members.length){customAlert('Select or enter at least one other username.');return;}
+                    modal.style.display='none';xCreateGroup(name,members);
+                }}]);
             body.querySelector('#x-group-name').focus();
         }
         function xOpenDMDialog() {
-            const names=xContactNames().filter(n=>n!==myUsername).sort((a,b)=>(Number(xContacts[b]?.lastSeen)||0)-(Number(xContacts[a]?.lastSeen)||0));
-            const opts=names.map(n=>`<option value="${escapeHTML(n)}"></option>`).join('');
-            const {overlay,body}=xCreateModal('x-open-dm-modal','Open Direct Message',
-                `<label>Username <input id="x-open-dm-name" list="x-open-dm-list" type="text" style="width:100%;margin-top:5px;"></label>
-                <datalist id="x-open-dm-list">${opts}</datalist>
-                <div class="att-label" style="margin-top:6px;">Choose a known contact or enter any valid username.</div>`,
-                [{label:'Open DM',action:(modal,b)=>{
-                    const name=sanitizeUsername(b.querySelector('#x-open-dm-name').value.trim());
-                    if(!isValidUsername(name)||name===myUsername){customAlert('Enter a valid username other than your own.');return;}
+            const names=xContactNames().filter(n=>n!==myUsername).sort((a,b)=>(Number(xContacts[b]?.lastSeen)||0)-(Number(xContacts[a]?.lastSeen)||0)).slice(0,500);
+            const {body}=xCreateModal('x-open-dm-modal','Open Direct Message',
+                `<div class="att-label">Select one username</div>${xNameCheckboxList(names,'x-dm-user')}
+                <label>Or enter a username <input id="x-open-dm-name" type="text" style="width:100%;margin-top:5px;"></label>`,
+                [{label:'Cancel',action:modal=>modal.style.display='none'},{label:'OK',action:(modal,b)=>{
+                    const chosen=xSelectedNames(b,'x-dm-user');
+                    const typed=sanitizeUsername(b.querySelector('#x-open-dm-name').value.trim());
+                    if(chosen.length>1){customAlert('Select only one username for a direct message.');return;}
+                    const name=chosen[0]||typed;
+                    if(!isValidUsername(name)||name===myUsername){customAlert('Select or enter a valid username other than your own.');return;}
                     modal.style.display='none';startDmWith(name);
-                }},{label:'Cancel',action:modal=>modal.style.display='none'}]);
+                }}]);
             body.querySelector('#x-open-dm-name').focus();
         }
         function xOpenPollDialog() {
@@ -7184,7 +7297,10 @@
             if(channel===currentTab) scheduleRenderActiveTabMessages();
             else markUnread(channel);
             publishMessage(payload);
-            prepared.slice().sort((a,b)=>(Number(a.size)||0)-(Number(b.size)||0)).reduce((chain,a)=>chain.then(()=>queueAttBroadcast(a.id,channel.startsWith('dm:')?target:null)),Promise.resolve());
+            // Enqueue the whole current-session batch immediately in selection order.
+            // Do not chain on completion: that would leave gaps where history sync
+            // could sneak in between two files from the same message.
+            prepared.forEach(a=>queueAttBroadcast(a.id,channel.startsWith('dm:')?target:null));
             ui.msgIp.value='';
             const expanded=document.getElementById('x-expanded-text');if(expanded)expanded.value='';
             cancelReply();
@@ -7714,33 +7830,57 @@
         Object.keys(xGroups).forEach(id=>{ xLoadGroupHistory(id).catch(()=>{}); });
 
 
-        // Serialize outgoing attachment broadcasts by ascending size. The receiver-side
-        // ATT_PULL queues are also size-sorted, so both push and pull sync favor small files.
+        // Current-session attachments always take priority over historical sync.
+        // Keep them FIFO (rather than size-sorting them) so every newly sent image/file
+        // is completed before the lower-priority ATT_PULL queue resumes.
         queueAttBroadcast = function(id,to,tries=0) {
-            if(!client||!isConnected){attBroadcastBacklog.push({id,to});return Promise.resolve(false);}
-            return sendAttachmentFrame(id,{to}).then(ok=>{
-                if(!ok&&tries<3)setTimeout(()=>queueAttBroadcast(id,to,tries+1),3000*(tries+1));
-                return ok;
-            }).catch(()=>{
-                if(tries<3)setTimeout(()=>queueAttBroadcast(id,to,tries+1),3000*(tries+1));
-                return false;
+            if(!client||!isConnected) {
+                attBroadcastBacklog.push({id,to});
+                return Promise.resolve(false);
+            }
+            return new Promise(resolve => {
+                const key = `${id}|${to||''}`;
+                const existing = liveAttQueue.find(job => job.key === key);
+                if (existing) existing.waiters.push(resolve);
+                else liveAttQueue.push({id,to,tries,key,waiters:[resolve]});
+                pumpLiveAttQueue();
             });
         };
-        flushAttBackfill = async function() {
-            const jobs=attBroadcastBacklog.splice(0);
-            const seen=new Set(), enriched=[];
-            for(const job of jobs) {
-                const key=`${job.id}|${job.to||''}`;
-                if(seen.has(key))continue;
-                seen.add(key);
-                const rec=await attGet(job.id);
-                enriched.push({...job,size:Number(rec&&rec.size)||Number.MAX_SAFE_INTEGER});
+        async function pumpLiveAttQueue() {
+            if (liveAttSending) return;
+            liveAttSending = true;
+            try {
+                while (liveAttQueue.length) {
+                    const job = liveAttQueue.shift();
+                    let ok = false;
+                    for (let attempt = job.tries || 0; attempt <= 3 && !ok; attempt++) {
+                        if (!client || !isConnected) {
+                            attBroadcastBacklog.push({id:job.id,to:job.to});
+                            break;
+                        }
+                        try { ok = await sendAttachmentFrame(job.id,{to:job.to}); }
+                        catch (e) { ok = false; }
+                        if (!ok && attempt < 3) await new Promise(r => setTimeout(r, 700 * (attempt + 1)));
+                    }
+                    job.waiters.forEach(done => { try { done(ok); } catch (e) {} });
+                }
+            } finally {
+                liveAttSending = false;
+                // Wake the lower-priority sender only after the entire live batch drains.
+                if (attSendQueue.length) pumpAttSendQueue();
+                if (liveAttQueue.length) pumpLiveAttQueue();
             }
-            enriched.sort((a,b)=>a.size-b.size);
-            for(const job of enriched) {
-                if(!client||!isConnected){attBroadcastBacklog.push(job);continue;}
-                const ok=await sendAttachmentFrame(job.id,{to:job.to});
-                if(!ok)queueAttBroadcast(job.id,job.to);
+        }
+        flushAttBackfill = async function() {
+            const jobs = attBroadcastBacklog.splice(0);
+            const seen = new Set();
+            for (const job of jobs) {
+                const key = `${job.id}|${job.to||''}`;
+                if (seen.has(key)) continue;
+                seen.add(key);
+                // These are attachments queued by this client while it was offline,
+                // so restore them to the current-session priority lane in original order.
+                await queueAttBroadcast(job.id,job.to);
             }
         };
 
