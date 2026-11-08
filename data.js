@@ -410,6 +410,6 @@ const applets = [
   { title: 'Text Games', description: 'Text adventure, Hangman, Mad Libs, Blackjack and more', icon: 'images/icons/textgames.svg', url: 'applets/textgames.html', w: 700, h: 460, group: 'games', 'desktop-feature': true },
   { title: 'FreeCell', description: 'Classic card solitaire with numbered deals', icon: 'images/icons/freecell.svg', url: 'applets/freecell.html', w: 720, h: 560, group: 'games', 'desktop-feature': true },
   { title: 'Reversi', description: 'Flip discs and take the corners', icon: 'images/icons/reversi.svg', url: 'applets/reversi.html', w: 460, h: 540, group: 'games', 'desktop-feature': true },
-  { title: 'Minesweeper', description: 'Find the mines without stepping on one', icon: 'images/icons/warning.svg', url: 'applets/minesweeper.html', w: 340, h: 420, group: 'games', 'desktop-feature': true, 'desktop-enabled': true },
+  { title: 'Minesweeper', description: 'Find the mines without stepping on one', icon: 'images/icons/warning.svg', url: 'applets/minesweeper.html', w: 340, h: 420, group: 'games', 'desktop-feature': true },
   { title: 'Solitaire', description: 'Klondike card game (original card art)', icon: 'images/icons/star.svg', url: 'applets/solitaire.html', w: 620, h: 540, group: 'games', 'desktop-feature': true }
 ];
