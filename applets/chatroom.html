@@ -1385,12 +1385,17 @@
         const attAsm = new Map();           // in-progress chunked attachments being reassembled
         setInterval(() => { const now = Date.now(); attAsm.forEach((a, k) => {
             if (now - a.t > 600000) { attAsm.delete(k); return; }
-            if (now - a.t > 8000 && !a.nudged) { // a transfer stalled mid-way: ask again right away (received parts are kept, only gaps get filled)
-                a.nudged = true; const id = k.split('|')[0];
+            // A single recovery request can itself be lost or answered by a peer
+            // that has gone offline. Re-request stalled assemblies periodically;
+            // already received chunks are retained and duplicate chunks are ignored.
+            if (now - a.t > 8000 && now - (a.lastPullAt || 0) > 12000) {
+                a.lastPullAt = now;
+                const id = k.split('|')[0];
                 if (!attHave.has(id)) {
                     let w = attWanted.get(id);
                     if (!w) { w = { tries: 0, nextAt: 0, asked: new Set(), hint: a.from || null }; attWanted.set(id, w); }
-                    w.nextAt = 0; w.asked.clear(); scheduleAttPump(300);
+                    w.nextAt = 0; w.asked.clear();
+                    scheduleAttPump(250);
                 }
             }
         }); }, 4000);
@@ -1449,27 +1454,25 @@
                 if (client !== c0 || !isConnected) return false;
                 return publishOne(encodeFrame(base, body, gz));
             }
-            // Big files: many small frames, a few in flight at once, paced against the socket buffer so keep-alives and chat traffic never starve.
+            // Publish one chunk at a time. Four concurrent lanes were faster, but
+            // made a dropped/late chunk harder to recover from under broker load.
+            // QoS-1 publish completion is awaited for every chunk before advancing.
             const cn = Math.ceil(body.length / ATT_CHUNK_BYTES);
-            let next = 0, ok = true;
-            const lane = async () => {
-                while (ok) {
-                    // Pause a historical/backfill transfer at a chunk boundary while
-                    // current-session attachments are being delivered.
-                    if (yieldIfLive) await waitForLiveAttQueue(to);
-                    const i = next++; if (i >= cn) return;
-                    if (client !== c0 || !isConnected) { ok = false; return; }
-                    const part = body.subarray(i * ATT_CHUNK_BYTES, (i + 1) * ATT_CHUNK_BYTES);
-                    if (!(await publishOne(encodeFrame(Object.assign({ ci: i, cn }, base), part, gz)))) { ok = false; return; }
-                    for (let w = 0; w < 200; w++) {
-                        const sock = c0.stream && (c0.stream.socket || c0.stream), buffered = (sock && sock.bufferedAmount) || 0;
-                        if (buffered < 256 * 1024) break;
-                        await new Promise(r => setTimeout(r, 25));
-                    }
+            for (let i = 0; i < cn; i++) {
+                // Historical/backfill transfers yield at every chunk boundary so
+                // current-session attachments can take priority immediately.
+                if (yieldIfLive) await waitForLiveAttQueue(to);
+                if (client !== c0 || !isConnected) return false;
+                const part = body.subarray(i * ATT_CHUNK_BYTES, (i + 1) * ATT_CHUNK_BYTES);
+                const sent = await publishOne(encodeFrame(Object.assign({ ci: i, cn }, base), part, gz));
+                if (!sent) return false;
+                for (let w = 0; w < 200; w++) {
+                    const sock = c0.stream && (c0.stream.socket || c0.stream), buffered = (sock && sock.bufferedAmount) || 0;
+                    if (buffered < 256 * 1024) break;
+                    await new Promise(r => setTimeout(r, 25));
                 }
-            };
-            await Promise.all(Array.from({ length: Math.min(4, cn) }, lane));
-            return ok;
+            }
+            return true;
         }
         // Serialize incoming attachment frames and always process current-session
         // deliveries before queued historical-sync frames. Historical senders mark
@@ -1529,7 +1532,7 @@
                 if (!Number.isInteger(h.ci) || !Number.isInteger(h.cn) || h.cn < 2 || h.cn > 4096 || h.ci < 0 || h.ci >= h.cn) return;
                 const key = h.id + '|' + (h.cid || '') + '|' + (h.to || '');
                 let a = attAsm.get(key);
-                if (!a) { if (attAsm.size >= 64) return; a = { parts: new Array(h.cn), got: 0, bytes: 0, cn: h.cn, t: Date.now() }; attAsm.set(key, a); }
+                if (!a) { if (attAsm.size >= 128) return; a = { parts: new Array(h.cn), got: 0, bytes: 0, cn: h.cn, t: Date.now(), lastPullAt: 0 }; attAsm.set(key, a); }
                 if (a.cn !== h.cn) return;
                 a.t = Date.now(); a.nudged = false; a.from = h.from;
                 if (!a.parts[h.ci]) {
@@ -1542,9 +1545,26 @@
                 attAsm.delete(key);
                 bytes = new Uint8Array(a.bytes); let o = 0; a.parts.forEach(pp => { bytes.set(pp, o); o += pp.length; });
             }
-            if (f.gz) { try { bytes = await gunzipBounded(bytes, MAX_UPLOAD_BYTES + 4096); } catch (e) { return; } }
-            if (bytes.length > MAX_UPLOAD_BYTES + 4096) return;
-            if ((await sha256Id(bytes)) !== h.id) return; // content-addressed: reject anything that doesn't hash to its id
+            if (f.gz) {
+                try { bytes = await gunzipBounded(bytes, MAX_UPLOAD_BYTES + 4096); }
+                catch (e) {
+                    const w = attWanted.get(h.id);
+                    if (w) { w.nextAt = 0; w.asked.clear(); w.hint = h.from; }
+                    scheduleAttPump(250); return;
+                }
+            }
+            if (bytes.length > MAX_UPLOAD_BYTES + 4096) {
+                const w = attWanted.get(h.id);
+                if (w) { w.nextAt = 0; w.asked.clear(); w.hint = h.from; }
+                scheduleAttPump(250); return;
+            }
+            if ((await sha256Id(bytes)) !== h.id) {
+                // A corrupted/incomplete assembly must not silently remain missing.
+                // Immediately ask for a clean retransmission from the source.
+                const w = attWanted.get(h.id) || { tries:0, nextAt:0, asked:new Set(), hint:h.from };
+                w.nextAt = 0; w.asked.clear(); w.hint = h.from; attWanted.set(h.id,w);
+                scheduleAttPump(250); return;
+            }
             setAttProgress(h.id, 1, 1);
             await attPut(h.id, new Blob([bytes], { type: h.mime }), { name: typeof h.name === 'string' ? h.name.slice(0, 200) : '' });
         }
