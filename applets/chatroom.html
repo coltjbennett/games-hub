@@ -768,6 +768,7 @@
         const THUMB_RE = /^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/;
         const BLANK_GIF = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
         let myCid = '';
+        let mySid = '', connSeq = 0, joinWanted = false;
 
         function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
         function isAttRef(t) { return typeof t === 'string' && t.length === 36 && t.startsWith('att:') && ATT_ID_RE.test(t.slice(4)); }
@@ -1163,9 +1164,19 @@
             return out;
         }
         const COMPRESSIBLE_MIME = /^(text\/|application\/(json|xml|pdf|javascript|x-ndjson|rtf)|image\/(bmp|svg\+xml)|audio\/(wav|x-wav))/i;
-        const ATT_CHUNK_BYTES = 40 * 1024;   // per-frame body size; well under any broker packet limit
+        const ATT_CHUNK_BYTES = 32 * 1024;   // per-frame body size; well under any broker packet limit
         const attAsm = new Map();           // in-progress chunked attachments being reassembled
-        setInterval(() => { const now = Date.now(); attAsm.forEach((a, k) => { if (now - a.t > 120000) attAsm.delete(k); }); }, 30000);
+        setInterval(() => { const now = Date.now(); attAsm.forEach((a, k) => {
+            if (now - a.t > 600000) { attAsm.delete(k); return; }
+            if (now - a.t > 8000 && !a.nudged) { // a transfer stalled mid-way: ask again right away (received parts are kept, only gaps get filled)
+                a.nudged = true; const id = k.split('|')[0];
+                if (!attHave.has(id)) {
+                    let w = attWanted.get(id);
+                    if (!w) { w = { tries: 0, nextAt: 0, asked: new Set(), hint: a.from || null }; attWanted.set(id, w); }
+                    w.nextAt = 0; w.asked.clear(); scheduleAttPump(300);
+                }
+            }
+        }); }, 4000);
         let capturedBufferCtor = null;
         function toWireBuffer(u8) {
             const B = (typeof Buffer !== 'undefined' && Buffer) || (window.mqtt && window.mqtt.Buffer) || capturedBufferCtor;
@@ -1185,29 +1196,37 @@
             }
             const topic = to ? TOPIC_USER(to) : TOPIC_ATT, c0 = client;
             const base = { id, mime: rec.mime || '', size: rec.size, name: rec.name || '', from: myUsername, cid: myCid, to: to || undefined };
+            /* QoS 1 + retry per frame: QoS 0 frames were silently dropped by the broker under load, which left messages with a thumbnail and no file. */
             const publishOne = (frame) => new Promise(resolve => {
-                try {
-                    const wire = toWireBuffer(frame);
-                    if (wire) c0.publish(topic, wire, { qos: 0 }, (err) => resolve(!err));
-                    else c0.publish(topic, 'AT64:' + bytesToB64(frame), { qos: 0 }, (err) => resolve(!err));
-                } catch (e) { resolve(false); }
+                const attempt = (n) => {
+                    try {
+                        const wire = toWireBuffer(frame);
+                        c0.publish(topic, wire || ('AT64:' + bytesToB64(frame)), { qos: 1 }, (err) => {
+                            if (err && n < 2 && client === c0 && isConnected) setTimeout(() => attempt(n + 1), 400); else resolve(!err);
+                        });
+                    } catch (e) { resolve(false); }
+                };
+                attempt(0);
             });
             if (body.length <= ATT_CHUNK_BYTES) return publishOne(encodeFrame(base, body, gz));
-            /* Big files go out as many small frames, paced against the socket's send buffer, so one upload can never
-               (a) exceed the broker's packet limit, (b) clog the websocket so later messages stall behind it, or (c) starve keep-alive pings. */
+            // Big files: many small frames, a few in flight at once, paced against the socket buffer so keep-alives and chat traffic never starve.
             const cn = Math.ceil(body.length / ATT_CHUNK_BYTES);
-            for (let i = 0; i < cn; i++) {
-                if (client !== c0 || !isConnected) return false; // connection dropped mid-send: the receiver will pull again
-                const part = body.subarray(i * ATT_CHUNK_BYTES, (i + 1) * ATT_CHUNK_BYTES);
-                if (!(await publishOne(encodeFrame(Object.assign({ ci: i, cn }, base), part, gz)))) return false;
-                for (let w = 0; w < 200; w++) { // back-pressure: wait for the socket to drain before queueing more
-                    const sock = c0.stream && (c0.stream.socket || c0.stream), buffered = (sock && sock.bufferedAmount) || 0;
-                    if (buffered < 256 * 1024) break;
-                    await new Promise(r => setTimeout(r, 25));
+            let next = 0, ok = true;
+            const lane = async () => {
+                while (ok) {
+                    const i = next++; if (i >= cn) return;
+                    if (client !== c0 || !isConnected) { ok = false; return; }
+                    const part = body.subarray(i * ATT_CHUNK_BYTES, (i + 1) * ATT_CHUNK_BYTES);
+                    if (!(await publishOne(encodeFrame(Object.assign({ ci: i, cn }, base), part, gz)))) { ok = false; return; }
+                    for (let w = 0; w < 200; w++) {
+                        const sock = c0.stream && (c0.stream.socket || c0.stream), buffered = (sock && sock.bufferedAmount) || 0;
+                        if (buffered < 256 * 1024) break;
+                        await new Promise(r => setTimeout(r, 25));
+                    }
                 }
-                await new Promise(r => setTimeout(r, 6));
-            }
-            return true;
+            };
+            await Promise.all(Array.from({ length: Math.min(4, cn) }, lane));
+            return ok;
         }
         async function handleAttachmentFrame(payload) {
             let buf;
@@ -1225,9 +1244,9 @@
                 if (!Number.isInteger(h.ci) || !Number.isInteger(h.cn) || h.cn < 2 || h.cn > 4096 || h.ci < 0 || h.ci >= h.cn) return;
                 const key = h.id + '|' + (h.cid || '') + '|' + (h.to || '');
                 let a = attAsm.get(key);
-                if (!a) { if (attAsm.size >= 24) return; a = { parts: new Array(h.cn), got: 0, bytes: 0, cn: h.cn, t: Date.now() }; attAsm.set(key, a); }
+                if (!a) { if (attAsm.size >= 64) return; a = { parts: new Array(h.cn), got: 0, bytes: 0, cn: h.cn, t: Date.now() }; attAsm.set(key, a); }
                 if (a.cn !== h.cn) return;
-                a.t = Date.now();
+                a.t = Date.now(); a.nudged = false; a.from = h.from;
                 if (!a.parts[h.ci]) {
                     a.bytes += f.body.length;
                     if (a.bytes > MAX_UPLOAD_BYTES + 4096) { attAsm.delete(key); return; }
@@ -1243,8 +1262,8 @@
             await attPut(h.id, new Blob([bytes], { type: h.mime }), { name: typeof h.name === 'string' ? h.name.slice(0, 200) : '' });
         }
         const attBroadcastBacklog = [];
-        function queueAttBroadcast(id, to) {
-            if (client && isConnected) sendAttachmentFrame(id, { to });
+        function queueAttBroadcast(id, to, tries = 0) {
+            if (client && isConnected) sendAttachmentFrame(id, { to }).then(ok => { if (!ok && tries < 3) setTimeout(() => queueAttBroadcast(id, to, tries + 1), 3000 * (tries + 1)); });
             else attBroadcastBacklog.push({ id, to });
         }
         function flushAttBackfill() {
@@ -1685,7 +1704,7 @@
                 client.subscribe(t, { qos: 1 });
                 inboxTopicSubscribed = t;
             }
-            if (!attSubscribed) { client.subscribe(TOPIC_ATT, { qos: 0 }); attSubscribed = true; }
+            if (!attSubscribed) { client.subscribe(TOPIC_ATT, { qos: 1 }); attSubscribed = true; }
         }
         function findUserByCid(cid) {
             if (!cid) return null;
@@ -3601,20 +3620,7 @@
             }
 
             if (!isGhost) {
-                if (!hasJoinedRoomWindow) {
-                    hasJoinedRoomWindow = true;
-                    const now = Date.now();
-                    publishMessage({
-                        type: "JOIN", cid: myCid,
-                        author: myUsername,
-                        joinTime: activeUsers.get(myUsername)?.joinTime || now,
-                        id: generateId(),
-                        isOnHomepage: isOnHomepage,
-                        chatWindowOpen: true,
-                        status: currentStatus,
-                        activity: { ...currentActivity }
-                    });
-                }
+                if (!hasJoinedRoomWindow) { hasJoinedRoomWindow = true; announceMyJoin(); }
                 publishPing();
                 if (isConnected && historyReadyForSync) requestManifestBroadcast();
             } else {
@@ -3725,15 +3731,16 @@
             const persistentSession = await acquireSessionLock();
             const deviceId = getDeviceId();
             myCid = persistentSession ? `uc_${deviceId}` : `uc_${deviceId}_${Math.random().toString(36).slice(2, 8)}`;
+            mySid = myCid + '.' + Date.now().toString(36);
             // Persistent session (clean:false): the broker queues QoS1 chat messages while this device is offline.
             client = mqtt.connect("wss://broker.emqx.io:8084/mqtt", {
                 clientId: myCid, clean: !persistentSession, keepalive: 45, reconnectPeriod: 2000, connectTimeout: 20000, resubscribe: true, reschedulePings: true,
                 queueQoSZero: false, // never replay stale QoS0 traffic (old pings, attachment frames) in a burst after a reconnect
-                will: { topic: ROOM_TOPIC, qos: 0, retain: false, payload: JSON.stringify({ type: "LEAVE", author: "_will", will: true, cid: myCid, id: "will" }) }
+                will: { topic: ROOM_TOPIC, qos: 0, retain: false, payload: JSON.stringify({ type: "LEAVE", author: "_will", will: true, cid: myCid, sid: mySid, id: "will" }) }
             });
             updateConnectionStatus("CONNECTING", "normal");
             client.on("connect", () => {
-                isConnected = true; lastInboundAt = Date.now(); lastConnectedAt = Date.now();
+                connSeq++; isConnected = true; lastInboundAt = Date.now(); lastConnectedAt = Date.now();
                 /* we were deaf while disconnected: give everyone a fresh grace period instead of reaping them as "disconnected" */
                 activeUsers.forEach(u => { u.lastSeen = Date.now(); });
                 updateConnectionStatus("CONNECTED", "good");
@@ -3745,6 +3752,7 @@
                             if (isConnected && historyReadyForSync) requestManifestBroadcast();
                         });
                         publishPing();
+                        if (hasJoinedRoomWindow) announceMyJoin();
                         startPingInterval();
                         pumpOutbox(); flushAttBackfill(); scheduleAttPump(2500);
                     }
@@ -3816,22 +3824,70 @@
 
             hasJoinedRoomWindow = true;
             ensureSubscriptions();
-            if (isConnected) {
-                publishMessage({
-                    type: "JOIN", cid: myCid,
-                    author: myUsername,
-                    joinTime: now,
-                    id: generateId(),
-                    isOnHomepage: isOnHomepage,
-                    chatWindowOpen: isChatWindowOpen,
-                    status: currentStatus,
-                    activity: { ...currentActivity }
-                });
-                requestManifestBroadcast();
-            }
+            announceMyJoin();
+            if (isConnected) requestManifestBroadcast();
 
             startPingInterval()
         }
+
+        /* ---- presence notices: deterministic ids, derived from observed state, not from a single lossy packet ---- */
+        const PRESENCE_TIMEOUT_MS = 45000;
+        function latestPresenceEvent(user) {
+            let best = null, bi = -1;
+            messageHistory.forEach((m, i) => {
+                const e = presenceEventKind(m); if (!e || e.user !== user) return;
+                const t = Number(m.timestamp) || 0;
+                if (!best || t > best.t || (t === best.t && i > bi)) { best = { t, e }; bi = i; }
+            });
+            return best && best.e;
+        }
+        function addPresenceNotice(id, text, ts) {
+            if (messageHistoryIdSet.has(id)) return false;
+            messageHistory = dedupeConsecutivePresenceEvents(mergeHistory(messageHistory, [{ id, isSystem: true, text, timestamp: ts }], true));
+            rebuildMessageHistoryIdSet(); saveLocalHistory();
+            if (currentTab === "global") scheduleRenderActiveTabMessages();
+            return true;
+        }
+        function announceLeaveNotice(user, sid, ts, wasKnown) {
+            const last = latestPresenceEvent(user);
+            if (!wasKnown && !(last && last.kind === "join")) return;
+            addPresenceNotice(`pl-${user}-${sid || Math.floor(ts / 1000)}`, `${user} disconnected.`, ts);
+        }
+        function findUsersByCid(cid) {
+            const out = [];
+            if (cid) activeUsers.forEach((u, name) => { if (name !== myUsername && u.cid === cid) out.push(name); });
+            return out;
+        }
+        // JOIN is re-announced on every (re)connect and is never dropped while offline (it used to be lost for good if the socket wasn't up yet)
+        function announceMyJoin() {
+            if (isGhost || !myUsername || !hasJoinedRoomWindow) return;
+            if (!isConnected) { joinWanted = true; return; }
+            joinWanted = false;
+            const now = Date.now();
+            publishMessage({ type: "JOIN", cid: myCid, sid: mySid, author: myUsername, joinTime: (activeUsers.get(myUsername) || {}).joinTime || now, timestamp: now,
+                id: `pj-${myUsername}-${mySid}-${connSeq}`, isOnHomepage: isOnHomepage, chatWindowOpen: isChatWindowOpen, status: currentStatus, activity: { ...currentActivity } });
+        }
+        const pendingOps = new Map(); // edits/reactions that arrived before their message
+        function stashPendingOp(d) {
+            if (!d.id) return;
+            if (pendingOps.size > 200) pendingOps.delete(pendingOps.keys().next().value);
+            const l = pendingOps.get(d.id) || []; if (l.length < 20) l.push(d); pendingOps.set(d.id, l);
+        }
+        function applyPendingOps(id) {
+            const l = pendingOps.get(id); if (!l) return; pendingOps.delete(id);
+            setTimeout(() => l.forEach(d => { try { client.emit('message', ROOM_TOPIC, JSON.stringify(d)); } catch (e) {} }), 50);
+        }
+        function wakeUp(restored) {
+            const now = Date.now(); activeUsers.forEach(u => { u.lastSeen = now; });
+            if (!client) return;
+            if (!client.connected && !client.reconnecting) { try { client.reconnect(); } catch (e) {} return; }
+            if (restored) { connSeq++; announceMyJoin(); }
+            publishPing(true);
+            if (historyReadyForSync) requestManifestBroadcast();
+        }
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wakeUp(false); });
+        window.addEventListener('online', () => wakeUp(false));
+        window.addEventListener('pageshow', (e) => { if (e.persisted) wakeUp(true); });
 
         /* ---- connection health (EMQX): inbound watchdog, forced reconnect, will grace ---- */
         let lastInboundAt = Date.now(), lastConnectedAt = 0, lastForcedReconnectAt = 0;
@@ -3849,9 +3905,19 @@
             const silent = Date.now() - lastInboundAt, limit = document.visibilityState === 'hidden' ? 150000 : 60000;
             if (silent > limit) forceReconnect('no traffic for ' + Math.round(silent / 1000) + 's');
         }, 8000);
+        /* Hidden tabs get their timers throttled to ~1/min, which made healthy users look dead (and could starve MQTT keep-alive).
+           A worker's timer isn't throttled the same way, so it keeps heartbeats and the presence reaper honest in the background. */
+        try {
+            const hbw = new Worker(URL.createObjectURL(new Blob(['setInterval(function(){postMessage(1)},4000)'], { type: 'text/javascript' })));
+            hbw.onmessage = () => {
+                if (!document.hidden) return;
+                if (isConnected && Date.now() - lastPingPublishedAt >= getPingIntervalMs() - 500) publishPing(true);
+                checkPresence(); pumpOutbox();
+            };
+        } catch (e) {}
 
         function setupMqttListeners() {
-            window.addEventListener("beforeunload", () => { if (isConnected && !isGhost) publishMessage({ type: "LEAVE", author: myUsername, id: generateId() }); });
+            window.addEventListener("pagehide", () => { if (isConnected && !isGhost) publishMessage({ type: "LEAVE", author: myUsername, cid: myCid, sid: mySid, id: `pl-${myUsername}-${mySid}`, timestamp: Date.now() }); });
             client.on("message", async (topic, payload) => {
                 lastInboundAt = Date.now();
                 try {
@@ -3859,18 +3925,20 @@
                     if (isFramePayload(payload)) { await handleAttachmentFrame(payload); return; }
                     let data = JSON.parse(payload.toString());
                     if (!validateChatPayload(data)) return;
-                    if (data.type === "LEAVE" && data.will) { // Last Will: the broker says a client's connection died, which is NOT the same as leaving
-                        const gone = findUserByCid(data.cid);
-                        if (!gone) return;
-                        /* Wait: a flaky network or a long upload makes the broker fire the will, then the user reconnects within seconds.
-                           Only announce a disconnect if we hear nothing from them for a grace period. */
-                        const marker = Date.now(); clearTimeout(willTimers.get(gone));
-                        willTimers.set(gone, setTimeout(() => {
-                            willTimers.delete(gone);
-                            const u = activeUsers.get(gone);
-                            if (!u || u.lastSeen > marker || !isConnected) return; // they came back (or we are the ones who are offline)
-                            client.emit('message', ROOM_TOPIC, JSON.stringify({ type: "LEAVE", author: gone, id: generateId(), timestamp: Date.now() }));
-                        }, WILL_GRACE_MS));
+                    if (data.type === "LEAVE" && data.will) { // Last Will: the broker says a connection died. That may be a blip, so wait and see.
+                        const gone = findUsersByCid(data.cid);
+                        if (!gone.length) return;
+                        gone.forEach(name => {
+                            const marker = Date.now(); clearTimeout(willTimers.get(name));
+                            willTimers.set(name, setTimeout(() => {
+                                willTimers.delete(name);
+                                const u = activeUsers.get(name);
+                                if (!u || u.lastSeen > marker || !isConnected || name === myUsername) return; // they came back
+                                activeUsers.delete(name);
+                                if (!u.isGhost && !name.startsWith('ghost-')) announceLeaveNotice(name, u.sid || data.sid, Date.now(), true);
+                                renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
+                            }, WILL_GRACE_MS));
+                        });
                         return;
                     }
                     if (data.compressed && data.text) {
@@ -3884,8 +3952,8 @@
                     if ((data.type === "MSG" || data.type === "DM") && !validateMessagePayloadAfterDecompression(data)) return;
                     
                     if ((data.type === "MSG" || data.type === "DM") && data.author !== myUsername && incomingFlood(data.author)) return;
-                    if (data.author && !blockedUsers.has(data.author)) {
-                        const existing = activeUsers.get(data.author);
+                    if (data.author && !blockedUsers.has(data.author) && !(data.timestamp && Date.now() - data.timestamp > 90000 && data.type !== "PING")) {
+                        const existing = activeUsers.get(data.author); data.__wasKnown = !!existing;
                         const incomingActivity = data.activity
                             ? normalizeActivity(data.activity, data.isOnHomepage === true)
                             : (existing?.activity
@@ -3903,8 +3971,15 @@
                             isGhost: data.isGhost !== undefined ? data.isGhost : (data.author.startsWith("ghost-")),
                             status: data.status || (existing ? existing.status : "Online"),
                             activity: incomingActivity,
-                            cid: data.cid || (existing ? existing.cid : undefined)
+                            cid: data.cid || (existing ? existing.cid : undefined),
+                            sid: data.sid || (existing ? existing.sid : undefined)
                         });
+                        // someone we never saw arrive (their JOIN was lost or we connected late) still gets a join notice once we've been listening a while
+                        if (!existing && data.author !== myUsername && data.type !== "JOIN" && data.type !== "LEAVE" && !data.isGhost && !data.author.startsWith("ghost-") &&
+                            isConnected && Date.now() - lastConnectedAt > 12000 && (!data.timestamp || Date.now() - data.timestamp < 30000)) {
+                            const lp = latestPresenceEvent(data.author);
+                            if (!lp || lp.kind !== "join") addPresenceNotice(`pj-${data.author}-${data.sid || data.cid || Math.floor(Date.now() / 1000)}`, `${data.author} joined the room.`, Date.now());
+                        }
                         renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
                     }
 
@@ -3966,50 +4041,20 @@
                     }
                     else if (data.type === "JOIN") {
                         if (blockedUsers.has(data.author)) return;
-                        if (data.author !== myUsername) roomPresenceEpoch++;
-                        const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} joined the room.`, timestamp: data.timestamp || Date.now() };
-                        const latestPresence = messageHistory
-                            .map((m, index) => ({ m, index, e: presenceEventKind(m) }))
-                            .filter(x => x.e && x.e.user === data.author)
-                            .sort((a, b) => (Number(a.m.timestamp) || 0) - (Number(b.m.timestamp) || 0) || a.index - b.index)
-                            .pop();
-                        const latestKind = latestPresence && latestPresence.e;
-                        const duplicateRecentJoin = latestKind && latestKind.kind === "join" &&
-                            Math.abs((sysObj.timestamp || 0) - (latestPresence.m.timestamp || 0)) < 30000;
-                        if (!duplicateRecentJoin) {
-                            messageHistory = dedupeConsecutivePresenceEvents(mergeHistory(messageHistory, [sysObj], true));
-                            rebuildMessageHistoryIdSet(); saveLocalHistory(); if (currentTab === "global") { scheduleRenderActiveTabMessages(); }
-                        }
-                        
-                        if (data.author !== myUsername && shouldAnswerManifest(0)) {
-                            setTimeout(() => { if (isConnected) handleManifestRequest({ author: data.author }); }, Math.floor(Math.random() * 400));
+                        if (data.author !== myUsername) {
+                            roomPresenceEpoch++;
+                            const lp = latestPresenceEvent(data.author);
+                            if (!lp || lp.kind !== "join") addPresenceNotice(data.id || `pj-${data.author}-${data.sid || Date.now()}`, `${data.author} joined the room.`, data.timestamp || Date.now());
+                            if (shouldAnswerManifest(0)) setTimeout(() => { if (isConnected) handleManifestRequest({ author: data.author }); }, Math.floor(Math.random() * 400));
                         }
                     }
                     else if (data.type === "PING") { /* presence is updated above */ }
                     else if (data.type === "LEAVE") {
+                        if (data.author === myUsername) return; // our own echo / another tab of ours must never remove us
                         const uData = activeUsers.get(data.author);
                         if (data.author) activeUsers.delete(data.author);
-                        // Do not require an activeUsers entry: a missed PING/JOIN race must
-                        // not silently drop a real disconnect event.
-                        if (data.author && !data.isGhost && !(uData && uData.isGhost)) {
-                            const leaveTs = data.timestamp || Date.now();
-                            const sysObj = { id: data.id || generateId(), isSystem: true, text: `${data.author} disconnected.`, timestamp: leaveTs };
-                            const alreadyPresent = messageHistory.some(m => m.id === sysObj.id);
-                            const latestEvent = messageHistory
-                                .map((m, index) => ({ m, index, e: presenceEventKind(m) }))
-                                .filter(x => x.e && x.e.user === data.author)
-                                .sort((a, b) => (Number(a.m.timestamp) || 0) - (Number(b.m.timestamp) || 0) || a.index - b.index)
-                                .pop();
-                            // A disconnect is accepted only if a join exists and no later
-                            // disconnect has already closed that session. This also blocks
-                            // repeated/stale LEAVE packets with new IDs from spamming history.
-                            const hasActiveSession = !!latestEvent && latestEvent.e.kind === "join";
-                            if (!alreadyPresent && hasActiveSession) {
-                                messageHistory = dedupeConsecutivePresenceEvents(mergeHistory(messageHistory, [sysObj], true));
-                                rebuildMessageHistoryIdSet(); saveLocalHistory();
-                                if (currentTab === "global") { scheduleRenderActiveTabMessages(); }
-                            }
-                        }
+                        if (data.author && !data.isGhost && !(uData && uData.isGhost) && !data.author.startsWith("ghost-"))
+                            announceLeaveNotice(data.author, data.sid, data.timestamp || Date.now(), data.__wasKnown === true);
                         renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
                     }
                     else if (data.type === "MSG") {
@@ -4020,7 +4065,7 @@
                         const prevLen = messageHistory.length;
                         const liveMsg = (Date.now() - (msgObj.timestamp || Date.now())) < 90000;
                         messageHistory = mergeHistory(messageHistory, [msgObj], liveMsg); saveLocalHistory();
-                        noteAttachmentRefs([msgObj], { live: true });
+                        noteAttachmentRefs([msgObj], { live: true }); applyPendingOps(msgObj.id);
                         if (currentTab === "global" && isNew) {
                             // Only append when the message really was inserted. If it was merged into an
                             // existing placeholder or rejected by a tombstone, re-render instead of
@@ -4038,6 +4083,7 @@
                         let updated = updateMsgList(messageHistory);
                         if (updated) saveLocalHistory();
                         Object.keys(dmHistories).forEach(user => { if (updateMsgList(dmHistories[user])) { saveDmHistory(user); updated = true; } });
+                        if (!updated) stashPendingOp(data);
                         if (updated) {
                             const list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
                             const m = list.find(x => x.id === data.id);
@@ -4063,6 +4109,7 @@
                         let updated = updateReacts(messageHistory);
                         if (updated) saveLocalHistory();
                         Object.keys(dmHistories).forEach(user => { if (updateReacts(dmHistories[user])) { saveDmHistory(user); updated = true; } });
+                        if (!updated) stashPendingOp(data);
                         if (updated) {
                             const list = currentTab === "global" ? messageHistory : (dmHistories[currentTab.replace("dm:", "")] || []);
                             const m = list.find(x => x.id === data.id);
@@ -4088,7 +4135,7 @@
                             const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, attMime: data.attMime, attSize: data.attSize, thumb: data.thumb, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), edited: false, reactions: data.reactions || {} };
                             if (isMediaMsg(msgObj) && typeof msgObj.text === 'string' && msgObj.text.startsWith('data:')) await convertLegacyMedia(msgObj);
                             dmHistories[otherUser] = mergeHistory(dmHistories[otherUser] || [], [msgObj], true); saveDmHistory(otherUser);
-                            noteAttachmentRefs([msgObj], { live: true });
+                            noteAttachmentRefs([msgObj], { live: true }); applyPendingOps(msgObj.id);
                             if (currentTab === tabId) scheduleRenderActiveTabMessages(); else markUnread(tabId);
                             if (!isChatWindowOpen && data.author !== myUsername) window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, CHAT_ORIGIN);
                         }
@@ -4172,7 +4219,7 @@
                                 joinTime: data.joinTime || uData.joinTime,
                                 isOnHomepage: uData.isOnHomepage,
                                 isGhost: false,
-                                status: uData.status,
+                                status: uData.status, cid: uData.cid, sid: uData.sid,
                                 activity: uData.activity ? { ...uData.activity } : { id: null, kind: "homepage", name: "" }
                             }); }
                         messageHistory.forEach(m => { if (m.author === oldName) m.author = newName; if (m.replyTo && m.replyTo.author === oldName) m.replyTo.author = newName; });
@@ -5079,7 +5126,7 @@
                 syncInboundBuffers.delete(bufferKey);
                 if (!buffered.length) return;
 
-                noteAttachmentRefs(buffered);
+                noteAttachmentRefs(buffered); buffered.forEach(m => applyPendingOps(m.id));
                 if (bufferKey === "global") {
                     messageHistory = mergeHistory(messageHistory, buffered, false);
                     saveLocalHistory();
@@ -5435,25 +5482,16 @@
             ui.connectionStatus.style.color = colors[1];
         }
 
+        let lastPresenceRun = 0;
         function checkPresence() {
-            const now = Date.now();
+            const now = Date.now(), gap = now - lastPresenceRun; lastPresenceRun = now;
             if (!isConnected || now - lastConnectedAt < 8000) { updateAndBroadcastPresence(); return; } // never reap people while WE are the one who is offline
+            if (gap > 20000) { activeUsers.forEach(u => { u.lastSeen = now; }); updateAndBroadcastPresence(); return; } // we were asleep/throttled, so silence proves nothing
             let changed = false;
             activeUsers.forEach((userData, user) => {
-                if (user !== myUsername && now - userData.lastSeen > 30000) {
+                if (user !== myUsername && now - userData.lastSeen > PRESENCE_TIMEOUT_MS) {
                     activeUsers.delete(user);
-                    if (!userData.isGhost) {
-                        const latestEvent = messageHistory
-                            .map((m, index) => ({ m, index, e: presenceEventKind(m) }))
-                            .filter(x => x.e && x.e.user === user)
-                            .sort((a, b) => (Number(a.m.timestamp) || 0) - (Number(b.m.timestamp) || 0) || a.index - b.index)
-                            .pop();
-                        if (latestEvent && latestEvent.e.kind === "join") {
-                            const sysObj = { id: generateId(), isSystem: true, text: `${user} disconnected.`, timestamp: Date.now() };
-                            messageHistory = dedupeConsecutivePresenceEvents(mergeHistory(messageHistory, [sysObj], true)); rebuildMessageHistoryIdSet(); saveLocalHistory();
-                            if (currentTab === "global") scheduleRenderActiveTabMessages();
-                        }
-                    }
+                    if (!userData.isGhost && !user.startsWith('ghost-')) announceLeaveNotice(user, userData.sid, now, true);
                     changed = true;
                 }
             });
@@ -5572,6 +5610,7 @@
             if (data.attSize !== undefined && !Number.isFinite(data.attSize)) return false;
             if (data.thumb !== undefined && (typeof data.thumb !== 'string' || data.thumb.length > 70000)) return false;
             if (data.cid !== undefined && (typeof data.cid !== 'string' || data.cid.length > 80)) return false;
+            if (data.sid !== undefined && (typeof data.sid !== 'string' || data.sid.length > 80)) return false;
             if (data.sig !== undefined && (typeof data.sig !== 'string' || data.sig.length > 200)) return false;
             if (data.tab !== undefined && data.tab !== 'global' && data.tab !== 'dm') return false;
             if (data.ids !== undefined && (!Array.isArray(data.ids) || data.ids.length > 400 || data.ids.some(x => typeof x !== 'string' || x.length > 80))) return false;
