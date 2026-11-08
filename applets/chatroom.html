@@ -379,10 +379,19 @@
         .x-tab-settings-section button { width:100%; margin-top:4px; text-align:left; }
         .x-room-tab { max-width:220px; }
         .x-room-tab .x-tab-title { overflow:hidden; text-overflow:ellipsis; max-width:160px; }
-        .x-multi-attachments { display:flex; flex-wrap:wrap; align-items:flex-start; gap:5px; margin:4px 0 2px; }
-        .x-attachment-item { display:inline-flex; flex-direction:column; max-width:min(250px,48vw); }
-        .x-attachment-item img, .x-attachment-item video { max-width:250px; max-height:230px; object-fit:contain; }
-        .x-attachment-file { display:inline-block; margin-top:2px; }
+        /* Masonry-style attachment layout: each tile sits directly below the
+           lowest unobstructed column above it, avoiding the large blank row gaps
+           produced by a regular grid with mixed image aspect ratios. */
+        .x-multi-attachments { display:block; position:relative; margin:5px 0 3px; width:min(100%,506px); max-width:100%; min-width:0; box-sizing:border-box; }
+        .x-attachment-item { position:absolute; display:flex; flex-direction:column; width:calc(50% - 3px); max-width:250px; min-width:0; overflow:visible; box-sizing:border-box; background:transparent; border:0; }
+        .x-attachment-item img, .x-attachment-item video { display:block; width:100%; height:auto; max-width:none; max-height:230px; object-fit:contain; box-sizing:border-box; border:2px inset #808080; margin:0; background:#dedede; }
+        .x-attachment-item .chat-video { display:block; width:100%; max-width:none; margin:0; border:0; background:transparent; box-sizing:border-box; }
+        .x-attachment-item .chat-video video { width:100%; height:auto; max-width:none; max-height:230px; object-fit:contain; border:2px inset #808080; }
+        .x-multi-attachments.is-stacked .x-attachment-item { width:min(250px,100%); }
+        .x-multi-attachments .x-attachment-item img.chat-image { width:100% !important; height:auto !important; max-width:none !important; max-height:230px; object-fit:contain; border:2px inset #808080 !important; margin:0 !important; }
+        .x-multi-attachments .x-attachment-item video { width:100%; max-width:none; max-height:230px; border:2px inset #808080; }
+        .x-attachment-item .att-label { display:block; padding:2px 1px; margin:0; overflow-wrap:anywhere; }
+        .x-attachment-file { display:inline-block; margin:4px; align-self:flex-start; }
         .x-message-text { display:block; margin-top:4px; white-space:pre-wrap; overflow-wrap:anywhere; }
         .x-poll-card { display:block; width:min(460px,100%); margin:5px 0; padding:7px; background:#e4e4e4; border:2px outset #fff; color:#000; }
         .x-poll-title { font-weight:bold; margin-bottom:5px; }
@@ -464,7 +473,6 @@
             .users-sidebar { flex-basis:100px !important; min-width:100px; max-width:100px; }
             .media-viewer { padding:42px 48px; }
             .viewer-nav-left { left:4px; } .viewer-nav-right { right:4px; }
-            .x-attachment-item img, .x-attachment-item video { max-width:42vw; max-height:180px; }
         }
         /* Switch the users panel below the chat only at phone-sized widths. */
         @media (max-width:480px) {
@@ -729,7 +737,7 @@
         const CHAT_HISTORY_MODE_KEY = "mqtt_chat_history_mode_v1";
         const DEFAULT_CHAT_RETENTION_DAYS = 0;
         const DEFAULT_CHAT_HISTORY_MODE = "full-media";
-        const ALLOWED_INCOMING_TYPES = new Set(['ATT_PULL', 
+        const ALLOWED_INCOMING_TYPES = new Set(['ATT_PULL', 'ATT_LIVE_BUSY', 'ATT_LIVE_IDLE', 
             'MSG', 'DM', 'EDIT_MSG', 'DELETE_MSG', 'REACT_MSG', 'CLEAR_ALL', 'CLEAR_RECENT',
             'CMD', 'PRESENCE', 'PING', 'RENAME', 'TYPING', 'MUTE_ATTEMPT', 'DM_READ',
             'JOIN', 'LEAVE', 'CLEAR_SYSTEM_ALL', 'SYNC_MANIFEST_REQ', 'SYNC_MANIFEST', 'SYNC_PULL', 'SYNC_PULL_RANGE', 'SYNC_CHUNK'
@@ -1199,7 +1207,48 @@
         const attUrlCache = new Map();
         const attMsgRefs = new Map();      // attId -> Set(msgId), used to patch the DOM when a file lands
         const attWanted = new Map();       // attId -> { tries, nextAt, asked:Set, hint }
+        const liveIncomingWanted = new Set();
+        const liveIncomingTimers = new Map();
+        const remoteLiveBusy = new Map(); // peer username -> busy-until timestamp
+        const liveIncomingPeers = new Set();
+        let lastLiveBusyBroadcast = 0;
         let persistRequested = false;
+
+        function broadcastLiveSyncState(busy, force = false) {
+            if (busy && !force && Date.now() - lastLiveBusyBroadcast < 8000) return;
+            if (busy) lastLiveBusyBroadcast = Date.now();
+            const recipients = new Set(liveIncomingPeers);
+            activeUsers.forEach((u, name) => { if (name !== myUsername && !u.isGhost && !name.startsWith('ghost-') && !blockedUsers.has(name)) recipients.add(name); });
+            recipients.forEach(target => {
+                if (!isValidUsername(target) || target === myUsername) return;
+                publishMessage({ type: busy ? 'ATT_LIVE_BUSY' : 'ATT_LIVE_IDLE', author: myUsername, target, timestamp: Date.now() });
+            });
+        }
+        function noteLiveIncomingAttachment(id, author) {
+            if (!id || attHave.has(id)) return;
+            if (isValidUsername(author) && author !== myUsername) liveIncomingPeers.add(author);
+            const wasEmpty = liveIncomingWanted.size === 0;
+            liveIncomingWanted.add(id);
+            const prior = liveIncomingTimers.get(id);
+            if (prior) clearTimeout(prior);
+            liveIncomingTimers.set(id, setTimeout(() => releaseLiveIncomingAttachment(id), 120000));
+            if (wasEmpty) broadcastLiveSyncState(true, true);
+        }
+        function releaseLiveIncomingAttachment(id) {
+            const wasActive = liveIncomingWanted.delete(id);
+            const timer = liveIncomingTimers.get(id);
+            if (timer) clearTimeout(timer);
+            liveIncomingTimers.delete(id);
+            if (wasActive && !liveIncomingWanted.size) {
+                broadcastLiveSyncState(false, true);
+                liveIncomingPeers.clear();
+            }
+        }
+        function handleAttLiveState(data) {
+            if (!data || data.target !== myUsername || !isValidUsername(data.author) || data.author === myUsername) return;
+            if (data.type === 'ATT_LIVE_BUSY') remoteLiveBusy.set(data.author, Date.now() + 45000);
+            else if (data.type === 'ATT_LIVE_IDLE') remoteLiveBusy.delete(data.author);
+        }
 
         function registerAttRef(attId, msgId) {
             let s = attMsgRefs.get(attId);
@@ -1236,6 +1285,7 @@
         }
         function onAttStored(id) {
             attWanted.delete(id); attProgress.delete(id);
+            releaseLiveIncomingAttachment(id);
             const refs = attMsgRefs.get(id);
             if (!refs) return;
             refs.forEach(mid => { const m = findMessageById(mid); if (m) patchMsgDOM(m); });
@@ -1353,14 +1403,20 @@
         // Retroactive ATT_PULL transfers yield between chunks whenever this queue has work.
         const liveAttQueue = [];
         let liveAttSending = false;
-        const waitForLiveAttQueue = async () => {
-            while (liveAttSending || liveAttQueue.length) await new Promise(r => setTimeout(r, 40));
+        const waitForLiveAttQueue = async (to = null) => {
+            while (true) {
+                const until = to ? (remoteLiveBusy.get(to) || 0) : 0;
+                if (to && until && until <= Date.now()) remoteLiveBusy.delete(to);
+                const remoteBusy = !!(to && remoteLiveBusy.has(to));
+                if (!liveAttSending && !liveAttQueue.length && !remoteBusy) return;
+                await new Promise(r => setTimeout(r, 40));
+            }
         };
         async function sendAttachmentFrame(id, { to = null, yieldIfLive = false } = {}) {
             if (!client || !isConnected || isGhost) return false;
             // Historical sync must wait even for a one-frame/small attachment. The
             // chunk-loop check below then keeps yielding between chunks for large files.
-            if (yieldIfLive) await waitForLiveAttQueue();
+            if (yieldIfLive) await waitForLiveAttQueue(to);
             if (!client || !isConnected || isGhost) return false;
             const rec = await attGet(id);
             if (!rec || !rec.blob) return false;
@@ -1373,7 +1429,7 @@
                 } catch (e) {}
             }
             const topic = to ? TOPIC_USER(to) : TOPIC_ATT, c0 = client;
-            const base = { id, mime: rec.mime || '', size: rec.size, name: rec.name || '', from: myUsername, cid: myCid, to: to || undefined };
+            const base = { id, mime: rec.mime || '', size: rec.size, name: rec.name || '', from: myUsername, cid: myCid, to: to || undefined, sync: !!yieldIfLive };
             /* QoS 1 + retry per frame: QoS 0 frames were silently dropped by the broker under load, which left messages with a thumbnail and no file. */
             const publishOne = (frame) => new Promise(resolve => {
                 const attempt = (n) => {
@@ -1389,7 +1445,7 @@
             if (body.length <= ATT_CHUNK_BYTES) {
                 // Re-check after storage/compression work so a newly queued live batch
                 // can jump ahead of a not-yet-published historical single-frame file.
-                if (yieldIfLive) await waitForLiveAttQueue();
+                if (yieldIfLive) await waitForLiveAttQueue(to);
                 if (client !== c0 || !isConnected) return false;
                 return publishOne(encodeFrame(base, body, gz));
             }
@@ -1400,7 +1456,7 @@
                 while (ok) {
                     // Pause a historical/backfill transfer at a chunk boundary while
                     // current-session attachments are being delivered.
-                    if (yieldIfLive) await waitForLiveAttQueue();
+                    if (yieldIfLive) await waitForLiveAttQueue(to);
                     const i = next++; if (i >= cn) return;
                     if (client !== c0 || !isConnected) { ok = false; return; }
                     const part = body.subarray(i * ATT_CHUNK_BYTES, (i + 1) * ATT_CHUNK_BYTES);
@@ -1415,6 +1471,47 @@
             await Promise.all(Array.from({ length: Math.min(4, cn) }, lane));
             return ok;
         }
+        // Serialize incoming attachment frames and always process current-session
+        // deliveries before queued historical-sync frames. Historical senders mark
+        // ATT_PULL frames with sync:true; FIFO is retained within each priority lane.
+        const incomingAttFrameQueue = [];
+        let incomingAttFrameBusy = false, incomingAttFrameSeq = 0;
+        function incomingFrameIsHistorical(payload) {
+            try {
+                const buf = payload[2] === 0x36 ? b64ToBytes(payload.toString().slice(5))
+                    : new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength);
+                if (buf.length < 6) return false;
+                const hl = (buf[4] << 8) | buf[5];
+                if (6 + hl > buf.length) return false;
+                const h = JSON.parse(new TextDecoder().decode(buf.subarray(6, 6 + hl)));
+                return h && h.sync === true;
+            } catch (e) { return false; }
+        }
+        function queueIncomingAttachmentFrame(payload) {
+            let copy;
+            try { copy = payload && payload.constructor && payload.constructor.from ? payload.constructor.from(payload) : new Uint8Array(payload).slice(); }
+            catch (e) { return; }
+            incomingAttFrameQueue.push({ payload:copy, historical:incomingFrameIsHistorical(copy), seq:incomingAttFrameSeq++ });
+            pumpIncomingAttachmentFrames();
+        }
+        async function pumpIncomingAttachmentFrames() {
+            if (incomingAttFrameBusy) return;
+            incomingAttFrameBusy = true;
+            try {
+                while (incomingAttFrameQueue.length) {
+                    // Find the oldest live frame first; if none remain, continue the
+                    // historical queue in its original order (newest message first).
+                    let index = incomingAttFrameQueue.findIndex(job => !job.historical);
+                    if (index < 0) index = 0;
+                    const job = incomingAttFrameQueue.splice(index, 1)[0];
+                    try { await handleAttachmentFrame(job.payload); } catch (e) { console.warn('[chat] attachment frame failed', e); }
+                }
+            } finally {
+                incomingAttFrameBusy = false;
+                if (incomingAttFrameQueue.length) pumpIncomingAttachmentFrames();
+            }
+        }
+
         async function handleAttachmentFrame(payload) {
             let buf;
             if (payload[2] === 0x36) buf = b64ToBytes(payload.toString().slice(5));
@@ -1427,6 +1524,7 @@
             if (h.to && h.to !== myUsername) return;
             if (!Number.isFinite(h.size) || h.size < 0 || h.size > MAX_UPLOAD_BYTES + 4096) return;
             let bytes = f.body;
+            if (h.cn === undefined) setAttProgress(h.id, 0, 1);
             if (h.cn !== undefined) { // chunked: collect every part, then fall through with the whole body
                 if (!Number.isInteger(h.ci) || !Number.isInteger(h.cn) || h.cn < 2 || h.cn > 4096 || h.ci < 0 || h.ci >= h.cn) return;
                 const key = h.id + '|' + (h.cid || '') + '|' + (h.to || '');
@@ -1447,6 +1545,7 @@
             if (f.gz) { try { bytes = await gunzipBounded(bytes, MAX_UPLOAD_BYTES + 4096); } catch (e) { return; } }
             if (bytes.length > MAX_UPLOAD_BYTES + 4096) return;
             if ((await sha256Id(bytes)) !== h.id) return; // content-addressed: reject anything that doesn't hash to its id
+            setAttProgress(h.id, 1, 1);
             await attPut(h.id, new Blob([bytes], { type: h.mime }), { name: typeof h.name === 'string' ? h.name.slice(0, 200) : '' });
         }
         const attBroadcastBacklog = [];
@@ -1761,10 +1860,11 @@
             if (!url || !el.isConnected) { delete el.dataset.mediaLoading; return; }
             el.removeAttribute('data-lazy');
             if (el.tagName === 'VIDEO' || el.tagName === 'AUDIO') el.preload = 'metadata';
+            if (el.tagName === 'VIDEO') el.onloadedmetadata = () => refreshChatMediaLayout();
             if (el.tagName === 'IMG') {
                 el.style.width = 'auto'; el.style.height = 'auto';
                 el.decoding = 'async';
-                el.onload = () => { el.style.width = 'auto'; el.style.height = 'auto'; el.classList.remove('att-pending'); };
+                el.onload = () => { el.style.width = 'auto'; el.style.height = 'auto'; el.classList.remove('att-pending'); refreshChatMediaLayout(); };
                 el.onerror = () => { delete el.dataset.mediaLoading; };
             }
             el.src = url;
@@ -1791,8 +1891,35 @@
             mediaLayoutFrame = requestAnimationFrame(() => {
                 mediaLayoutFrame = 0;
                 if (!ui.chatBox) return;
+                // Pack attachment tiles into the shortest available column. This
+                // keeps each image directly below the image above its centerline
+                // whenever that path is clear, while filling otherwise-empty space.
+                ui.chatBox.querySelectorAll('.x-multi-attachments').forEach(gallery => {
+                    const width = gallery.clientWidth;
+                    if (!width) return;
+                    const shouldStack = width < 229;
+                    gallery.classList.toggle('is-stacked', shouldStack);
+                    const items = Array.from(gallery.querySelectorAll(':scope > .x-attachment-item'));
+                    const gap = 6;
+                    const columns = shouldStack ? 1 : 2;
+                    const tileWidth = shouldStack ? Math.min(250, width) : Math.min(250, (width - gap) / 2);
+                    const heights = Array(columns).fill(0);
+                    items.forEach(item => {
+                        item.style.width = `${tileWidth}px`;
+                        const col = columns === 1 ? 0 : (heights[0] <= heights[1] ? 0 : 1);
+                        const left = col * (tileWidth + gap);
+                        item.style.left = `${left}px`;
+                        item.style.top = `${heights[col]}px`;
+                        // Reading offsetHeight after width assignment captures the
+                        // natural image ratio and any filename/status label height.
+                        heights[col] += item.offsetHeight + gap;
+                    });
+                    gallery.style.height = `${Math.max(0, ...heights) ? Math.max(0, ...heights) - gap : 0}px`;
+                });
                 ui.chatBox.querySelectorAll('img.chat-image').forEach(img => {
-                    img.style.width = 'auto'; img.style.height = 'auto';
+                    // Do not write per-image pixel widths: the shared CSS grid controls
+                    // every attachment together and can grow again after a resize.
+                    img.style.removeProperty('width'); img.style.removeProperty('height');
                     if (img.dataset.lazy === '1') {
                         const obs = getMediaObserver();
                         if (obs && ui.chatBox.clientHeight > 0) obs.observe(img);
@@ -1820,8 +1947,8 @@
         // ---------------------------------------------------------------------
         //  Transport: routing, QoS, outbox with retry
         // ---------------------------------------------------------------------
-        const DIRECT_TYPES = new Set(['DM', 'SYNC_MANIFEST', 'SYNC_PULL', 'SYNC_PULL_RANGE', 'SYNC_CHUNK', 'DM_READ', 'ATT_PULL']);
-        const QOS1_TYPES = new Set(['MSG', 'DM', 'EDIT_MSG', 'DELETE_MSG', 'REACT_MSG', 'CLEAR_ALL', 'CLEAR_RECENT', 'CLEAR_SYSTEM_ALL', 'RENAME']);
+        const DIRECT_TYPES = new Set(['DM', 'SYNC_MANIFEST', 'SYNC_PULL', 'SYNC_PULL_RANGE', 'SYNC_CHUNK', 'DM_READ', 'ATT_PULL', 'ATT_LIVE_BUSY', 'ATT_LIVE_IDLE']);
+        const QOS1_TYPES = new Set(['MSG', 'DM', 'EDIT_MSG', 'DELETE_MSG', 'REACT_MSG', 'CLEAR_ALL', 'CLEAR_RECENT', 'CLEAR_SYSTEM_ALL', 'RENAME', 'ATT_LIVE_BUSY', 'ATT_LIVE_IDLE']);
         function topicsFor(data) {
             if (DIRECT_TYPES.has(data.type) && data.target) {
                 const t = [TOPIC_USER(data.target)];
@@ -3311,7 +3438,7 @@
                 const have = attHave.has(attId);
                 const thumb = (typeof msg.thumb === 'string' && THUMB_RE.test(msg.thumb)) ? msg.thumb : '';
                 const prog = attProgress.get(attId), pctN = prog ? Math.round(prog.got / prog.cn * 100) : 0;
-                const bar = (prog || attWanted.has(attId)) ? `<span class="att-bar" data-att-bar="${attId}"><i style="width:${pctN}%"></i></span><span class="att-label" data-att-pct="${attId}">${prog ? pctN + '%' : ''}</span>` : '';
+                const bar = (prog || attWanted.has(attId)) ? `<span class="att-bar" data-att-bar="${attId}" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pctN}"><i style="width:${pctN}%"></i></span><span class="att-label" data-att-pct="${attId}">${prog ? pctN + '%' : '0%'}</span>` : '';
                 const label = have ? '' : `<span class="att-label">${prog ? '&#8681; downloading' : (attWanted.has(attId) ? '&#8681; waiting for sender...' : 'not available yet')}</span>${bar} <span class="att-label"><a href="#" data-att-retry="${attId}">retry</a></span>`;
                 const lazy = have ? 'data-lazy="1"' : '';
                 if (msg.isImage) {
@@ -4209,9 +4336,11 @@
         function setAttProgress(id, got, cn) {
             const first = !attProgress.has(id);
             attProgress.set(id, { got, cn });
+            if (liveIncomingWanted.has(id)) noteLiveIncomingAttachment(id, null);
             if (first) { const refs = attMsgRefs.get(id); if (refs) refs.forEach(mid => { const m = findMessageById(mid); if (m) patchMsgDOM(m); }); return; }
             const pct = Math.round(got / cn * 100);
             document.querySelectorAll(`[data-att-bar="${id}"] i`).forEach(e => { e.style.width = pct + '%'; });
+            document.querySelectorAll(`[data-att-bar="${id}"]`).forEach(e => { e.setAttribute('aria-valuenow', String(pct)); });
             document.querySelectorAll(`[data-att-pct="${id}"]`).forEach(e => { e.textContent = pct + '%'; });
         }
         function retryAttachment(id) {
@@ -4296,7 +4425,7 @@
                 lastInboundAt = Date.now();
                 try {
                     if (!capturedBufferCtor && payload && payload.constructor && payload.constructor !== Uint8Array && payload.constructor.from) capturedBufferCtor = payload.constructor;
-                    if (isFramePayload(payload)) { await handleAttachmentFrame(payload); return; }
+                    if (isFramePayload(payload)) { queueIncomingAttachmentFrame(payload); return; }
                     let data = JSON.parse(payload.toString());
                     if (!validateChatPayload(data)) return;
                     if (data.type === "LEAVE" && data.will) { // Last Will: the broker says a connection died. That may be a blip, so wait and see.
@@ -4415,6 +4544,9 @@
                     }
                     else if (data.type === "ATT_PULL") {
                         handleAttPull(data);
+                    }
+                    else if (data.type === 'ATT_LIVE_BUSY' || data.type === 'ATT_LIVE_IDLE') {
+                        handleAttLiveState(data);
                     }
                     else if (data.type === "JOIN") {
                         if (blockedUsers.has(data.author)) return;
@@ -6436,21 +6568,38 @@
             }
         };
 
-        // Add multi-file refs to the original attachment backfill and prioritize smaller
-        // outstanding files before larger ones.
+        // Track message recency and media kind for every historical attachment.
+        // Newer messages sync first; videos are deliberately held until all images,
+        // audio, and ordinary files have been requested.
+        const xAttSyncMeta = new Map();
         const xBaseNoteAttachmentRefs = noteAttachmentRefs;
         noteAttachmentRefs = function(list, options = {}) {
             xBaseNoteAttachmentRefs(list, options);
             if (!Array.isArray(list) || isGhost) return;
             const wantRemote = getChatHistoryMode() === 'full-media';
-            list.forEach(m => {
-                (Array.isArray(m && m.attachments) ? m.attachments : []).forEach(a => {
-                    if (!a || !/^[0-9a-f]{32}$/.test(a.id || '')) return;
-                    registerAttRef(a.id, m.id);
-                    if (wantRemote && !attHave.has(a.id) && !attWanted.has(a.id)) {
-                        attWanted.set(a.id, { tries:0, nextAt:Date.now() + (options.live ? 4000 : 0),
-                            asked:new Set(), hint:m.author === myUsername ? null : m.author, size:Number(a.size)||0 });
-                    }
+            const remember = (id, kind, timestamp, size, msg) => {
+                if (!/^[0-9a-f]{32}$/.test(id || '')) return;
+                const meta = { kind:kind || 'file', timestamp:Number(timestamp)||0, size:Number(size)||0 };
+                xAttSyncMeta.set(id, meta);
+                registerAttRef(id, msg && msg.id);
+                const wanted = attWanted.get(id);
+                if (wanted) Object.assign(wanted, meta);
+                else if ((wantRemote || options.live) && !attHave.has(id)) {
+                    attWanted.set(id, Object.assign({ tries:0, nextAt:Date.now() + (options.live ? 4000 : 0),
+                        asked:new Set(), hint:msg && msg.author === myUsername ? null : (msg && msg.author) }, meta));
+                }
+                if (options.live && msg && msg.author !== myUsername && !attHave.has(id)) noteLiveIncomingAttachment(id, msg.author);
+            };
+            list.forEach((m, index) => {
+                if (!m) return;
+                const timestamp = Number(m.timestamp) || index;
+                if (isMediaMsg(m) && isAttRef(m.text)) {
+                    const kind = m.isVideo ? 'video' : m.isImage ? 'image' : m.isAudio ? 'audio' : 'file';
+                    remember(m.text.slice(4), kind, timestamp, m.attSize, m);
+                }
+                (Array.isArray(m.attachments) ? m.attachments : []).forEach(a => {
+                    if (!a) return;
+                    remember(a.id, a.kind, timestamp, a.size, m);
                 });
             });
             if (attWanted.size) scheduleAttPump(options.live ? 4500 : 1500);
@@ -6463,8 +6612,12 @@
             if (!peers.length) { scheduleAttPump(10000); return; }
             const perPeer = new Map();
             let picked = 0;
-            const ordered = Array.from(attWanted.entries()).sort((a,b) =>
-                (Number(a[1].size)||Number.MAX_SAFE_INTEGER) - (Number(b[1].size)||Number.MAX_SAFE_INTEGER));
+            const ordered = Array.from(attWanted.entries()).sort((a,b) => {
+                const ma = xAttSyncMeta.get(a[0]) || a[1], mb = xAttSyncMeta.get(b[0]) || b[1];
+                const av = ma.kind === 'video' ? 1 : 0, bv = mb.kind === 'video' ? 1 : 0;
+                if (av !== bv) return av - bv; // images/files/audio before any historical video
+                return (Number(mb.timestamp)||0) - (Number(ma.timestamp)||0); // newest first within each class
+            });
             for (const [id,w] of ordered) {
                 if (picked >= 8) break;
                 if (w.nextAt > now) continue;
@@ -6487,26 +6640,16 @@
         const xBaseHandleAttPull = handleAttPull;
         handleAttPull = async function(data) {
             if (!data || data.target !== myUsername || isGhost || blockedUsers.has(data.author)) return;
-            const items = [];
-            for (const id of (Array.isArray(data.ids) ? data.ids.slice(0,8) : [])) {
+            // Preserve the requester's priority order (newest non-video first,
+            // historical videos last) instead of re-sorting by byte size here.
+            const ids = Array.isArray(data.ids) ? data.ids.slice(0,8) : [];
+            for (const id of ids) {
                 if (!ATT_ID_RE.test(id) || !attHave.has(id)) continue;
-                const rec = await attGet(id);
-                items.push({ id, size:Number(rec && rec.size)||Number.MAX_SAFE_INTEGER });
+                if (attSendQueue.length < 32 && !attSendQueue.some(q=>q.to===data.author && q.id===id))
+                    attSendQueue.push({to:data.author,id});
             }
-            items.sort((a,b)=>a.size-b.size);
-            items.forEach(item => {
-                if (attSendQueue.length < 32 && !attSendQueue.some(q=>q.to===data.author && q.id===item.id))
-                    attSendQueue.push({to:data.author,id:item.id,size:item.size});
-            });
-            // A later pull can contain smaller blobs than a previously queued pull.
-            // Reorder all not-yet-started jobs, not just this request's IDs.
-            for (const job of attSendQueue) {
-                if (!Number.isFinite(job.size)) {
-                    const rec=await attGet(job.id);
-                    job.size=Number(rec&&rec.size)||Number.MAX_SAFE_INTEGER;
-                }
-            }
-            attSendQueue.sort((a,b)=>(Number(a.size)||Number.MAX_SAFE_INTEGER)-(Number(b.size)||Number.MAX_SAFE_INTEGER));
+            // Do not size-sort historical jobs: ATT_PULL IDs already arrive in
+            // newest-to-oldest order, with videos deliberately placed last.
             pumpAttSendQueue();
         };
 
