@@ -301,6 +301,9 @@
         }
         .video-expand:active { box-shadow: inset -1px -1px #fff, inset 1px 1px #0a0a0a, inset -2px -2px #dfdfdf, inset 2px 2px #808080; }
 
+        .att-bar { display: inline-block; width: 120px; height: 10px; border: 2px inset var(--win-border-dark); background: #fff; vertical-align: middle; margin-left: 6px; }
+        .att-bar i { display: block; height: 100%; width: 0; background: var(--win-blue); }
+        .att-label a { color: inherit; }
         .att-label { font-size: 11px; color: #555; margin-left: 6px; }
         .att-box { display: inline-block; margin-top: 4px; padding: 2px 4px; border: 2px inset var(--win-border-dark); background: #f5f5f5; font-size: 12px; }
         .att-pending { opacity: 0.6; }
@@ -403,6 +406,21 @@
         <div id="media-viewer-stage" class="viewer-stage"></div>
     </div>
 
+    <div id="conn-modal" class="modal-overlay">
+        <div class="w95-window" style="width: min(480px, 94vw);">
+            <div class="w95-titlebar"><span>Connection Details</span><button onclick="closeConnPanel()" style="height: 18px; line-height: 10px;">X</button></div>
+            <div class="w95-content" style="text-align:left;">
+                <pre id="conn-details" style="font-size: 12px; white-space: pre-wrap; word-break: break-all; font-family: monospace !important; background:#fff; border: 2px inset var(--win-border-dark); padding: 6px; max-height: 50vh; overflow:auto;"></pre>
+                <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">
+                    <button onclick="connReconnectNow()">Reconnect now</button>
+                    <button onclick="connResendPending()">Resend unsent</button>
+                    <button onclick="connSyncNow()">Sync history</button>
+                    <button onclick="connRetryDownloads()">Retry downloads</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="password-modal" class="modal-overlay">
         <div class="w95-window">
             <div class="w95-titlebar"><span id="password-modal-title">Admin Override</span><button onclick="closeModal('password-modal')" style="height: 18px; line-height: 10px;">X</button></div>
@@ -448,7 +466,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
             <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
                 <span id="status" style="font-size: 13px; font-weight: bold;">Connecting to chatroom...</span>
-                <span id="connection-status" style="display: inline-block; width: fit-content; font-size: 10px; padding: 1px 4px; border: 1px inset #808080; background: #ffffcc; color: #775500;">MQTT: CONNECTING</span>
+                <span id="connection-status" onclick="openConnPanel()" title="Click for connection details" style="cursor: pointer; display: inline-block; width: fit-content; font-size: 10px; padding: 1px 4px; border: 1px inset #808080; background: #ffffcc; color: #775500;">MQTT: CONNECTING</span>
                 <span id="activity-status" style="font-size: 11px; color: #555;">On homepage</span>
             </div>
             <div style="display: flex; gap: 4px; align-items: center;">
@@ -457,6 +475,7 @@
                     <option value="AFK">AFK</option>
                     <option value="DND">Do Not Disturb</option>
                 </select>
+                <button onclick="openConnPanel()">Connection</button>
                 <button onclick="toggleSettings()">Settings</button>
                 <button id="admin-clear-btn" onclick="openAdminTools()" style="display: none; background: #8b0000; color: white; font-weight: bold;">Admin Tools</button>
             </div>
@@ -1069,7 +1088,7 @@
             return url;
         }
         function onAttStored(id) {
-            attWanted.delete(id);
+            attWanted.delete(id); attProgress.delete(id);
             const refs = attMsgRefs.get(id);
             if (!refs) return;
             refs.forEach(mid => { const m = findMessageById(mid); if (m) patchMsgDOM(m); });
@@ -1251,6 +1270,7 @@
                     a.bytes += f.body.length;
                     if (a.bytes > MAX_UPLOAD_BYTES + 4096) { attAsm.delete(key); return; }
                     a.parts[h.ci] = new Uint8Array(f.body); a.got++; // copy: f.body is only a view into the network buffer
+                    setAttProgress(h.id, a.got, a.cn);
                 }
                 if (a.got < a.cn) return;
                 attAsm.delete(key);
@@ -3071,7 +3091,9 @@
                 registerAttRef(attId, msg.id);
                 const have = attHave.has(attId);
                 const thumb = (typeof msg.thumb === 'string' && THUMB_RE.test(msg.thumb)) ? msg.thumb : '';
-                const label = have ? '' : `<span class="att-label">${attWanted.has(attId) ? '&#8681; downloading...' : 'not available yet'}</span>`;
+                const prog = attProgress.get(attId), pctN = prog ? Math.round(prog.got / prog.cn * 100) : 0;
+                const bar = (prog || attWanted.has(attId)) ? `<span class="att-bar" data-att-bar="${attId}"><i style="width:${pctN}%"></i></span><span class="att-label" data-att-pct="${attId}">${prog ? pctN + '%' : ''}</span>` : '';
+                const label = have ? '' : `<span class="att-label">${prog ? '&#8681; downloading' : (attWanted.has(attId) ? '&#8681; waiting for sender...' : 'not available yet')}</span>${bar} <span class="att-label"><a href="#" data-att-retry="${attId}">retry</a></span>`;
                 const lazy = have ? 'data-lazy="1"' : '';
                 if (msg.isImage) {
                     if (!thumb && !have) return `<span class="att-box" data-att="${attId}">[Image] ${label}</span>`;
@@ -3279,7 +3301,7 @@
             const r = m.reactions && Object.keys(m.reactions).length ? JSON.stringify(m.reactions) : "";
             const st = (m.author === myUsername && !m.isSystem) ? (outboxState(m.id) || "") : "";
             const ref = isAttRef(m.text) ? m.text.slice(4) : null;
-            const att = ref ? (attHave.has(ref) ? "A" : (attWanted.has(ref) ? "W" : "N")) : "";
+            const att = ref ? (attHave.has(ref) ? "A" : (attProgress.has(ref) ? "D" : (attWanted.has(ref) ? "W" : "N"))) : "";
             let rr = "";
             if (currentTab.startsWith("dm:") && m.author === myUsername) rr = (m.timestamp || 0) <= (dmReadWatermarks[currentTab.slice(3)] || 0) ? "R" : "U";
             const t = typeof m.text === "string" ? m.text : "";
@@ -3500,7 +3522,9 @@
                 action = "remove";
             }
 
-            publishMessage({ type: "REACT_MSG", id: msg.id, emoji: emoji, author: myUsername, action: action });
+            publishMessage({ type: "REACT_MSG", id: msg.id, emoji: emoji, author: myUsername, action: action, timestamp: Date.now() });
+            applyReaction(msg, emoji, myUsername, action === "add", Date.now()); // instant local feedback; the echo is ignored as a duplicate
+            if (!patchMsgDOM(msg)) scheduleRenderActiveTabMessages();
             activeContextMsgId = null;
         }
 
@@ -3740,7 +3764,7 @@
             });
             updateConnectionStatus("CONNECTING", "normal");
             client.on("connect", () => {
-                connSeq++; isConnected = true; lastInboundAt = Date.now(); lastConnectedAt = Date.now();
+                connSeq++; connStats.connects++; isConnected = true; lastInboundAt = Date.now(); lastConnectedAt = Date.now();
                 /* we were deaf while disconnected: give everyone a fresh grace period instead of reaping them as "disconnected" */
                 activeUsers.forEach(u => { u.lastSeen = Date.now(); });
                 updateConnectionStatus("CONNECTED", "good");
@@ -3763,6 +3787,7 @@
                 updateConnectionStatus("RECONNECTING", "normal");
             });
             client.on("close", () => {
+                connStats.closes++; connStats.lastCloseAt = Date.now();
                 isConnected = false; inboxTopicSubscribed = null; attSubscribed = false;
                 outbox.forEach(e => { e.inflight = false; });
                 updateConnectionStatus("DISCONNECTED", "bad");
@@ -3771,7 +3796,8 @@
                 isConnected = false;
                 updateConnectionStatus("OFFLINE", "bad");
             });
-            client.on("error", () => {
+            client.on("error", (err) => {
+                connStats.errors++; connStats.lastError = String((err && err.message) || err || "unknown").slice(0, 80);
                 updateConnectionStatus("ERROR", "bad");
             });
 
@@ -3906,6 +3932,101 @@
         });
         window.addEventListener('online', () => wakeUp(false));
         window.addEventListener('pageshow', (e) => { if (e.persisted) wakeUp(true); });
+
+        /* ---- reactions: one last-writer-wins register per (emoji, user) so sync, replays and reordering can't lose or resurrect reactions ---- */
+        const RX_SEP = '\u0001';
+        function ensureRx(m) {
+            if (m.rx && typeof m.rx === 'object') return;
+            m.rx = {};
+            if (m.reactions) Object.entries(m.reactions).forEach(([e, us]) => (us || []).forEach(u => { m.rx[e + RX_SEP + u] = [0, 1]; }));
+        }
+        function rebuildReactions(m) {
+            const out = {};
+            Object.entries(m.rx).forEach(([k, v]) => { if (v[1] === 1) { const i = k.indexOf(RX_SEP); (out[k.slice(0, i)] = out[k.slice(0, i)] || []).push(k.slice(i + 1)); } });
+            m.reactions = out;
+        }
+        function applyReaction(m, emoji, user, on, ts) {
+            if (typeof emoji !== 'string' || emoji.length > 16 || !isValidUsername(user)) return false;
+            ensureRx(m);
+            const key = emoji + RX_SEP + user, cur = m.rx[key];
+            if (cur && cur[0] > ts) return false;
+            if (!cur && Object.keys(m.rx).length >= 300) return false;
+            if (cur && cur[0] === ts && cur[1] === (on ? 1 : 0)) return false;
+            m.rx[key] = [ts, on ? 1 : 0]; rebuildReactions(m); return true;
+        }
+        function mergeReactions(existing, incoming) {
+            let changed = false;
+            const src = (incoming.rx && typeof incoming.rx === 'object') ? incoming.rx : null;
+            if (src) {
+                Object.entries(src).forEach(([k, v]) => {
+                    const i = k.indexOf(RX_SEP);
+                    if (i < 1 || k.length > 120 || !Array.isArray(v) || !Number.isFinite(v[0])) return;
+                    if (applyReaction(existing, k.slice(0, i), k.slice(i + 1), v[1] === 1, v[0])) changed = true;
+                });
+            } else if (incoming.reactions && typeof incoming.reactions === 'object') {
+                Object.entries(incoming.reactions).forEach(([e, us]) => (Array.isArray(us) ? us : []).forEach(u => { if (applyReaction(existing, e, u, true, 0)) changed = true; }));
+            }
+            return changed;
+        }
+
+        /* ---- download progress ---- */
+        const attProgress = new Map(); // attId -> { got, cn }
+        function setAttProgress(id, got, cn) {
+            const first = !attProgress.has(id);
+            attProgress.set(id, { got, cn });
+            if (first) { const refs = attMsgRefs.get(id); if (refs) refs.forEach(mid => { const m = findMessageById(mid); if (m) patchMsgDOM(m); }); return; }
+            const pct = Math.round(got / cn * 100);
+            document.querySelectorAll(`[data-att-bar="${id}"] i`).forEach(e => { e.style.width = pct + '%'; });
+            document.querySelectorAll(`[data-att-pct="${id}"]`).forEach(e => { e.textContent = pct + '%'; });
+        }
+        function retryAttachment(id) {
+            let w = attWanted.get(id);
+            const refs = attMsgRefs.get(id);
+            if (!w) {
+                let hint = null;
+                if (refs) for (const mid of refs) { const m = findMessageById(mid); if (m && m.author !== myUsername) { hint = m.author; break; } }
+                w = { tries: 0, nextAt: 0, asked: new Set(), hint }; attWanted.set(id, w);
+            } else { w.nextAt = 0; w.asked.clear(); w.tries = 0; }
+            scheduleAttPump(100);
+            if (refs) refs.forEach(mid => { const m = findMessageById(mid); if (m) patchMsgDOM(m); });
+        }
+        ui.chatBox.addEventListener('click', (ev) => {
+            const a = ev.target.closest && ev.target.closest('[data-att-retry]');
+            if (!a) return;
+            ev.preventDefault(); ev.stopPropagation(); retryAttachment(a.dataset.attRetry);
+        }, true);
+
+        /* ---- connection details panel ---- */
+        const connStats = { connects: 0, closes: 0, errors: 0, lastError: '', lastCloseAt: 0 };
+        let connPanelTimer = null;
+        function fmtAgo(t) { if (!t) return 'never'; const s = Math.max(0, Math.round((Date.now() - t) / 1000)); return s < 60 ? s + 's ago' : Math.floor(s / 60) + 'm ' + (s % 60) + 's ago'; }
+        function renderConnPanel() {
+            const el = document.getElementById('conn-details'); if (!el) return;
+            let failed = 0; outbox.forEach(e => { if (e.tries >= 3) failed++; });
+            let online = 0; activeUsers.forEach((u, n) => { if (!u.isGhost && !n.startsWith('ghost-')) online++; });
+            const rows = [
+                ['Broker', isConnected ? 'connected' : (client && client.reconnecting ? 'reconnecting...' : 'offline')],
+                ['Connected since', isConnected ? fmtAgo(lastConnectedAt) : '-'],
+                ['Connects/drops/errors', `${connStats.connects} / ${connStats.closes} / ${connStats.errors}`],
+                ['Last drop', fmtAgo(connStats.lastCloseAt)],
+                ['Last error', connStats.lastError || 'none'],
+                ['Data received', fmtAgo(lastInboundAt)],
+                ['Heartbeat sent', fmtAgo(lastPingPublishedAt)],
+                ['This tab', document.hidden ? 'hidden (inactive)' : 'visible'],
+                ['Users online', online],
+                ['Unsent messages', `${outbox.size} (${failed} failed)`],
+                ['Downloads', `${attWanted.size} wanted, ${attAsm.size} in progress, ${attHave.size} stored`],
+                ['History', `${messageHistory.length} room msgs, ${Object.keys(dmHistories).length} DM chats`],
+                ['Session', `${myCid} / ${mySid}`]
+            ];
+            el.textContent = rows.map(([k, v]) => (k + ':').padEnd(23) + v).join('\n');
+        }
+        function openConnPanel() { openModal('conn-modal'); renderConnPanel(); clearInterval(connPanelTimer); connPanelTimer = setInterval(renderConnPanel, 1000); }
+        function closeConnPanel() { closeModal('conn-modal'); clearInterval(connPanelTimer); }
+        function connReconnectNow() { lastForcedReconnectAt = 0; forceReconnect('manual'); }
+        function connResendPending() { outbox.forEach(e => { e.tries = 0; e.inflight = false; }); pumpOutbox(); flushAttBackfill(); }
+        function connSyncNow() { if (isConnected) sendManifestRequest(0); }
+        function connRetryDownloads() { attWanted.forEach(w => { w.nextAt = 0; w.asked.clear(); w.tries = 0; }); noteAllAttachmentRefs(); scheduleAttPump(100); }
 
         /* ---- connection health (EMQX): inbound watchdog, forced reconnect, will grace ---- */
         let lastInboundAt = Date.now(), lastConnectedAt = 0, lastForcedReconnectAt = 0;
@@ -4112,19 +4233,10 @@
                     }
                     else if (data.type === "REACT_MSG") {
                         const updateReacts = (list) => {
-                            let m = list.find(x => x.id === data.id);
-                            if (m) {
-                                if (!m.reactions) m.reactions = {};
-                                if (!m.reactions[data.emoji]) m.reactions[data.emoji] = [];
-                                if (data.action === "add" && !m.reactions[data.emoji].includes(data.author)) {
-                                    m.reactions[data.emoji].push(data.author);
-                                } else if (data.action === "remove") {
-                                    m.reactions[data.emoji] = m.reactions[data.emoji].filter(u => u !== data.author);
-                                    if (m.reactions[data.emoji].length === 0) delete m.reactions[data.emoji];
-                                }
-                                return true;
-                            }
-                            return false;
+                            const m = list.find(x => x.id === data.id);
+                            if (!m) return false;
+                            applyReaction(m, data.emoji, data.author, data.action === "add", data.timestamp || Date.now());
+                            return true;
                         };
                         let updated = updateReacts(messageHistory);
                         if (updated) saveLocalHistory();
@@ -4696,9 +4808,7 @@
                     if (msg.edited) {
                         existing.text = msg.text; existing.edited = true;
                     }
-                    if (msg.reactions && Object.keys(msg.reactions).length > 0) {
-                        existing.reactions = msg.reactions;
-                    }
+                    mergeReactions(existing, msg);
                     uniqueMessages.set(key, existing);
                 }
             });
