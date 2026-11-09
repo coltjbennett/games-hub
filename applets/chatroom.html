@@ -2504,6 +2504,10 @@
             if (userData.isOnHomepage) return " <span style='font-size:11px; color:#555;'>[On homepage]</span>";
             const activity = normalizeActivity(userData.activity, false);
             if (activity.kind === 'homepage') return " <span style='font-size:11px; color:#555;'>[On homepage]</span>";
+            if (activity.kind !== 'chatroom') {
+                const label = escapeHTML(String(activity.name || 'another app').slice(0, 48));
+                return ` <span style='font-size:11px; color:#555;'>[Active in ${label}]</span>`;
+            }
             const room = typeof userData.room === 'string' ? userData.room : 'global';
             const here = room === currentTab || (room === 'global' && currentTab === 'global');
             return here
@@ -3957,18 +3961,76 @@
             if (hasUnread) { window.parent.postMessage({ source: 'universal-chat', kind: 'unread' }, CHAT_ORIGIN); }
         }
 
+        // Presence is based on actual foreground interaction, not packet arrival.
+        // Backgrounding the tab is immediately inactive; a visible tab becomes
+        // inactive only after three minutes without meaningful user input.
+        const PRESENCE_IDLE_AFTER_MS = 3 * 60 * 1000;
+        let lastInteractionAt = Date.now();
+        let lastLocalIdleState = document.hidden === true;
+        let lastInteractionEventAt = 0;
+
+        function localPresenceIsIdle(now = Date.now()) {
+            return document.visibilityState === 'hidden' || (now - lastInteractionAt) >= PRESENCE_IDLE_AFTER_MS;
+        }
+
+        function noteUserInteraction() {
+            if (document.visibilityState === 'hidden') return;
+            const now = Date.now();
+            // Ignore high-frequency pointer events after refreshing the timestamp;
+            // only force a packet when the user transitions back from inactive.
+            lastInteractionAt = now;
+            const wasIdle = lastLocalIdleState;
+            lastLocalIdleState = false;
+            const me = activeUsers.get(myUsername);
+            if (me) {
+                me.lastSeen = now;
+                me.idle = false;
+                me.idleSince = 0;
+                activeUsers.set(myUsername, me);
+            }
+            if (wasIdle) {
+                renderUserList();
+                if (isConnected) publishPing(true);
+            }
+        }
+
+        // Capture activity across the whole chat tab, not just the message box.
+        // Throttle the handler itself so mouse movement/scrolling stays inexpensive.
+        const PRESENCE_ACTIVITY_EVENTS = ['pointerdown', 'pointermove', 'pointerup', 'mousedown', 'mousemove', 'keydown', 'keyup', 'touchstart', 'touchend', 'wheel', 'scroll', 'click', 'input', 'focusin'];
+        PRESENCE_ACTIVITY_EVENTS.forEach(eventName => {
+            document.addEventListener(eventName, () => {
+                const now = Date.now();
+                if (eventName === 'pointermove' || eventName === 'mousemove' || eventName === 'scroll' || eventName === 'wheel') {
+                    if (now - lastInteractionEventAt < 250 && !lastLocalIdleState) {
+                        lastInteractionAt = now;
+                        return;
+                    }
+                    lastInteractionEventAt = now;
+                }
+                noteUserInteraction();
+            }, { passive: true, capture: true });
+        });
+
         function publishPing(force = false) {
             if (!isConnected || !myUsername) return false;
             if (parentLowPowerMode && !force && Date.now() - lastPingPublishedAt < getPingIntervalMs()) return false;
 
             const uData = activeUsers.get(myUsername) || { joinTime: Date.now() };
+            const wasIdle = lastLocalIdleState;
+            const idleNow = localPresenceIsIdle();
+            lastLocalIdleState = idleNow;
+            uData.idle = idleNow;
+            uData.idleSince = idleNow ? (uData.idleSince || Date.now()) : 0;
+            uData.lastSeen = Date.now();
+            activeUsers.set(myUsername, uData);
+            if (wasIdle !== idleNow) renderUserList();
             const published = publishMessage({
                 type: "PING", cid: myCid,
                 author: myUsername,
                 isGhost: isGhost,
                 isOnHomepage: isOnHomepage,
                 chatWindowOpen: isChatWindowOpen,
-                joinTime: uData.joinTime, idle: document.hidden === true,
+                joinTime: uData.joinTime, idle: idleNow,
                 timestamp: Date.now(),
                 status: currentStatus,
                 activity: { ...currentActivity },
@@ -4241,7 +4303,7 @@
 
         /* ---- presence notices: deterministic ids, derived from observed state, not from a single lossy packet ---- */
         const PRESENCE_TIMEOUT_MS = 45000;
-        const IDLE_GRACE_MS = 5 * 60000 + 20000; // a tabbed-out user is only 'gone' after 5 quiet minutes
+        const IDLE_GRACE_MS = 5 * 60000 + 20000; // inactive users remain listed for a grace period before disconnect cleanup
         function willDelay(name) { const u = activeUsers.get(name); return u && u.idle ? Math.max(WILL_GRACE_MS, (u.idleSince || Date.now()) + IDLE_GRACE_MS - Date.now()) : WILL_GRACE_MS; }
         function latestPresenceEvent(user) {
             let best = null, bi = -1;
@@ -4275,7 +4337,7 @@
             if (!isConnected) { joinWanted = true; return; }
             joinWanted = false;
             const now = Date.now();
-            publishMessage({ type: "JOIN", cid: myCid, sid: mySid, author: myUsername, joinTime: (activeUsers.get(myUsername) || {}).joinTime || now, timestamp: now, idle: document.hidden === true,
+            publishMessage({ type: "JOIN", cid: myCid, sid: mySid, author: myUsername, joinTime: (activeUsers.get(myUsername) || {}).joinTime || now, timestamp: now, idle: localPresenceIsIdle(now),
                 id: `pj-${myUsername}-${mySid}-${connSeq}`, isOnHomepage: isOnHomepage, chatWindowOpen: isChatWindowOpen, status: currentStatus, activity: { ...currentActivity } });
         }
         const pendingOps = new Map(); // edits/reactions that arrived before their message
@@ -4301,12 +4363,16 @@
             const me = activeUsers.get(myUsername);
             if (document.visibilityState === 'hidden') {
                 hiddenAt = Date.now();
+                lastLocalIdleState = true;
                 if (me) { me.idle = true; me.idleSince = hiddenAt; }
                 renderUserList();
-                if (isConnected) publishPing(true); // tell everyone immediately that we're tabbed out, not "gone"
+                if (isConnected) publishPing(true); // backgrounding is immediately inactive
             } else {
                 const away = hiddenAt ? Date.now() - hiddenAt : 0; hiddenAt = 0;
-                if (me) { me.idle = false; me.idleSince = 0; }
+                // Returning to the tab is itself activity, even before another click/key event.
+                lastInteractionAt = Date.now();
+                lastLocalIdleState = false;
+                if (me) { me.idle = false; me.idleSince = 0; me.lastSeen = Date.now(); }
                 renderUserList();
                 wakeUp(away > IDLE_GRACE_MS); // away long enough that others dropped us: announce a fresh join
                 // a socket the OS silently killed while we were away: if nothing arrives shortly, rebuild it
@@ -6066,7 +6132,7 @@
                     badge.textContent = ` [${userData.status}]`;
                     item.appendChild(badge);
                 }
-                const isInactive = !!userData.idle || (now - userData.lastSeen > 10000 && user !== myUsername);
+                const isInactive = !!userData.idle;
                 if (isInactive) {
                     const inactive = document.createElement('span');
                     inactive.style.cssText = 'font-size:11px;color:#888;';
