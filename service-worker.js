@@ -30,7 +30,6 @@ const CORE = [
   "./applets/minesweeper.html",
   "./applets/msdos.html",
   "./applets/notepad.html",
-  "./applets/notes.html",
   "./applets/paint.html",
   "./applets/solitaire.html",
   "./applets/textviewer.html",
