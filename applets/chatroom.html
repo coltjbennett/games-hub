@@ -6350,9 +6350,9 @@
         // The current protocol is an open MQTT room, not an encrypted or authenticated
         // private service. Group membership is a client-side routing/filter, not a
         // broker-enforced security boundary.
-        ['GROUP_META','GROUP_SYNC_REQ','GROUP_MSG','POLL_CREATE','POLL_VOTE','CONTACT_SYNC'].forEach(t => ALLOWED_INCOMING_TYPES.add(t));
-        ['GROUP_MSG','POLL_CREATE','POLL_VOTE','GROUP_META','CONTACT_SYNC'].forEach(t => QOS1_TYPES.add(t));
-        ['POLL_CREATE','POLL_VOTE'].forEach(t => DIRECT_TYPES.add(t));
+        ['GROUP_META','GROUP_SYNC_REQ','GROUP_MSG','POLL_CREATE','POLL_VOTE','POLL_SYNC_REQ','CONTACT_SYNC'].forEach(t => ALLOWED_INCOMING_TYPES.add(t));
+        ['GROUP_MSG','POLL_CREATE','POLL_VOTE','POLL_SYNC_REQ','GROUP_META','CONTACT_SYNC'].forEach(t => QOS1_TYPES.add(t));
+        ['POLL_CREATE','POLL_VOTE','POLL_SYNC_REQ'].forEach(t => DIRECT_TYPES.add(t));
 
         function xSaveGroups() { safeSet(X_GROUPS_KEY, JSON.stringify(xGroups)); }
         function xSaveClosedGroups() { safeSet(X_GROUP_TABS_KEY, JSON.stringify(Array.from(xClosedGroups))); }
@@ -6470,6 +6470,7 @@
                     if (m.poll && m.poll.votes && Object.prototype.hasOwnProperty.call(m.poll.votes, oldName)) {
                         m.poll.votes[newName] = m.poll.votes[oldName]; delete m.poll.votes[oldName];
                     }
+                    if (m.poll && Array.isArray(m.poll.voteEvents)) m.poll.voteEvents.forEach(v => { if(v.author===oldName)v.author=newName; });
                 });
                 xStoreGroupHistory(id);
             });
@@ -6646,7 +6647,7 @@
         const xBaseTopicsFor = topicsFor;
         topicsFor = function(data) {
             if (data && data.groupId && /^[A-Za-z0-9_-]{8,64}$/.test(data.groupId)) return [xGroupTopic(data.groupId)];
-            if (data && (data.type === 'POLL_CREATE' || data.type === 'POLL_VOTE') && data.target) {
+            if (data && (['POLL_CREATE','POLL_VOTE','POLL_SYNC_REQ'].includes(data.type)) && data.target) {
                 const topics = [TOPIC_USER(data.target)];
                 if (data.author && data.author !== data.target) topics.push(TOPIC_USER(data.author));
                 return topics;
@@ -7066,17 +7067,44 @@
             }
             return `<span class="x-attachment-item"><a href="#" data-att-download="${id}" data-name="${name}" class="btn-w95 x-attachment-file">Download ${name}${size}</a>${label}</span>`;
         }
+        function xPollLatestVotes(poll) {
+            const latest = Object.create(null);
+            const events = Array.isArray(poll && poll.voteEvents) ? poll.voteEvents : [];
+            events.forEach(ev => {
+                if (!ev || !isValidUsername(ev.author) || !Number.isInteger(ev.option) || !Number.isFinite(ev.timestamp)) return;
+                const prev = latest[ev.author];
+                if (!prev || ev.timestamp > prev.timestamp || (ev.timestamp === prev.timestamp && String(ev.id) > String(prev.id))) latest[ev.author] = ev;
+            });
+            // Migrate older polls that only stored a username -> option map.
+            const legacy = poll && poll.votes && typeof poll.votes === 'object' ? poll.votes : {};
+            Object.keys(legacy).forEach(author => {
+                if (!isValidUsername(author) || !Number.isInteger(legacy[author]) || latest[author]) return;
+                latest[author] = { id:`legacy-${author}`, author, option:legacy[author], timestamp:Number(poll.timestamp)||0, legacy:true };
+            });
+            return latest;
+        }
+        function xRebuildPollVotes(poll) {
+            if (!poll || typeof poll !== 'object') return;
+            const latest = xPollLatestVotes(poll), votes = {};
+            Object.keys(latest).forEach(author => { votes[author] = latest[author].option; });
+            poll.votes = votes;
+            return latest;
+        }
         function xPollHtml(msg) {
             const p = msg.poll || {}, options = Array.isArray(p.options) ? p.options : [];
-            const votes = p.votes && typeof p.votes === 'object' ? p.votes : {};
-            const counts = options.map((_,i)=>Object.values(votes).filter(v=>v===i).length);
+            const latest = xRebuildPollVotes(p);
+            const counts = options.map((_,i)=>Object.values(latest).filter(v=>v.option===i).length);
             const total = counts.reduce((a,b)=>a+b,0);
-            const mine = Object.prototype.hasOwnProperty.call(votes,myUsername);
+            const mine = latest[myUsername] || null;
+            const canChange = !!mine && !mine.legacy && Date.now() - mine.timestamp < 15000;
+            const remaining = canChange ? Math.max(0, Math.ceil((15000 - (Date.now()-mine.timestamp))/1000)) : 0;
             let html = `<div class="x-poll-card" data-poll-card="${escapeHTML(msg.id)}"><div class="x-poll-title">Poll</div><div style="margin-bottom:6px;">${escapeHTML(p.question||msg.text||'')}</div>`;
             options.forEach((option,i)=>{
-                html += `<button type="button" class="x-poll-option" data-vote-poll="${escapeHTML(msg.id)}" data-option="${i}" ${mine?'disabled':''}><span>${escapeHTML(option)}</span><span class="x-poll-count">${counts[i]||0} vote${counts[i]===1?'':'s'}${total?` · ${Math.round((counts[i]||0)*100/total)}%`:''}</span></button>`;
+                html += `<button type="button" class="x-poll-option" data-vote-poll="${escapeHTML(msg.id)}" data-option="${i}" ${mine&&!canChange?'disabled':''}><span>${escapeHTML(option)}</span><span class="x-poll-count">${counts[i]||0} vote${counts[i]===1?'':'s'}${total?` · ${Math.round((counts[i]||0)*100/total)}%`:''}</span></button>`;
             });
-            html += `<div class="att-label">${total} vote${total===1?'':'s'}${mine?' · You voted':''}</div></div>`;
+            const status = mine ? (canChange ? `You voted · change available for ${remaining}s` : 'You voted · vote locked') : 'Choose an option';
+            html += `<div class="att-label">${total} vote${total===1?'':'s'} · ${status}</div></div>`;
+            if (canChange && currentTab) setTimeout(()=>{ if(currentTab && xCurrentList().some(m=>m.id===msg.id)) scheduleRenderActiveTabMessages(); }, Math.max(50,15000-(Date.now()-mine.timestamp)+40));
             return html;
         }
         const xBaseFormatMessageContent = formatMessageContent;
@@ -7550,12 +7578,12 @@
         function xOpenPollDialog() {
             const {overlay,body}=xCreateModal('x-poll-create-modal','Create Poll',
                 `<label>Question <input id="x-poll-question" type="text" maxlength="240" style="width:100%;margin-top:4px;"></label>
-                <label style="display:block;margin-top:8px;">Options (one per line, 2–8 options)
+                <label style="display:block;margin-top:8px;">Options (one per line)
                 <textarea id="x-poll-options" rows="6" style="width:100%;padding:5px;margin-top:4px;" placeholder="Option one&#10;Option two"></textarea></label>
                 <div class="att-label">The poll is posted to the currently selected room.</div>`,
                 [{label:'Post Poll',action:async(modal,b)=>{
                     const question=b.querySelector('#x-poll-question').value.trim();
-                    const options=b.querySelector('#x-poll-options').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean).slice(0,8);
+                    const options=b.querySelector('#x-poll-options').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
                     if(!question||options.length<2){customAlert('Enter a question and at least two options.');return;}
                     modal.style.display='none';await xSendPoll(question,options);
                 }},{label:'Cancel',action:modal=>modal.style.display='none'}]);
@@ -7827,7 +7855,7 @@
             else if(xIsGroupTab()){groupId=xGroupIdFromTab();channel=`group:${groupId}`;}
             if(groupId&&!xIsGroupMember(xGroups[groupId]))return;
             const id=generateId(),timestamp=Date.now();
-            const poll={question:String(question).slice(0,240),options:options.map(s=>String(s).slice(0,100)),votes:{}};
+            const poll={question:String(question).slice(0,240),options:options.map(s=>String(s).slice(0,100)),votes:{},voteEvents:[]};
             const data={type:'POLL_CREATE',id,author:myUsername,timestamp,poll, text:''};
             if(target)data.target=target;if(groupId)data.groupId=groupId;
             const msg={id,author:myUsername,text:'',poll:{...poll},timestamp,reactions:{},edited:false,isSystem:false};
@@ -7836,14 +7864,29 @@
             else{xGroupHistories[groupId]=mergeHistory(xGroupHistories[groupId]||[],[msg],true);xStoreGroupHistory(groupId);}
             scheduleRenderActiveTabMessages();publishMessage(data);
         }
+        function xFindPoll(channel,pollId) {
+            const list=channel==='global'?messageHistory:channel.startsWith('dm:')?(dmHistories[channel.slice(3)]||[]):(xGroupHistories[channel.slice(6)]||[]);
+            return list.find(m=>m.id===pollId&&m.poll);
+        }
+        function xAddPollVoteEvent(poll,event) {
+            if(!poll||!event||!isValidUsername(event.author)||!Number.isInteger(event.option)||event.option<0||event.option>=poll.options.length||!Number.isFinite(event.timestamp))return false;
+            if(!Array.isArray(poll.voteEvents))poll.voteEvents=[];
+            const id=String(event.id||`legacy-${event.author}-${event.timestamp}-${event.option}`).slice(0,100);
+            if(poll.voteEvents.some(v=>v&&v.id===id))return false;
+            poll.voteEvents.push({id,author:event.author,option:event.option,timestamp:event.timestamp});
+            xRebuildPollVotes(poll);
+            return true;
+        }
         function xSendPollVote(msg,optionIndex) {
             if(!msg||!msg.poll||!Number.isInteger(optionIndex)||optionIndex<0||optionIndex>=msg.poll.options.length)return;
-            const votes=msg.poll.votes||{};
-            if(Object.prototype.hasOwnProperty.call(votes,myUsername))return;
-            msg.poll.votes={...votes,[myUsername]:optionIndex};
-            const groupId=xIsGroupTab()?xGroupIdFromTab():msg.groupId||null;
+            const latest=xRebuildPollVotes(msg.poll),mine=latest[myUsername],now=Date.now();
+            if(mine && (mine.legacy || now-mine.timestamp>=15000))return;
+            if(mine && mine.option===optionIndex)return;
+            const groupId=currentTab.startsWith('group:')?xGroupIdFromTab():msg.groupId||null;
             const target=currentTab.startsWith('dm:')?currentTab.slice(3):null;
-            const data={type:'POLL_VOTE',pollId:msg.id,option:optionIndex,author:myUsername,timestamp:Date.now()};
+            const event={id:generateId(),author:myUsername,option:optionIndex,timestamp:now};
+            xAddPollVoteEvent(msg.poll,event);
+            const data={type:'POLL_VOTE',pollId:msg.id,option:optionIndex,author:myUsername,timestamp:now,voteId:event.id};
             if(groupId)data.groupId=groupId;
             if(target)data.target=target;
             publishMessage(data);
@@ -7876,9 +7919,10 @@
             if(data.type==='POLL_CREATE') {
                 const p=data.poll;
                 return p&&typeof p.question==='string'&&p.question.length<=240&&Array.isArray(p.options)&&
-                    p.options.length>=2&&p.options.length<=8&&p.options.every(o=>typeof o==='string'&&o.length<=100);
+                    p.options.length>=2&&p.options.every(o=>typeof o==='string'&&o.length<=100);
             }
-            if(data.type==='POLL_VOTE') return typeof data.pollId==='string'&&Number.isInteger(data.option)&&data.option>=0&&data.option<8;
+            if(data.type==='POLL_VOTE') return typeof data.pollId==='string'&&Number.isInteger(data.option)&&data.option>=0&&(data.voteId===undefined||typeof data.voteId==='string');
+            if(data.type==='POLL_SYNC_REQ') return typeof data.pollId==='string'&&data.pollId.length<=80;
             if(data.type==='CONTACT_SYNC') return Array.isArray(data.contacts);
             if(data.type==='RENAME') return isValidUsername(data.oldAuthor)&&isValidUsername(data.author)&&data.oldAuthor!==data.author;
             return data.type==='GROUP_SYNC_REQ';
@@ -7891,7 +7935,7 @@
         function xApplyIncomingPoll(data) {
             const channel=xResolvePollChannel(data);
             if(data.type==='POLL_CREATE') {
-                const p={question:data.poll.question,options:data.poll.options.slice(),votes:{}};
+                const p={question:data.poll.question,options:data.poll.options.slice(),votes:{},voteEvents:[]};
                 const msg={id:data.id,author:data.author,text:'',poll:p,timestamp:data.timestamp||Date.now(),reactions:{},edited:false,isSystem:false};
                 if(channel.startsWith('group:')) {
                     const id=channel.slice(6);const group=xGroups[id];
@@ -7908,20 +7952,57 @@
                 } else {
                     messageHistory=mergeHistory(messageHistory,[msg],true);saveLocalHistory();
                 }
+                const created=xFindPoll(channel,data.id);
+                if(created) xRequestPollSync(channel,created.id);
                 if(channel===currentTab)scheduleRenderActiveTabMessages();else markUnread(channel);
-            } else {
-                const list=channel==='global'?messageHistory:channel.startsWith('dm:')?(dmHistories[channel.slice(3)]||[]):(xGroupHistories[channel.slice(6)]||[]);
-                const msg=list.find(m=>m.id===data.pollId);
+            } else if(data.type==='POLL_VOTE') {
+                const msg=xFindPoll(channel,data.pollId);
                 if(!msg||!msg.poll||data.option>=msg.poll.options.length)return;
                 const group=channel.startsWith('group:')?xGroups[channel.slice(6)]:null;
                 if(channel.startsWith('group:')&&(!group||!xIsGroupMember(group)||!group.members.includes(data.author)))return;
-                msg.poll.votes=msg.poll.votes||{};
-                if(!Object.prototype.hasOwnProperty.call(msg.poll.votes,data.author))msg.poll.votes[data.author]=data.option;
+                const event={id:data.voteId||`legacy-${data.author}-${data.timestamp||Date.now()}-${data.option}`,author:data.author,option:data.option,timestamp:Number(data.timestamp)||Date.now()};
+                if(!xAddPollVoteEvent(msg.poll,event))return;
                 if(channel==='global')saveLocalHistory();
                 else if(channel.startsWith('dm:'))saveDmHistory(channel.slice(3));
                 else xStoreGroupHistory(channel.slice(6));
                 if(channel===currentTab&&!patchMsgDOM(msg))scheduleRenderActiveTabMessages();
+            } else if(data.type==='POLL_SYNC_REQ') {
+                if(data.author===myUsername && data.cid===myCid)return;
+                const requestKey=String(data.id||`${data.author}:${data.pollId}:${data.timestamp}`);
+                if(xHandledPollSyncRequests.has(requestKey))return;
+                xHandledPollSyncRequests.add(requestKey);
+                if(xHandledPollSyncRequests.size>2000)xHandledPollSyncRequests.clear();
+                const msg=xFindPoll(channel,data.pollId);
+                if(!msg||!msg.poll)return;
+                const group=channel.startsWith('group:')?xGroups[channel.slice(6)]:null;
+                if(channel.startsWith('group:')&&(!group||!xIsGroupMember(group)||!group.members.includes(data.author)))return;
+                const events=Array.isArray(msg.poll.voteEvents)?msg.poll.voteEvents:[];
+                const legacy=xPollLatestVotes(msg.poll);
+                const all=events.slice();
+                Object.values(legacy).forEach(v=>{if(v.legacy)all.push(v);});
+                all.forEach(ev=>{
+                    if(!isValidUsername(ev.author)||!Number.isInteger(ev.option))return;
+                    const reply={type:'POLL_VOTE',pollId:msg.id,option:ev.option,author:ev.author,timestamp:ev.timestamp||msg.timestamp,voteId:ev.id||`legacy-${ev.author}-${ev.timestamp}-${ev.option}`};
+                    if(channel.startsWith('group:'))reply.groupId=channel.slice(6);
+                    if(channel.startsWith('dm:'))reply.target=data.author;
+                    publishMessage(reply);
+                });
             }
+        }
+        const xPollSyncRequested = new Set();
+        const xHandledPollSyncRequests = new Set();
+        function xRequestPollSync(channel,pollId) {
+            const key=`${channel}:${pollId}`;
+            if(xPollSyncRequested.has(key))return;
+            xPollSyncRequested.add(key);
+            const data={type:'POLL_SYNC_REQ',id:generateId(),pollId,author:myUsername,cid:myCid,timestamp:Date.now()};
+            if(channel.startsWith('group:'))data.groupId=channel.slice(6);
+            if(channel.startsWith('dm:'))data.target=channel.slice(3);
+            publishMessage(data);
+        }
+        function xSyncKnownPolls() {
+            const channels=[['global',messageHistory],...Object.entries(dmHistories).map(([n,l])=>[`dm:${n}`,l]),...Object.entries(xGroupHistories).map(([id,l])=>[`group:${id}`,l])];
+            channels.forEach(([channel,list])=>(list||[]).slice(-200).forEach(m=>{if(m&&m.poll)xRequestPollSync(channel,m.id);}));
         }
         function xNotifyGroupMention(data,group) {
             if(data.author===myUsername||!xIsGroupMember(group))return;
@@ -7988,7 +8069,7 @@
                     // Group traffic stays quiet unless xNotifyGroupMention detected a real ping.
                     return;
                 }
-                if(data.type==='POLL_CREATE'||data.type==='POLL_VOTE') { xApplyIncomingPoll(data); return; }
+                if(data.type==='POLL_CREATE'||data.type==='POLL_VOTE'||data.type==='POLL_SYNC_REQ') { xApplyIncomingPoll(data); return; }
             } catch(e) { console.warn('Extended chat packet ignored',e); }
         }
         const xAttachedClients=new WeakSet();
@@ -7997,7 +8078,7 @@
                 try{client.on('message',xHandleExtendedPacket);xAttachedClients.add(client);}catch(e){}
             }
             if(isConnected&&!isGhost&&Date.now()-xGroupSyncAt>45000) {
-                xGroupSyncAt=Date.now();publishMessage({type:'GROUP_SYNC_REQ',author:myUsername,id:generateId(),timestamp:Date.now()});
+                xGroupSyncAt=Date.now();publishMessage({type:'GROUP_SYNC_REQ',author:myUsername,id:generateId(),timestamp:Date.now()});xSyncKnownPolls();
             }
             xScheduleContactSync();
         },750);
@@ -8177,6 +8258,7 @@
                 if(m.poll&&m.poll.votes&&Object.prototype.hasOwnProperty.call(m.poll.votes,oldName)){
                     m.poll.votes[newName]=m.poll.votes[oldName];delete m.poll.votes[oldName];
                 }
+                if(m.poll&&Array.isArray(m.poll.voteEvents))m.poll.voteEvents.forEach(v=>{if(v.author===oldName)v.author=newName;});
             };
             messageHistory.forEach(renameMessage);
             Object.values(dmHistories).forEach(list=>(list||[]).forEach(renameMessage));
