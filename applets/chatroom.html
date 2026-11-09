@@ -320,6 +320,7 @@
         .viewer-stage {
             width: 100%; height: 100%;
             display: flex; align-items: center; justify-content: center;
+            transform: translateY(-9px);
             pointer-events: none; /* clicks on empty space fall through to the dimmed backdrop */
         }
         .viewer-stage img, .viewer-stage video {
@@ -401,10 +402,11 @@
         .x-mention-menu { display:none; position:fixed; z-index:10070; max-height:220px; overflow:auto; min-width:180px; max-width:min(300px,86vw); padding:2px; background:var(--win-bg); border:2px outset #fff; box-shadow:2px 2px 8px rgba(0,0,0,.4); }
         .x-mention-option { padding:4px 8px; cursor:pointer; font-size:12px; }
         .x-mention-option.active, .x-mention-option:hover { background:var(--win-blue); color:#fff; }
-        .viewer-nav { position:fixed; z-index:10055; top:50%; transform:translateY(-50%); width:34px; height:38px; min-width:34px; padding:0; font-size:22px; font-weight:bold; line-height:1; box-shadow:inset -1px -1px #0a0a0a,inset 1px 1px #fff,inset -2px -2px #808080,inset 2px 2px #dfdfdf; }
+        .viewer-nav { position:fixed; z-index:10055; top:auto; bottom:31px; left:50%; right:auto; width:29px; height:30px; min-width:29px; padding:0; font-size:19px; font-weight:bold; line-height:1; box-shadow:inset -1px -1px #0a0a0a,inset 1px 1px #fff,inset -2px -2px #808080,inset 2px 2px #dfdfdf; }
         .viewer-nav:active { box-shadow:inset -1px -1px #fff,inset 1px 1px #0a0a0a,inset -2px -2px #dfdfdf,inset 2px 2px #808080; }
-        .viewer-nav-left { left:14px; } .viewer-nav-right { right:14px; }
-        .viewer-gallery-count { position:fixed; z-index:10055; left:50%; bottom:12px; transform:translateX(-50%); padding:3px 8px; background:#000; color:#fff; font-size:12px; border:1px solid #888; }
+        .viewer-nav-left { transform:translateX(calc(-100% - 3px)); }
+        .viewer-nav-right { transform:translateX(3px); }
+        .viewer-gallery-count { position:fixed; z-index:10055; left:50%; bottom:5px; transform:translateX(-50%); padding:2px 6px; background:#000; color:#fff; font-size:11px; border:1px solid #888; }
         /* Keep the top controls inside the viewport on narrow screens. */
         .chat-topbar { min-width:0; gap:6px; }
         .chat-top-status { flex:1 1 150px; min-width:0; }
@@ -471,8 +473,7 @@
             body { padding:4px; height:100dvh; }
             .user-item { padding:2px 3px; font-size:12px; overflow-wrap:anywhere; }
             .users-sidebar { flex-basis:100px !important; min-width:100px; max-width:100px; }
-            .media-viewer { padding:42px 48px; }
-            .viewer-nav-left { left:4px; } .viewer-nav-right { right:4px; }
+            .media-viewer { padding:38px 42px; }
         }
         /* Switch the users panel below the chat only at phone-sized widths. */
         @media (max-width:480px) {
@@ -486,7 +487,7 @@
             #status { max-width:46vw; }
             #chat-screen > div:first-child > div:last-child button { font-size:11px; padding:2px 4px; }
             .x-advanced-menu { top:72px; right:5px; }
-            .viewer-nav { width:28px; min-width:28px; height:34px; }
+            .viewer-nav { width:27px; min-width:27px; height:28px; bottom:29px; }
         }
 
     </style>
@@ -7091,25 +7092,8 @@
             return result;
         }
 
-        function xPositionGalleryArrows() {
-            const node=mediaViewer.stage.querySelector('img,video');
-            const rect=mediaViewer.stage.getBoundingClientRect();
-            let w=rect.width,h=rect.height;
-            const iw=node?(node.tagName==='VIDEO'?node.videoWidth:node.naturalWidth):0;
-            const ih=node?(node.tagName==='VIDEO'?node.videoHeight:node.naturalHeight):0;
-            if(iw>0&&ih>0) {
-                const scale=Math.min(rect.width/iw,rect.height/ih);
-                w=iw*scale;h=ih*scale;
-            }
-            const left=rect.left+(rect.width-w)/2;
-            const right=left+w;
-            const navWidth=34;
-            xViewerPrev.style.left=`${Math.max(4,Math.round(left-navWidth-8))}px`;
-            xViewerPrev.style.right='auto';
-            xViewerNext.style.left=`${Math.min(Math.max(4,window.innerWidth-navWidth-4),Math.round(right+8))}px`;
-            xViewerNext.style.right='auto';
-        }
-        window.addEventListener('resize',xPositionGalleryArrows);
+        // Gallery controls stay in one fixed viewport position beneath the media.
+        function xPositionGalleryArrows() {}
 
         async function xShowGalleryIndex(nextIndex) {
             if (!mediaViewer.el.classList.contains('open')) return;
