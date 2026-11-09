@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -658,22 +658,96 @@
         /* ================= ONLINE VERSUS ================= */
         body.online-mode #btn-pause { display: none !important; }
         body.online-mode #split-divider { display: none !important; }
-        body.online-mode .bui { display: none !important; }
-        .online-panel { position: fixed; z-index: 35; top: 12px; left: 12px; width: min(310px, calc(100vw - 24px)); max-height: min(48vh, 390px); display: none; flex-direction: column; gap: 7px; padding: 9px; color: #f4f1de; background: rgba(12,10,8,.93); border: 2px solid #8b7355; border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.85); font: 12px Georgia,serif; pointer-events: auto; }
-        body.online-mode .online-panel { display: flex; }
+        body.online-mode .bui, body.online-mode .bui-orders { display: none !important; visibility:hidden !important; }
+        body.online-mode #info-display { display:none !important; }
+        body.online-mode .camp-only { display:flex !important; }
+        body.online-mode #level-select-container, body.online-mode .level-text { display:none !important; }
+        body.online-mode #header-panel { padding:5px 12px; gap:0; }
+        body.online-mode #header-panel h1 { font-size:13px; margin:0; }
+        body.online-mode .stats-row.camp-only { display:flex !important; }
+        body.online-mode #budget-display { display:inline-block !important; visibility:visible !important; }
+        body.online-mode .online-panel { background:transparent; border:0; box-shadow:none; padding:0; }
+        .online-panel { position:fixed; z-index:35; right:12px; bottom:12px; left:auto; top:auto; width:auto; max-width:min(230px,calc(100vw - 24px)); max-height:none; display:none; flex-direction:column; gap:4px; padding:5px; color:#f4f1de; background:rgba(12,10,8,.78); border:1px solid #8b7355; border-radius:8px; box-shadow:0 4px 14px rgba(0,0,0,.65); font:11px Georgia,serif; pointer-events:auto; }
+        /* Keep the reset button in the same responsive right-hand control column. */
+        body.online-mode .online-panel { position:static; display:contents; }
+        body.online-mode .online-panel-head, body.online-mode #online-match-status, body.online-mode #online-budget-status, body.online-mode #online-reset-note, body.online-mode #online-leave-match { display:none !important; }
+
+        body.online-mode {
+            --online-stack-width: clamp(76px, 14vw, 124px);
+            --online-right-inset: clamp(6px, 1.5vw, 12px);
+        }
+        body.online-mode #ui-layer { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+        body.online-mode .bottom-panel { width:100%; pointer-events:none; }
+        body.online-mode .action-panel {
+            display:grid;
+            grid-template-columns:minmax(0, 1fr) auto var(--online-stack-width);
+            grid-template-rows:auto auto;
+            grid-template-areas:"tools history system" "units units system";
+            align-items:end;
+            justify-content:stretch;
+            gap:4px;
+            width:100%;
+        }
+        /* Flatten the wrapper so tools, history and units can share a responsive grid. */
+        body.online-mode .left-column { display:contents !important; }
+        body.online-mode .placement-tools-group {
+            grid-area:tools; display:flex; width:100%; min-width:0; max-width:100%;
+            align-self:stretch; gap:clamp(2px, .5vw, 6px);
+            padding:clamp(3px, .6vw, 6px); overflow:hidden; pointer-events:auto;
+        }
+        body.online-mode .placement-tools-group .btn {
+            flex:1 1 0; min-width:0; width:0;
+            padding:clamp(4px, .8vw, 8px) 2px;
+            font-size:clamp(8px, .85vw, 10px); line-height:1.1;
+            white-space:normal; overflow-wrap:anywhere;
+        }
+        body.online-mode .unit-selector-group {
+            grid-area:units; width:100%; min-width:0; max-width:100%;
+            flex:0 1 auto; overflow-x:auto; flex-wrap:nowrap;
+            justify-content:flex-start; padding-bottom:4px; pointer-events:auto;
+        }
+        body.online-mode .history-group {
+            grid-area:history; display:flex; flex:0 0 auto; min-width:0;
+            align-self:stretch; gap:3px; padding:clamp(3px, .6vw, 6px);
+            pointer-events:auto;
+        }
+        body.online-mode .history-group .btn-hist {
+            min-width:clamp(34px, 5.5vw, 44px);
+            padding:5px 3px; font-size:clamp(8px, .8vw, 10px);
+        }
+        /* The fixed action stack reserves its own grid column, so it cannot cover the selector. */
+        body.online-mode .system-group {
+            grid-area:system; position:fixed;
+            right:var(--online-right-inset);
+            bottom:calc(48px + env(safe-area-inset-bottom));
+            z-index:59; display:flex !important; flex-direction:column;
+            align-items:stretch; gap:4px; width:var(--online-stack-width);
+            max-width:var(--online-stack-width); min-width:0; padding:0;
+            pointer-events:auto;
+        }
+        body.online-mode .system-group .btn {
+            min-width:0; width:100%; min-height:0; height:auto; margin:0;
+            padding:6px clamp(3px, .8vw, 8px);
+            font-size:clamp(8px, .85vw, 10px); line-height:1.1;
+            white-space:normal; overflow-wrap:anywhere;
+        }
+        body.online-mode #online-reset-btn {
+            position:fixed; right:var(--online-right-inset);
+            bottom:calc(8px + env(safe-area-inset-bottom));
+            z-index:60; display:block; width:var(--online-stack-width);
+            min-width:0; margin:0; padding:6px clamp(3px, .8vw, 8px);
+            font-size:clamp(8px, .85vw, 10px); line-height:1.1;
+            letter-spacing:0; white-space:normal;
+        }
         .online-panel-head { display:flex; align-items:center; justify-content:space-between; gap:8px; font-weight:bold; color:#ffd700; letter-spacing:1px; }
         #online-connection-status { color:#52b788; font-size:10px; letter-spacing:.5px; text-align:right; }
         #online-match-status { color:#a8dadc; font-size:11px; line-height:1.3; }
-        #online-chat-log { height:112px; min-height:64px; overflow-y:auto; padding:6px; background:rgba(0,0,0,.45); border:1px solid #5c4033; border-radius:6px; user-select:text; -webkit-user-select:text; }
-        .online-chat-line { padding:2px 0; line-height:1.25; overflow-wrap:anywhere; }
-        .online-chat-line b { color:#ffd700; }
-        .online-chat-form { display:flex; gap:5px; }
-        #online-chat-input { min-width:0; flex:1; padding:7px; border:1px solid #8b7355; border-radius:5px; background:#17120d; color:#fff; font:12px Georgia,serif; user-select:text; -webkit-user-select:text; }
         .online-small-btn { padding:6px 9px; border-radius:5px; border:1px solid #8b7355; background:#302418; color:#f4f1de; font:bold 11px Georgia,serif; cursor:pointer; }
         .online-small-btn:disabled { opacity:.45; cursor:not-allowed; }
         #online-reset-btn { width:100%; padding:8px; border:1px solid #ffb703; border-radius:6px; background:linear-gradient(135deg,#735104,#3e2c04); color:#fff; font:bold 11px Georgia,serif; cursor:pointer; letter-spacing:.5px; }
         #online-reset-btn.waiting { border-color:#8b7355; background:#302418; }
         .online-note { color:#aaa; font-size:10px; line-height:1.3; }
+        .online-budget-status { padding:7px 9px; border:1px solid #315b43; border-radius:6px; background:rgba(12,35,23,.78); color:#72e0a1; font-weight:bold; font-size:14px; }
         #online-lobby .menu-panel { width:min(560px,94vw); }
         #online-menu .menu-panel { width:min(440px,94vw); }
         .online-room-code { display:inline-block; padding:4px 10px; margin:4px; border:1px solid #8b7355; border-radius:5px; background:#080706; color:#ffd700; font:bold 22px monospace; letter-spacing:4px; }
@@ -684,9 +758,15 @@
         .online-budget-value { color:#52b788; font-weight:bold; font-size:22px; text-align:center; }
         .online-opponent { padding:9px; border:1px solid #5c4033; border-radius:7px; background:rgba(0,0,0,.35); font-size:12px; }
         @media (max-width:700px) {
-            .online-panel { top:8px; left:8px; width:min(270px, calc(100vw - 16px)); max-height:40vh; padding:7px; }
-            #online-chat-log { height:82px; }
+            body.online-mode { --online-right-inset:8px; }
+            body.online-mode .system-group { bottom:calc(42px + env(safe-area-inset-bottom)); }
+            body.online-mode #online-reset-btn { bottom:calc(8px + env(safe-area-inset-bottom)); }
             .online-lobby-grid { grid-template-columns:1fr; }
+        }
+        @media (max-width:380px) {
+            body.online-mode .action-panel { column-gap:3px; row-gap:3px; }
+            body.online-mode .history-group { gap:2px; }
+            body.online-mode .history-group .btn-hist { min-width:32px; }
         }
 
 </style>
@@ -891,17 +971,13 @@
         </div>
     </div>
 
-    <!-- ONLINE CHAT / MATCH STATUS -->
+    <!-- ONLINE MATCH STATUS -->
     <div class="online-panel" id="online-panel">
         <div class="online-panel-head"><span id="online-role-label">ONLINE VERSUS</span><span id="online-connection-status">CONNECTING</span></div>
         <div id="online-match-status">Waiting for deployment…</div>
-        <div id="online-chat-log" aria-live="polite"></div>
-        <form class="online-chat-form" id="online-chat-form">
-            <input id="online-chat-input" type="text" maxlength="180" placeholder="Message opponent…" autocomplete="off">
-            <button class="online-small-btn" type="submit">Send</button>
-        </form>
-        <button id="online-reset-btn">RESET BATTLE · BOTH PLAYERS MUST CONFIRM</button>
-        <div class="online-note" id="online-reset-note">Reset restores both starting deployments and starts a new seeded round.</div>
+        <div class="online-budget-status" id="online-budget-status">Budget remaining: $800</div>
+        <button id="online-reset-btn">Reset: 0/2</button>
+        <div class="online-note" id="online-reset-note">Both players must agree to reset. Your deployment layout will be saved.</div>
         <button class="online-small-btn" id="online-leave-match">Leave Match</button>
     </div>
 
@@ -2967,7 +3043,8 @@
                 h.style.visibility = (gameState === GAME_STATES.PLACEMENT || appMode === 'campaign') ? 'visible' : 'hidden';
                 const st = h.querySelector('.btn-start'); if (st) st.style.display = gameState === GAME_STATES.PLACEMENT ? 'block' : 'none';
             });
-            el('budget-display').innerText = players[0] ? `Budget: $${fmtBudget(players[0])}` : '';
+            el('budget-display').innerText = players[0] ? `Budget remaining: $${fmtBudget(players[0])}` : '';
+            if (onlineMode && el('online-budget-status')) el('online-budget-status').textContent = `Budget remaining: $${players[0] ? fmtBudget(players[0]) : (online.budgets[online.team] || online.cfg.budget)}`;
             if (appMode === 'versus' && players.length === 2) { el('vs-b1').innerText = '$' + fmtBudget(players[0]); el('vs-b2').innerText = '$' + fmtBudget(players[1]); }
             const showHud = gameState === GAME_STATES.PLACEMENT || appMode === 'campaign';
             players.forEach(c => { if (c.hud) c.hud.style.visibility = gameState === GAME_STATES.PLACEMENT ? 'visible' : (appMode === 'campaign' ? 'visible' : 'hidden'); });
@@ -2996,30 +3073,37 @@
                 if (appMode === 'menu' || paused || !players.length) return; e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch (_) {}
                 const ctx = ctxAt(e.clientX); ctx.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, mode: 'none', button: e.button, pt: e.pointerType });
                 const p = ctx.ptrs.get(e.pointerId);
-                if (gameState === GAME_STATES.SIMULATION && onlineMode && !(e.pointerType === 'mouse' && (keys.space || keys.shift || e.button === 1 || e.button === 2))) { ctx.ptrs.delete(e.pointerId); return; }
+                
                 if (gameState === GAME_STATES.SIMULATION && !onlineMode && e.pointerType === 'mouse' && e.button === 2 && !keys.space && !keys.shift) { contextOrderAt(ctx, e); return; }
                 if (e.pointerType === 'mouse' && (keys.space || keys.shift || e.button === 1 || e.button === 2)) { p.mode = (keys.shift || e.button === 1) ? 'pan' : 'rot'; return; }
-                if (ctx.ptrs.size === 1 && gameState === GAME_STATES.SIMULATION) { battleDown(ctx, p, e); return; }
-                if (ctx.ptrs.size === 1) { p.mode = 'place'; ctx.strokeId = e.pointerId; beginStroke(ctx); const h = groundHit(ctx, e.clientX, e.clientY); if (h) placeAt(ctx, h, true); }
-                else { ctx.strokeId = null; endStroke(ctx); p.mode = 'cam'; startGesture(ctx); }
+                // A second pointer always takes over as a camera gesture, in every mode.
+                // A single touch keeps its normal battlefield behavior; it never rotates the camera.
+                if (ctx.ptrs.size >= 2) {
+                    ctx.strokeId = null;
+                    endStroke(ctx);
+                    startGesture(ctx);
+                    return;
+                }
+                if (gameState === GAME_STATES.SIMULATION) { battleDown(ctx, p, e); return; }
+                p.mode = 'place'; ctx.strokeId = e.pointerId; beginStroke(ctx); const h = groundHit(ctx, e.clientX, e.clientY); if (h) placeAt(ctx, h, true);
             });
             cv.addEventListener('pointermove', e => {
                 const ctx = [...players].find(c => c.ptrs.has(e.pointerId)); if (!ctx) return; const p = ctx.ptrs.get(e.pointerId);
                 const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
                 if (p.mode === 'place') { if (gameState !== GAME_STATES.PLACEMENT) return; const h = groundHit(ctx, e.clientX, e.clientY); if (h) placeAt(ctx, h, false); }
-                else if (p.mode === 'pan') panCam(ctx, dx, dy); else if (p.mode === 'rot') { ctx.cam.theta -= dx * 0.006; ctx.cam.phi -= dy * 0.005; }
+                else if (p.mode === 'pan') panCam(ctx, dx, dy); else if (p.mode === 'rot') { ctx.cam.theta -= dx * 0.003; ctx.cam.phi -= dy * 0.0025; }
                 else if (p.mode === 'cam') updateGesture(ctx);
                 else if (p.mode === 'select') battleMove(ctx, p, e);
             });
             window.addEventListener('pointermove', e => { mouseX = e.clientX; mouseY = e.clientY; });
             const up = e => {
-                const ctx = [...players].find(c => c.ptrs.has(e.pointerId)); if (!ctx) return; const pp = ctx.ptrs.get(e.pointerId); if (pp) battleUp(ctx, pp, e); ctx.ptrs.delete(e.pointerId);
+                const ctx = [...players].find(c => c.ptrs.has(e.pointerId)); if (!ctx) return; const pp = ctx.ptrs.get(e.pointerId); if (pp && pp.mode !== 'cam' && pp.mode !== 'pan' && pp.mode !== 'rot') battleUp(ctx, pp, e); ctx.ptrs.delete(e.pointerId);
                 if (ctx.strokeId === e.pointerId) { ctx.strokeId = null; endStroke(ctx); }
                 if (ctx.ptrs.size < 2) ctx.g = null; else startGesture(ctx);
                 if (ctx.ptrs.size === 0) { ctx.strokeId = null; endStroke(ctx); }
             };
             cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
-            cv.addEventListener('wheel', e => { if (appMode === 'menu' || paused) return; e.preventDefault(); const ctx = ctxAt(e.clientX); ctx.cam.radius *= (1 + Math.sign(e.deltaY) * 0.1); }, { passive: false });
+            cv.addEventListener('wheel', e => { if (appMode === 'menu' || paused) return; e.preventDefault(); const ctx = ctxAt(e.clientX); ctx.cam.radius = clamp(ctx.cam.radius * (1 + Math.sign(e.deltaY) * 0.045), 12, 180); }, { passive: false });
             window.addEventListener('keydown', e => {
                 if (e.code === 'Space') { keys.space = true; if (appMode !== 'menu') e.preventDefault(); } if (e.key === 'Shift') keys.shift = true; if (e.key === 'Control') keys.ctrl = true; keys.down.add(e.code);
                 if (e.code.startsWith('Arrow') && players.some(c => c.possessed)) e.preventDefault();
@@ -3039,7 +3123,7 @@
         function startGesture(ctx) { if (ctx.ptrs.size >= 2) { ctx.ptrs.forEach(p => { clearTimeout(p.lp); p.mode = 'cam'; }); hideSelBox(ctx); ctx.g = gestureStats(ctx); } }
         function updateGesture(ctx) {
             if (!ctx.g || ctx.ptrs.size < 2) return; const n = gestureStats(ctx), o = ctx.g;
-            panCam(ctx, n.cx - o.cx, n.cy - o.cy); ctx.cam.radius *= o.d / n.d; ctx.cam.theta -= angDiff(n.ang - o.ang) * 0.9; ctx.g = n;
+            panCam(ctx, n.cx - o.cx, n.cy - o.cy); ctx.cam.radius = clamp(ctx.cam.radius * o.d / n.d, 12, 180); ctx.cam.theta -= angDiff(n.ang - o.ang) * 0.9; ctx.g = n;
         }
 
         // ---------------------------------------------------------------- PLACEMENT
@@ -3763,7 +3847,6 @@
             onlineMode = false; onlineTransportConnected = true; onlineMatchEnded = false; onlineRandomState = 0;
             document.body.classList.remove('online-mode');
             if (el('online-panel')) el('online-panel').style.display = 'none';
-            if (el('online-chat-log')) el('online-chat-log').innerHTML = '';
         }
 
         function openOnlineMenu() {
@@ -3785,7 +3868,6 @@
             el('online-leave-lobby').onclick = () => showMainMenu();
             el('online-leave-match').onclick = () => showMainMenu();
             el('online-reset-btn').onclick = onlineRequestReset;
-            el('online-chat-form').addEventListener('submit', e => { e.preventDefault(); sendOnlineChat(); });
         }
         function onlineCreateRoom() {
             if (onlineNetwork) onlineNetwork.leaveMatch('replace');
@@ -3903,7 +3985,6 @@
             el('online-menu').classList.remove('open'); el('online-lobby').classList.remove('open');
             onlineBuildPlacementScene(online.layouts, online.budgets);
             el('online-panel').style.display = 'flex';
-            addOnlineChatMessage('SYSTEM', `Room ${onlineNetwork ? onlineNetwork.roomCode : ''} ready. You are ${online.team === TEAMS.MONGOL ? 'the Mongols' : 'the Dynasty'}.`);
             refreshOnlinePanel();
         }
         function onlineBuildPlacementScene(layouts, budgets) {
@@ -3990,7 +4071,9 @@
             online.layouts = onlineCopyLayouts(online.roundLayouts); online.budgets = onlineCopyBudgets(online.roundBudgets, online.cfg.budget);
             online.localReady = online.remoteReady = online.localReset = online.remoteReset = false; onlineMatchEnded = false;
             seedOnlineRandom(online.roundSeed); simTime = 0; simTick = 0; simAcc = 0;
+            const savedCam = players[0] ? { target: players[0].cam.target.clone(), radius: players[0].cam.radius, theta: players[0].cam.theta, phi: players[0].cam.phi } : null;
             onlineBuildPlacementScene(online.roundLayouts, online.roundBudgets);
+            if (savedCam && players[0]) { players[0].cam.target.copy(savedCam.target); players[0].cam.radius = savedCam.radius; players[0].cam.theta = savedCam.theta; players[0].cam.phi = savedCam.phi; updateCam(players[0]); }
             // Re-seed after deterministic army construction is not needed: both clients consumed
             // the same constructor draws in the same canonical Mongol-then-Dynasty ordering.
             players[0].ready = false; beginBattle();
@@ -4006,25 +4089,22 @@
         }
         function maybeResetOnlineRound() {
             if (!onlineMode || !onlineNetwork || !onlineNetwork.isHost || !online.localReset || !online.remoteReset || !online.roundLayouts) return;
-            const seed = onlineRandomSeed(), roundId = (online.roundId || 0) + 1;
             const layouts = onlineCopyLayouts(online.roundLayouts), budgets = onlineCopyBudgets(online.roundBudgets, online.cfg.budget);
-            online.roundSeed = seed; online.roundId = roundId;
-            onlineNetwork.broadcast({ type: 'roundStart', seed, roundId, cfg: online.cfg, layouts, budgets, reset: true });
-            startOnlineRound(seed, layouts, budgets, roundId);
+            onlineNetwork.broadcast({ type: 'placementReset', cfg: online.cfg, layouts, budgets, roundId: online.roundId });
+            onlineReturnToPlacement(layouts, budgets);
         }
-        function addOnlineChatMessage(name, message) {
-            const log = el('online-chat-log'); if (!log) return;
-            const line = document.createElement('div'); line.className = 'online-chat-line';
-            const b = document.createElement('b'); b.textContent = (name || 'Opponent').slice(0, 16) + ': ';
-            const span = document.createElement('span'); span.textContent = String(message || '').slice(0, 180);
-            line.appendChild(b); line.appendChild(span); log.appendChild(line);
-            while (log.children.length > 60) log.removeChild(log.firstChild);
-            log.scrollTop = log.scrollHeight;
-        }
-        function sendOnlineChat() {
-            const input = el('online-chat-input'), message = (input.value || '').trim(); if (!message || !onlineNetwork || !onlineNetwork.connected) return;
-            onlineNetwork.broadcast({ type: 'chat', name: onlineNetwork.username, message: message.slice(0, 180) });
-            addOnlineChatMessage(onlineNetwork.username, message); input.value = '';
+        function onlineReturnToPlacement(layouts, budgets) {
+            const savedCam = players[0] ? { target: players[0].cam.target.clone(), radius: players[0].cam.radius, theta: players[0].cam.theta, phi: players[0].cam.phi } : null;
+            online.localReady = online.remoteReady = online.localReset = online.remoteReset = false;
+            onlineMatchEnded = false; online.authoritativeTick = 0; online.pendingHash = null;
+            online.layouts = onlineCopyLayouts(layouts); online.budgets = onlineCopyBudgets(budgets, online.cfg.budget);
+            online.roundLayouts = onlineCopyLayouts(layouts); online.roundBudgets = onlineCopyBudgets(budgets, online.cfg.budget);
+            simTime = 0; simTick = 0; simAcc = 0; resultShown = false;
+            onlineBuildPlacementScene(online.layouts, online.budgets);
+            if (savedCam && players[0]) { players[0].cam.target.copy(savedCam.target); players[0].cam.radius = savedCam.radius; players[0].cam.theta = savedCam.theta; players[0].cam.phi = savedCam.phi; updateCam(players[0]); }
+            players[0].ready = false;
+            setStatus('PHASE: DEPLOYMENT — your saved layouts are restored; both players press READY');
+            refreshHUD(); refreshOnlinePanel();
         }
         function refreshOnlinePanel() {
             if (!el('online-panel')) return;
@@ -4039,11 +4119,13 @@
             else if (online.setupStarted && !online.opponentConnected) stage += ' · Opponent disconnected; waiting to resync';
             el('online-match-status').textContent = stage;
             const reset = el('online-reset-btn');
-            reset.style.display = gameState === GAME_STATES.PLACEMENT ? 'none' : 'block';
-            reset.disabled = !onlineTransportConnected || !onlineNetwork || !onlineNetwork.connected || !!online.localReset;
+            reset.style.display = 'block';
+            reset.disabled = !onlineTransportConnected || !onlineNetwork || !onlineNetwork.connected || !!online.localReset || gameState === GAME_STATES.PLACEMENT;
             reset.classList.toggle('waiting', online.localReset);
-            reset.textContent = online.localReset ? (online.remoteReset ? 'RESET CONFIRMED · STARTING…' : 'RESET CONFIRMED · WAITING FOR OPPONENT') : 'RESET BATTLE · BOTH PLAYERS MUST CONFIRM';
-            el('online-reset-note').textContent = 'Reset restores both starting deployments and generates a fresh shared seed.';
+            reset.textContent = `Reset: ${(online.localReset ? 1 : 0) + (online.remoteReset ? 1 : 0)}/2`;
+            el('online-reset-note').textContent = 'Both players must agree to reset. Your deployment layout will be saved.';
+            const localCtx = players[0];
+            el('online-budget-status').textContent = `Budget remaining: $${localCtx ? fmtBudget(localCtx) : (online.budgets[online.team] || online.cfg.budget)}`;
         }
         function onlineOnLocalMenuLeave() {
             if (onlineNetwork) onlineNetwork.leaveMatch('menu');
@@ -4203,9 +4285,9 @@
                         online.remoteReady = !!data.ready; online.revisions.CHINESE = Math.max(online.revisions.CHINESE || 0, 0);
                         refreshOnlinePanel(); maybeStartOnlineRound();
                         net.broadcast({ type:'ready', team:TEAMS.MONGOL, ready:online.localReady, remoteReady:online.remoteReady });
-                    } else if (data.type === 'resetReady') { online.remoteReset = !!data.ready; refreshOnlinePanel(); maybeResetOnlineRound(); }
+                    } else if (data.type === 'resetReady') { online.remoteReset = !!data.ready; net.broadcast({ type:'resetProgress', host:!!online.localReset, guest:!!online.remoteReset }); refreshOnlinePanel(); maybeResetOnlineRound(); }
+                    else if (data.type === 'placementReset') { if (data.cfg) online.cfg = Object.assign({}, data.cfg); onlineReturnToPlacement(data.layouts || online.roundLayouts, data.budgets || online.roundBudgets); }
                     else if (data.type === 'syncRequest') onlineSendSync();
-                    else if (data.type === 'chat') { addOnlineChatMessage(net.opponentName, data.message); net.broadcast({ type:'chatRelay', name:net.opponentName, message:String(data.message || '').slice(0,180) }); }
                     else if (data.type === 'leave') { onOnlineOpponentPresence(false); }
                 }
             } else {
@@ -4229,6 +4311,8 @@
                         startOnlineRound(data.seed >>> 0, data.layouts, data.budgets, data.roundId);
                     }
                     else if (data.type === 'resetReady') { online.remoteReset = !!data.ready; refreshOnlinePanel(); }
+                    else if (data.type === 'resetProgress') { online.localReset = !!data.guest; online.remoteReset = !!data.host; refreshOnlinePanel(); }
+                    else if (data.type === 'placementReset') { if (data.cfg) online.cfg = Object.assign({}, data.cfg); onlineReturnToPlacement(data.layouts || online.roundLayouts, data.budgets || online.roundBudgets); }
                     else if (data.type === 'sync') onlineApplySync(data);
                     else if (data.type === 'tick' && onlineMode && gameState === GAME_STATES.SIMULATION) {
                         const remoteTick = Number(data.tick) || 0;
@@ -4237,7 +4321,6 @@
                         if (remoteTick - simTick > 360) onlineAskForSync();
                         onlineCheckPendingHash();
                     }
-                    else if (data.type === 'chatRelay' || data.type === 'chat') addOnlineChatMessage(data.name || net.opponentName, data.message);
                     else if (data.type === 'leave') onOnlineOpponentPresence(false);
                 }
             }
@@ -4258,4 +4341,4 @@
 
     </script>
 </body>
-</html> 
+</html>
