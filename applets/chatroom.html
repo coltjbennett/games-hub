@@ -737,7 +737,7 @@
         const CHAT_HISTORY_MODE_KEY = "mqtt_chat_history_mode_v1";
         const DEFAULT_CHAT_RETENTION_DAYS = 0;
         const DEFAULT_CHAT_HISTORY_MODE = "full-media";
-        const ALLOWED_INCOMING_TYPES = new Set(['ATT_PULL', 'ATT_LIVE_BUSY', 'ATT_LIVE_IDLE', 
+        const ALLOWED_INCOMING_TYPES = new Set(['ATT_PULL', 'ATT_LIVE_BUSY', 'ATT_LIVE_IDLE', 'ATT_PING', 'ATT_PONG', 'ATT_PEER_QUERY', 'ATT_PEER_HAVE', 'ATT_PEER_PULL', 
             'MSG', 'DM', 'EDIT_MSG', 'DELETE_MSG', 'REACT_MSG', 'CLEAR_ALL', 'CLEAR_RECENT',
             'CMD', 'PRESENCE', 'PING', 'RENAME', 'TYPING', 'MUTE_ATTEMPT', 'DM_READ',
             'JOIN', 'LEAVE', 'CLEAR_SYSTEM_ALL', 'SYNC_MANIFEST_REQ', 'SYNC_MANIFEST', 'SYNC_PULL', 'SYNC_PULL_RANGE', 'SYNC_CHUNK'
@@ -1967,7 +1967,7 @@
         // ---------------------------------------------------------------------
         //  Transport: routing, QoS, outbox with retry
         // ---------------------------------------------------------------------
-        const DIRECT_TYPES = new Set(['DM', 'SYNC_MANIFEST', 'SYNC_PULL', 'SYNC_PULL_RANGE', 'SYNC_CHUNK', 'DM_READ', 'ATT_PULL', 'ATT_LIVE_BUSY', 'ATT_LIVE_IDLE']);
+        const DIRECT_TYPES = new Set(['DM', 'SYNC_MANIFEST', 'SYNC_PULL', 'SYNC_PULL_RANGE', 'SYNC_CHUNK', 'DM_READ', 'ATT_PULL', 'ATT_LIVE_BUSY', 'ATT_LIVE_IDLE', 'ATT_PING', 'ATT_PONG', 'ATT_PEER_HAVE', 'ATT_PEER_PULL']);
         const QOS1_TYPES = new Set(['MSG', 'DM', 'EDIT_MSG', 'DELETE_MSG', 'REACT_MSG', 'CLEAR_ALL', 'CLEAR_RECENT', 'CLEAR_SYSTEM_ALL', 'RENAME', 'ATT_LIVE_BUSY', 'ATT_LIVE_IDLE']);
         function topicsFor(data) {
             if (DIRECT_TYPES.has(data.type) && data.target) {
@@ -4475,7 +4475,7 @@
                     if ((data.type === "MSG" || data.type === "DM") && !validateMessagePayloadAfterDecompression(data)) return;
                     
                     if ((data.type === "MSG" || data.type === "DM") && data.author !== myUsername && incomingFlood(data.author)) return;
-                    if (data.author && !blockedUsers.has(data.author) && !(data.timestamp && Date.now() - data.timestamp > 90000 && data.type !== "PING")) {
+                    if (data.author && !String(data.type || '').startsWith('ATT_') && !blockedUsers.has(data.author) && !(data.timestamp && Date.now() - data.timestamp > 90000 && data.type !== "PING")) {
                         const existing = activeUsers.get(data.author); data.__wasKnown = !!existing;
                         const incomingActivity = data.activity
                             ? normalizeActivity(data.activity, data.isOnHomepage === true)
@@ -4568,9 +4568,25 @@
                     else if (data.type === 'ATT_LIVE_BUSY' || data.type === 'ATT_LIVE_IDLE') {
                         handleAttLiveState(data);
                     }
+                    else if (data.type === 'ATT_PING') {
+                        handleAttachmentPing(data);
+                    }
+                    else if (data.type === 'ATT_PONG') {
+                        handleAttachmentPong(data);
+                    }
+                    else if (data.type === 'ATT_PEER_QUERY') {
+                        handleAttachmentPeerQuery(data);
+                    }
+                    else if (data.type === 'ATT_PEER_HAVE') {
+                        handleAttachmentPeerHave(data);
+                    }
+                    else if (data.type === 'ATT_PEER_PULL') {
+                        handleAttachmentPeerPull(data);
+                    }
                     else if (data.type === "JOIN") {
                         if (blockedUsers.has(data.author)) return;
                         if (data.author !== myUsername) {
+                            retryPeerRecoveryOnJoin();
                             roomPresenceEpoch++;
                             const lp = latestPresenceEvent(data.author);
                             if (!lp || lp.kind !== "join") addPresenceNotice(data.id || `pj-${data.author}-${data.sid || Date.now()}`, `${data.author} joined the room.`, data.timestamp || Date.now());
@@ -6673,6 +6689,253 @@
             pumpAttSendQueue();
         };
 
+        // Resilient attachment recovery. A requester first silently pings the
+        // message author. If that instance cannot provide a complete local copy,
+        // it asks the message's room for a peer that has BOTH the message ID and
+        // the fully stored content-addressed blob. Only one peer is asked to send
+        // at a time; if nobody has it, the request sleeps until a JOIN arrives.
+        const attPeerRecovery = new Map(); // attachment id -> recovery state
+        const ATT_AUTHOR_PING_MS = 2200;
+        const ATT_PEER_DISCOVERY_MS = 1400;
+        const ATT_PEER_TRANSFER_STALL_MS = 9000;
+
+        function messageContainsAttachment(message, attachmentId) {
+            if (!message) return false;
+            if (message.text === 'att:' + attachmentId) return true;
+            return Array.isArray(message.attachments) && message.attachments.some(a => a && a.id === attachmentId);
+        }
+        function findAttachmentMessageInRoom(messageId, room, attachmentId) {
+            if (!messageId || !room) return null;
+            if (room === 'global') return (messageHistory || []).find(m => m && m.id === messageId && messageContainsAttachment(m, attachmentId)) || null;
+            if (room.startsWith('group:')) {
+                const gid = room.slice(6);
+                if (!/^[A-Za-z0-9_-]{8,64}$/.test(gid) || typeof xGroups === 'undefined' || !xIsGroupMember(xGroups[gid])) return null;
+                return ((xGroupHistories && xGroupHistories[gid]) || []).find(m => m && m.id === messageId && messageContainsAttachment(m, attachmentId)) || null;
+            }
+            if (room.startsWith('dm:')) {
+                const other = room.slice(3);
+                return (dmHistories[other] || []).find(m => m && m.id === messageId && messageContainsAttachment(m, attachmentId)) || null;
+            }
+            return null;
+        }
+        function findAttachmentContext(attachmentId) {
+            const ids = attMsgRefs.get(attachmentId);
+            if (!ids) return null;
+            for (const messageId of ids) {
+                let m = (messageHistory || []).find(x => x && x.id === messageId && messageContainsAttachment(x, attachmentId));
+                if (m) return { messageId, room:'global', author:m.author || null };
+                if (typeof xGroupHistories !== 'undefined') {
+                    for (const gid of Object.keys(xGroupHistories || {})) {
+                        m = (xGroupHistories[gid] || []).find(x => x && x.id === messageId && messageContainsAttachment(x, attachmentId));
+                        if (m && xIsGroupMember(xGroups[gid])) return { messageId, room:'group:' + gid, author:m.author || null };
+                    }
+                }
+                for (const other of Object.keys(dmHistories || {})) {
+                    m = (dmHistories[other] || []).find(x => x && x.id === messageId && messageContainsAttachment(x, attachmentId));
+                    if (m) return { messageId, room:'dm:' + other, author:m.author || null };
+                }
+            }
+            return null;
+        }
+        function clearAttachmentRecovery(id) {
+            const state = attPeerRecovery.get(id);
+            if (state && state.timer) clearTimeout(state.timer);
+            attPeerRecovery.delete(id);
+        }
+        function armAttachmentRecoveryTimer(state, delay, callback) {
+            if (state.timer) clearTimeout(state.timer);
+            state.timer = setTimeout(() => {
+                state.timer = null;
+                if (attHave.has(state.id) || attPeerRecovery.get(state.id) !== state) return;
+                callback();
+            }, delay);
+        }
+        function startAttachmentPeerQuery(state) {
+            if (!state || attHave.has(state.id) || attPeerRecovery.get(state.id) !== state) return;
+            if (!(state.room === 'global' || state.room.startsWith('group:'))) {
+                state.phase = 'waiting-join'; // DMs have no third-party room peers.
+                return;
+            }
+            state.phase = 'peer-query';
+            state.candidates = state.candidates || [];
+            state.selected = null;
+            publishMessage({
+                type:'ATT_PEER_QUERY', author:myUsername, cid:myCid,
+                attachmentId:state.id, messageId:state.messageId,
+                room:state.room, channel:state.room, requestId:state.requestId,
+                timestamp:Date.now()
+            });
+            armAttachmentRecoveryTimer(state, ATT_PEER_DISCOVERY_MS, () => {
+                if (state.candidates && state.candidates.length) requestNextAttachmentPeer(state);
+                else state.phase = 'waiting-join';
+            });
+        }
+        function requestNextAttachmentPeer(state) {
+            if (!state || attHave.has(state.id) || attPeerRecovery.get(state.id) !== state) return;
+            const candidate = (state.candidates || []).shift();
+            if (!candidate) { state.phase = 'waiting-join'; state.selected = null; return; }
+            state.selected = candidate;
+            state.phase = 'peer-transfer';
+            publishMessage({
+                type:'ATT_PEER_PULL', author:myUsername, target:candidate.author,
+                peerCid:candidate.cid, attachmentId:state.id,
+                messageId:state.messageId, room:state.room,
+                requestId:state.requestId, timestamp:Date.now()
+            });
+            armAttachmentRecoveryTimer(state, ATT_PEER_TRANSFER_STALL_MS, () => requestNextAttachmentPeer(state));
+        }
+        function beginAttachmentRecovery(id, wanted) {
+            if (attHave.has(id) || attPeerRecovery.has(id)) return;
+            const context = findAttachmentContext(id);
+            if (!context) {
+                // Older cached references may not have their message loaded yet.
+                // Keep the legacy targeted pull as a safe fallback until it is.
+                if (wanted && wanted.hint && isValidUsername(wanted.hint))
+                    publishMessage({type:'ATT_PULL',author:myUsername,target:wanted.hint,ids:[id]});
+                return;
+            }
+            const author = wanted && isValidUsername(wanted.hint) ? wanted.hint : context.author;
+            const state = {
+                id, messageId:context.messageId, room:context.room, author,
+                requestId:generateId(), phase:'author-ping', candidates:[], selected:null, timer:null
+            };
+            attPeerRecovery.set(id, state);
+            if (author && isValidUsername(author)) {
+                publishMessage({
+                    type:'ATT_PING', author:myUsername, target:author, cid:myCid,
+                    attachmentId:id, messageId:state.messageId, room:state.room,
+                    requestId:state.requestId, timestamp:Date.now()
+                });
+                armAttachmentRecoveryTimer(state, ATT_AUTHOR_PING_MS, () => startAttachmentPeerQuery(state));
+            } else startAttachmentPeerQuery(state);
+        }
+        function handleAttachmentPing(data) {
+            if (!data || data.target !== myUsername || data.cid === myCid || isGhost || blockedUsers.has(data.author)) return;
+            if (!ATT_ID_RE.test(data.attachmentId || '') || typeof data.messageId !== 'string' || data.messageId.length > 80) return;
+            if (!attHave.has(data.attachmentId)) return;
+            const message = findAttachmentMessageInRoom(data.messageId, data.room, data.attachmentId);
+            if (!message) return;
+            attGet(data.attachmentId).then(rec => {
+                if (!rec || !rec.blob || !isConnected || isGhost) return;
+                publishMessage({
+                    type:'ATT_PONG', author:myUsername, target:data.author, cid:myCid,
+                    attachmentId:data.attachmentId, messageId:data.messageId,
+                    room:data.room, requestId:data.requestId, available:true,
+                    timestamp:Date.now()
+                });
+                // The ping is silent to the user; the stored blob is sent directly
+                // to the requesting client without asking them to issue another pull.
+                queueAttBroadcast(data.attachmentId, data.author);
+            }).catch(() => {});
+        }
+        function handleAttachmentPong(data) {
+            if (!data || data.target !== myUsername || data.available !== true || !ATT_ID_RE.test(data.attachmentId || '')) return;
+            const state = attPeerRecovery.get(data.attachmentId);
+            if (!state || state.phase === 'peer-transfer' || state.requestId !== data.requestId || state.messageId !== data.messageId || state.room !== data.room) return;
+            state.phase = 'author-transfer';
+            state.selected = { author:data.author, cid:data.cid || null };
+            armAttachmentRecoveryTimer(state, ATT_PEER_TRANSFER_STALL_MS, () => startAttachmentPeerQuery(state));
+        }
+        async function handleAttachmentPeerQuery(data) {
+            if (!data || data.author === myUsername && data.cid === myCid || blockedUsers.has(data.author)) return;
+            if (!ATT_ID_RE.test(data.attachmentId || '') || typeof data.messageId !== 'string' || data.messageId.length > 80) return;
+            if (data.channel !== data.room || !(data.room === 'global' || (typeof data.room === 'string' && data.room.startsWith('group:')))) return;
+            if (!attHave.has(data.attachmentId)) return;
+            const message = findAttachmentMessageInRoom(data.messageId, data.room, data.attachmentId);
+            if (!message) return;
+            const rec = await attGet(data.attachmentId);
+            if (!rec || !rec.blob || !isConnected || isGhost) return;
+            // Tiny availability response only; no bytes are sent until selected.
+            publishMessage({
+                type:'ATT_PEER_HAVE', author:myUsername, target:data.author, cid:myCid,
+                attachmentId:data.attachmentId, messageId:data.messageId,
+                room:data.room, requestId:data.requestId, peerCid:myCid,
+                timestamp:Date.now()
+            });
+        }
+        function handleAttachmentPeerHave(data) {
+            if (!data || data.target !== myUsername || !ATT_ID_RE.test(data.attachmentId || '') || !isValidUsername(data.author)) return;
+            const state = attPeerRecovery.get(data.attachmentId);
+            if (!state || state.requestId !== data.requestId || state.messageId !== data.messageId || state.room !== data.room) return;
+            if (data.peerCid === myCid || (state.candidates || []).some(c => c.author === data.author && c.cid === data.peerCid) ||
+                (state.selected && state.selected.author === data.author && state.selected.cid === data.peerCid)) return;
+            state.candidates.push({author:data.author,cid:typeof data.peerCid === 'string' ? data.peerCid : data.cid || null});
+            if (state.phase === 'peer-query' || state.phase === 'waiting-join') {
+                if (state.timer) clearTimeout(state.timer);
+                state.timer = null;
+                requestNextAttachmentPeer(state);
+            }
+        }
+        async function handleAttachmentPeerPull(data) {
+            if (!data || data.target !== myUsername || data.peerCid !== myCid || isGhost || blockedUsers.has(data.author)) return;
+            if (!ATT_ID_RE.test(data.attachmentId || '') || typeof data.messageId !== 'string') return;
+            if (!attHave.has(data.attachmentId)) return;
+            const message = findAttachmentMessageInRoom(data.messageId, data.room, data.attachmentId);
+            if (!message) return;
+            const rec = await attGet(data.attachmentId);
+            if (!rec || !rec.blob) return;
+            queueAttBroadcast(data.attachmentId, data.author);
+        }
+        function retryPeerRecoveryOnJoin() {
+            if (!attPeerRecovery.size) return;
+            attPeerRecovery.forEach(state => {
+                if (state.phase === 'waiting-join' && (state.room === 'global' || state.room.startsWith('group:'))) {
+                    state.candidates = [];
+                    startAttachmentPeerQuery(state);
+                }
+            });
+        }
+        // Replace the legacy broad pull loop with a tiny bounded set of silent
+        // author pings. A peer discovery broadcast happens only after timeout.
+        pumpAttachmentPulls = function() {
+            if (!client || !isConnected || isGhost || !attWanted.size) return;
+            const now = Date.now();
+            const ordered = Array.from(attWanted.entries()).sort((a,b) => {
+                const ma = xAttSyncMeta.get(a[0]) || a[1], mb = xAttSyncMeta.get(b[0]) || b[1];
+                const liveA = liveIncomingWanted.has(a[0]) ? 0 : 1, liveB = liveIncomingWanted.has(b[0]) ? 0 : 1;
+                if (liveA !== liveB) return liveA - liveB;
+                const av = ma.kind === 'video' ? 1 : 0, bv = mb.kind === 'video' ? 1 : 0;
+                if (av !== bv) return av - bv;
+                return (Number(mb.timestamp)||0) - (Number(ma.timestamp)||0);
+            });
+            let started = 0;
+            for (const [id,w] of ordered) {
+                if (started >= 3) break; // cap simultaneous probes to avoid room-wide bursts
+                if (w.nextAt > now || attPeerRecovery.has(id)) continue;
+                beginAttachmentRecovery(id,w);
+                w.nextAt = now + 15000;
+                started++;
+            }
+            scheduleAttPump(attWanted.size ? 5000 : 30000);
+        };
+        const xBaseOnAttStoredPeerRecovery = onAttStored;
+        onAttStored = function(id) {
+            clearAttachmentRecovery(id);
+            for (const [key, assembly] of attAsm) if (key.startsWith(id + '|')) attAsm.delete(key);
+            xBaseOnAttStoredPeerRecovery(id);
+        };
+        const xBaseSetAttProgressPeerRecovery = setAttProgress;
+        setAttProgress = function(id, got, cn) {
+            xBaseSetAttProgressPeerRecovery(id,got,cn);
+            const state = attPeerRecovery.get(id);
+            if (state && !attHave.has(id)) {
+                const next = state.phase === 'peer-transfer' || state.phase === 'author-transfer'
+                    ? ATT_PEER_TRANSFER_STALL_MS : ATT_PEER_TRANSFER_STALL_MS;
+                armAttachmentRecoveryTimer(state,next,() => {
+                    if (state.phase === 'author-transfer') startAttachmentPeerQuery(state);
+                    else if (state.phase === 'peer-transfer') requestNextAttachmentPeer(state);
+                });
+            }
+        };
+        const xBaseRetryAttachmentPeerRecovery = retryAttachment;
+        retryAttachment = function(id) {
+            clearAttachmentRecovery(id);
+            const result = xBaseRetryAttachmentPeerRecovery(id);
+            const w = attWanted.get(id); if (w) w.nextAt = 0;
+            scheduleAttPump(100);
+            return result;
+        };
+
         // Multi-attachment messages are still ordinary persisted chat messages; files
         // themselves remain content-addressed blobs in the existing attachment store.
         const xBaseIsMediaMsg = isMediaMsg;
@@ -7634,7 +7897,7 @@
                 if(isFramePayload(payload))return;
                 const data=JSON.parse(payload.toString());
                 if(!data||typeof data!=='object')return;
-                if(isValidUsername(data.author)&&data.author!==myUsername&&data.author!=='ghost')xAddContact(data.author,Number(data.timestamp)||Date.now());
+                if(!String(data.type||'').startsWith('ATT_')&&isValidUsername(data.author)&&data.author!==myUsername&&data.author!=='ghost')xAddContact(data.author,Number(data.timestamp)||Date.now());
                 const seenAt=Number(data.timestamp)||Date.now();
                 if(data.type==='MSG'&&isValidUsername(data.author)){
                     if(!xRoomLastActive.global)xRoomLastActive.global={};
