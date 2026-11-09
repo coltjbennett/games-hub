@@ -654,6 +654,41 @@
         .cb.atk { background: rgba(158,42,43,.92); width: 128px; padding: 22px 10px; font-size: 17px; }
         body.split .joy, body.split .cbtns { transform: scale(.85); }
 
+
+        /* ================= ONLINE VERSUS ================= */
+        body.online-mode #btn-pause { display: none !important; }
+        body.online-mode #split-divider { display: none !important; }
+        body.online-mode .bui { display: none !important; }
+        .online-panel { position: fixed; z-index: 35; top: 12px; left: 12px; width: min(310px, calc(100vw - 24px)); max-height: min(48vh, 390px); display: none; flex-direction: column; gap: 7px; padding: 9px; color: #f4f1de; background: rgba(12,10,8,.93); border: 2px solid #8b7355; border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.85); font: 12px Georgia,serif; pointer-events: auto; }
+        body.online-mode .online-panel { display: flex; }
+        .online-panel-head { display:flex; align-items:center; justify-content:space-between; gap:8px; font-weight:bold; color:#ffd700; letter-spacing:1px; }
+        #online-connection-status { color:#52b788; font-size:10px; letter-spacing:.5px; text-align:right; }
+        #online-match-status { color:#a8dadc; font-size:11px; line-height:1.3; }
+        #online-chat-log { height:112px; min-height:64px; overflow-y:auto; padding:6px; background:rgba(0,0,0,.45); border:1px solid #5c4033; border-radius:6px; user-select:text; -webkit-user-select:text; }
+        .online-chat-line { padding:2px 0; line-height:1.25; overflow-wrap:anywhere; }
+        .online-chat-line b { color:#ffd700; }
+        .online-chat-form { display:flex; gap:5px; }
+        #online-chat-input { min-width:0; flex:1; padding:7px; border:1px solid #8b7355; border-radius:5px; background:#17120d; color:#fff; font:12px Georgia,serif; user-select:text; -webkit-user-select:text; }
+        .online-small-btn { padding:6px 9px; border-radius:5px; border:1px solid #8b7355; background:#302418; color:#f4f1de; font:bold 11px Georgia,serif; cursor:pointer; }
+        .online-small-btn:disabled { opacity:.45; cursor:not-allowed; }
+        #online-reset-btn { width:100%; padding:8px; border:1px solid #ffb703; border-radius:6px; background:linear-gradient(135deg,#735104,#3e2c04); color:#fff; font:bold 11px Georgia,serif; cursor:pointer; letter-spacing:.5px; }
+        #online-reset-btn.waiting { border-color:#8b7355; background:#302418; }
+        .online-note { color:#aaa; font-size:10px; line-height:1.3; }
+        #online-lobby .menu-panel { width:min(560px,94vw); }
+        #online-menu .menu-panel { width:min(440px,94vw); }
+        .online-room-code { display:inline-block; padding:4px 10px; margin:4px; border:1px solid #8b7355; border-radius:5px; background:#080706; color:#ffd700; font:bold 22px monospace; letter-spacing:4px; }
+        .online-lobby-status { margin:9px 0; min-height:22px; color:#a8dadc; font-size:12px; }
+        .online-lobby-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; text-align:left; }
+        .online-lobby-grid label { display:block; color:#c9b78a; font-size:11px; letter-spacing:.8px; text-transform:uppercase; }
+        .online-lobby-grid select, .online-lobby-grid input { margin-top:5px; }
+        .online-budget-value { color:#52b788; font-weight:bold; font-size:22px; text-align:center; }
+        .online-opponent { padding:9px; border:1px solid #5c4033; border-radius:7px; background:rgba(0,0,0,.35); font-size:12px; }
+        @media (max-width:700px) {
+            .online-panel { top:8px; left:8px; width:min(270px, calc(100vw - 16px)); max-height:40vh; padding:7px; }
+            #online-chat-log { height:82px; }
+            .online-lobby-grid { grid-template-columns:1fr; }
+        }
+
 </style>
 </head>
 <body>
@@ -779,6 +814,7 @@
         <div class="menu-panel">
             <button class="menu-btn primary" id="mm-campaign">▶ Campaign<small id="mm-campaign-sub">Level 1 of 100</small></button>
             <button class="menu-btn vs" id="mm-versus">⚔ 2-Player Versus<small>Split screen · shared device · multitouch</small></button>
+            <button class="menu-btn vs" id="mm-online">🌐 Online Versus<small>Two devices · Mongols vs Dynasty · MQTT</small></button>
             <button class="menu-btn" id="mm-options">⚙ Options</button>
             <button class="menu-btn" id="mm-howto">❓ How to Play</button>
             <button class="menu-btn god" id="mm-god">⚡ God Menu</button>
@@ -811,6 +847,62 @@
             <button class="menu-btn go" id="vs-begin">Begin Duel</button>
             <button class="menu-btn" id="vs-back">Back</button>
         </div>
+    </div>
+
+
+    <!-- ONLINE VERSUS CONNECT -->
+    <div id="online-menu" class="screen">
+        <div class="menu-panel">
+            <h2>🌐 Online Versus</h2>
+            <div class="row-lbl">Your name</div>
+            <input id="online-name-input" type="text" maxlength="16" value="Commander" autocomplete="nickname" style="width:100%;padding:9px;border-radius:6px;border:1px solid #5c4033;background:#17120d;color:#fff;font-family:Georgia,serif;">
+            <button class="menu-btn go" id="online-host-btn">Create Room</button>
+            <div class="row-lbl" style="text-align:center">— OR JOIN A ROOM —</div>
+            <input id="online-room-input" type="text" maxlength="6" placeholder="6-CHAR ROOM CODE" autocomplete="off" style="width:100%;padding:9px;text-align:center;text-transform:uppercase;letter-spacing:4px;border-radius:6px;border:1px solid #5c4033;background:#17120d;color:#ffd700;font-weight:bold;">
+            <button class="menu-btn vs" id="online-join-btn">Join Room</button>
+            <div class="online-lobby-status" id="online-connect-status">Requires an internet connection and MQTT access.</div>
+            <button class="menu-btn" id="online-menu-back">Back</button>
+        </div>
+    </div>
+
+    <!-- ONLINE LOBBY / HOST SETTINGS -->
+    <div id="online-lobby" class="screen">
+        <div class="menu-panel">
+            <h2>Online Battle Room</h2>
+            <div>Room code</div>
+            <div class="online-room-code" id="online-room-code">------</div>
+            <div class="online-lobby-status" id="online-lobby-status">Connecting…</div>
+            <div class="online-opponent" id="online-player-status">Host: Mongols · Opponent: waiting for Dynasty player</div>
+            <div id="online-host-settings">
+                <div class="row-lbl">Budget (each army)</div>
+                <input type="range" id="online-budget-slider" min="100" max="10000" step="50" value="800">
+                <div class="online-budget-value" id="online-budget-value">800</div>
+                <div class="online-lobby-grid">
+                    <div><label for="online-layout-select">Battlefield map</label><select id="online-layout-select">
+                        <option value="OPEN">Open Field</option><option value="CHOKE">The Narrow Gate</option><option value="RIVER">River Crossing</option><option value="CANYON">Twin Canyons</option><option value="FOREST">Whispering Woods</option><option value="HILLS">King of the Hill</option>
+                    </select></div>
+                    <div><label for="online-biome-select">Biome</label><select id="online-biome-select"></select></div>
+                </div>
+            </div>
+            <div class="online-lobby-status" id="online-config-summary"></div>
+            <button class="menu-btn go" id="online-begin-setup" disabled>Begin Deployment</button>
+            <div class="online-note" id="online-lobby-hint">The host is always the Mongols. The joining player is always the Dynasty. Both armies must ready up after deployment.</div>
+            <button class="menu-btn" id="online-leave-lobby">Leave Room</button>
+        </div>
+    </div>
+
+    <!-- ONLINE CHAT / MATCH STATUS -->
+    <div class="online-panel" id="online-panel">
+        <div class="online-panel-head"><span id="online-role-label">ONLINE VERSUS</span><span id="online-connection-status">CONNECTING</span></div>
+        <div id="online-match-status">Waiting for deployment…</div>
+        <div id="online-chat-log" aria-live="polite"></div>
+        <form class="online-chat-form" id="online-chat-form">
+            <input id="online-chat-input" type="text" maxlength="180" placeholder="Message opponent…" autocomplete="off">
+            <button class="online-small-btn" type="submit">Send</button>
+        </form>
+        <button id="online-reset-btn">RESET BATTLE · BOTH PLAYERS MUST CONFIRM</button>
+        <div class="online-note" id="online-reset-note">Reset restores both starting deployments and starts a new seeded round.</div>
+        <button class="online-small-btn" id="online-leave-match">Leave Match</button>
     </div>
 
     <!-- PAUSE -->
@@ -882,6 +974,7 @@
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
     <script>
         // =====================================================================
         //  GENGHIS KHAN SIMULATOR  v2
@@ -1253,7 +1346,7 @@
                             const dist = impact.distanceTo(u.mesh.position);
                             if (dist <= R) { hostile.push(u); u.takeDamage(this.damage * (1 - (dist / R) * 0.55), ow, { ranged: true }); }
                         }
-                        if (Math.random() < 0.7) {
+                        if (simRandom() < 0.7) {
                             const chain = hostile.filter(u => u.alive).sort((a, b) => impact.distanceTo(a.mesh.position) - impact.distanceTo(b.mesh.position))[1];
                             if (chain) { createExplosionEffect(chain.mesh.position.clone().add(new THREE.Vector3(0, 1.1, 0)), 0x8be9ff, 8, true); chain.takeDamage(this.damage * 0.7, ow, { ranged: true }); }
                         }
@@ -1704,7 +1797,7 @@
         }
         class Wall {
             constructor(team, x, z, rot, isLevel = false, hpMul = 1, variant = null) {
-                this.type = 'WALL'; this.team = team; this.alive = true; this.isLevelWall = isLevel; this.rot = rot; this.variant = variant; this.low = variant === 'spike';
+                this.id = Wall.nextId = (Wall.nextId || 0) + 1; this.type = 'WALL'; this.team = team; this.alive = true; this.isLevelWall = isLevel; this.rot = rot; this.variant = variant; this.low = variant === 'spike';
                 const cfg = this.low ? UNIT_TYPES.BARRICADE : UNIT_TYPES.WALL; this.cost = cfg.cost; this.maxHp = this.hp = Math.floor(cfg.hp * hpMul); this.config = cfg;
                 this.mesh = new THREE.Group();
                 if (this.low) { spikeParts(team).forEach(p => { const m = new THREE.Mesh(p.geometry, p.material); m.receiveShadow = true; this.mesh.add(m); }); }
@@ -2247,13 +2340,13 @@
                 this.kills = 0; this.veteranRank = 0; this.veteranFlag = null;
                 this.path = null; this.pathIdx = 0; this.pathVer = -1; this.repathAt = 0; this.pathGX = 0; this.pathGZ = 0;
                 this.bumpWall = null; this.bumpAt = -1e9; this.bumpSince = 0; this.obstruct = null; this.canFireLast = false;
-                this.chargeDist = 0; this.charging = false; this.retreating = false; this.strafe = Math.random() < 0.5 ? 1 : -1;
+                this.chargeDist = 0; this.charging = false; this.retreating = false; this.strafe = simRandom() < 0.5 ? 1 : -1;
                 this.recoil = 0; this.flapUntil = 0; this.flapOpen = 0; this.lastPulse = 0; this.lastVolley = 0; this.fireAt = -1e9; this.moveDelta = 0;
                 this.mesh = createUnitGraphic(type, team); this.rig = this.mesh.userData.rig;
                 this.mesh.position.set(x, getTerrainHeight(x, z), z);
                 this.mesh.rotation.y = (team === TEAMS.MONGOL) ? 0 : Math.PI;
                 scene.add(this.mesh);
-                this.animTime = Math.random() * 50; this.animPhase = Math.random() * 6;
+                this.animTime = simRandom() * 50; this.animPhase = simRandom() * 6;
                 this.isAttackingAnim = false; this.attackAnimProgress = 0; this.genghisHomeTarget = new THREE.Vector3(-35, 0, 0);
                 const ring = this.mesh.getObjectByName('rangeRing'); if (ring) ring.visible = (gameState === GAME_STATES.PLACEMENT) && SETTINGS.rings;
                 this.mesh.matrixAutoUpdate = true; this.id = Unit.nextId = (Unit.nextId || 0) + 1; this.px = x; this.pz = z; this.vx = 0; this.vz = 0; this.sepAt = 0; this.csx = 0; this.csz = 0; this.cn = 0; this.order = null; this.areaLimit = null; this.possessedBy = null; this.hasLadder = (type === 'LADDER'); this.lastDirX = (team === TEAMS.MONGOL ? 1 : -1); this.lastDirZ = 0; this.lastThornAt = 0; this.sideUntil = 0; this.sideDir = 1; this.sel = null;
@@ -2302,12 +2395,12 @@
             navDir(tx, tz) {
                 const p = this.mesh.position; const dx = tx - p.x, dz = tz - p.z; const d = Math.hypot(dx, dz) || 1;
                 if (!navActive || d < 2.2) { this.path = null; return [dx / d, dz / d]; }
-                if (simTime >= this.navCheckAt || Math.hypot(tx - this.pathGX, tz - this.pathGZ) > 6) { this.navCheckAt = simTime + 110 + Math.random() * 90; this.navDirect = lineClear(p.x, p.z, tx, tz, this.big, this.team); if (this.navDirect) this.path = null; this.pathGX = this.navDirect ? tx : this.pathGX; this.pathGZ = this.navDirect ? tz : this.pathGZ; }
+                if (simTime >= this.navCheckAt || Math.hypot(tx - this.pathGX, tz - this.pathGZ) > 6) { this.navCheckAt = simTime + 110 + simRandom() * 90; this.navDirect = lineClear(p.x, p.z, tx, tz, this.big, this.team); if (this.navDirect) this.path = null; this.pathGX = this.navDirect ? tx : this.pathGX; this.pathGZ = this.navDirect ? tz : this.pathGZ; }
                 if (this.navDirect) return [dx / d, dz / d];
                 if (!this.path || this.pathVer !== navVersion || simTime > this.repathAt || Math.hypot(tx - this.pathGX, tz - this.pathGZ) > 5) {
                     if (pathBudget > 0) {
                         pathBudget--; this.path = findPath(p.x, p.z, tx, tz, this.big, this.team); this.pathIdx = 0; this.pathVer = navVersion; this.pathGX = tx; this.pathGZ = tz;
-                        this.repathAt = simTime + 1400 + Math.random() * 600;
+                        this.repathAt = simTime + 1400 + simRandom() * 600;
                     } else if (!this.path) return [dx / d, dz / d];
                 }
                 if (this.path && this.path.length) {
@@ -2323,7 +2416,7 @@
                 if (this.type === 'SIEGE_TOWER') { dz = 0; dx = dx > 0.05 ? 1 : (dx < -0.05 ? -1 : 0); noFace = true; if (dx === 0) { this.isMoving = false; return 0; } }
                 const p = this.mesh.position; let sx = 0, sz = 0, n = 0; const bound = Math.max(1.4, this.radius * 2.2);
                 if (simTime >= this.sepAt) {
-                    this.sepAt = simTime + 70 + Math.random() * 50;
+                    this.sepAt = simTime + 70 + simRandom() * 50;
                     const near = unitGrid.getNearby(this, bound + 1.0);
                     for (let i = 0; i < near.length; i++) {
                         const o = near[i]; if (o === this || !o.alive) continue;
@@ -2343,7 +2436,7 @@
                 p.x = clamp(p.x, -MAP_X, MAP_X); p.z = clamp(p.z, -MAP_Z, MAP_Z);
                 if (navActive) {
                     const w = resolveBlockers(p, this.radius, this.team); const hb = lastBlocker;
-                    if (hb && this.type === 'LADDER' && this.hasLadder) { if (hb.tree) { if (simTime > this.sideUntil + 1500) { this.sideUntil = simTime + 900; this.sideDir = Math.random() < 0.5 ? 1 : -1; } } else this.tryPlaceLadder(hb); }
+                    if (hb && this.type === 'LADDER' && this.hasLadder) { if (hb.tree) { if (simTime > this.sideUntil + 1500) { this.sideUntil = simTime + 900; this.sideDir = simRandom() < 0.5 ? 1 : -1; } } else this.tryPlaceLadder(hb); }
                     if (w && w.variant === 'spike' && w.team !== this.team && simTime - this.lastThornAt > 600) { this.lastThornAt = simTime; this.takeDamage(7, null, { ranged: true }); }
                     if (w) { this.bumpWall = w; this.bumpAt = simTime; if (!this.bumpSince) this.bumpSince = simTime; }
                     else if (simTime - this.bumpAt > 500) this.bumpSince = 0;
@@ -2362,7 +2455,7 @@
             // ---------------------------------------------------------- targeting
             retarget(hold) {
                 if (this.target && this.target.alive && simTime < this.retargetAt) return;
-                this.target = this.locateOptimalEnemy(hold); this.retargetAt = simTime + 280 + Math.random() * 220;
+                this.target = this.locateOptimalEnemy(hold); this.retargetAt = simTime + 280 + simRandom() * 220;
             }
             locateOptimalEnemy(hold) {
                 const p = this.mesh.position;
@@ -2437,7 +2530,7 @@
                 } else if (t === 'HORSE_ARCHER') {
                     this.retreating = false;
                     if (dist < 8) { this.retreating = true; this.stepMove(-ux, -uz, 1.0, true); this.faceDir(ux, uz, 0.25); }
-                    else if (dist <= cr) { this.stepMove(-uz * this.strafe, ux * this.strafe, 0.55, true); this.faceDir(ux, uz, 0.25); if (Math.random() < 0.004) this.strafe *= -1; }
+                    else if (dist <= cr) { this.stepMove(-uz * this.strafe, ux * this.strafe, 0.55, true); this.faceDir(ux, uz, 0.25); if (simRandom() < 0.004) this.strafe *= -1; }
                     else { const d = this.navDir(tg.mesh.position.x, tg.mesh.position.z); this.stepMove(d[0], d[1]); }
                     if (dist <= cr) this.attackIfPossible(true, dist, cr);
                 } else if (t === 'CROSSBOW' || cfg.artillery) {
@@ -2462,7 +2555,7 @@
                 if (this.type === 'SHAMAN' && d > this.range) { this.canFireLast = false; return false; }
                 if (this.config.minRange && d < this.config.minRange) { this.canFireLast = false; return false; }
                 this.obstruct = null;
-                if (!this.config.artillery && walls.length && tg.team !== this.team) { if (simTime >= this.losAt || this.losTarget !== tg) { this.losAt = simTime + 140 + Math.random() * 60; this.losTarget = tg; this.losWall = wallBetween(p.x, p.z, tg.mesh.position.x, tg.mesh.position.z); } const w = this.losWall && this.losWall.alive ? this.losWall : null; if (w) { this.obstruct = w; this.canFireLast = false; return false; } }
+                if (!this.config.artillery && walls.length && tg.team !== this.team) { if (simTime >= this.losAt || this.losTarget !== tg) { this.losAt = simTime + 140 + simRandom() * 60; this.losTarget = tg; this.losWall = wallBetween(p.x, p.z, tg.mesh.position.x, tg.mesh.position.z); } const w = this.losWall && this.losWall.alive ? this.losWall : null; if (w) { this.obstruct = w; this.canFireLast = false; return false; } }
                 this.canFireLast = true; this.faceDir(tg.mesh.position.x - p.x, tg.mesh.position.z - p.z, 0.2);
                 if (simTime - this.lastAttackTime > this.curAtkSpd()) { this.lastAttackTime = simTime; this.fireAttackRoutine(); return true; }
                 return false;
@@ -2642,7 +2735,7 @@
             }
             takeDamage(amount, attacker, opts) {
                 if (!this.alive) return; opts = opts || {}; let d = Math.floor(amount); const T = this.type;
-                if (T === 'SHAOLIN' && Math.random() < 0.28) { spawnFloatingCombatText(this.mesh.position, 'DODGE', 0xffaa00); return; }
+                if (T === 'SHAOLIN' && simRandom() < 0.28) { spawnFloatingCombatText(this.mesh.position, 'DODGE', 0xffaa00); return; }
                 let src = opts.from || (attacker ? attacker.mesh.position : null);
                 if (T === 'SHIELD' && src) {
                     const [fx, fz] = fwd(this); const sx = src.x - this.mesh.position.x, sz = src.z - this.mesh.position.z; const l = Math.hypot(sx, sz) || 1;
@@ -2773,7 +2866,7 @@
             ctx.camera.lookAt(c.target);
         }
         function resetCams() {
-            players.forEach((p, i) => { const vs = players.length === 2; p.cam.theta = vs ? (i === 0 ? Math.PI : 0) : Math.PI / 2; p.cam.phi = vs ? 0.8 : 0.95; const asp = (innerWidth / 2) / innerHeight; p.cam.radius = vs ? clamp(80 / (2 * Math.tan(THREE.MathUtils.degToRad(22.5)) * asp), 60, 128) : 60; p.cam.target.set(vs ? (i === 0 ? -6 : 6) : 0, 0, 0); });
+            players.forEach((p, i) => { const vs = players.length === 2; if (onlineMode && players.length === 1) { p.cam.theta = p.team === TEAMS.MONGOL ? Math.PI / 2 : -Math.PI / 2; p.cam.phi = 0.95; p.cam.radius = clamp(innerWidth < innerHeight ? 88 : 76, 68, 96); p.cam.target.set(0, 0, 0); return; } p.cam.theta = vs ? (i === 0 ? Math.PI : 0) : Math.PI / 2; p.cam.phi = vs ? 0.8 : 0.95; const asp = (innerWidth / 2) / innerHeight; p.cam.radius = vs ? clamp(80 / (2 * Math.tan(THREE.MathUtils.degToRad(22.5)) * asp), 60, 128) : 60; p.cam.target.set(vs ? (i === 0 ? -6 : 6) : 0, 0, 0); });
         }
         function layoutViewports() {
             const W = innerWidth, H = innerHeight;
@@ -2783,10 +2876,10 @@
         }
         const ctxAt = x => (players.length === 2 && x >= innerWidth / 2) ? players[1] : players[0];
         const isLocked = type => {
-            const c = UNIT_TYPES[type]; if (c.sandbox) return !(sandboxUnlocked || godUnlockAll);
+            const c = UNIT_TYPES[type]; if (onlineMode) return false; if (c.sandbox) return !(sandboxUnlocked || godUnlockAll);
             if (appMode === 'versus') return false; return !(godUnlockAll || c.unlock <= currentLevelIdx + 1);
         };
-        const SELECTABLE = () => Object.keys(UNIT_TYPES).filter(k => UNIT_TYPES[k].enabled && !['GENGHIS', 'TARGET_MARK', 'WAYPOINT', 'OBJECTIVE'].includes(k) && !(appMode === 'versus' && UNIT_TYPES[k].sandbox && !sandboxUnlocked && !godUnlockAll))
+        const SELECTABLE = () => Object.keys(UNIT_TYPES).filter(k => UNIT_TYPES[k].enabled && !['GENGHIS', 'TARGET_MARK', 'WAYPOINT', 'OBJECTIVE'].includes(k) && !(appMode === 'versus' && !onlineMode && UNIT_TYPES[k].sandbox && !sandboxUnlocked && !godUnlockAll))
             .sort((a, b) => ((UNIT_TYPES[a].sandbox ? 1e6 : 0) + UNIT_TYPES[a].unlock) - ((UNIT_TYPES[b].sandbox ? 1e6 : 0) + UNIT_TYPES[b].unlock));
 
         // ---------------------------------------------------------------- HUD
@@ -2849,21 +2942,21 @@
             if (t.dataset.unitType) { if (t.classList.contains('locked')) return; ctx.selected = t.dataset.unitType; refreshHUD(); return; }
             const a = t.dataset.act;
             if (gameState !== GAME_STATES.PLACEMENT && !['start', 'next', 'clear', 'wipe', 'load', 'save'].includes(a)) return;
-            if (a === 'undo') undoEntry(ctx); else if (a === 'redo') redoEntry(ctx);
+            if (a === 'undo') { undoEntry(ctx); if (onlineMode) queueOnlineLayoutSync(ctx, true); } else if (a === 'redo') { redoEntry(ctx); if (onlineMode) queueOnlineLayoutSync(ctx, true); }
             else if (a === 'start') tryStartBattle(); else if (a === 'next') { loadCampaignLevel(Math.min(99, currentLevelIdx + 1)); }
             else if (a === 'save') saveLayout(); else if (a === 'load') loadLayout(); else if (a === 'clear') resetMap(); else if (a === 'wipe') wipeProgress();
-            else if (a === 'ready') { ctx.ready = !ctx.ready; refreshHUD(); if (players.every(p => p.ready)) beginBattle(); }
+            else if (a === 'ready') { if (onlineMode) toggleOnlineReady(ctx); else { ctx.ready = !ctx.ready; refreshHUD(); if (players.every(p => p.ready)) beginBattle(); } }
             else if (a === 'clearside') clearSide(ctx);
             refreshHUD();
         }
-        function fmtBudget(ctx) { return (godNoBudget || ctx.budget > BIG / 2) ? '∞' : Math.floor(ctx.budget); }
+        function fmtBudget(ctx) { return ((!onlineMode && godNoBudget) || ctx.budget > BIG / 2) ? '∞' : Math.floor(ctx.budget); }
         function refreshHUD() {
             players.forEach(ctx => {
                 const h = ctx.hud; if (!h) return;
                 h.querySelectorAll('[data-unit-type]').forEach(b => {
                     const k = b.dataset.unitType; b.classList.toggle('selected', ctx.selected === k);
                     if (UNIT_TYPES[k] && k !== 'DELETE' && k !== 'WAYPOINT' && k !== 'TARGET_MARK') {
-                        const lk = isLocked(k) || (k === 'COMMANDER' && appMode === 'campaign' && ctx.team === TEAMS.CHINESE); b.classList.toggle('locked', lk); b.classList.toggle('disabled', !lk && !godNoBudget && UNIT_TYPES[k].cost > ctx.budget);
+                        const lk = isLocked(k) || (k === 'COMMANDER' && appMode === 'campaign' && ctx.team === TEAMS.CHINESE); b.classList.toggle('locked', lk); b.classList.toggle('disabled', !lk && !(godNoBudget && !onlineMode) && UNIT_TYPES[k].cost > ctx.budget);
                         
                     }
                 });
@@ -2879,10 +2972,10 @@
             const showHud = gameState === GAME_STATES.PLACEMENT || appMode === 'campaign';
             players.forEach(c => { if (c.hud) c.hud.style.visibility = gameState === GAME_STATES.PLACEMENT ? 'visible' : (appMode === 'campaign' ? 'visible' : 'hidden'); });
             refreshBUIVisibility();
-            const hideTools = appMode === 'campaign' && gameState !== GAME_STATES.PLACEMENT;   // keep layout space so the system buttons stay on the right
+            const hideTools = (appMode === 'campaign' && gameState !== GAME_STATES.PLACEMENT) || (onlineMode && gameState !== GAME_STATES.PLACEMENT);   // keep layout space so the system buttons stay on the right
             players.forEach(c => c.hud && c.hud.querySelectorAll('.left-column,.history-group').forEach(x => { x.style.visibility = hideTools ? 'hidden' : 'visible'; x.style.pointerEvents = hideTools ? 'none' : ''; }));
         }
-        function refreshBUIVisibility() { players.forEach(c => { if (c.bui) { c.bui.style.display = (gameState === GAME_STATES.SIMULATION && appMode !== 'menu') ? 'block' : 'none'; updateBUI(c); } }); }
+        function refreshBUIVisibility() { players.forEach(c => { if (c.bui) { c.bui.style.display = (!onlineMode && gameState === GAME_STATES.SIMULATION && appMode !== 'menu') ? 'block' : 'none'; updateBUI(c); } }); }
         function setStatus(txt, col) { const s = el('game-status'); s.innerText = txt; s.style.color = col || '#52b788'; }
 
         // ---------------------------------------------------------------- INPUT
@@ -2903,7 +2996,8 @@
                 if (appMode === 'menu' || paused || !players.length) return; e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch (_) {}
                 const ctx = ctxAt(e.clientX); ctx.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, mode: 'none', button: e.button, pt: e.pointerType });
                 const p = ctx.ptrs.get(e.pointerId);
-                if (gameState === GAME_STATES.SIMULATION && e.pointerType === 'mouse' && e.button === 2 && !keys.space && !keys.shift) { contextOrderAt(ctx, e); return; }
+                if (gameState === GAME_STATES.SIMULATION && onlineMode && !(e.pointerType === 'mouse' && (keys.space || keys.shift || e.button === 1 || e.button === 2))) { ctx.ptrs.delete(e.pointerId); return; }
+                if (gameState === GAME_STATES.SIMULATION && !onlineMode && e.pointerType === 'mouse' && e.button === 2 && !keys.space && !keys.shift) { contextOrderAt(ctx, e); return; }
                 if (e.pointerType === 'mouse' && (keys.space || keys.shift || e.button === 1 || e.button === 2)) { p.mode = (keys.shift || e.button === 1) ? 'pan' : 'rot'; return; }
                 if (ctx.ptrs.size === 1 && gameState === GAME_STATES.SIMULATION) { battleDown(ctx, p, e); return; }
                 if (ctx.ptrs.size === 1) { p.mode = 'place'; ctx.strokeId = e.pointerId; beginStroke(ctx); const h = groundHit(ctx, e.clientX, e.clientY); if (h) placeAt(ctx, h, true); }
@@ -2930,7 +3024,7 @@
                 if (e.code === 'Space') { keys.space = true; if (appMode !== 'menu') e.preventDefault(); } if (e.key === 'Shift') keys.shift = true; if (e.key === 'Control') keys.ctrl = true; keys.down.add(e.code);
                 if (e.code.startsWith('Arrow') && players.some(c => c.possessed)) e.preventDefault();
                 battleKey(e);
-                if (e.key === 'Escape' && (appMode !== 'menu') && !releaseAnyPossession()) { if (el('options-menu').classList.contains('open')) closeOptions(); else if (paused) resumeGame(); else pauseGame(); }
+                if (!onlineMode && e.key === 'Escape' && (appMode !== 'menu') && !releaseAnyPossession()) { if (el('options-menu').classList.contains('open')) closeOptions(); else if (paused) resumeGame(); else pauseGame(); }
             });
             window.addEventListener('keyup', e => { if (e.code === 'Space') keys.space = false; if (e.key === 'Shift') keys.shift = false; if (e.key === 'Control') keys.ctrl = false; keys.down.delete(e.code); });
             window.addEventListener('blur', () => { keys.space = keys.shift = keys.ctrl = false; keys.down.clear(); });
@@ -2955,10 +3049,10 @@
         function endStroke(ctx) { ctx.curEntry = null; ctx.lastPlaced = null; ctx.pathLast = null; ctx.lastWall = null; ctx.wallFirst = null; }
         function pushItem(ctx, action, item) {
             if (!ctx.curEntry) { ctx.curEntry = { action, items: [] }; ctx.hist.push(ctx.curEntry); ctx.redo.length = 0; }
-            ctx.curEntry.items.push(item); refreshHUD();
+            ctx.curEntry.items.push(item); refreshHUD(); if (onlineMode) queueOnlineLayoutSync(ctx);
         }
-        function canAfford(ctx, cost) { return godNoBudget || ctx.budget >= cost; }
-        function spend(ctx, cost) { if (!godNoBudget) ctx.budget -= cost; }
+        function canAfford(ctx, cost) { return (godNoBudget && !onlineMode) || ctx.budget >= cost; }
+        function spend(ctx, cost) { if (!godNoBudget || onlineMode) ctx.budget -= cost; }
         function placeAt(ctx, hit, first) {
             if (gameState !== GAME_STATES.PLACEMENT) return; const sel = ctx.selected; const team = ctx.team;
             if (sel === 'DELETE') { deleteAt(ctx, hit); return; }
@@ -3019,12 +3113,12 @@
                 const u = units[i]; if (!ownedBy(ctx, u)) continue; const p = u.mesh.position;
                 if (Math.hypot(p.x - hit.x, p.z - hit.z) <= 1.9 + (u.radius > 1.5 ? u.radius : 0)) {
                     const item = { kind: 'unit', obj: u, cost: u.config.cost || 0, prev: null, next: null };
-                    removeUnitFromWorld(u, item); if (!godNoBudget) ctx.budget += item.cost; pushItem(ctx, 'delete', item); did = true;
+                    removeUnitFromWorld(u, item); if (!godNoBudget || onlineMode) ctx.budget += item.cost; pushItem(ctx, 'delete', item); did = true;
                 }
             }
             for (let i = walls.length - 1; i >= 0; i--) {
                 const w = walls[i]; if (w.team !== ctx.team || w.isLevelWall) continue;
-                if (Math.hypot(w.mesh.position.x - hit.x, w.mesh.position.z - hit.z) <= 2.1) { const item = { kind: 'wall', obj: w, cost: w.cost }; removeWallObject(w); if (!godNoBudget) ctx.budget += item.cost; pushItem(ctx, 'delete', item); did = true; }
+                if (Math.hypot(w.mesh.position.x - hit.x, w.mesh.position.z - hit.z) <= 2.1) { const item = { kind: 'wall', obj: w, cost: w.cost }; removeWallObject(w); if (!godNoBudget || onlineMode) ctx.budget += item.cost; pushItem(ctx, 'delete', item); did = true; }
             }
             if (did) createExplosionEffect(new THREE.Vector3(hit.x, hit.y + 0.6, hit.z), 0xff6666, 4);
         }
@@ -3050,23 +3144,29 @@
             const e = ctx.hist.pop(); if (!e) return;
             for (let i = e.items.length - 1; i >= 0; i--) {
                 const it = e.items[i];
-                if (e.action === 'place') { if (it.kind === 'wall') removeWallObject(it.obj); else removeUnitFromWorld(it.obj, it); if (!godNoBudget) ctx.budget += it.cost; }
-                else { if (it.kind === 'wall') restoreWallObject(it.obj); else restoreUnitToWorld(it.obj, it); if (!godNoBudget) ctx.budget -= it.cost; }
+                if (e.action === 'place') { if (it.kind === 'wall') removeWallObject(it.obj); else removeUnitFromWorld(it.obj, it); if (!godNoBudget || onlineMode) ctx.budget += it.cost; }
+                else { if (it.kind === 'wall') restoreWallObject(it.obj); else restoreUnitToWorld(it.obj, it); if (!godNoBudget || onlineMode) ctx.budget -= it.cost; }
             }
             ctx.redo.push(e);
         }
         function redoEntry(ctx) {
             const e = ctx.redo.pop(); if (!e) return;
             for (const it of e.items) {
-                if (e.action === 'place') { if (it.kind === 'wall') restoreWallObject(it.obj); else restoreUnitToWorld(it.obj, it); if (!godNoBudget) ctx.budget -= it.cost; }
-                else { if (it.kind === 'wall') removeWallObject(it.obj); else removeUnitFromWorld(it.obj, it); if (!godNoBudget) ctx.budget += it.cost; }
+                if (e.action === 'place') { if (it.kind === 'wall') restoreWallObject(it.obj); else restoreUnitToWorld(it.obj, it); if (!godNoBudget || onlineMode) ctx.budget -= it.cost; }
+                else { if (it.kind === 'wall') removeWallObject(it.obj); else removeUnitFromWorld(it.obj, it); if (!godNoBudget || onlineMode) ctx.budget += it.cost; }
             }
             ctx.hist.push(e);
         }
         function clearSide(ctx) {
-            for (let i = units.length - 1; i >= 0; i--) { const u = units[i]; if (ownedBy(ctx, u)) { const cost = u.config.cost || 0; removeUnitFromWorld(u, {}); if (!godNoBudget) ctx.budget += cost; } }
-            for (let i = walls.length - 1; i >= 0; i--) { const w = walls[i]; if (w.team === ctx.team && !w.isLevelWall) { removeWallObject(w); if (!godNoBudget) ctx.budget += w.cost; } }
-            ctx.hist.length = 0; ctx.redo.length = 0; ctx.ready = false; refreshHUD();
+            for (let i = units.length - 1; i >= 0; i--) { const u = units[i]; if (ownedBy(ctx, u)) { const cost = u.config.cost || 0; removeUnitFromWorld(u, {}); if (!godNoBudget || onlineMode) ctx.budget += cost; } }
+            for (let i = walls.length - 1; i >= 0; i--) { const w = walls[i]; if (w.team === ctx.team && !w.isLevelWall) { removeWallObject(w); if (!godNoBudget || onlineMode) ctx.budget += w.cost; } }
+            ctx.hist.length = 0; ctx.redo.length = 0; ctx.ready = false;
+            if (onlineMode) {
+                online.localReady = false;
+                queueOnlineLayoutSync(ctx, true);
+                if (onlineNetwork && onlineNetwork.connected) onlineNetwork.broadcast({ type: 'ready', team: ctx.team, ready: false });
+            }
+            refreshHUD();
         }
 
         // ================================================================
@@ -3131,7 +3231,7 @@
         function releaseUnit(ctx) { if (ctx.possessed) ctx.possessed.possessedBy = null; ctx.possessed = null; ctx.moveX = ctx.moveZ = 0; ctx.joyX = ctx.joyY = 0; ctx.mouseAtk = ctx.btnAtk = ctx.attackHeld = false; updateBUI(ctx); }
         function releaseAnyPossession() { let any = false; players.forEach(c => { if (c.possessed) { releaseUnit(c); any = true; } }); return any; }
         function battleKey(e) {
-            if (gameState !== GAME_STATES.SIMULATION || paused || !players.length) return; const ctx = ctxAt(mouseX); const k = e.code;
+            if (onlineMode || gameState !== GAME_STATES.SIMULATION || paused || !players.length) return; const ctx = ctxAt(mouseX); const k = e.code;
             if ((e.ctrlKey || e.metaKey) && k === 'KeyA') { e.preventDefault(); selectSet(ctx, ownUnits(ctx), false); return; }
             if (e.ctrlKey || e.metaKey || e.altKey) return;
             if (k === 'KeyH') orderSimple(ctx, 'hold'); else if (k === 'KeyF') orderSimple(ctx, 'fall'); else if (k === 'KeyR') orderSimple(ctx, 'resume');
@@ -3140,6 +3240,7 @@
         }
         let _ctlFrame = 0;
         function updateControl(ctx) {
+            if (onlineMode) return;
             if (++_ctlFrame % 20 === 0) ctx.sel.forEach(u => { if (!u.alive) { ctx.sel.delete(u); setSelRing(u, false); } });
             if (ctx.possessed && (!ctx.possessed.alive || gameState !== GAME_STATES.SIMULATION)) releaseUnit(ctx);
             if (!ctx.possessed) return;
@@ -3232,7 +3333,7 @@
             currentObjective = null; genghisRef = null; battleSnapshot = null; resultShown = false; el('result-overlay').classList.remove('open');
         }
         function enterGameUI(mode) {
-            appMode = mode; const b = document.body; b.classList.remove('menu-mode'); b.classList.add('in-game'); b.classList.toggle('versus', mode === 'versus'); b.classList.toggle('split', mode === 'versus');
+            appMode = mode; const b = document.body; b.classList.remove('menu-mode'); b.classList.add('in-game'); b.classList.toggle('versus', mode === 'versus'); b.classList.toggle('split', mode === 'versus' && !onlineMode); b.classList.toggle('online-mode', onlineMode);
             ['main-menu', 'versus-setup', 'pause-menu', 'options-menu', 'howto-menu'].forEach(i => el(i).classList.remove('open')); paused = false;
             el('objective-status').style.display = 'none'; gameState = GAME_STATES.PLACEMENT; el('btn-pause').style.display = 'block';
         }
@@ -3317,7 +3418,9 @@
         function endBattleOutcome() {
             if (gameState !== GAME_STATES.SIMULATION) return; const [m, c] = updateCounters();
             if (appMode === 'versus') {
-                if (m > 0 && c > 0) return; gameState = GAME_STATES.VICTORY; const w = m > 0 ? 'PLAYER 1' : (c > 0 ? 'PLAYER 2' : null);
+                if (m > 0 && c > 0) return; gameState = GAME_STATES.VICTORY;
+                if (onlineMode) { const winner = m > 0 ? 'MONGOLS' : (c > 0 ? 'DYNASTY' : null); setStatus(winner ? winner + ' WIN!' : 'DRAW — BOTH ARMIES FELL', '#ffd700'); onlineMatchEnded = true; refreshOnlinePanel(); return; }
+                const w = m > 0 ? 'PLAYER 1' : (c > 0 ? 'PLAYER 2' : null);
                 setStatus(w ? w + ' WINS!' : 'DRAW — BOTH ARMIES FELL', '#ffd700'); setTimeout(() => showResult(w ? w + ' Wins!' : 'Draw!', w ? 'The ' + (m > 0 ? 'Horde' : 'Dynasty') + ' holds the field.' : 'Nobody is left standing.'), 1400); return;
             }
             const ally = players[0].team, mc = ally === TEAMS.MONGOL ? m : c, cc = ally === TEAMS.MONGOL ? c : m;
@@ -3338,13 +3441,14 @@
         function showResult(t, s) { if (resultShown) return; resultShown = true; el('result-title').innerText = t; el('result-sub').innerText = s; el('result-overlay').classList.add('open'); }
 
         // ---------------------------------------------------------------- menus
-        function closeAllScreens() { ['main-menu', 'versus-setup', 'pause-menu', 'options-menu', 'howto-menu'].forEach(i => el(i).classList.remove('open')); }
-        function pauseGame() { if (appMode === 'menu' || paused) return; paused = true; el('pause-menu').classList.add('open'); }
+        function closeAllScreens() { ['main-menu', 'versus-setup', 'online-menu', 'online-lobby', 'pause-menu', 'options-menu', 'howto-menu'].forEach(i => el(i).classList.remove('open')); }
+        function pauseGame() { if (onlineMode || appMode === 'menu' || paused) return; paused = true; el('pause-menu').classList.add('open'); }
         function resumeGame() { paused = false; closeAllScreens(); }
         function closeOptions() { el('options-menu').classList.remove('open'); if (appMode === 'menu') el('main-menu').classList.add('open'); else el('pause-menu').classList.add('open'); }
         let versusFrom = 'menu';
         function openVersusSetup(from) { versusFrom = from; closeAllScreens(); el('versus-setup').classList.add('open'); }
         function showMainMenu() {
+            if (onlineNetwork) onlineNetwork.leaveMatch('menu'); onlineMode = false; onlineTransportConnected = true; onlineMatchEnded = false; online.authoritativeTick = 0; online.pendingHash = null; document.body.classList.remove('online-mode'); if (el('online-panel')) el('online-panel').style.display = 'none';
             clearUnits(); players = []; walls = walls; appMode = 'menu'; paused = false; gameState = GAME_STATES.PLACEMENT; const b = document.body; b.classList.add('menu-mode'); b.classList.remove('in-game', 'split', 'versus');
             el('btn-pause').style.display = 'none'; el('hud-root').innerHTML = ''; closeAllScreens(); el('main-menu').classList.add('open');
             const keys = Object.keys(BIOMES); const bk = keys[Math.floor(Math.random() * keys.length)]; setupBattlefield(bk, 'OPEN', 5);
@@ -3355,7 +3459,7 @@
         }
         function bindMenus() {
             el('mm-campaign').onclick = () => loadCampaignLevel(currentLevelIdx);
-            el('mm-versus').onclick = () => openVersusSetup('menu'); el('mm-options').onclick = () => { closeAllScreens(); el('options-menu').classList.add('open'); syncOptionsUI(); };
+            el('mm-versus').onclick = () => openVersusSetup('menu'); el('mm-online').onclick = openOnlineMenu; el('mm-options').onclick = () => { closeAllScreens(); el('options-menu').classList.add('open'); syncOptionsUI(); };
             el('mm-howto').onclick = () => { closeAllScreens(); el('howto-menu').classList.add('open'); }; el('howto-back').onclick = () => { closeAllScreens(); el(appMode === 'menu' ? 'main-menu' : 'pause-menu').classList.add('open'); };
             el('mm-god').onclick = () => el('god-menu-overlay').classList.add('open'); el('pm-god').onclick = () => el('god-menu-overlay').classList.add('open');
             el('btn-pause').onclick = pauseGame; el('pm-resume').onclick = resumeGame;
@@ -3376,6 +3480,7 @@
             el('opt-fps').onchange = e => { SETTINGS.fps = e.target.checked; saveSettings(); }; el('opt-hp').onchange = e => { SETTINGS.hpAlways = e.target.checked; saveSettings(); };
             el('opt-rings').onchange = e => { SETTINGS.rings = e.target.checked; saveSettings(); units.forEach(u => u.setPlacementVisuals(gameState === GAME_STATES.PLACEMENT)); };
             bindGodMenu();
+            bindOnlineMenus();
         }
         function syncOptionsUI() { el('opt-shadows').value = SETTINGS.shadows; el('opt-fps').checked = SETTINGS.fps; el('opt-hp').checked = SETTINGS.hpAlways; el('opt-rings').checked = SETTINGS.rings; }
         function bindGodMenu() {
@@ -3426,7 +3531,7 @@
             if (gameState === GAME_STATES.SIMULATION) for (let i = 0; i < units.length; i++) units[i].update();
             for (let i = activeProjectiles.length - 1; i >= 0; i--) { const p = activeProjectiles[i]; p.update(); if (!p.alive) activeProjectiles.splice(i, 1); }
             updateFXSystems();
-            simTick++; if (simTick % 30 === 0) endBattleOutcome(); if (simTick % 240 === 0) units = units.filter(u => !u.removed);
+            simTick++; if (onlineMode) onlinePeriodicTick(); if (simTick % 30 === 0) endBattleOutcome(); if (simTick % 240 === 0) units = units.filter(u => !u.removed);
         }
         let frameN = 0, hbDrawn = 0, simTick = 0, simAcc = 0, lastT = performance.now(), fpsN = 0, fpsT = 0, shadowFlip = 0, menuAng = 0;
         const _hp = new THREE.Vector3();
@@ -3435,7 +3540,17 @@
             const now = performance.now(); const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
             if (SETTINGS.fps) { fpsN++; fpsT += dt; if (fpsT > 0.5) { el('fps-counter').style.display = 'block'; el('fps-counter').innerText = Math.round(fpsN / fpsT) + ' FPS · ' + renderer.info.render.calls + ' draws'; fpsN = 0; fpsT = 0; } } else el('fps-counter').style.display = 'none';
             players.forEach(updateControl);
-            if (!paused) { simAcc += dt; let s = 0; while (simAcc >= SIM_DT && s < 4) { simStep(); simAcc -= SIM_DT; s++; } if (s === 4) simAcc = 0; }
+            if (!paused && (!onlineMode || (onlineNetwork && (onlineNetwork.isHost || onlineTransportConnected))) && !(onlineMode && onlineMatchEnded)) {
+                if (onlineMode && onlineNetwork && !onlineNetwork.isHost && gameState === GAME_STATES.SIMULATION) {
+                    let steps = 0; const targetTick = Math.max(simTick, online.authoritativeTick || 0);
+                    while (simTick < targetTick && steps < 72) { simStep(); steps++; onlineCheckPendingHash(); if (gameState !== GAME_STATES.SIMULATION) break; }
+                    simAcc = 0; onlineCheckPendingHash();
+                } else {
+                    simAcc += dt; let s = 0; const maxSteps = onlineMode ? 24 : 4;
+                    while (simAcc >= SIM_DT && s < maxSteps) { simStep(); simAcc -= SIM_DT; s++; }
+                    if (!onlineMode && s === 4) simAcc = 0;
+                }
+            }
             if (appMode === 'menu' && players[0]) { menuAng += dt * 0.07; const c = players[0].cam; c.theta = Math.PI / 2 + Math.sin(menuAng) * 0.8; c.radius = 52; c.phi = 0.95; c.target.set(0, 0, 0); }
             viewFrustums.length = 0;
             players.forEach(p => { updateCam(p); p.camera.updateMatrixWorld(); _fm.multiplyMatrices(p.camera.projectionMatrix, p.camera.matrixWorldInverse); p.frustum.setFromProjectionMatrix(_fm); viewFrustums.push(p.frustum); });
@@ -3464,6 +3579,682 @@
             }
         }
         window.onload = init;
+
+
+        // =====================================================================
+        // ONLINE VERSUS: MQTT room transport, canonical placement relay,
+        // deterministic seeded simulation, bilateral reset and reconnect sync.
+        // =====================================================================
+        const GKS_MQTT_BROKER = 'wss://broker.emqx.io:8084/mqtt';
+        const GKS_MQTT_PREFIX = 'coltons-ghengis-khan-sim-v1/';
+        let onlineMode = false;
+        let onlineTransportConnected = true;
+        let onlineMatchEnded = false;
+        let onlineRandomState = 0;
+        let onlineNetwork = null;
+        let online = {
+            role: 'host', team: TEAMS.MONGOL, cfg: null, opponentName: 'Opponent',
+            layouts: { MONGOL: { units: [], walls: [], chains: [], marks: [] }, CHINESE: { units: [], walls: [], chains: [], marks: [] } },
+            budgets: { MONGOL: 800, CHINESE: 800 }, revisions: { MONGOL: 0, CHINESE: 0 },
+            localReady: false, remoteReady: false, localReset: false, remoteReset: false,
+            roundLayouts: null, roundBudgets: null, roundSeed: 0, roundId: 0,
+            setupStarted: false, syncTimers: Object.create(null), dirty: { MONGOL: false, CHINESE: false }, opponentLastSeen: 0, opponentConnected: false,
+            lastSyncRequest: 0, lastTickCheck: 0, authoritativeTick: 0, pendingHash: null
+        };
+
+        function simRandom() {
+            if (!onlineMode) return Math.random();
+            onlineRandomState = (onlineRandomState + 0x6D2B79F5) | 0;
+            let t = onlineRandomState;
+            t = Math.imul(t ^ (t >>> 15), t | 1);
+            t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        }
+        function seedOnlineRandom(seed) { onlineRandomState = seed >>> 0; }
+        function onlineRandomSeed() {
+            try { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] >>> 0; }
+            catch (_) { return ((Math.random() * 0xffffffff) ^ Date.now()) >>> 0; }
+        }
+        function onlineRandomToken(n = 8) {
+            const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            try { const bytes = new Uint8Array(n); crypto.getRandomValues(bytes); return Array.from(bytes, b => alphabet[b % alphabet.length]).join(''); }
+            catch (_) { let out = ''; for (let i = 0; i < n; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)]; return out; }
+        }
+        function onlineClone(value) {
+            if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+            if (Array.isArray(value)) return value.map(onlineClone);
+            if (value && Object.getPrototypeOf(value) === Object.prototype) { const out = {}; for (const k of Object.keys(value)) out[k] = onlineClone(value[k]); return out; }
+            return null;
+        }
+        function onlineEmptyLayout() { return { units: [], walls: [], chains: [], marks: [] }; }
+        function onlineCopyLayouts(layouts) {
+            return { MONGOL: onlineClone(layouts && layouts.MONGOL || onlineEmptyLayout()), CHINESE: onlineClone(layouts && layouts.CHINESE || onlineEmptyLayout()) };
+        }
+        function onlineCopyBudgets(budgets, fallback) {
+            return { MONGOL: Number.isFinite(+((budgets || {}).MONGOL)) ? +budgets.MONGOL : fallback, CHINESE: Number.isFinite(+((budgets || {}).CHINESE)) ? +budgets.CHINESE : fallback };
+        }
+
+        class GKSOnlineNetwork {
+            constructor() {
+                this.client = null; this.myId = onlineRandomToken(9) + Date.now().toString(36);
+                // Extra per-instance entropy is intentionally appended to the MQTT client ID.
+                // Two tabs/browsers on one device therefore do not evict one another at the broker.
+                this.instanceSuffix = onlineRandomToken(8).toLowerCase();
+                this.roomCode = ''; this.roomTopic = ''; this.directTopic = '';
+                this.isHost = false; this.hostId = null; this.opponentId = null;
+                this.username = 'Commander'; this.opponentName = 'Opponent';
+                this.connected = false; this.everConnected = false; this.leaving = false;
+                this.initialized = false; this.lastSeen = 0; this.presenceTimer = null; this.retryTimer = null; this.timeoutTimer = null; this.connectTimer = null;
+                this.onInitialReady = null; this.onInitialError = null;
+            }
+            _publish(data, qos) {
+                if (!this.client || !this.client.connected || this.leaving || !this.roomTopic) return false;
+                try { this.client.publish(this.roomTopic, JSON.stringify({ __senderId: this.myId, payload: data }), { qos: qos == null ? 1 : qos, retain: false }); return true; }
+                catch (_) { return false; }
+            }
+            broadcast(data) { return this._publish(data, data && ['presence', 'tick'].includes(data.type) ? 0 : 1); }
+            _setConnected(v) {
+                const changed = this.connected !== !!v; this.connected = !!v;
+                if (changed) onOnlineNetworkChanged(this.connected);
+            }
+            _connect(onReady, onError) {
+                if (typeof mqtt === 'undefined' || !mqtt || typeof mqtt.connect !== 'function') {
+                    onError && onError('MQTT library could not load. Check the connection and reload the game.'); return;
+                }
+                this.onInitialReady = onReady; this.onInitialError = onError;
+                const will = JSON.stringify({ __senderId: this.myId, payload: { type: 'leave', reason: 'connection_lost' } });
+                try {
+                    this.client = mqtt.connect(GKS_MQTT_BROKER, {
+                        clientId: `gks_${this.myId}_${this.instanceSuffix}`,
+                        clean: true, keepalive: 20, reconnectPeriod: 1200, connectTimeout: 9000,
+                        will: { topic: this.roomTopic, payload: will, qos: 1, retain: false }
+                    });
+                } catch (e) { onError && onError('Could not start MQTT: ' + (e && e.message ? e.message : 'connection error')); return; }
+                this.connectTimer = setTimeout(() => {
+                    if (!this.everConnected && !this.leaving) this._failInitial('Could not connect to the MQTT service. Check internet access and try again.');
+                }, 11000);
+                this.client.on('connect', () => {
+                    if (this.leaving) return;
+                    this.client.subscribe(this.roomTopic, { qos: 1 }, err => {
+                        if (err || this.leaving) { if (!this.everConnected) this._failInitial('Could not subscribe to the room. Try again.'); return; }
+                        const wasConnectedBefore = this.everConnected;
+                        this.everConnected = true; this._setConnected(true);
+                        clearTimeout(this.connectTimer); this.connectTimer = null;
+                        if (!wasConnectedBefore) {
+                            if (this.isHost) onReady && onReady(this.roomCode);
+                            else { this.broadcast({ type: 'join', username: this.username, reconnect: false }); this._ensureJoinRetry(); onReady && onReady(this.roomCode); }
+                        } else {
+                            if (this.isHost) this.broadcast({ type: 'presence', reconnected: true });
+                            else {
+                            if (onlineMode && online.setupStarted && gameState === GAME_STATES.PLACEMENT && players[0]) flushOnlineLayoutSync(players[0], true);
+                            this.broadcast({ type: 'join', username: this.username, reconnect: true }); this._ensureJoinRetry();
+                            }
+                        }
+                    });
+                });
+                this.client.on('reconnect', () => this._setConnected(false));
+                this.client.on('offline', () => this._setConnected(false));
+                this.client.on('close', () => this._setConnected(false));
+                this.client.on('error', err => {
+                    if (!this.everConnected && !this.leaving) this._failInitial('MQTT connection failed: ' + (err && err.message ? err.message : 'service unavailable'));
+                });
+                this.client.on('message', (topic, payload) => {
+                    if (topic !== this.roomTopic || this.leaving) return;
+                    let msg; try { msg = JSON.parse(payload.toString()); } catch (_) { return; }
+                    if (!msg || !msg.__senderId || msg.__senderId === this.myId || !msg.payload || typeof msg.payload.type !== 'string') return;
+                    this.lastSeen = Date.now(); this.opponentLastSeen = this.lastSeen;
+                    handleOnlineNetworkMessage(msg.__senderId, msg.payload);
+                });
+                if (!this.presenceTimer) this.presenceTimer = setInterval(() => {
+                    if (!this.connected || this.leaving) return;
+                    this.broadcast({ type: 'presence' });
+                    if (!this.isHost && !this.hostId) this.broadcast({ type: 'join', username: this.username, reconnect: true });
+                    if (onlineMode && online.setupStarted && gameState === GAME_STATES.PLACEMENT && players[0]) flushOnlineLayoutSync(players[0]);
+                }, 3000);
+                if (!this.timeoutTimer) this.timeoutTimer = setInterval(() => {
+                    if (!this.opponentId && !this.hostId) return;
+                    if (this.lastSeen && Date.now() - this.lastSeen > 11000) onOnlineOpponentPresence(false);
+                }, 3000);
+            }
+            _ensureJoinRetry() {
+                if (this.retryTimer || this.isHost) return;
+                this.retryTimer = setInterval(() => {
+                    if (this.leaving || !this.connected || this.hostId) { clearInterval(this.retryTimer); this.retryTimer = null; return; }
+                    this.broadcast({ type: 'join', username: this.username, reconnect: true });
+                }, 2500);
+            }
+            _failInitial(message) {
+                if (this.everConnected || this.leaving) return;
+                clearTimeout(this.connectTimer); this.connectTimer = null;
+                if (this.onInitialError) this.onInitialError(message);
+                this.leaveMatch('connection_failed');
+            }
+            startHost(username, onReady, onError) {
+                this.username = username || 'Commander'; this.isHost = true; this.roomCode = onlineRandomToken(6); this.roomTopic = GKS_MQTT_PREFIX + this.roomCode;
+                this._connect(onReady, onError);
+            }
+            joinRoom(username, code, onReady, onError) {
+                this.username = username || 'Commander'; this.isHost = false; this.roomCode = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+                this.roomTopic = GKS_MQTT_PREFIX + this.roomCode;
+                if (this.roomCode.length !== 6) { onError && onError('Enter the six-character room code.'); return; }
+                this._connect(onReady, onError);
+            }
+            leaveMatch(reason = 'left') {
+                if (this.leaving) return;
+                if (this.client && this.client.connected) this._publish({ type: 'leave', reason }, 1);
+                this.leaving = true;
+                this._setConnected(false);
+                clearInterval(this.presenceTimer); clearInterval(this.retryTimer); clearInterval(this.timeoutTimer); clearTimeout(this.connectTimer);
+                this.presenceTimer = this.retryTimer = this.timeoutTimer = this.connectTimer = null;
+                try { if (this.client) this.client.end(true); } catch (_) {}
+                this.client = null;
+            }
+        }
+
+        function resetOnlineSession(role, team) {
+            if (online && online.syncTimers) Object.values(online.syncTimers).forEach(clearTimeout);
+            online.role = role; online.team = team; online.cfg = null; online.opponentName = 'Opponent';
+            online.layouts = { MONGOL: onlineEmptyLayout(), CHINESE: onlineEmptyLayout() };
+            online.budgets = { MONGOL: 800, CHINESE: 800 }; online.revisions = { MONGOL: 0, CHINESE: 0 };
+            online.localReady = online.remoteReady = online.localReset = online.remoteReset = false;
+            online.roundLayouts = online.roundBudgets = null; online.roundSeed = 0; online.roundId = 0;
+            online.setupStarted = false; online.syncTimers = Object.create(null); online.dirty = { MONGOL: false, CHINESE: false }; online.opponentLastSeen = 0; online.opponentConnected = false;
+            online.lastSyncRequest = 0; online.lastTickCheck = 0; online.authoritativeTick = 0; online.pendingHash = null;
+            onlineMode = false; onlineTransportConnected = true; onlineMatchEnded = false; onlineRandomState = 0;
+            document.body.classList.remove('online-mode');
+            if (el('online-panel')) el('online-panel').style.display = 'none';
+            if (el('online-chat-log')) el('online-chat-log').innerHTML = '';
+        }
+
+        function openOnlineMenu() {
+            closeAllScreens(); el('online-connect-status').textContent = 'Create a room or join with a six-character code.';
+            el('online-menu').classList.add('open');
+        }
+        function onlineLocalName() { return (el('online-name-input').value || 'Commander').trim().slice(0, 16) || 'Commander'; }
+        function bindOnlineMenus() {
+            const biome = el('online-biome-select');
+            if (biome && !biome.options.length) Object.keys(BIOMES).forEach(k => { const o = document.createElement('option'); o.value = k; o.textContent = BIOMES[k].name; biome.appendChild(o); });
+            el('online-menu-back').onclick = () => { closeAllScreens(); el('main-menu').classList.add('open'); };
+            el('online-host-btn').onclick = () => onlineCreateRoom();
+            el('online-join-btn').onclick = () => onlineJoinRoom();
+            el('online-room-input').addEventListener('input', e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6); });
+            el('online-budget-slider').oninput = () => onlineConfigChanged();
+            el('online-layout-select').onchange = onlineConfigChanged;
+            el('online-biome-select').onchange = onlineConfigChanged;
+            el('online-begin-setup').onclick = beginOnlineDeployment;
+            el('online-leave-lobby').onclick = () => showMainMenu();
+            el('online-leave-match').onclick = () => showMainMenu();
+            el('online-reset-btn').onclick = onlineRequestReset;
+            el('online-chat-form').addEventListener('submit', e => { e.preventDefault(); sendOnlineChat(); });
+        }
+        function onlineCreateRoom() {
+            if (onlineNetwork) onlineNetwork.leaveMatch('replace');
+            resetOnlineSession('host', TEAMS.MONGOL);
+            onlineNetwork = new GKSOnlineNetwork();
+            online.cfg = { budget: 800, layout: 'OPEN', biome: 'STEPPE', layoutSeed: onlineRandomSeed() };
+            closeAllScreens(); el('online-lobby').classList.add('open');
+            el('online-room-code').textContent = '------'; el('online-lobby-status').textContent = 'Connecting to MQTT…'; el('online-player-status').textContent = 'Host: Mongols · Opponent: waiting for Dynasty player';
+            el('online-host-settings').style.display = 'block'; el('online-begin-setup').disabled = true; el('online-begin-setup').style.display = 'block';
+            el('online-lobby-hint').textContent = 'Share the room code with one opponent. You will command the Mongols.';
+            onlineRenderConfig();
+            onlineNetwork.startHost(onlineLocalName(), code => {
+                el('online-room-code').textContent = code; el('online-lobby-status').textContent = 'Room open. Waiting for the Dynasty player to connect…';
+                onlineRefreshLobby();
+            }, message => { closeAllScreens(); el('online-menu').classList.add('open'); el('online-connect-status').textContent = message; });
+        }
+        function onlineJoinRoom() {
+            if (onlineNetwork) onlineNetwork.leaveMatch('replace');
+            const code = el('online-room-input').value;
+            resetOnlineSession('guest', TEAMS.CHINESE);
+            onlineNetwork = new GKSOnlineNetwork();
+            online.cfg = null; closeAllScreens(); el('online-lobby').classList.add('open');
+            el('online-room-code').textContent = code || '------'; el('online-lobby-status').textContent = 'Connecting to room…';
+            el('online-host-settings').style.display = 'none'; el('online-begin-setup').style.display = 'none';
+            el('online-lobby-hint').textContent = 'You will command the Dynasty. The host controls the map, biome and shared budget.';
+            onlineNetwork.joinRoom(onlineLocalName(), code, () => {
+                el('online-lobby-status').textContent = 'Connected to MQTT. Finding the host…';
+                onlineRefreshLobby();
+            }, message => { closeAllScreens(); el('online-menu').classList.add('open'); el('online-connect-status').textContent = message; });
+        }
+        function onlineRenderConfig() {
+            if (!online.cfg) return;
+            el('online-budget-slider').value = online.cfg.budget;
+            el('online-budget-value').textContent = '$' + online.cfg.budget;
+            el('online-layout-select').value = online.cfg.layout;
+            el('online-biome-select').value = online.cfg.biome;
+            el('online-config-summary').textContent = `${LAYOUT_LABEL[online.cfg.layout] || online.cfg.layout} · ${BIOMES[online.cfg.biome] ? BIOMES[online.cfg.biome].name : online.cfg.biome} · $${online.cfg.budget} per side`;
+        }
+        function onlineConfigChanged() {
+            if (!onlineNetwork || !onlineNetwork.isHost || online.setupStarted) return;
+            online.cfg = Object.assign({}, online.cfg || {}, {
+                budget: +el('online-budget-slider').value,
+                layout: el('online-layout-select').value,
+                biome: el('online-biome-select').value
+            });
+            onlineRenderConfig(); onlineNetwork.broadcast({ type: 'config', cfg: online.cfg });
+        }
+        function onlineRefreshLobby() {
+            if (!onlineNetwork) return;
+            el('online-room-code').textContent = onlineNetwork.roomCode || '------';
+            const joined = !!onlineNetwork.opponentId || !!onlineNetwork.hostId;
+            el('online-player-status').textContent = onlineNetwork.isHost
+                ? `Host: ${onlineNetwork.username} (Mongols) · Opponent: ${joined ? onlineNetwork.opponentName + ' (Dynasty)' : 'waiting…'}`
+                : `Host: ${onlineNetwork.opponentName || 'waiting…'} (Mongols) · You: ${onlineNetwork.username} (Dynasty)`;
+            el('online-begin-setup').disabled = !onlineNetwork.isHost || !onlineNetwork.opponentId || !onlineNetwork.connected || online.setupStarted;
+            if (onlineNetwork.isHost) el('online-lobby-status').textContent = joined ? 'Opponent connected. Set the battlefield, then begin deployment.' : 'Room open. Waiting for the Dynasty player to connect…';
+            else if (!onlineNetwork.hostId) el('online-lobby-status').textContent = onlineNetwork.connected ? 'Connected to MQTT. Finding the host…' : 'Reconnecting to MQTT…';
+            onlineRenderConfig();
+        }
+        function onOnlineNetworkChanged(connected) {
+            onlineTransportConnected = connected;
+            if (onlineMode) {
+                if (!connected) setOnlineConnectionText('RECONNECTING…');
+                else setOnlineConnectionText('CONNECTED');
+            }
+            if (el('online-lobby').classList.contains('open')) onlineRefreshLobby();
+            refreshOnlinePanel();
+        }
+        function setOnlineConnectionText(textValue) {
+            if (el('online-connection-status')) el('online-connection-status').textContent = textValue;
+        }
+        function onOnlineOpponentPresence(present) {
+            online.opponentConnected = !!present;
+            online.opponentLastSeen = present ? Date.now() : 0;
+            if (onlineMode) refreshOnlinePanel();
+        }
+        function onlineRefreshPlayerNames() {
+            if (!players[0] || !players[0].hud) return;
+            const p = players[0].hud.querySelector('.pname');
+            if (p) p.textContent = online.team === TEAMS.MONGOL ? 'MONGOLS' : 'DYNASTY';
+        }
+        function onlineSetLobbyConfig(cfg) {
+            if (!cfg || typeof cfg !== 'object') return;
+            online.cfg = {
+                budget: clamp(Math.floor(+cfg.budget || 800), 100, 10000),
+                layout: LAYOUTS[cfg.layout] ? cfg.layout : 'OPEN',
+                biome: BIOMES[cfg.biome] ? cfg.biome : 'STEPPE',
+                layoutSeed: Number.isFinite(+cfg.layoutSeed) ? (+cfg.layoutSeed >>> 0) : onlineRandomSeed()
+            };
+            if (onlineNetwork && !onlineNetwork.isHost) {
+                el('online-host-settings').style.display = 'none'; el('online-begin-setup').style.display = 'none';
+            }
+            onlineRenderConfig(); onlineRefreshLobby();
+        }
+        function beginOnlineDeployment() {
+            if (!onlineNetwork || !onlineNetwork.isHost || !onlineNetwork.connected || !onlineNetwork.opponentId || online.setupStarted) return;
+            online.cfg = {
+                budget: +el('online-budget-slider').value,
+                layout: el('online-layout-select').value,
+                biome: el('online-biome-select').value,
+                layoutSeed: onlineRandomSeed()
+            };
+            online.setupStarted = true;
+            const empty = onlineEmptyLayout(); online.layouts = { MONGOL: onlineClone(empty), CHINESE: onlineClone(empty) };
+            online.budgets = { MONGOL: online.cfg.budget, CHINESE: online.cfg.budget };
+            online.revisions = { MONGOL: 0, CHINESE: 0 }; online.dirty = { MONGOL: false, CHINESE: false };
+            onlineNetwork.broadcast({ type: 'setup', cfg: online.cfg });
+            startOnlineSetup(online.cfg);
+        }
+        function startOnlineSetup(cfg) {
+            onlineMode = true; onlineTransportConnected = !!(onlineNetwork && onlineNetwork.connected); onlineMatchEnded = false;
+            online.setupStarted = true; online.opponentConnected = true; online.cfg = Object.assign({}, cfg); online.layouts = { MONGOL: onlineEmptyLayout(), CHINESE: onlineEmptyLayout() };
+            online.budgets = { MONGOL: cfg.budget, CHINESE: cfg.budget }; online.revisions = { MONGOL: 0, CHINESE: 0 }; online.dirty = { MONGOL: false, CHINESE: false };
+            online.localReady = online.remoteReady = online.localReset = online.remoteReset = false;
+            el('online-menu').classList.remove('open'); el('online-lobby').classList.remove('open');
+            onlineBuildPlacementScene(online.layouts, online.budgets);
+            el('online-panel').style.display = 'flex';
+            addOnlineChatMessage('SYSTEM', `Room ${onlineNetwork ? onlineNetwork.roomCode : ''} ready. You are ${online.team === TEAMS.MONGOL ? 'the Mongols' : 'the Dynasty'}.`);
+            refreshOnlinePanel();
+        }
+        function onlineBuildPlacementScene(layouts, budgets) {
+            const cfg = online.cfg || { budget: 800, layout: 'OPEN', biome: 'STEPPE', layoutSeed: 1 };
+            clearUnits(); Unit.nextId = 0; Wall.nextId = 0;
+            layoutInfo = setupBattlefield(cfg.biome, cfg.layout, cfg.layoutSeed || 1);
+            const ctx = new PlayerCtx(0, online.team); ctx.budget = ctx.startBudget = cfg.budget; ctx.selected = 'SWORD'; players = [ctx];
+            enterGameUI('versus'); resetCams(); layoutViewports();
+            const cloned = onlineCopyLayouts(layouts);
+            for (const team of [TEAMS.MONGOL, TEAMS.CHINESE]) {
+                const targetCtx = team === online.team ? ctx : { team, budget: cfg.budget, startBudget: cfg.budget };
+                applyLayout(targetCtx, cloned[team]);
+                targetCtx.budget = Number.isFinite(+budgets[team]) ? +budgets[team] : cfg.budget;
+                online.budgets[team] = targetCtx.budget;
+            }
+            online.layouts = cloned;
+            buildHUDs(); onlineRefreshPlayerNames();
+            el('vs-name').textContent = 'ONLINE · ' + (LAYOUT_LABEL[cfg.layout] || cfg.layout).toUpperCase();
+            setStatus('PHASE: DEPLOYMENT — both players press READY'); refreshHUD(); updateCounters(true);
+            onlineMode = true; document.body.classList.add('online-mode'); document.body.classList.remove('split');
+            refreshOnlinePanel();
+        }
+        function onlineApplyRemoteLayout(team, layout, budget, ready, revision) {
+            if (!onlineMode || gameState !== GAME_STATES.PLACEMENT || team === online.team) return;
+            const oldRev = online.revisions[team] || 0;
+            if (Number.isFinite(revision) && revision < oldRev) return;
+            online.revisions[team] = Number.isFinite(revision) ? revision : oldRev + 1;
+            for (let i = units.length - 1; i >= 0; i--) if (units[i].team === team) removeUnitFromWorld(units[i], {});
+            for (let i = walls.length - 1; i >= 0; i--) if (walls[i].team === team && !walls[i].isLevelWall) removeWallObject(walls[i]);
+            const temp = { team, budget: online.cfg.budget, startBudget: online.cfg.budget };
+            applyLayout(temp, layout || onlineEmptyLayout());
+            temp.budget = Number.isFinite(+budget) ? +budget : temp.budget;
+            online.layouts[team] = onlineClone(layout || onlineEmptyLayout()); online.budgets[team] = temp.budget;
+            online.remoteReady = !!ready;
+            rebuildStaticNav(); rebuildBlockerGrid(); refreshWallStructures(); refreshHUD(); updateCounters(true); refreshOnlinePanel();
+        }
+        function queueOnlineLayoutSync(ctx, immediate = false) {
+            if (!onlineMode || gameState !== GAME_STATES.PLACEMENT || !ctx || ctx.team !== online.team) return;
+            online.dirty[ctx.team] = true;
+            clearTimeout(online.syncTimers[ctx.team]);
+            if (immediate) { flushOnlineLayoutSync(ctx); return; }
+            online.syncTimers[ctx.team] = setTimeout(() => flushOnlineLayoutSync(ctx), 90);
+        }
+        function flushOnlineLayoutSync(ctx, force = false) {
+            if (!onlineMode || gameState !== GAME_STATES.PLACEMENT || !ctx || ctx.team !== online.team) return;
+            clearTimeout(online.syncTimers[ctx.team]); online.syncTimers[ctx.team] = null;
+            const team = ctx.team;
+            if (!force && !online.dirty[team]) return;
+            const layout = collectLayout(ctx);
+            online.layouts[team] = onlineClone(layout); online.budgets[team] = ctx.budget;
+            if (!onlineNetwork || !onlineNetwork.connected) { online.dirty[team] = true; return; }
+            const rev = (online.revisions[team] || 0) + 1;
+            const packet = onlineNetwork.isHost
+                ? { type: 'layoutState', team, layout, budget: ctx.budget, ready: !!ctx.ready, rev }
+                : { type: 'layout', team, layout, budget: ctx.budget, ready: !!ctx.ready, rev };
+            if (onlineNetwork.broadcast(packet)) { online.revisions[team] = rev; online.dirty[team] = false; }
+            else online.dirty[team] = true;
+        }
+        function toggleOnlineReady(ctx) {
+            if (gameState !== GAME_STATES.PLACEMENT) return;
+            const anyArmy = units.some(u => u.team === ctx.team && u.targetable && u.type !== 'OBJECTIVE');
+            if (!ctx.ready && !anyArmy) { flashStatus('Place at least one combat unit before readying.'); return; }
+            flushOnlineLayoutSync(ctx, true);
+            ctx.ready = !ctx.ready; online.localReady = ctx.ready; refreshHUD();
+            if (onlineNetwork && onlineNetwork.connected) onlineNetwork.broadcast({ type: 'ready', team: ctx.team, ready: ctx.ready });
+            refreshOnlinePanel();
+            if (onlineNetwork && onlineNetwork.isHost) maybeStartOnlineRound();
+        }
+        function maybeStartOnlineRound() {
+            if (!onlineMode || !onlineNetwork || !onlineNetwork.isHost || gameState !== GAME_STATES.PLACEMENT || !online.localReady || !online.remoteReady) return;
+            const layouts = onlineCopyLayouts(online.layouts), budgets = onlineCopyBudgets(online.budgets, online.cfg.budget);
+            const seed = onlineRandomSeed(), roundId = (online.roundId || 0) + 1;
+            online.roundLayouts = onlineCopyLayouts(layouts); online.roundBudgets = onlineCopyBudgets(budgets, online.cfg.budget);
+            online.roundSeed = seed; online.roundId = roundId;
+            const packet = { type: 'roundStart', seed, roundId, cfg: online.cfg, layouts, budgets };
+            onlineNetwork.broadcast(packet);
+            startOnlineRound(seed, layouts, budgets, roundId);
+        }
+        function startOnlineRound(seed, layouts, budgets, roundId) {
+            onlineMode = true; onlineTransportConnected = !!(onlineNetwork && onlineNetwork.connected);
+            online.roundSeed = seed >>> 0; online.roundId = roundId || online.roundId || 1;
+            online.authoritativeTick = 0; online.pendingHash = null;
+            online.roundLayouts = onlineCopyLayouts(layouts); online.roundBudgets = onlineCopyBudgets(budgets, online.cfg.budget);
+            online.layouts = onlineCopyLayouts(online.roundLayouts); online.budgets = onlineCopyBudgets(online.roundBudgets, online.cfg.budget);
+            online.localReady = online.remoteReady = online.localReset = online.remoteReset = false; onlineMatchEnded = false;
+            seedOnlineRandom(online.roundSeed); simTime = 0; simTick = 0; simAcc = 0;
+            onlineBuildPlacementScene(online.roundLayouts, online.roundBudgets);
+            // Re-seed after deterministic army construction is not needed: both clients consumed
+            // the same constructor draws in the same canonical Mongol-then-Dynasty ordering.
+            players[0].ready = false; beginBattle();
+            setStatus('PHASE: BATTLE! · SEE HOW THE TWO SEEDED SIMULATIONS UNFOLD', '#e63946');
+            refreshHUD(); refreshOnlinePanel();
+        }
+        function onlineRequestReset() {
+            if (!onlineMode || !onlineNetwork || !onlineNetwork.connected || !online.roundLayouts) return;
+            if (online.localReset) return;
+            online.localReset = true; refreshOnlinePanel();
+            onlineNetwork.broadcast({ type: 'resetReady', ready: true, roundId: online.roundId });
+            if (onlineNetwork.isHost) maybeResetOnlineRound();
+        }
+        function maybeResetOnlineRound() {
+            if (!onlineMode || !onlineNetwork || !onlineNetwork.isHost || !online.localReset || !online.remoteReset || !online.roundLayouts) return;
+            const seed = onlineRandomSeed(), roundId = (online.roundId || 0) + 1;
+            const layouts = onlineCopyLayouts(online.roundLayouts), budgets = onlineCopyBudgets(online.roundBudgets, online.cfg.budget);
+            online.roundSeed = seed; online.roundId = roundId;
+            onlineNetwork.broadcast({ type: 'roundStart', seed, roundId, cfg: online.cfg, layouts, budgets, reset: true });
+            startOnlineRound(seed, layouts, budgets, roundId);
+        }
+        function addOnlineChatMessage(name, message) {
+            const log = el('online-chat-log'); if (!log) return;
+            const line = document.createElement('div'); line.className = 'online-chat-line';
+            const b = document.createElement('b'); b.textContent = (name || 'Opponent').slice(0, 16) + ': ';
+            const span = document.createElement('span'); span.textContent = String(message || '').slice(0, 180);
+            line.appendChild(b); line.appendChild(span); log.appendChild(line);
+            while (log.children.length > 60) log.removeChild(log.firstChild);
+            log.scrollTop = log.scrollHeight;
+        }
+        function sendOnlineChat() {
+            const input = el('online-chat-input'), message = (input.value || '').trim(); if (!message || !onlineNetwork || !onlineNetwork.connected) return;
+            onlineNetwork.broadcast({ type: 'chat', name: onlineNetwork.username, message: message.slice(0, 180) });
+            addOnlineChatMessage(onlineNetwork.username, message); input.value = '';
+        }
+        function refreshOnlinePanel() {
+            if (!el('online-panel')) return;
+            if (!onlineMode) { el('online-panel').style.display = 'none'; return; }
+            el('online-panel').style.display = 'flex';
+            el('online-role-label').textContent = online.team === TEAMS.MONGOL ? 'MONGOL COMMAND' : 'DYNASTY COMMAND';
+            setOnlineConnectionText(onlineTransportConnected ? 'CONNECTED' : 'RECONNECTING…');
+            const local = online.localReady ? 'READY' : 'NOT READY';
+            const remote = online.remoteReady ? 'READY' : 'NOT READY';
+            let stage = gameState === GAME_STATES.PLACEMENT ? `Deployment · You: ${local} · Opponent: ${remote}` : (gameState === GAME_STATES.SIMULATION ? 'Battle simulation running · in-battle commands disabled' : (onlineMatchEnded ? 'Round complete · reset requires both players' : 'Battle paused for resynchronization'));
+            if (!onlineTransportConnected) stage += ' · Reconnecting; match will resync';
+            else if (online.setupStarted && !online.opponentConnected) stage += ' · Opponent disconnected; waiting to resync';
+            el('online-match-status').textContent = stage;
+            const reset = el('online-reset-btn');
+            reset.style.display = gameState === GAME_STATES.PLACEMENT ? 'none' : 'block';
+            reset.disabled = !onlineTransportConnected || !onlineNetwork || !onlineNetwork.connected || !!online.localReset;
+            reset.classList.toggle('waiting', online.localReset);
+            reset.textContent = online.localReset ? (online.remoteReset ? 'RESET CONFIRMED · STARTING…' : 'RESET CONFIRMED · WAITING FOR OPPONENT') : 'RESET BATTLE · BOTH PLAYERS MUST CONFIRM';
+            el('online-reset-note').textContent = 'Reset restores both starting deployments and generates a fresh shared seed.';
+        }
+        function onlineOnLocalMenuLeave() {
+            if (onlineNetwork) onlineNetwork.leaveMatch('menu');
+            onlineMode = false; onlineTransportConnected = true; onlineMatchEnded = false;
+            document.body.classList.remove('online-mode'); el('online-panel').style.display = 'none';
+        }
+
+        // A small, explicit state codec is used only for reconnect recovery. It captures
+        // gameplay fields and references, while omitting Three.js meshes/materials.
+        const ONLINE_UNIT_SCALARS = [
+            'hp','maxHp','range','damage','speed','attackSpeed','isBuffed','buffUntil','isInvisible','stunUntil','lastDamagedAt','lastAttackTime',
+            'alive','removed','isMoving','holdCache','holdAt','targetable','isTargetMarked','kills','veteranRank','pathIdx','pathVer','repathAt','pathGX','pathGZ',
+            'bumpAt','bumpSince','canFireLast','chargeDist','charging','retreating','strafe','recoil','flapUntil','flapOpen','lastPulse','lastVolley','fireAt','moveDelta',
+            'px','pz','vx','vz','sepAt','csx','csz','cn','hasLadder','lastDirX','lastDirZ','lastThornAt','sideUntil','sideDir','navCheckAt','navDirect','losAt',
+            'isStunnedFx','wasClimb','climbMult','isAttackingAnim','attackAnimProgress','pulseAt'
+        ];
+        const ONLINE_UNIT_PLAIN = ['path','order','areaLimit'];
+        const ONLINE_UNIT_REFS = ['target','assignedCommander','nextWaypoint','currentWaypoint','losTarget','owner'];
+        const ONLINE_WALL_REFS = ['bumpWall','obstruct','losWall','chopTarget'];
+        function onlineSerializeBattle() {
+            const unitRows = units.map(u => {
+                const row = { id: u.id, type: u.type, team: u.team, pos: [u.mesh.position.x,u.mesh.position.y,u.mesh.position.z], yaw: u.mesh.rotation.y, state: {} };
+                // Capture every scalar gameplay field, including fields added by future unit types.
+                Object.keys(u).forEach(k => { const v = u[k]; if (k !== 'id' && (v === null || ['number','boolean','string'].includes(typeof v))) row.state[k] = v; });
+                ONLINE_UNIT_PLAIN.forEach(k => { if (u[k] !== undefined) row.state[k] = onlineClone(u[k]); });
+                ONLINE_UNIT_REFS.forEach(k => { row.state[k + 'Id'] = u[k] && Number.isFinite(u[k].id) ? u[k].id : null; row.state[k + 'Kind'] = u[k] && u[k].type === 'WALL' ? 'wall' : 'unit'; });
+                ONLINE_WALL_REFS.forEach(k => { row.state[k + 'Id'] = u[k] && Number.isFinite(u[k].id) ? u[k].id : null; });
+                if (u.genghisHomeTarget) row.state.genghisHomeTarget = [u.genghisHomeTarget.x,u.genghisHomeTarget.y,u.genghisHomeTarget.z];
+                return row;
+            });
+            const wallRows = walls.map(w => ({ id: w.id, hp: w.hp, alive: w.alive, rotZ: w.mesh.rotation.z }));
+            const projRows = activeProjectiles.filter(p => p.alive && p.targetUnit).map(p => ({
+                type:p.type,team:p.team,damage:p.damage,targetId:p.targetUnit.id,targetKind:p.targetUnit.type === 'WALL' ? 'wall' : 'unit',ownerId:p.owner && p.owner.id || null,
+                position:[p.position.x,p.position.y,p.position.z],startPos:[p.startPos.x,p.startPos.y,p.startPos.z],
+                targetLastPos:[p.targetLastPos.x,p.targetLastPos.y,p.targetLastPos.z],aim:[p.aim.x,p.aim.y,p.aim.z],
+                totalDistance:p.totalDistance,progress:p.progress,arc:p.arc,speed:p.speed,ballistic:p.ballistic,
+                rotation:[p.mesh.rotation.x,p.mesh.rotation.y,p.mesh.rotation.z]
+            }));
+            const ladderRows = ladders.map(l => ({ team:l.team, x:l.x, z:l.z, rot:l.rot, run:l.run, T:l.T, h:l.h }));
+            return { simTime, simTick, randomState: onlineRandomState >>> 0, units: unitRows, walls: wallRows, ladders: ladderRows, projectiles: projRows, state: gameState };
+        }
+        function onlineApplyBattleSnapshot(snapshot) {
+            if (!snapshot || !Array.isArray(snapshot.units)) return;
+            const byId = new Map(units.map(u => [u.id,u])); const wallById = new Map(walls.map(w => [w.id,w]));
+            const present = new Set(snapshot.units.map(r => r.id));
+            units.slice().forEach(u => { if (!present.has(u.id)) removeUnitFromWorld(u, {}); });
+            snapshot.units.forEach(row => {
+                const u = byId.get(row.id); if (!u) return;
+                u.mesh.position.set(row.pos[0],row.pos[1],row.pos[2]); u.mesh.rotation.y = row.yaw;
+                const st = row.state || {};
+                Object.keys(st).forEach(k => {
+                    if (k.endsWith('Id') || k === 'genghisHomeTarget' || ONLINE_UNIT_PLAIN.includes(k)) return;
+                    const v = st[k]; if (v === null || ['number','boolean','string'].includes(typeof v)) u[k] = v;
+                });
+                ONLINE_UNIT_PLAIN.forEach(k => { if (st[k] !== undefined) u[k] = onlineClone(st[k]); });
+                if (st.genghisHomeTarget) u.genghisHomeTarget.set(st.genghisHomeTarget[0],st.genghisHomeTarget[1],st.genghisHomeTarget[2]);
+                u.mesh.visible = !!u.alive && !u.removed;
+                u.setGhost(!!u.isInvisible);
+                const aura = u.mesh.getObjectByName('aura'); if (aura) aura.visible = !!u.isBuffed;
+            });
+            const resolveUnitRefs = (row, u) => {
+                const st = row.state || {};
+                ONLINE_UNIT_REFS.forEach(k => { const id = st[k + 'Id']; const kind = st[k + 'Kind']; u[k] = id == null ? null : (kind === 'wall' ? (wallById.get(id) || null) : (byId.get(id) || null)); });
+                ONLINE_WALL_REFS.forEach(k => { const id = st[k + 'Id']; u[k] = id == null ? null : (wallById.get(id) || null); });
+            };
+            snapshot.units.forEach(row => { const u = byId.get(row.id); if (u) resolveUnitRefs(row,u); });
+            const aliveWalls = new Set((snapshot.walls || []).filter(w => w.alive).map(w => w.id));
+            (snapshot.walls || []).forEach(row => { const w = wallById.get(row.id); if (!w) return; w.hp = row.hp; w.mesh.rotation.z = row.rotZ || 0; });
+            walls.slice().forEach(w => { if (!aliveWalls.has(w.id)) removeWallObject(w); });
+            refreshWallStructures(); rebuildStaticNav(); rebuildBlockerGrid();
+            ladders.forEach(l => scene.remove(l.mesh)); ladders = [];
+            (snapshot.ladders || []).forEach(row => ladders.push(new Ladder(row.team, row.x, row.z, row.rot, row.run, row.T, row.h)));
+            rebuildLadderNav(); if (ladders.length) navActive = true;
+            activeProjectiles.forEach(p => { p.alive = false; p.mesh.visible = false; }); activeProjectiles = [];
+            (snapshot.projectiles || []).forEach(row => {
+                const target = row.targetKind === 'wall' ? wallById.get(row.targetId) : byId.get(row.targetId); if (!target) return;
+                const owner = row.ownerId == null ? null : (byId.get(row.ownerId) || null);
+                const p = projectilesPool.get();
+                p.fire(new THREE.Vector3(...row.startPos), target, row.damage, row.type, row.team, owner);
+                p.position.set(...row.position); p.startPos.set(...row.startPos); p.targetLastPos.set(...row.targetLastPos); p.aim.set(...row.aim);
+                p.totalDistance = row.totalDistance; p.progress = row.progress; p.arc = row.arc; p.speed = row.speed; p.ballistic = row.ballistic;
+                p.mesh.position.copy(p.position); p.mesh.rotation.set(...row.rotation); activeProjectiles.push(p);
+            });
+            simTime = Number(snapshot.simTime) || 0; simTick = Number(snapshot.simTick) || 0; simAcc = 0;
+            online.authoritativeTick = simTick; online.pendingHash = null;
+            seedOnlineRandom(snapshot.randomState >>> 0);
+            if (snapshot.state && Object.values(GAME_STATES).includes(snapshot.state)) gameState = snapshot.state;
+            onlineMatchEnded = gameState === GAME_STATES.VICTORY || gameState === GAME_STATES.DEFEAT;
+            updateCounters(true); refreshHUD(); refreshOnlinePanel();
+        }
+        function onlineStateHash() {
+            let h = 2166136261 >>> 0;
+            const mix = n => { h ^= (Math.round((+n || 0) * 100) | 0); h = Math.imul(h, 16777619) >>> 0; };
+            const ordered = units.slice().sort((a,b) => a.id-b.id);
+            for (const u of ordered) { mix(u.id); mix(u.hp); mix(u.alive ? 1 : 0); mix(u.mesh.position.x); mix(u.mesh.position.z); mix(u.mesh.rotation.y); }
+            const ws = walls.slice().sort((a,b)=>a.id-b.id); for (const w of ws) { mix(w.id); mix(w.hp); mix(w.alive ? 1 : 0); }
+            for (const l of ladders) { mix(l.team === TEAMS.MONGOL ? 1 : 2); mix(l.x); mix(l.z); mix(l.rot); mix(l.run); mix(l.T); mix(l.h); }
+            for (const p of activeProjectiles) if (p.alive) { mix(p.team === TEAMS.MONGOL ? 1 : 2); mix(p.damage); mix(p.position.x); mix(p.position.y); mix(p.position.z); mix(p.progress); mix(p.targetUnit && p.targetUnit.id || 0); }
+            mix(onlineRandomState >>> 0);
+            return h >>> 0;
+        }
+        function onlineAskForSync() {
+            const now = Date.now(); if (!onlineNetwork || !onlineNetwork.connected || now - online.lastSyncRequest < 2500) return;
+            online.lastSyncRequest = now; onlineNetwork.broadcast({ type: 'syncRequest', tick: simTick });
+        }
+        function onlineSendSync() {
+            if (!onlineNetwork || !onlineNetwork.isHost || !onlineNetwork.connected) return;
+            if (onlineMode && online.setupStarted) {
+                if (gameState === GAME_STATES.PLACEMENT) {
+                    onlineNetwork.broadcast({ type:'sync', stage:'placement', cfg:online.cfg, layouts:onlineCopyLayouts(online.layouts), budgets:onlineCopyBudgets(online.budgets,online.cfg.budget), revisions:online.revisions, localReady:online.localReady, remoteReady:online.remoteReady });
+                } else {
+                    onlineNetwork.broadcast({ type:'sync', stage:'battle', cfg:online.cfg, layouts:onlineCopyLayouts(online.roundLayouts), budgets:onlineCopyBudgets(online.roundBudgets,online.cfg.budget), seed:online.roundSeed, roundId:online.roundId, resetLocal:online.localReset, resetRemote:online.remoteReset, snapshot:onlineSerializeBattle() });
+                }
+            } else onlineNetwork.broadcast({ type:'sync', stage:'lobby', cfg:online.cfg });
+        }
+        function onlineApplySync(data) {
+            if (!data || !data.stage) return;
+            if (data.stage === 'lobby') { if (data.cfg) onlineSetLobbyConfig(data.cfg); onlineRefreshLobby(); return; }
+            if (data.stage === 'placement') {
+                onlineSetLobbyConfig(data.cfg || online.cfg); onlineMode = true; onlineTransportConnected = !!onlineNetwork.connected;
+                onlineBuildPlacementScene(data.layouts || online.layouts, data.budgets || online.budgets);
+                online.revisions = Object.assign({ MONGOL: 0, CHINESE: 0 }, data.revisions || {});
+                online.localReady = online.team === TEAMS.MONGOL ? !!data.localReady : !!data.remoteReady;
+                online.remoteReady = online.team === TEAMS.MONGOL ? !!data.remoteReady : !!data.localReady;
+                players[0].ready = online.localReady; refreshHUD(); refreshOnlinePanel(); return;
+            }
+            if (data.stage === 'battle') {
+                onlineSetLobbyConfig(data.cfg || online.cfg); onlineMode = true; onlineTransportConnected = !!onlineNetwork.connected;
+                startOnlineRound(data.seed >>> 0, data.layouts, data.budgets, data.roundId);
+                onlineApplyBattleSnapshot(data.snapshot);
+                online.localReset = online.team === TEAMS.MONGOL ? !!data.resetLocal : !!data.resetRemote;
+                online.remoteReset = online.team === TEAMS.MONGOL ? !!data.resetRemote : !!data.resetLocal;
+                refreshOnlinePanel();
+            }
+        }
+        function handleOnlineNetworkMessage(senderId, data) {
+            if (!onlineNetwork || !data) return;
+            const net = onlineNetwork;
+            if (net.isHost) {
+                if (data.type === 'join') {
+                    if (net.opponentId && net.opponentId !== senderId) { net._publish({ type:'room_full' },1); return; }
+                    const isReconnect = net.opponentId === senderId;
+                    net.opponentId = senderId; net.opponentName = String(data.username || net.opponentName || 'Dynasty').slice(0,16); net.lastSeen = Date.now(); onOnlineOpponentPresence(true);
+                    net.broadcast({ type:'welcome', hostName:net.username, cfg:online.cfg, setupStarted:online.setupStarted });
+                    onlineRefreshLobby();
+                    if (isReconnect) onlineSendSync();
+                } else {
+                    if (senderId !== net.opponentId) return;
+                    if (data.type === 'presence') { net.lastSeen = Date.now(); onOnlineOpponentPresence(true); }
+                    else if (data.type === 'layout' && onlineMode && data.team === TEAMS.CHINESE && gameState === GAME_STATES.PLACEMENT) {
+                        const rev = Number(data.rev) || 0; if (rev <= (online.revisions.CHINESE || 0)) return;
+                        onlineApplyRemoteLayout(TEAMS.CHINESE, data.layout, data.budget, data.ready, rev);
+                        online.remoteReady = !!data.ready;
+                        onlineNetwork.broadcast({ type:'layoutState', team:TEAMS.CHINESE, layout:data.layout, budget:data.budget, ready:!!data.ready, rev });
+                        if (data.ready !== undefined) { refreshOnlinePanel(); maybeStartOnlineRound(); }
+                    } else if (data.type === 'ready') {
+                        online.remoteReady = !!data.ready; online.revisions.CHINESE = Math.max(online.revisions.CHINESE || 0, 0);
+                        refreshOnlinePanel(); maybeStartOnlineRound();
+                        net.broadcast({ type:'ready', team:TEAMS.MONGOL, ready:online.localReady, remoteReady:online.remoteReady });
+                    } else if (data.type === 'resetReady') { online.remoteReset = !!data.ready; refreshOnlinePanel(); maybeResetOnlineRound(); }
+                    else if (data.type === 'syncRequest') onlineSendSync();
+                    else if (data.type === 'chat') { addOnlineChatMessage(net.opponentName, data.message); net.broadcast({ type:'chatRelay', name:net.opponentName, message:String(data.message || '').slice(0,180) }); }
+                    else if (data.type === 'leave') { onOnlineOpponentPresence(false); }
+                }
+            } else {
+                if (data.type === 'welcome') {
+                    net.hostId = senderId; net.opponentName = String(data.hostName || 'Mongol host').slice(0,16); onOnlineOpponentPresence(true);
+                    if (net.retryTimer) { clearInterval(net.retryTimer); net.retryTimer = null; }
+                    if (data.cfg) onlineSetLobbyConfig(data.cfg);
+                    if (data.setupStarted) net.broadcast({ type:'syncRequest' });
+                    onlineRefreshLobby();
+                } else {
+                    if (net.hostId && senderId !== net.hostId) return;
+                    if (data.type === 'room_full') { el('online-lobby-status').textContent = 'This room already has two players.'; return; }
+                    if (data.type === 'presence') { if (data.reconnected) onlineAskForSync(); onOnlineOpponentPresence(true); }
+                    else if (data.type === 'config' && data.cfg) onlineSetLobbyConfig(data.cfg);
+                    else if (data.type === 'setup' && data.cfg) { onlineSetLobbyConfig(data.cfg); startOnlineSetup(online.cfg); }
+                    else if (data.type === 'layoutState' && onlineMode && data.team && data.team !== online.team && gameState === GAME_STATES.PLACEMENT) onlineApplyRemoteLayout(data.team, data.layout, data.budget, data.ready, data.rev);
+                    else if (data.type === 'ready') { online.remoteReady = !!data.ready; refreshOnlinePanel(); }
+                    else if (data.type === 'roundStart') {
+                        if ((data.roundId || 0) <= (online.roundId || 0) && gameState !== GAME_STATES.PLACEMENT) return;
+                        if (data.cfg) online.cfg = Object.assign({}, data.cfg);
+                        startOnlineRound(data.seed >>> 0, data.layouts, data.budgets, data.roundId);
+                    }
+                    else if (data.type === 'resetReady') { online.remoteReset = !!data.ready; refreshOnlinePanel(); }
+                    else if (data.type === 'sync') onlineApplySync(data);
+                    else if (data.type === 'tick' && onlineMode && gameState === GAME_STATES.SIMULATION) {
+                        const remoteTick = Number(data.tick) || 0;
+                        if (remoteTick > online.authoritativeTick) online.authoritativeTick = remoteTick;
+                        if (data.hash !== undefined && data.hash !== null) online.pendingHash = { tick: remoteTick, hash: data.hash >>> 0 };
+                        if (remoteTick - simTick > 360) onlineAskForSync();
+                        onlineCheckPendingHash();
+                    }
+                    else if (data.type === 'chatRelay' || data.type === 'chat') addOnlineChatMessage(data.name || net.opponentName, data.message);
+                    else if (data.type === 'leave') onOnlineOpponentPresence(false);
+                }
+            }
+        }
+
+        function onlineCheckPendingHash() {
+            const p = online.pendingHash;
+            if (!p || simTick < p.tick) return;
+            online.pendingHash = null;
+            if (simTick !== p.tick || onlineStateHash() !== p.hash) onlineAskForSync();
+        }
+        function onlinePeriodicTick() {
+            if (!onlineMode || !onlineNetwork || !onlineNetwork.isHost || !onlineNetwork.connected || gameState !== GAME_STATES.SIMULATION || simTick % 3 !== 0) return;
+            const packet = { type:'tick', tick:simTick };
+            if (simTick % 180 === 0) packet.hash = onlineStateHash();
+            onlineNetwork.broadcast(packet);
+        }
 
     </script>
 </body>
