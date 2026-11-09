@@ -742,7 +742,7 @@
         const ALLOWED_INCOMING_TYPES = new Set(['ATT_PULL', 'ATT_LIVE_BUSY', 'ATT_LIVE_IDLE', 'ATT_PING', 'ATT_PONG', 'ATT_PEER_QUERY', 'ATT_PEER_HAVE', 'ATT_PEER_PULL', 
             'MSG', 'DM', 'EDIT_MSG', 'DELETE_MSG', 'RESTORE_MSG', 'REACT_MSG', 'CLEAR_ALL', 'CLEAR_RECENT',
             'CMD', 'PRESENCE', 'PING', 'RENAME', 'TYPING', 'MUTE_ATTEMPT', 'DM_READ',
-            'JOIN', 'LEAVE', 'CLEAR_SYSTEM_ALL', 'SYNC_MANIFEST_REQ', 'SYNC_MANIFEST', 'SYNC_PULL', 'SYNC_PULL_RANGE', 'SYNC_CHUNK'
+            'JOIN', 'LEAVE', 'CLEAR_SYSTEM_ALL', 'SYNC_MANIFEST_REQ', 'SYNC_MANIFEST', 'SYNC_PULL', 'SYNC_PULL_RANGE', 'SYNC_CHUNK', 'SYNC_TOMB_PAGE_REQ', 'SYNC_TOMB_PAGE'
         ]);
 
         function isValidUsername(value) {
@@ -951,7 +951,12 @@
         function isMediaMsg(m) { return !!(m && (m.isImage || m.isVideo || m.isAudio || m.isFile)); }
         function findMessageById(id) {
             if (!id) return null;
-            return messageHistory.find(m => m.id === id) || Object.values(dmHistories).flat().find(m => m.id === id) || null;
+            const base = messageHistory.find(m => m.id === id) || Object.values(dmHistories).flat().find(m => m.id === id) || null;
+            if (base) return base;
+            if (typeof xGroupHistories !== 'undefined') {
+                for (const list of Object.values(xGroupHistories)) { const found = (list || []).find(m => m && m.id === id); if (found) return found; }
+            }
+            return null;
         }
         function humanSize(n) {
             if (!Number.isFinite(n) || n <= 0) return '';
@@ -1035,6 +1040,32 @@
         const DB_NAME = 'chatroom_v3';
         let dbPromise = null;
         let dbBroken = false;
+        // Keep the in-memory/network message shape flexible, but store a compact
+        // representation in IndexedDB: absent/irrelevant media fields are omitted.
+        function compactStoredValue(value) {
+            if (Array.isArray(value)) return value.map(compactStoredValue);
+            if (!value || typeof value !== 'object' || value instanceof Blob || value instanceof Date) return value;
+            const out = {};
+            for (const [key, raw] of Object.entries(value)) {
+                if (raw === undefined) continue;
+                if (['isImage','isVideo','isAudio','isFile'].includes(key) && raw !== true) continue;
+                if (['fileName','attMime'].includes(key) && raw === '') continue;
+                out[key] = compactStoredValue(raw);
+            }
+            return out;
+        }
+        function compactMessageRecord(record) {
+            if (!record || !record.m || typeof record.m !== 'object') return record;
+            const compact = compactStoredValue(record.m);
+            return { ...record, m: compact };
+        }
+        function hasUncompactFields(value) {
+            if (Array.isArray(value)) return value.some(hasUncompactFields);
+            if (!value || typeof value !== 'object' || value instanceof Blob || value instanceof Date) return false;
+            return Object.entries(value).some(([key, raw]) => raw === undefined ||
+                (['isImage','isVideo','isAudio','isFile'].includes(key) && raw !== true) ||
+                (['fileName','attMime'].includes(key) && raw === '') || hasUncompactFields(raw));
+        }
         function dbOpen() {
             if (dbPromise) return dbPromise;
             dbPromise = new Promise((resolve, reject) => {
@@ -1046,7 +1077,28 @@
                     if (!db.objectStoreNames.contains('atts')) db.createObjectStore('atts', { keyPath: 'id' });
                     if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv', { keyPath: 'key' });
                 };
-                req.onsuccess = () => { req.result.onversionchange = () => req.result.close(); resolve(req.result); };
+                req.onsuccess = () => {
+                    const db = req.result;
+                    db.onversionchange = () => db.close();
+                    // One-time-in-practice cleanup of records written by older builds.
+                    // Cursor updates only the message payload; channel keys/indexes stay intact.
+                    try {
+                        const tx = db.transaction('msgs', 'readwrite');
+                        const store = tx.objectStore('msgs');
+                        const cursorReq = store.openCursor();
+                        cursorReq.onsuccess = () => {
+                            const cursor = cursorReq.result;
+                            if (!cursor) return;
+                            try {
+                                const compact = compactMessageRecord(cursor.value);
+                                if (hasUncompactFields(cursor.value.m)) cursor.update(compact);
+                            } catch (e) {}
+                            cursor.continue();
+                        };
+                        tx.oncomplete = () => resolve(db);
+                        tx.onerror = tx.onabort = () => resolve(db);
+                    } catch (e) { resolve(db); }
+                };
                 req.onerror = () => { dbBroken = true; reject(req.error); };
             });
             dbPromise.catch(() => {});
@@ -1114,8 +1166,9 @@
             if (!m || typeof m !== 'object' || !m.id) return null;
             if (cutoff && Number.isFinite(m.timestamp) && m.timestamp < cutoff) return null;
             if (isMediaMsg(m) && mode !== 'full-media' && !m.backupPlaceholder) {
-                const c = { ...m, text: '', storageMediaOmitted: true };
+                const c = { ...m, text: '', storageMediaOmitted: true, omittedAttachmentCount: 1 };
                 delete c.thumb;
+                if (mode === 'text-only') { delete c.fileName; delete c.attMime; delete c.attSize; }
                 return c;
             }
             return m;
@@ -1140,7 +1193,7 @@
             if (!puts.length && !dels.length) return;
             await dbWrite(['msgs'], tx => {
                 const st = tx.objectStore('msgs');
-                puts.forEach(s => st.put({ k: `${channel}|${s.id}`, ch: channel, ts: clampTs(s.timestamp), m: s }));
+                puts.forEach(s => st.put({ k: `${channel}|${s.id}`, ch: channel, ts: clampTs(s.timestamp), m: compactStoredValue(s) }));
                 dels.forEach(id => st.delete(`${channel}|${id}`));
             });
             persistedSigs.set(channel, next);
@@ -1969,7 +2022,7 @@
         // ---------------------------------------------------------------------
         //  Transport: routing, QoS, outbox with retry
         // ---------------------------------------------------------------------
-        const DIRECT_TYPES = new Set(['DM', 'DELETE_MSG', 'RESTORE_MSG', 'SYNC_MANIFEST', 'SYNC_PULL', 'SYNC_PULL_RANGE', 'SYNC_CHUNK', 'DM_READ', 'ATT_PULL', 'ATT_LIVE_BUSY', 'ATT_LIVE_IDLE', 'ATT_PING', 'ATT_PONG', 'ATT_PEER_HAVE', 'ATT_PEER_PULL']);
+        const DIRECT_TYPES = new Set(['DM', 'DELETE_MSG', 'RESTORE_MSG', 'SYNC_MANIFEST', 'SYNC_PULL', 'SYNC_PULL_RANGE', 'SYNC_CHUNK', 'SYNC_TOMB_PAGE_REQ', 'SYNC_TOMB_PAGE', 'DM_READ', 'ATT_PULL', 'ATT_LIVE_BUSY', 'ATT_LIVE_IDLE', 'ATT_PING', 'ATT_PONG', 'ATT_PEER_HAVE', 'ATT_PEER_PULL']);
         const QOS1_TYPES = new Set(['MSG', 'DM', 'EDIT_MSG', 'DELETE_MSG', 'RESTORE_MSG', 'REACT_MSG', 'CLEAR_ALL', 'CLEAR_RECENT', 'CLEAR_SYSTEM_ALL', 'RENAME', 'ATT_LIVE_BUSY', 'ATT_LIVE_IDLE']);
         function topicsFor(data) {
             if (DIRECT_TYPES.has(data.type) && data.target) {
@@ -3139,20 +3192,24 @@
             const cutoff = retention ? Date.now() - retention * 86400000 : 0;
             const mode = getChatHistoryMode();
             const out = [];
-
             for (const original of list) {
                 if (!original || typeof original !== "object") continue;
                 if (cutoff && Number.isFinite(original.timestamp) && original.timestamp < cutoff) continue;
-
                 const m = { ...original };
-                const hasMedia = !!(m.isImage || m.isVideo || m.isAudio || m.isFile);
-                if (hasMedia && mode === "text-only") {
-                    m.text = "";
-                    m.storageMediaOmitted = true;
-                } else if (hasMedia && mode === "attachments") {
-                    // Preserve the fact that an attachment exists and its filename/type,
-                    // but don't keep the large data URL in the durable history copy.
-                    m.text = "";
+                const hasLegacyMedia = !!(m.isImage || m.isVideo || m.isAudio || m.isFile);
+                if (hasLegacyMedia && mode !== "full-media") {
+                    m.text = ""; m.storageMediaOmitted = true; delete m.thumb;
+                    if (mode === "text-only") { delete m.fileName; delete m.attMime; delete m.attSize; }
+                }
+                if (Array.isArray(m.attachments) && mode !== "full-media") {
+                    m.omittedAttachmentCount = m.attachments.length;
+                    if (mode === "text-only") delete m.attachments;
+                    else m.attachments = m.attachments.map(a => {
+                        if (!a || typeof a !== 'object') return a;
+                        const meta = { id:a.id, name:a.name, mime:a.mime, kind:a.kind, size:a.size };
+                        Object.keys(meta).forEach(k => { if (meta[k] === undefined || meta[k] === '') delete meta[k]; });
+                        return meta;
+                    });
                     m.storageMediaOmitted = true;
                 }
                 out.push(m);
@@ -4156,8 +4213,7 @@
                 await loadSettingsAndDMs(); 
                 await loadLocalHistory();
                 await loadTombstones();
-                messageHistory = applyTombstonesToList(messageHistory);
-                rebuildMessageHistoryIdSet();
+                pruneAllHistoriesByTombstones();
                 await maintenanceOnce(); await restoreOutbox(); noteAllAttachmentRefs();
                 historyReadyForSync = false;
                 backupRestorePromise = maybeFirstVisitBackupRestore().finally(() => { historyReadyForSync = true; if (isConnected) requestManifestBroadcast(); });
@@ -4169,8 +4225,7 @@
                 await loadSettingsAndDMs(); 
                 await loadLocalHistory();
                 await loadTombstones();
-                messageHistory = applyTombstonesToList(messageHistory);
-                rebuildMessageHistoryIdSet();
+                pruneAllHistoriesByTombstones();
                 await maintenanceOnce(); await restoreOutbox(); noteAllAttachmentRefs();
                 historyReadyForSync = false;
                 backupRestorePromise = maybeFirstVisitBackupRestore().finally(() => { historyReadyForSync = true; if (isConnected) requestManifestBroadcast(); });
@@ -4279,8 +4334,7 @@
             await loadSettingsAndDMs(); 
             await loadLocalHistory();
             await loadTombstones();
-            messageHistory = applyTombstonesToList(messageHistory);
-            rebuildMessageHistoryIdSet();
+            pruneAllHistoriesByTombstones();
             await maintenanceOnce(); await restoreOutbox(); noteAllAttachmentRefs();
 
             const now = Date.now();
@@ -4630,6 +4684,12 @@
                     else if (data.type === "SYNC_CHUNK") {
                         handleSyncChunk(data);
                     }
+                    else if (data.type === "SYNC_TOMB_PAGE_REQ") {
+                        handleTombstonePageRequest(data);
+                    }
+                    else if (data.type === "SYNC_TOMB_PAGE") {
+                        handleTombstonePage(data);
+                    }
                     else if (data.type === "ATT_PULL") {
                         handleAttPull(data);
                     }
@@ -4674,6 +4734,7 @@
                         if (blockedUsers.has(data.author) && data.author !== myUsername) return;
                         const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, attMime: data.attMime, attSize: data.attSize, thumb: data.thumb, attachments: data.attachments || [], takenAt: data.takenAt, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), isSystem: false, edited: false, reactions: data.reactions || {} };
                         if (isMediaMsg(msgObj) && typeof msgObj.text === 'string' && msgObj.text.startsWith('data:')) await convertLegacyMedia(msgObj); // old-format peer
+                        if (isMessageTombstoned(msgObj)) return;
                         const isNew = !messageHistoryIdSet.has(msgObj.id);
                         const prevLen = messageHistory.length;
                         const liveMsg = (Date.now() - (msgObj.timestamp || Date.now())) < 90000;
@@ -4735,10 +4796,11 @@
                         if (blockedUsers.has(data.author) && data.author !== myUsername) return;
                         if (!isGhost && (data.target === myUsername || data.author === myUsername)) {
                             const otherUser = data.target === myUsername ? data.author : data.target;
-                            if (closedDMs.has(otherUser)) { closedDMs.delete(otherUser); saveClosedDMs(); }
-                            const tabId = ensureDmTab(otherUser); bumpDmTab(otherUser);
                             const msgObj = { id: data.id, author: data.author, text: data.text, isImage: data.isImage, isVideo: data.isVideo, isAudio: data.isAudio, isFile: data.isFile, fileName: data.fileName, attMime: data.attMime, attSize: data.attSize, thumb: data.thumb, attachments: data.attachments || [], takenAt: data.takenAt, replyTo: data.replyTo, timestamp: data.timestamp || Date.now(), edited: false, reactions: data.reactions || {} };
                             if (isMediaMsg(msgObj) && typeof msgObj.text === 'string' && msgObj.text.startsWith('data:')) await convertLegacyMedia(msgObj);
+                            if (isMessageTombstoned(msgObj)) return;
+                            if (closedDMs.has(otherUser)) { closedDMs.delete(otherUser); saveClosedDMs(); }
+                            const tabId = ensureDmTab(otherUser); bumpDmTab(otherUser);
                             dmHistories[otherUser] = mergeHistory(dmHistories[otherUser] || [], [msgObj], true); saveDmHistory(otherUser);
                             noteAttachmentRefs([msgObj], { live: true }); applyPendingOps(msgObj.id);
                             if (currentTab === tabId) scheduleRenderActiveTabMessages(); else markUnread(tabId);
@@ -4759,44 +4821,83 @@
                     }
                     else if (data.type === "MUTE_ATTEMPT" && isAdmin) { appendSystemDOM({ id: data.id || generateId(), isSystem: true, text: `${data.author} tried to send a message while muted (Attempt #${data.count})`, timestamp: data.timestamp || Date.now() }); }
                     else if (data.type === "RESTORE_MSG") {
-                        const restoredAt = Number(data.timestamp || (data.message && data.message.restoredAt)) || 0;
                         const incoming = data.message;
-                        if (incoming && incoming.id === data.id && restoredAt > (msgTombstoneTimes.get(data.id) || 0) && (data.author === incoming.author || ADMINS.includes(data.author))) {
-                            const channel = String(data.channel || 'global');
-                            const restored = { ...incoming, restoredAt, restoreTimestamp: restoredAt };
-                            if (channel === 'global') { messageHistory = mergeHistory(messageHistory, [restored], true); rebuildMessageHistoryIdSet(); saveLocalHistory(); }
-                            else if (channel.startsWith('dm:')) { const u=channel.slice(3); dmHistories[u]=mergeHistory(dmHistories[u]||[],[restored],true); saveDmHistory(u); }
-                            else if (channel.startsWith('group:')) { const gid=channel.slice(6); if (xGroups[gid] && xIsGroupMember(xGroups[gid]) && xGroups[gid].members.includes(data.author)) { xGroupHistories[gid]=mergeHistory(xGroupHistories[gid]||[],[restored],true); xStoreGroupHistory(gid); } }
-                            scheduleRenderActiveTabMessages();
+                        const channel = String(data.channel || 'global');
+                        const actor = String(data.author || '');
+                        const restoredAt = Number(data.timestamp || (incoming && (incoming.restoredAt || incoming.restoreTimestamp))) || 0;
+                        if (!incoming || incoming.id !== data.id || !isValidUsername(actor) ||
+                            !(actor === incoming.author || ADMINS.includes(actor)) ||
+                            restoredAt <= (msgTombstoneTimes.get(data.id) || 0)) return;
+                        let destination = channel;
+                        if (channel.startsWith('dm:')) {
+                            if (data.target !== myUsername && data.author !== myUsername) return;
+                            const other = data.target === myUsername ? actor : data.target;
+                            if (!isValidUsername(other)) return;
+                            destination = `dm:${other}`;
                         }
+                        const restored = { ...incoming, restoredAt, restoreTimestamp: restoredAt };
+                        if (destination === 'global') {
+                            messageHistory = mergeHistory(messageHistory, [restored], true);
+                            messageHistory = applyTombstonesToList(messageHistory);
+                            rebuildMessageHistoryIdSet(); saveLocalHistory();
+                        } else if (destination.startsWith('dm:')) {
+                            const u = destination.slice(3);
+                            dmHistories[u] = applyTombstonesToList(mergeHistory(dmHistories[u] || [], [restored], true));
+                            saveDmHistory(u);
+                        } else if (destination.startsWith('group:')) {
+                            const gid = destination.slice(6), group = xGroups[gid];
+                            if (!group || (!xIsGroupMember(group, actor) && !ADMINS.includes(actor))) return;
+                            xGroupHistories[gid] = applyTombstonesToList(mergeHistory(xGroupHistories[gid] || [], [restored], true));
+                            xStoreGroupHistory(gid);
+                        } else return;
+                        if (currentTab === destination) scheduleRenderActiveTabMessages();
                     }
                     else if (data.type === "DELETE_MSG") {
-                        const ephemeralDelete = false;
+                        const id = String(data.id || ''), deleter = String(data.deleter || '');
                         const channel = String(data.channel || 'global');
                         const deletedAt = Number(data.timestamp) || Date.now();
-                        if (data.deleter === data.author || ADMINS.includes(data.deleter)) addMsgTombstone(data.id, deletedAt);
-                        let removedGlobal = false;
-                        const idxG = messageHistory.findIndex(m => m.id === data.id);
-                        if (idxG !== -1) {
-                            const msg = messageHistory[idxG];
-                            if (msg.author === data.deleter || ADMINS.includes(data.deleter)) {
-                                messageHistory.splice(idxG, 1); messageHistoryIdSet.delete(data.id); saveLocalHistory();
-                                removedGlobal = true;
+                        // A sender may only issue a deletion as themselves (or as an
+                        // administrator); validate that claim before writing a tombstone.
+                        if (!id || id.length > 80 || !isValidUsername(deleter) ||
+                            !(data.author === deleter || ADMINS.includes(deleter))) return;
+                        let destination = channel, list = null, group = null;
+                        if (channel === 'global') list = messageHistory;
+                        else if (channel.startsWith('dm:')) {
+                            if (data.target !== myUsername && data.author !== myUsername) return;
+                            const other = data.target === myUsername ? data.author : data.target;
+                            if (!isValidUsername(other)) return;
+                            destination = `dm:${other}`; list = dmHistories[other] || [];
+                        } else if (channel.startsWith('group:')) {
+                            const gid = channel.slice(6);
+                            if (!/^[A-Za-z0-9_-]{8,64}$/.test(gid)) return;
+                            group = xGroups[gid];
+                            if (!group || (!group.members.includes(deleter) && !ADMINS.includes(deleter))) return;
+                            list = xGroupHistories[gid] || [];
+                        } else return;
+                        const existing = list.find(m => m && m.id === id);
+                        const knownAnywhere = findMessageById(id);
+                        // Message IDs are globally unique. If this ID is known in a
+                        // different room, never let a packet tombstone it through this room.
+                        if (knownAnywhere && knownAnywhere !== existing) return;
+                        if (existing && existing.author !== deleter && !ADMINS.includes(deleter)) return;
+                        // If no copy exists anywhere locally, ownership cannot be proven
+                        // by this open, unsigned MQTT protocol. We still accept the
+                        // tombstone so offline peers can converge; known ownership is enforced.
+                        addMsgTombstone(id, deletedAt);
+                        if (existing && isMessageTombstoned(existing)) {
+                            if (destination === 'global') {
+                                messageHistory = messageHistory.filter(m => m.id !== id);
+                                messageHistoryIdSet.delete(id); saveLocalHistory();
+                            } else if (destination.startsWith('dm:')) {
+                                const u = destination.slice(3);
+                                dmHistories[u] = (dmHistories[u] || []).filter(m => m.id !== id); saveDmHistory(u);
+                            } else {
+                                const gid = destination.slice(6);
+                                xGroupHistories[gid] = (xGroupHistories[gid] || []).filter(m => m.id !== id); xStoreGroupHistory(gid);
                             }
                         }
-                        Object.keys(dmHistories).forEach(user => {
-                            const idxD = dmHistories[user].findIndex(m => m.id === data.id);
-                            if (idxD !== -1 && (dmHistories[user][idxD].author === data.deleter || ADMINS.includes(data.deleter))) {
-                                dmHistories[user].splice(idxD, 1); saveDmHistory(user);
-                            }
-                        });
-                        if (channel.startsWith('group:')) {
-                            const gid=channel.slice(6), list=xGroupHistories[gid]||[];
-                            const idx=list.findIndex(m=>m.id===data.id);
-                            if(idx!==-1 && (list[idx].author===data.deleter || ADMINS.includes(data.deleter))) { list.splice(idx,1); xStoreGroupHistory(gid); removedGlobal=true; }
-                        }
-                        const el = document.getElementById(`msg-${data.id}`); if (el) el.remove();
-                        if (removedGlobal || channel === currentTab) scheduleRenderActiveTabMessages();
+                        const el = document.getElementById(`msg-${id}`); if (el) el.remove();
+                        if (destination === currentTab) scheduleRenderActiveTabMessages();
                     }
                     else if (data.type === "CLEAR_RECENT") {
                         if (!(await verifyAdminMessage(data)) || !Number.isFinite(data.hours) || data.hours <= 0) return;
@@ -5415,6 +5516,88 @@
             if (!msgTombstones.size && !rangeTombstones.length && !nukeMarker) return list;
             return list.filter(m => !isMessageTombstoned(m));
         }
+        function pruneAllHistoriesByTombstones() {
+            const beforeGlobal = messageHistory.length;
+            messageHistory = applyTombstonesToList(messageHistory);
+            if (messageHistory.length !== beforeGlobal) { rebuildMessageHistoryIdSet(); saveLocalHistory(); }
+            Object.keys(dmHistories).forEach(user => {
+                const before = dmHistories[user] || [];
+                const after = applyTombstonesToList(before);
+                if (after.length !== before.length) { dmHistories[user] = after; saveDmHistory(user); }
+            });
+            if (typeof xGroupHistories !== 'undefined') Object.keys(xGroupHistories).forEach(id => {
+                const before = xGroupHistories[id] || [];
+                const after = applyTombstonesToList(before);
+                if (after.length !== before.length) { xGroupHistories[id] = after; if (typeof xStoreGroupHistory === 'function') xStoreGroupHistory(id); }
+            });
+            scheduleRenderActiveTabMessages();
+        }
+
+        // Tombstones travel in bounded pages rather than growing every manifest forever.
+        const TOMBSTONE_PAGE_SIZE = 100;
+        const TOMBSTONE_PAGE_TIMEOUT_MS = 9000;
+        const TOMBSTONE_PAGE_MAX_RETRIES = 2;
+        const tombPageInFlight = new Map();
+        function clearTombstonePageTimer(state) {
+            if (state && state.timer) { clearTimeout(state.timer); state.timer = null; }
+        }
+        function requestTombstonePage(peer, after = '', verify = false, retries = 0) {
+            if (!isValidUsername(peer) || peer === myUsername || tombPageInFlight.has(peer)) return;
+            const requestId = generateId(), cursor = String(after || '').slice(0,80);
+            const state = { requestId, after:cursor, verify:!!verify, retries, timer:null, remoteTotal:null, totalChanged:false };
+            tombPageInFlight.set(peer, state);
+            publishMessage({ type:'SYNC_TOMB_PAGE_REQ', author:myUsername, target:peer, after:cursor,
+                requestId, verify:state.verify, timestamp:Date.now() });
+            state.timer = setTimeout(() => {
+                if (tombPageInFlight.get(peer) !== state) return;
+                tombPageInFlight.delete(peer);
+                if (state.retries < TOMBSTONE_PAGE_MAX_RETRIES && isConnected && !blockedUsers.has(peer)) {
+                    requestTombstonePage(peer, state.after, state.verify, state.retries + 1);
+                } else {
+                    // Release the stuck peer slot and let a fresh manifest restart reconciliation.
+                    requestManifestBroadcast();
+                }
+            }, TOMBSTONE_PAGE_TIMEOUT_MS);
+        }
+        function handleTombstonePageRequest(data) {
+            if (!data || data.target !== myUsername || !isValidUsername(data.author) || data.author === myUsername) return;
+            const ids = Array.from(msgTombstones).filter(id => typeof id === 'string' && id).sort();
+            let start = 0;
+            if (data.after) { while (start < ids.length && ids[start] <= data.after) start++; }
+            const page = ids.slice(start, start + TOMBSTONE_PAGE_SIZE);
+            const hasMore = start + page.length < ids.length;
+            publishMessage({ type:'SYNC_TOMB_PAGE', author:myUsername, target:data.author, requestId:data.requestId,
+                verify:data.verify === true, total:ids.length, entries:page.map(id => ({ id, ts:msgTombstoneTimes.get(id) || 0 })), hasMore,
+                nextAfter:page.length ? page[page.length - 1] : (data.after || ''), timestamp:Date.now() });
+        }
+        function handleTombstonePage(data) {
+            if (!data || data.target !== myUsername || !isValidUsername(data.author) || blockedUsers.has(data.author)) return;
+            const expected = tombPageInFlight.get(data.author);
+            if (!expected || expected.requestId !== data.requestId || expected.verify !== (data.verify === true)) return;
+            clearTombstonePageTimer(expected);
+            if (Number.isSafeInteger(data.total) && data.total >= 0) {
+                if (expected.remoteTotal === null) expected.remoteTotal = data.total;
+                else if (expected.remoteTotal !== data.total) expected.totalChanged = true;
+            }
+            let changed = false;
+            data.entries.forEach(entry => {
+                if (!entry || typeof entry.id !== 'string' || !entry.id || entry.id.length > 80 || !Number.isFinite(entry.ts) || entry.ts < 0) return;
+                const at = Math.min(entry.ts, Date.now() + 86400000);
+                const prior = msgTombstoneTimes.get(entry.id) || 0;
+                if (!msgTombstones.has(entry.id) || at > prior) { msgTombstones.add(entry.id); msgTombstoneTimes.set(entry.id, at); changed = true; }
+            });
+            if (changed) saveTombstones();
+            pruneAllHistoriesByTombstones();
+            tombPageInFlight.delete(data.author);
+            if (data.hasMore && data.nextAfter && data.nextAfter > expected.after) {
+                setTimeout(() => requestTombstonePage(data.author, data.nextAfter, expected.verify), 80);
+            } else if (!data.hasMore && (expected.totalChanged || !expected.verify)) {
+                // Restart when the sender's tombstone count changes during pagination. A
+                // verification pass also catches IDs inserted before the first pass's cursor.
+                // Repeat only when a count change proves the snapshot moved during this pass.
+                setTimeout(() => requestTombstonePage(data.author, '', true), 80);
+            }
+        }
 
         const SYNC_BATCH_SIZE = 50;
         const SYNC_BATCH_INTERVAL_MS = 150;
@@ -5539,12 +5722,12 @@
                 global: globalSlice.map(m => ({ id: m.id, ts: m.timestamp || 0 })),
                 globalBuckets: buildHistoryBucketManifest(messageHistory),
                 dms: {},
-                tomb: {
-                    ids: Array.from(msgTombstones).slice(-500),
-                    times: Object.fromEntries(Array.from(msgTombstoneTimes.entries()).slice(-500)),
-                    ranges: rangeTombstones,
-                    nuke: nukeMarker
-                }
+                tomb: (() => {
+                    const ids = Array.from(msgTombstones).filter(id => typeof id === 'string' && id).sort();
+                    const page = ids.slice(0, TOMBSTONE_PAGE_SIZE);
+                    return { ids:page, times:Object.fromEntries(page.map(id => [id, msgTombstoneTimes.get(id) || 0])),
+                        ranges:rangeTombstones, nuke:nukeMarker, total:ids.length, hasMore:ids.length > page.length };
+                })()
             };
             const sliceDm = (arr) => (arr.length > manifestMaxEntries ? arr.slice(-manifestMaxEntries) : arr);
             const addDmManifest = (otherUser) => {
@@ -5586,23 +5769,32 @@
             if (blockedUsers.has(data.author) && data.author !== myUsername) return;
 
             let tombChanged = false;
-            if (data.tomb) {
-                (data.tomb.ids || []).forEach(id => {
-                    const at = Number(data.tomb.times && data.tomb.times[id]) || 0;
-                    const prior = msgTombstoneTimes.get(id) || 0;
-                    if (!msgTombstones.has(id) || at > prior) { msgTombstones.add(id); msgTombstoneTimes.set(id, at); tombChanged = true; }
-                });
-                (data.tomb.ranges || []).forEach(r => {
-                    const exists = rangeTombstones.some(x => x.from === r.from && x.to === r.to && x.scope === r.scope);
-                    if (!exists) { rangeTombstones.push(r); tombChanged = true; }
-                });
-                if (data.tomb.nuke && data.tomb.nuke > nukeMarker) { nukeMarker = data.tomb.nuke; tombChanged = true; }
-            }
-            if (tombChanged) {
-                saveTombstones();
-                messageHistory = applyTombstonesToList(messageHistory); rebuildMessageHistoryIdSet(); saveLocalHistory();
-                Object.keys(dmHistories).forEach(u => { dmHistories[u] = applyTombstonesToList(dmHistories[u]); saveDmHistory(u); });
-                scheduleRenderActiveTabMessages();
+            const tombPayload = data.tomb || {};
+            const groupTombPayload = data.groupTomb || {};
+            const incomingTombIds = [...(Array.isArray(tombPayload.ids) ? tombPayload.ids : []),
+                ...(Array.isArray(groupTombPayload.ids) ? groupTombPayload.ids : [])];
+            incomingTombIds.forEach(id => {
+                if (typeof id !== 'string' || !id || id.length > 80) return;
+                const rawAt = Math.max(Number(tombPayload.times && tombPayload.times[id]) || 0,
+                    Number(groupTombPayload.times && groupTombPayload.times[id]) || 0);
+                const at = Number.isFinite(rawAt) && rawAt >= 0 ? Math.min(rawAt, Date.now() + 86400000) : 0;
+                const prior = msgTombstoneTimes.get(id) || 0;
+                if (!msgTombstones.has(id) || at > prior) { msgTombstones.add(id); msgTombstoneTimes.set(id, at); tombChanged = true; }
+            });
+            (Array.isArray(tombPayload.ranges) ? tombPayload.ranges : []).forEach(r => {
+                if (!r || !Number.isFinite(r.from) || !Number.isFinite(r.to) || r.from > r.to || !['all','system'].includes(r.scope)) return;
+                const exists = rangeTombstones.some(x => x.from === r.from && x.to === r.to && x.scope === r.scope);
+                if (!exists) { rangeTombstones.push(r); tombChanged = true; }
+            });
+            if (tombPayload.nuke && tombPayload.nuke > nukeMarker) { nukeMarker = tombPayload.nuke; tombChanged = true; }
+            if (tombChanged) saveTombstones();
+            // Always re-apply received tombstones, not only newly learned ones.
+            if (data.tomb || data.groupTomb) pruneAllHistoriesByTombstones();
+            const advertisedTomb = data.tomb || {};
+            if (advertisedTomb.hasMore === true || (Number(advertisedTomb.total) || 0) > (Array.isArray(advertisedTomb.ids) ? advertisedTomb.ids.length : 0)) {
+                const inline = Array.isArray(advertisedTomb.ids) ? advertisedTomb.ids.filter(id => typeof id === 'string').sort() : [];
+                const after = inline.length ? inline[inline.length - 1] : '';
+                requestTombstonePage(data.author, after);
             }
 
             diffAndQueue("global", data.author, messageHistory, data.global || [], data.globalBuckets || []);
@@ -5764,21 +5956,24 @@
                 const buffered = syncInboundBuffers.get(bufferKey) || [];
                 syncInboundBuffers.delete(bufferKey);
                 if (!buffered.length) return;
+                const eligible = buffered.filter(m => m && !isMessageTombstoned(m));
+                if (!eligible.length) return;
 
-                noteAttachmentRefs(buffered); buffered.forEach(m => applyPendingOps(m.id));
+                noteAttachmentRefs(eligible); eligible.forEach(m => applyPendingOps(m.id));
                 if (bufferKey === "global") {
-                    messageHistory = mergeHistory(messageHistory, buffered, false);
+                    messageHistory = applyTombstonesToList(mergeHistory(messageHistory, eligible, false));
+                    rebuildMessageHistoryIdSet();
                     saveLocalHistory();
                     if (currentTab === "global") scheduleRenderActiveTabMessages();
                 } else if (bufferKey.startsWith("group:")) {
                     const groupId=bufferKey.slice(6);
                     if(!xIsGroupMember(xGroups[groupId]))return;
-                    xGroupHistories[groupId]=applyTombstonesToList(mergeHistory(xGroupHistories[groupId]||[],buffered,false));
+                    xGroupHistories[groupId]=applyTombstonesToList(mergeHistory(xGroupHistories[groupId]||[],eligible,false));
                     xStoreGroupHistory(groupId);
                     if(currentTab===bufferKey)scheduleRenderActiveTabMessages();
                 } else {
                     const otherUser = bufferKey.replace("dm:", "");
-                    const merged = mergeHistory(dmHistories[otherUser] || [], buffered, false);
+                    const merged = mergeHistory(dmHistories[otherUser] || [], eligible, false);
                     dmHistories[otherUser] = applyTombstonesToList(merged);
                     saveDmHistory(otherUser);
                     if (!closedDMs.has(otherUser) && !isGhost) ensureDmTab(otherUser);
@@ -5972,19 +6167,31 @@
                 }
 
                 if (existing) {
+                    if (!forceRestore && isMessageTombstoned(existing)) {
+                        entries.push([m.backupKey, existing.id, m.timestamp || 0, m.isSystem ? 1 : 0]);
+                        matched++;
+                        return;
+                    }
                     existing.backupKey = m.backupKey;
+                    if (forceRestore && isMessageTombstoned(existing)) {
+                        const restoreAt = Math.max(Date.now(), (msgTombstoneTimes.get(existing.id) || 0) + 1);
+                        existing.restoredAt = restoreAt; existing.restoreTimestamp = restoreAt;
+                    }
                     mergeMessageMetadata(existing, m);
                     entries.push([m.backupKey, existing.id, m.timestamp || 0, m.isSystem ? 1 : 0]);
                     matched++;
                     return;
                 }
 
-                if (false && !forceRestore && isMessageTombstoned(m)) {
+                if (!forceRestore && isMessageTombstoned(m)) {
                     entries.push([m.backupKey, m.id, m.timestamp || 0, m.isSystem ? 1 : 0]);
                     return;
                 }
 
-                if (forceRestore) m.restoredFromBackup = true;
+                if (forceRestore) {
+                    const restoreAt = Math.max(Date.now(), (msgTombstoneTimes.get(m.id) || 0) + 1);
+                    m.restoredFromBackup = true; m.restoredAt = restoreAt; m.restoreTimestamp = restoreAt;
+                }
                 additions.push(m);
                 entries.push([m.backupKey, m.id, m.timestamp || 0, m.isSystem ? 1 : 0]);
                 localByBackupKey.set(m.backupKey, m);
@@ -6000,7 +6207,7 @@
 
             // Also clean any duplicate backup copies created by the previous version.
             const afterDedupe = dedupeHistoryList(messageHistory);
-            messageHistory = dedupeConsecutivePresenceEvents(afterDedupe.list);
+            messageHistory = applyTombstonesToList(dedupeConsecutivePresenceEvents(afterDedupe.list));
             rebuildMessageHistoryIdSet();
 
             return { added: additions.length, matched, deduped: beforeDedupe.removed + afterDedupe.removed, entries };
@@ -6124,7 +6331,8 @@
             return currentTab || 'global';
         }
         function addMessageToChannelLocal(channel, msg) {
-            const restored = { ...msg, restoredAt: Date.now(), restoreTimestamp: Date.now() };
+            const restoreAt = Date.now();
+            const restored = { ...msg, restoredAt: restoreAt, restoreTimestamp: restoreAt };
             if (channel === 'global') { messageHistory = mergeHistory(messageHistory, [restored], true); saveLocalHistory(); }
             else if (channel.startsWith('dm:')) { const u = channel.slice(3); dmHistories[u] = mergeHistory(dmHistories[u] || [], [restored], true); saveDmHistory(u); }
             else if (channel.startsWith('group:')) { const gid = channel.slice(6); xGroupHistories[gid] = mergeHistory(xGroupHistories[gid] || [], [restored], true); xStoreGroupHistory(gid); }
@@ -6314,6 +6522,8 @@
             if (data.tab !== undefined && data.tab !== 'global' && data.tab !== 'dm') return false;
             if (data.room !== undefined && (typeof data.room !== 'string' || data.room.length > 100)) return false;
             if (data.ids !== undefined && (!Array.isArray(data.ids) || data.ids.length > 400 || data.ids.some(x => typeof x !== 'string' || x.length > 80))) return false;
+            if (data.type === 'SYNC_TOMB_PAGE_REQ' && (typeof data.after !== 'string' || data.after.length > 80 || typeof data.requestId !== 'string' || data.requestId.length > 80 || (data.verify !== undefined && typeof data.verify !== 'boolean'))) return false;
+            if (data.type === 'SYNC_TOMB_PAGE' && (typeof data.requestId !== 'string' || data.requestId.length > 80 || !Array.isArray(data.entries) || data.entries.length > 100 || data.entries.some(e => !e || typeof e.id !== 'string' || !e.id || e.id.length > 80 || !Number.isFinite(e.ts) || e.ts < 0) || typeof data.hasMore !== 'boolean' || (data.total !== undefined && (!Number.isSafeInteger(data.total) || data.total < 0)) || (data.verify !== undefined && typeof data.verify !== 'boolean') || (data.nextAfter !== undefined && (typeof data.nextAfter !== 'string' || data.nextAfter.length > 80)))) return false;
             if (data.type === 'CMD' && !['KICK','BAN','MUTE','TIMEOUT','UNMUTE'].includes(data.cmd)) return false;
             if (data.type === 'REACT_MSG' && (typeof data.emoji !== 'string' || data.emoji.length > 16)) return false;
             return true;
@@ -6434,7 +6644,8 @@
         // broker-enforced security boundary.
         ['GROUP_META','GROUP_SYNC_REQ','GROUP_MSG','POLL_CREATE','POLL_VOTE','POLL_SYNC_REQ','CONTACT_SYNC','RESTORE_MSG'].forEach(t => ALLOWED_INCOMING_TYPES.add(t));
         ['GROUP_MSG','POLL_CREATE','POLL_VOTE','POLL_SYNC_REQ','GROUP_META','CONTACT_SYNC'].forEach(t => QOS1_TYPES.add(t));
-        ['POLL_CREATE','POLL_VOTE','POLL_SYNC_REQ'].forEach(t => DIRECT_TYPES.add(t));
+        ['POLL_CREATE','POLL_VOTE','POLL_SYNC_REQ','SYNC_TOMB_PAGE_REQ','SYNC_TOMB_PAGE'].forEach(t => DIRECT_TYPES.add(t));
+        ['SYNC_TOMB_PAGE_REQ','SYNC_TOMB_PAGE'].forEach(t => QOS1_TYPES.add(t));
 
         function xSaveGroups() { safeSet(X_GROUPS_KEY, JSON.stringify(xGroups)); }
         function xSaveClosedGroups() { safeSet(X_GROUP_TABS_KEY, JSON.stringify(Array.from(xClosedGroups))); }
@@ -6472,12 +6683,22 @@
         }
         async function xLoadGroupHistory(id) {
             if (!id || xGroupHistories[id]) return;
+            const channel = `group:${id}`;
             let rows = [];
-            try { rows = await dbLoadChannel(`group:${id}`); } catch (e) {}
-            const list = rows.map(r => r && r.m).filter(Boolean);
-            xGroupHistories[id] = sanitizeHistoryLoaded(list);
+            try { rows = await dbLoadChannel(channel); } catch (e) {}
+            const stored = rows.map(r => r && r.m).filter(m => m && m.id);
+            // Seed the diff map from the raw stored rows before filtering. The next
+            // persistence pass can then delete tombstoned/invalid rows from IndexedDB.
+            const storedSigs = new Map();
+            stored.forEach(m => storedSigs.set(m.id, msgPersistSig(m)));
+            persistedSigs.set(channel, storedSigs);
+            const clean = applyTombstonesToList(sanitizeHistoryLoaded(stored));
+            // A live packet may have arrived while IndexedDB was loading; merge rather
+            // than replacing that newer in-memory history.
+            xGroupHistories[id] = applyTombstonesToList(mergeHistory(xGroupHistories[id] || [], clean, false));
             noteAttachmentRefs(xGroupHistories[id]);
-            if (currentTab === `group:${id}`) scheduleRenderActiveTabMessages();
+            if (xGroupHistories[id].length !== stored.length || stored.some(m => isMessageTombstoned(m))) xStoreGroupHistory(id);
+            if (currentTab === channel) scheduleRenderActiveTabMessages();
         }
         function xPersistAllGroups() {
             Object.keys(xGroupHistories).forEach(id => xStoreGroupHistory(id));
@@ -7132,8 +7353,14 @@
         };
 
         function xFormatAttachment(a, msg, index) {
+            if (!a || typeof a !== 'object' || !ATT_ID_RE.test(String(a.id || '')) || !['image','video','audio','file'].includes(a.kind))
+                return '<span class="x-attachment-item"><span class="att-label">Attachment metadata unavailable</span></span>';
             const id = a.id, name = escapeHTML(a.name || 'attachment');
             const size = a.size ? ` (${humanSize(a.size)})` : '';
+            if (msg && msg.storageMediaOmitted) {
+                const kind = ({image:'Image',video:'Video',audio:'Audio',file:'File'})[a.kind] || 'Attachment';
+                return `<span class="x-attachment-item"><span class="att-label">${kind}: ${name}${size} · Not stored in this history mode</span></span>`;
+            }
             const have = attHave.has(id), thumb = typeof a.thumb === 'string' && THUMB_RE.test(a.thumb) ? a.thumb : '';
             const label = have ? '' : `<span class="att-label">${attWanted.has(id) ? 'downloading / waiting' : 'not downloaded yet'} <a href="#" data-att-retry="${id}">retry</a></span>`;
             const lazy = have ? 'data-lazy="1"' : '';
@@ -7199,6 +7426,21 @@
                 const textHtml = text ? `<div class="x-message-text">${xBaseFormatMessageContent(text,{})}</div>` : '';
                 return `<div class="x-multi-attachments">${blocks}</div>${textHtml}`;
             }
+            if (msg && msg.storageMediaOmitted && (msg.isImage || msg.isVideo || msg.isAudio || msg.isFile)) {
+                const kind = msg.isImage ? 'Image' : msg.isVideo ? 'Video' : msg.isAudio ? 'Audio' : 'File';
+                const name = msg.fileName ? `: ${escapeHTML(msg.fileName)}` : '';
+                const size = Number(msg.attSize) > 0 ? ` (${humanSize(msg.attSize)})` : '';
+                const label = getChatHistoryMode() === 'text-only' ? `${kind} omitted by text-only history` : `${kind}${name}${size} · Not stored in this history mode`;
+                const text = typeof rawText === 'string' ? rawText.trim() : '';
+                const textHtml = text && !/^\[(?:Image|Video|Voice Memo|File:)/.test(text) ? `<div class="x-message-text">${xBaseFormatMessageContent(text,{})}</div>` : '';
+                return `<div class="x-multi-attachments"><span class="att-label">${label}</span></div>${textHtml}`;
+            }
+            if (msg && msg.storageMediaOmitted && Number(msg.omittedAttachmentCount) > 0) {
+                const count = Number(msg.omittedAttachmentCount);
+                const text = typeof rawText === 'string' ? rawText.trim() : '';
+                const textHtml = text ? `<div class="x-message-text">${xBaseFormatMessageContent(text,{})}</div>` : '';
+                return `<div class="x-multi-attachments"><span class="att-label">${count} attachment${count===1?'':'s'} omitted by history settings</span></div>${textHtml}`;
+            }
             let html = xBaseFormatMessageContent(rawText,msg);
             if (msg && msg.isImage) html = html.replace('class="chat-media chat-image"', `class="chat-media chat-image" data-gallery-key="${escapeHTML(msg.id)}:0"`);
             if (msg && msg.isVideo) html = html.replace('class="chat-media chat-video"', `class="chat-media chat-video" data-gallery-key="${escapeHTML(msg.id)}:0"`);
@@ -7207,6 +7449,7 @@
 
         // Group/DM message insertion shares the app's merge/persistence/rendering helpers.
         function xAddMessageToChannel(channel, msg) {
+            if (!msg || isMessageTombstoned(msg)) return null;
             let list;
             if (channel === 'global') {
                 messageHistory = mergeHistory(messageHistory,[msg],true);
@@ -7247,7 +7490,7 @@
             const rows = xCurrentList().slice().sort((a,b)=>(a.timestamp||0)-(b.timestamp||0));
             const result = [];
             rows.forEach(m => {
-                if (!m || m.isSystem) return;
+                if (!m || m.isSystem || m.storageMediaOmitted) return;
                 if (Array.isArray(m.attachments)) {
                     m.attachments.forEach((a,i)=>{
                         if (a && (a.kind==='image'||a.kind==='video')) result.push({
@@ -7964,7 +8207,7 @@
             return true;
         }
         function xSendPollVote(msg,optionIndex) {
-            if(!msg||!msg.poll||!Number.isInteger(optionIndex)||optionIndex<0||optionIndex>=msg.poll.options.length)return;
+            if(!msg||!msg.poll||isMessageTombstoned(msg)||!Number.isInteger(optionIndex)||optionIndex<0||optionIndex>=msg.poll.options.length)return;
             const latest=xRebuildPollVotes(msg.poll),mine=latest[myUsername],now=Date.now();
             if(mine && (mine.legacy || now-mine.timestamp>=15000))return;
             if(mine && mine.option===optionIndex)return;
@@ -8025,6 +8268,7 @@
             if(data.type==='POLL_CREATE') {
                 const p={question:data.poll.question,options:data.poll.options.slice(),votes:{},voteEvents:[]};
                 const msg={id:data.id,author:data.author,text:'',poll:p,timestamp:data.timestamp||Date.now(),reactions:{},edited:false,isSystem:false};
+                if(isMessageTombstoned(msg))return;
                 if(channel.startsWith('group:')) {
                     const id=channel.slice(6);const group=xGroups[id];
                     if(!xIsGroupMember(group)||!group.members.includes(data.author))return;
@@ -8045,7 +8289,7 @@
                 if(channel===currentTab)scheduleRenderActiveTabMessages();else markUnread(channel);
             } else if(data.type==='POLL_VOTE') {
                 const msg=xFindPoll(channel,data.pollId);
-                if(!msg||!msg.poll||data.option>=msg.poll.options.length)return;
+                if(!msg||!msg.poll||isMessageTombstoned(msg)||data.option>=msg.poll.options.length)return;
                 const group=channel.startsWith('group:')?xGroups[channel.slice(6)]:null;
                 if(channel.startsWith('group:')&&(!group||!xIsGroupMember(group)||!group.members.includes(data.author)))return;
                 const event={id:data.voteId||`legacy-${data.author}-${data.timestamp||Date.now()}-${data.option}`,author:data.author,option:data.option,timestamp:Number(data.timestamp)||Date.now()};
@@ -8061,7 +8305,7 @@
                 xHandledPollSyncRequests.add(requestKey);
                 if(xHandledPollSyncRequests.size>2000)xHandledPollSyncRequests.clear();
                 const msg=xFindPoll(channel,data.pollId);
-                if(!msg||!msg.poll)return;
+                if(!msg||!msg.poll||isMessageTombstoned(msg))return;
                 const group=channel.startsWith('group:')?xGroups[channel.slice(6)]:null;
                 if(channel.startsWith('group:')&&(!group||!xIsGroupMember(group)||!group.members.includes(data.author)))return;
                 const events=Array.isArray(msg.poll.voteEvents)?msg.poll.voteEvents:[];
@@ -8139,18 +8383,9 @@
                     if(data.oldAuthor&&data.author)xRenameEverywhere(data.oldAuthor,data.author,data.timestamp||Date.now());
                     return;
                 }
-                if(data.type==='DELETE_MSG' && typeof data.channel==='string' && data.channel.startsWith('group:')) {
-                    const gid=data.channel.slice(6), group=xGroups[gid], list=xGroupHistories[gid]||[];
-                    if(group&&xIsGroupMember(group)&&group.members.includes(data.deleter)&&(data.deleter===data.author||ADMINS.includes(data.deleter))){
-                        addMsgTombstone(data.id,Number(data.timestamp)||Date.now());
-                        const idx=list.findIndex(m=>m.id===data.id);
-                        if(idx!==-1&&(list[idx].author===data.deleter||ADMINS.includes(data.deleter))){list.splice(idx,1);xStoreGroupHistory(gid);if(currentTab===`group:${gid}`)scheduleRenderActiveTabMessages();}
-                    }
-                    return;
-                }
-                if(data.type==='RESTORE_MSG' && typeof data.channel==='string' && data.channel.startsWith('group:')) {
-                    const gid=data.channel.slice(6), incoming=data.message, at=Number(data.timestamp)||0, group=xGroups[gid];
-                    if(incoming&&incoming.id===data.id&&at>(msgTombstoneTimes.get(data.id)||0)&&group&&xIsGroupMember(group)&&group.members.includes(data.author)){const restored={...incoming,restoredAt:at,restoreTimestamp:at};xGroupHistories[gid]=mergeHistory(xGroupHistories[gid]||[],[restored],true);xStoreGroupHistory(gid);if(currentTab===`group:${gid}`)scheduleRenderActiveTabMessages();}
+                if((data.type==='DELETE_MSG'||data.type==='RESTORE_MSG') && typeof data.channel==='string' && data.channel.startsWith('group:')) {
+                    // The primary MQTT listener owns deletion/restoration for every
+                    // channel; do not run a second, differently-authorized path here.
                     return;
                 }
                 if(data.type==='GROUP_MSG') {
@@ -8160,6 +8395,7 @@
                     const msg={id:data.id,author:data.author,text:data.text||'',attachments:data.attachments||[],
                         replyTo:data.replyTo||null,timestamp:data.timestamp||Date.now(),edited:false,reactions:data.reactions||{},
                         groupId:data.groupId,isSystem:false};
+                    if(isMessageTombstoned(msg))return;
                     const existed=(xGroupHistories[data.groupId]||[]).some(m=>m.id===msg.id);
                     if(xClosedGroups.has(data.groupId)){xClosedGroups.delete(data.groupId);xSaveClosedGroups();}
                     xEnsureGroupTab(data.groupId);
@@ -8287,8 +8523,14 @@
             if(m && Array.isArray(m.attachments) && mode!=='full-media') {
                 if(cutoff&&Number.isFinite(m.timestamp)&&m.timestamp<cutoff)return null;
                 const copy={...m,storageMediaOmitted:true,omittedAttachmentCount:m.attachments.length};
-                delete copy.attachments;
                 delete copy.thumb;
+                if(mode==='text-only') delete copy.attachments;
+                else copy.attachments=m.attachments.map(a=>{
+                    if(!a||typeof a!=='object')return a;
+                    const meta={id:a.id,name:a.name,mime:a.mime,kind:a.kind,size:a.size};
+                    Object.keys(meta).forEach(k=>{if(meta[k]===undefined||meta[k]==='')delete meta[k];});
+                    return meta;
+                });
                 return copy;
             }
             return xBaseStorableMessage(m,cutoff,mode);
@@ -8300,6 +8542,13 @@
         gcAttachments=async function() {
             try {
                 const db=await dbOpen(), refs=new Set();
+                // Deleted-message snapshots remain undoable for this tab session.
+                // Keep their content-addressed blobs alive until the undo entry expires.
+                (Array.isArray(undoStack)?undoStack:[]).forEach(entry=>{
+                    const m=entry&&entry.message;if(!m)return;
+                    if(typeof m.text==='string'&&isAttRef(m.text))refs.add(m.text.slice(4));
+                    (Array.isArray(m.attachments)?m.attachments:[]).forEach(a=>{if(a&&ATT_ID_RE.test(a.id||''))refs.add(a.id);});
+                });
                 await new Promise((resolve,reject)=>{
                     const req=db.transaction('msgs').objectStore('msgs').openCursor();
                     req.onsuccess=()=>{
@@ -8328,7 +8577,7 @@
                     await dbWrite(['atts'],tx=>{const st=tx.objectStore('atts');stale.forEach(id=>st.delete(id));});
                     stale.forEach(id=>{attHave.delete(id);const u=attUrlCache.get(id);if(u){URL.revokeObjectURL(u);attUrlCache.delete(id);}});
                 }
-            } catch(e) { try { await xBaseGcAttachments(); } catch(e2) {} }
+            } catch(e) { console.warn('Attachment cleanup skipped; preserving files for safety.',e); }
         };
 
         // Include new attachment metadata in synced message objects from the existing
@@ -8433,7 +8682,9 @@
         buildManifest=function(forPeer) {
             const manifest=xBaseBuildManifestGroups(forPeer);
             manifest.groups={};
-            manifest.groupTomb = { ids: Array.from(msgTombstones).slice(-500), times: Object.fromEntries(Array.from(msgTombstoneTimes.entries()).slice(-500)) };
+            // Keep the old group tombstone field bounded but generous for pre-pagination clients.
+            const legacyGroupTombIds = Array.from(msgTombstones).slice(-500);
+            manifest.groupTomb = { ids: legacyGroupTombIds, times: Object.fromEntries(legacyGroupTombIds.map(id => [id, msgTombstoneTimes.get(id) || 0])) };
             Object.values(xGroups).forEach(group=>{
                 if(!xIsGroupMember(group)||(forPeer&&!group.members.includes(forPeer)))return;
                 const list=xGroupHistories[group.id]||[];
@@ -8450,10 +8701,8 @@
         handleManifest=function(data) {
             xBaseHandleManifestGroups(data);
             if(!data||data.target!==myUsername||!isValidUsername(data.author)||blockedUsers.has(data.author))return;
-            let changedGroupTombs=false;
-            const gt=data.groupTomb||{};
-            (gt.ids||[]).forEach(id=>{const at=Number(gt.times&&gt.times[id])||0,prior=msgTombstoneTimes.get(id)||0;if(!msgTombstones.has(id)||at>prior){msgTombstones.add(id);msgTombstoneTimes.set(id,at);changedGroupTombs=true;}});
-            if(changedGroupTombs){saveTombstones();Object.keys(xGroupHistories).forEach(id=>{xGroupHistories[id]=applyTombstonesToList(xGroupHistories[id]||[]);xStoreGroupHistory(id);});if(currentTab.startsWith('group:'))scheduleRenderActiveTabMessages();}
+            // The base manifest handler already merges both global and group tombstones
+            // and reapplies them to every loaded history.
             const groups=data.groups&&typeof data.groups==='object'?data.groups:{};
             Object.entries(groups).forEach(([id,record])=>{
                 const group=xGroups[id];
