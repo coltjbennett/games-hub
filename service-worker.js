@@ -39,6 +39,7 @@ const CORE = [
   "./applets/web_proxy_browser_applet.html",
   "./changelog.txt",
   "./data.js",
+  "./games/abyssal-station.html",
   "./games/asphalt-rush.html",
   "./games/badracingsim.html",
   "./games/chronostrike.html",
@@ -131,6 +132,7 @@ const CORE = [
 const IMAGES = [
   "./images/Beam.cur",
   "./images/Cursor_15.cur",
+  "./images/abyssal-station.jpg",
   "./images/IMG_1002.jpeg",
   "./images/IMG_1604.jpeg",
   "./images/IMG_1605.jpeg",
