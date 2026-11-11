@@ -1,7 +1,7 @@
 // data.js
 
 const siteData = {
-  version: "v4.6.0",
+  version: "v4.6.1",
   author: "COLTON BENNETT",
   location: "Waukesha, WI",
   heroTitle: "Project Launcher",
@@ -51,11 +51,23 @@ const announcements = [
  * (it moves to Games > "Unfinished / Poor Quality" and out of Tapey's random picks). */
 const projects = [
   {
+    title: 'Abyssal Station',
+    url: 'games/abyssal-station.html',
+    image: 'images/abyssal-station.jpg',
+    alt: 'Abyssal Station',
+    statusKey: 'new',
+    type: 'Survival',
+    tags: ['Underwater', 'Base Building', 'Survival', 'Under Development'],
+    description: 'Dive into the depths of an expansive underwater world, where every wreck holds a story and every expedition brings you closer to the truth. Scavenge, build, craft, and explore as you follow the trail of a missing scientist and uncover the secrets buried beneath the ocean… …some of which were never meant to be found.',
+    featured: false,
+    'desktop-feature': true,
+  },
+  {
     title: 'Asphalt Rush',
     url: 'games/asphalt-rush.html',
     image: 'images/IMG_2376.jpeg',
     alt: 'Asphalt Rush',
-    statusKey: 'new',
+    statusKey: 'complete',
     type: 'Racing',
     tags: ['Street Racing', 'Customization', 'Driving', 'Racing', 'City', 'Underground', 'Under development', 'Top Pick'],
     description: 'Race through the night city to earn your respect amongst the other racers, take down the corrupt police, and buy, customize, and upgrade your rides to stay competitive!',
