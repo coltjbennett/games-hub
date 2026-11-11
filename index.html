@@ -1,366 +1,471 @@
 <!DOCTYPE html>
-<html lang="en" data-scheme="standard" data-crt="standard">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <!-- Boot sequence: must stay the first script so it covers the page before anything else loads. -->
-  <script src="boot.js"></script>
-  <script src="no-zoom.js"></script>
-  <!-- Static teal = the color link-preview cards (Discord, iMessage, Slack...) pick up, since they do not run scripts.
-       The script below switches it to black for real browsers so the tab bar stays black. -->
-  <meta name="theme-color" content="#008080" />
-  <meta name="color-scheme" content="light" />
-  <meta name="description" content="Colton Bennett's ColtonOS 95 — a Windows 95-style browser desktop with original games, classic arcade remakes, utilities, a chatroom, and a web arcade." />
-  <meta property="og:title" content="ColtonOS 95" />
-  <meta property="og:description" content="A Windows 95-style desktop full of games, classics, and apps." />
-  <meta property="og:type" content="website" />
-  <title>ColtonOS 95</title>
-  <link rel="icon" href="images/icon.JPG" />
-  <link rel="preload" href="images/w95f.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="styles.css" />
-  <link rel="manifest" href="manifest.webmanifest" />
-  <script>
-    (function () { var m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = '#000000'; }());
-  </script>
-  <script>
-    /* Apply saved look before first paint so there is no flash of the wrong scheme. */
-    (function () {
-      try {
-        var s = JSON.parse(localStorage.getItem('gh-desktop-v2') || '{}'), h = document.documentElement;
-        if (s.scheme) h.dataset.scheme = s.scheme;
-        if (s.crt) h.dataset.crt = s.crt;
-        if (s.desktopColor) h.style.setProperty('--desktop', s.desktopColor);
-        if (s.reducedMotion) h.classList.add('reduced-motion');
-        if (s.highContrast) h.classList.add('high-contrast');
-        if (s.lowPower) h.classList.add('low-power');
-        if (s.compact) h.classList.add('compact-mode');
-        if (s.wallpaper === 'none') h.classList.add('no-wallpaper');
-        if (s.textScale) h.style.setProperty('--text-scale', String(s.textScale));
-      } catch (e) {}
-    }());
-  </script>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Abyssal Station</title>
+<style>
+*{box-sizing:border-box;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:#000;overflow:hidden;font:12px Tahoma,"MS Sans Serif",Arial,sans-serif;color:#000;touch-action:none}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+.w{background:#c0c0c0;border:2px solid;border-color:#fff #000 #000 #fff;box-shadow:inset -1px -1px #808080,inset 1px 1px #dfdfdf;padding:3px}
+.tb{background:linear-gradient(90deg,#000080,#1084d0);color:#fff;font-weight:bold;padding:3px 6px;margin-bottom:6px}
+.b{background:#c0c0c0;border:2px solid;border-color:#fff #000 #000 #fff;box-shadow:inset -1px -1px #808080;padding:7px 12px;font:inherit;color:#000;cursor:pointer;min-height:34px}
+.b:active,.b.on{border-color:#000 #fff #fff #000;box-shadow:inset 1px 1px #808080}
+.b:disabled{color:#808080}
+#menu{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,20,40,.72);z-index:20;padding:8px;overflow:auto}
+#menu .w{max-width:470px;width:100%;position:relative;padding-bottom:34px}
+#menu p{margin:6px 8px;line-height:1.4}
+.row{display:flex;gap:6px;flex-wrap:wrap;margin:8px}
+#hud{position:fixed;inset:0;pointer-events:none;display:none;z-index:5}
+#bars{position:absolute;left:8px;top:8px;width:170px}
+.bar{height:12px;background:#404040;border:1px solid #000;margin:3px 0;position:relative}
+.bar i{display:block;height:100%;width:50%}
+#o2f{background:#30c0ff}#hpf{background:#e03030}
+#top{position:absolute;right:8px;top:8px;text-align:right;color:#fff;text-shadow:1px 1px #000;font-weight:bold;line-height:1.5}
+#obj{position:absolute;left:50%;top:8px;transform:translateX(-50%);max-width:46vw;text-align:center}
+#obj div{background:rgba(0,0,40,.65);color:#fff;border:1px solid #fff;padding:4px 8px;text-shadow:1px 1px #000}
+#arr{display:inline-block;transition:none}
+#cross{position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;border:1px solid #fff;border-radius:50%;opacity:.7}
+#sub{position:absolute;left:50%;bottom:12%;transform:translateX(-50%);width:min(490px,88vw);max-width:88vw;text-align:left}
+#sub .w{display:none;padding:7px;background:rgba(6,22,36,.93)}#sub .tb{display:flex;align-items:center;gap:8px;margin-bottom:5px;padding-bottom:4px}#sub #say{font-size:12px;line-height:1.35;padding:1px 4px 3px!important}#whoSprite{width:48px;height:48px;image-rendering:pixelated;border:2px solid #397b91;background:#06121c;flex:none}
+#prompt{position:absolute;left:50%;top:58%;transform:translateX(-50%);color:#fff;font-weight:bold;text-shadow:1px 1px #000;text-align:center}
+#toast{position:absolute;left:50%;top:22%;transform:translateX(-50%);color:#fff;font:bold 18px Tahoma,Arial;text-shadow:2px 2px #000;text-align:center;opacity:0;transition:opacity .4s}
+#bp{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:15;display:none;width:min(380px,94vw);max-height:90vh;overflow:auto}
+#bp .b{display:block;width:100%;margin:4px 0;text-align:left}
+#bp small{display:block;color:#404040}
+#touch{position:fixed;inset:0;z-index:4;display:none}
+body.tch #touch{display:block}
+#stk{position:absolute;width:110px;height:110px;margin:-55px;border-radius:50%;border:2px solid rgba(255,255,255,.5);background:rgba(255,255,255,.1);display:none}
+#knb{position:absolute;left:35px;top:35px;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.55)}
+.tbtn{position:absolute;width:54px;height:54px;border-radius:50%;background:rgba(192,192,192,.6);border:2px solid #fff;color:#000;font:bold 12px Tahoma,Arial;display:flex;align-items:center;justify-content:center;pointer-events:auto}
+.tbtn.on{background:rgba(255,255,255,.9)}
+#pz{position:absolute;right:8px;top:70px;pointer-events:auto;display:none}
+body.tch #pz{display:block}
+@media (max-height:480px){#bars{width:130px}#sub{bottom:4%}}
+.w{background:rgba(6,22,36,.86);border:1px solid #2a8fb4;box-shadow:0 4px 24px rgba(0,0,0,.5);border-radius:8px;padding:10px;color:#dff6ff}
+.tb{background:none;color:#5fe0ff;letter-spacing:.12em;text-transform:uppercase;font-weight:700;padding:0 0 6px;margin:0 0 8px;border-bottom:1px solid #2a8fb4}
+.b{background:#0d3b55;color:#e8fbff;border:1px solid #2a8fb4;border-radius:6px;box-shadow:none;padding:8px 14px}
+.b:active,.b.on{background:#17709a;border-color:#7fe6ff;box-shadow:none}
+.b:disabled{color:#5b7c8c;background:#0a2536}
+#menu{background:radial-gradient(ellipse at center,rgba(0,40,70,.55),rgba(0,8,16,.9))}
+#bp small{color:#8fc3d6}#obj div{border-radius:6px;border-color:#2a8fb4}
+html,body{font-family:"Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;color:#dff6ff}
+#flash{position:absolute;inset:0;background:radial-gradient(transparent 35%,rgba(255,0,0,.65));opacity:0;transition:opacity .35s}
+.tbtn.pl{display:none}body.plc .tbtn.pl{display:flex}
+@media (max-height:480px){.tbtn{width:46px;height:46px;font-size:10px}}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="hud">
+ <div id="bars"><div class="w" style="padding:4px"><b>O<sub>2</sub></b><div class="bar"><i id="o2f"></i></div><b>HULL</b><div class="bar"><i id="hpf"></i></div><span id="res"></span></div></div>
+ <div id="top"><span id="dep">0 m</span><br><span id="suit"></span><br><span id="zone"></span></div>
+ <div id="obj"><div><span id="arr">▲</span> <span id="ot"></span> <span id="od"></span></div></div>
+ <div id="flash"></div><div id="cross"></div><div id="prompt"></div><div id="toast"></div>
+ <div id="sub"><div class="w"><div class="tb"><img id="whoSprite" alt="Speaker portrait"><span id="who"></span></div><div id="say" style="padding:2px 6px 6px"></div></div></div>
+ <div id="pz"><button class="b" id="pzb" style="pointer-events:auto">❚❚</button></div>
+</div>
+<div id="touch"><div id="stk"><div id="knb"></div></div></div>
+<div id="bp" class="w"><div class="tb">Fabricator - BUILD / CRAFT <span style="float:right;cursor:pointer" id="bx">[X]</span></div><div id="bl"></div></div>
+<div id="menu"><div class="w"><div class="tb">Abyssal Station</div><div id="mc"></div></div></div>
+<script>
+(async()=>{'use strict';
+const $=id=>document.getElementById(id),cv=$('c'),LS=(k,v)=>{try{return v===undefined?localStorage.getItem(k):localStorage.setItem(k,v)}catch(e){return null}};
+const ld=u=>new Promise((ok,no)=>{const e=document.createElement('script');e.src=u;e.onload=ok;e.onerror=no;document.head.appendChild(e)});
+$('mc').innerHTML='<p>Loading engine...</p>';
+for(const u of['https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js','https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js']){try{await ld(u);if(window.THREE)break}catch(e){}}
+let CANNON=null;for(const u of['https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js','https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js']){try{CANNON=await import(u);break}catch(e){}}
+if(!window.THREE||!CANNON){$('mc').innerHTML='<p>Abyssal Station could not load three.js / cannon-es. Check your connection and reload (the hub caches them for offline play after one online visit).</p>';return}
+const THREE=window.THREE;
+/* ---------- math ---------- */
+const sm=t=>(t=Math.max(0,Math.min(1,t)))*t*(3-2*t),mix=(a,b,t)=>a+(b-a)*t,cl=(v,a,b)=>Math.max(a,Math.min(b,v));
+const hs=(x,y)=>{const h=Math.sin(x*127.1+y*311.7)*43758.5453;return h-Math.floor(h)};
+function nz(x,y){const i=Math.floor(x),j=Math.floor(y),u=sm(x-i),v=sm(y-j);return hs(i,j)*(1-u)*(1-v)+hs(i+1,j)*u*(1-v)+hs(i,j+1)*(1-u)*v+hs(i+1,j+1)*u*v}
+let sd=7;const R=()=>(sd=(sd*1664525+1013904223)>>>0)/4294967296;
+/* ---------- mesh builder ---------- */
+class MB{constructor(){this.v=[]}
+t(a,b,c,k,w=0){const ux=b[0]-a[0],uy=b[1]-a[1],uz=b[2]-a[2],vx=c[0]-a[0],vy=c[1]-a[1],vz=c[2]-a[2];let nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nq=ux*vy-uy*vx;const l=Math.hypot(nx,ny,nq)||1;nx/=l;ny/=l;nq/=l;for(const p of[a,b,c])this.v.push(p[0],p[1],p[2],nx,ny,nq,k[0],k[1],k[2],w)}
+q(a,b,c,d,k,w){this.t(a,b,c,k,w);this.t(a,c,d,k,w)}
+box(x,y,z,sx,sy,sz,k,w=0){const X=sx/2,Y=sy/2,Z=sz/2,P=(i,j,l)=>[x+i*X,y+j*Y,z+l*Z];
+this.q(P(-1,-1,1),P(1,-1,1),P(1,1,1),P(-1,1,1),k,w);this.q(P(1,-1,-1),P(-1,-1,-1),P(-1,1,-1),P(1,1,-1),k,w);this.q(P(1,-1,1),P(1,-1,-1),P(1,1,-1),P(1,1,1),k,w);this.q(P(-1,-1,-1),P(-1,-1,1),P(-1,1,1),P(-1,1,-1),k,w);this.q(P(-1,1,1),P(1,1,1),P(1,1,-1),P(-1,1,-1),k,w);this.q(P(-1,-1,-1),P(1,-1,-1),P(1,-1,1),P(-1,-1,1),k,w)}
+blob(x,y,z,rx,ry,rz,k,w=0,s=5){const g=[],n=s*2;for(let i=0;i<=s;i++){const a=Math.PI*i/s;g.push([]);for(let j=0;j<n;j++){const b=Math.PI*2*j/n;g[i].push([x+rx*Math.sin(a)*Math.cos(b),y+ry*Math.cos(a),z+rz*Math.sin(a)*Math.sin(b)])}}
+for(let i=0;i<s;i++)for(let j=0;j<n;j++){const j2=(j+1)%n;this.q(g[i][j],g[i][j2],g[i+1][j2],g[i+1][j],k,w)}}
+cyl(x,y,z,r0,r1,h,k,w=0,s=6){for(let j=0;j<s;j++){const a=Math.PI*2*j/s,b=Math.PI*2*(j+1)/s;this.q([x+r0*Math.cos(a),y,z+r0*Math.sin(a)],[x+r1*Math.cos(a),y+h,z+r1*Math.sin(a)],[x+r1*Math.cos(b),y+h,z+r1*Math.sin(b)],[x+r0*Math.cos(b),y,z+r0*Math.sin(b)],k,w)}}
+toGeo(a){const n=a.length/10,p=new Float32Array(n*3),nr=new Float32Array(n*3),c=new Float32Array(n*3);for(let i=0;i<n;i++){const o=i*10;p.set(a.slice(o,o+3),i*3);nr.set(a.slice(o+3,o+6),i*3);c.set(a.slice(o+6,o+9),i*3)}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(p,3));g.setAttribute('normal',new THREE.BufferAttribute(nr,3));g.setAttribute('color',new THREE.BufferAttribute(c,3));g.computeBoundingSphere();return g}
+up(){return this.toGeo(this.v)}
+chunks(sz){const m=new Map(),v=this.v;for(let i=0;i<v.length;i+=30){const k=Math.floor((v[i]+v[i+10]+v[i+20])/3/sz)+','+Math.floor((v[i+2]+v[i+12]+v[i+22])/3/sz);let a=m.get(k);if(!a)m.set(k,a=[]);for(let j=0;j<30;j++)a.push(v[i+j])}return[...m.values()].map(a=>this.toGeo(a))}}
+const hex=(h,j=0)=>{const n=parseInt(h.slice(1),16),r=1+(R()-.5)*j;return[(n>>16)/255*r,(n>>8&255)/255*r,(n&255)/255*r]};
+/* ---------- three setup ---------- */
+let renderer;try{renderer=new THREE.WebGLRenderer({canvas:cv,antialias:!matchMedia('(pointer:coarse)').matches,powerPreference:'high-performance'})}catch(e){$('mc').innerHTML='<p>Abyssal Station needs WebGL, which this browser or device has disabled.</p>';return}
+const scene=new THREE.Scene(),cam=new THREE.PerspectiveCamera(72,1,.15,400),fogc=new THREE.Color();cam.rotation.order='YXZ';scene.add(cam);scene.background=fogc;scene.fog=new THREE.FogExp2(0x103040,.02);
+const amb=new THREE.AmbientLight(0x88aacc,.6),sun=new THREE.DirectionalLight(0xffffff,.6);sun.position.set(.3,.9,.3);scene.add(amb,sun);
+const lamp=new THREE.SpotLight(0xfff2c0,2,60,.5,.5,1),lt=new THREE.Object3D();lt.position.set(0,0,-1);cam.add(lamp,lt);lamp.target=lt;const pls=[0,1,2].map(()=>{const l=new THREE.PointLight(0xfff0c0,0,30,1.6);scene.add(l);return l});
+const mLit=new THREE.MeshPhongMaterial({vertexColors:true,shininess:4,specular:0x111111}),mLam=new THREE.MeshLambertMaterial({vertexColors:true}),mGlow=new THREE.MeshBasicMaterial({vertexColors:true});
+/* ---------- world ---------- */
+const HALF=150,N=120,CS=HALF*2/N,STN=[0,-78],ARN=[0,-132],SW=[28,92],BUOY=[-72,8];
+function H(x,z){const d=Math.hypot(x,z);let h=-2-Math.min(d,220)*.28;h+=(nz(x*.03,z*.03)-.5)*14+(nz(x*.12,z*.12)-.5)*3;
+h-=sm((-z-45)/75)*82;if(x<-35)h-=sm((-x-35)/40)*6;if(x>70)h-=sm((x-70)/30)*14;
+h=mix(h,-56,1-sm((Math.hypot(x-STN[0],z-STN[1])-17)/12));h=mix(h,-112,1-sm((Math.hypot(x-ARN[0],z-ARN[1])-30)/14));
+const dk=Math.hypot(x,z-8);if(dk<22)h=Math.min(h,-3-dk*.2);return h}
+const SOL=[],VENTS=[],NOD=[];/* solid boxes [x0,y0,z0,x1,y1,z1] */
+const sbox=(m,x,y,z,sx,sy,sz,k,w,solid=1)=>{m.box(x,y,z,sx,sy,sz,k,w);if(solid)SOL.push([x-sx/2,y-sy/2,z-sz/2,x+sx/2,y+sy/2,z+sz/2])};
+const mT=new MB(),mS=new MB(),mG=new MB(),KEL=[];
+(function build(){
+for(let i=0;i<N;i++)for(let j=0;j<N;j++){const x0=-HALF+i*CS,z0=-HALF+j*CS,x1=x0+CS,z1=z0+CS,a=[x0,H(x0,z0),z0],b=[x1,H(x1,z0),z0],c=[x1,H(x1,z1),z1],d=[x0,H(x0,z1),z1];
+const col=(p,sl)=>{const dp=-p[1],g=nz(p[0]*.2,p[2]*.2);let k=dp<14?[.8,.74,.52]:dp<45?[.5,.5,.42]:dp<90?[.3,.34,.36]:[.22,.2,.26];if(p[0]<-40&&dp>8)k=[.28,.42,.3];if(sl>.55)k=[.4,.38,.4];if(Math.hypot(p[0]-ARN[0],p[2]-ARN[1])<30)k=[.2,.17,.24];return k.map(v=>v*(.85+g*.3))};
+mT.t(a,d,c,col(a,0),0);mT.t(a,c,b,col(a,0),0)}
+// fix slope colour using face normals is skipped for speed; rocks add variation
+for(let i=0;i<260;i++){const x=(R()-.5)*290,z=(R()-.5)*290;if(Math.hypot(x,z-8)<24)continue;const y=H(x,z),s=1+R()*3;mS.blob(x,y+s*.3,z,s,s*.7,s*.9,hex('#6a6a70',.3),0,4)}
+for(let i=0;i<340;i++){let x=(R()-.5)*290,z=(R()-.5)*290;if(i<240)x=-40-R()*105;const y=H(x,z);if(y>-5||Math.hypot(x-STN[0],z-STN[1])<22||z<-60)continue;const hh=4+R()*7,k=hex(i%3?'#2f8a3c':'#4aa83a',.25);
+for(let s=0;s<4;s++){const w=(s+1)/4;mS.box(x+Math.sin(s)*.25,y+s*hh/4+hh/8,z,.3,hh/4,.3,k,w)}KEL.push({x,y:y+1.2,z,cd:0})}
+for(let i=0;i<90;i++){const x=(R()-.5)*200,z=(R()-.2)*160,y=H(x,z);if(y>-4||z<-40)continue;const k=hex(['#e0507a','#e09030','#a050d0'][i%3],.2);for(let s=0;s<4;s++)mS.box(x+R()-.5,y+1+R(),z+R()-.5,.5,1.6+R()*1.5,.5,k,0.1)}
+// dock + barge
+const dk=hex('#8a6a42',.1),dg=hex('#707078');sbox(mS,0,.9,6,12,.5,9,dk,0);for(const[x,z]of[[-5,2],[5,2],[-5,10],[5,10]])mS.box(x,-4,z,.6,10,.6,dk);
+sbox(mS,0,.5,-12,18,3,7,hex('#b03030'),0);sbox(mS,-3,3.2,-12,6,3,5,hex('#e0e0e0'),0);mS.box(5,6,-12,.4,9,.4,dg);mG.blob(5,10.6,-12,.5,.5,.5,[1,.2,.2],0,3);mS.box(0,.8,-5.5,3,.2,3,dg);
+// wreck
+const[wx,wz]=SW,wy=H(wx,wz),wk=hex('#6a5a4a',.2),wr=hex('#7a3a2a',.2);sbox(mS,wx,wy+3,wz,22,5,7,wk,0);sbox(mS,wx-4,wy+7,wz,7,4,6,wr,0);mS.box(wx+7,wy+10,wz,.7,10,.7,wk);mS.box(wx-12,wy+1,wz+4,8,2,3,wk);sbox(mS,wx+14,wy+2,wz-5,5,3,4,wr,0);mG.blob(wx,wy+6,wz+3.6,.6,.6,.3,[1,.8,.2],0,3);
+// buoy
+const by=H(BUOY[0],BUOY[1]);mS.cyl(BUOY[0],by,BUOY[1],.5,.5,5,hex('#e0c020'),0);mG.blob(BUOY[0],by+5.4,BUOY[1],.5,.5,.5,[1,.3,.2],0,3);
+// station
+const sx=STN[0],sz=STN[1],sy=-56,wl=hex('#7d8794',.08),fl=hex('#4a525c');
+sbox(mS,sx,sy+.1,sz,22,.4,22,fl,0);sbox(mS,sx,sy+10,sz,22,.8,22,wl,0);
+sbox(mS,sx-11,sy+5,sz,.8,10,22,wl,0);sbox(mS,sx+11,sy+5,sz,.8,10,22,wl,0);sbox(mS,sx,sy+5,sz-11,22,10,.8,wl,0);
+sbox(mS,sx-7.5,sy+5,sz+11,7,10,.8,wl,0);sbox(mS,sx+7.5,sy+5,sz+11,7,10,.8,wl,0);sbox(mS,sx,sy+8.5,sz+11,8,3,.8,wl,0);
+for(let i=-3;i<=3;i+=2){sbox(mS,sx-9,sy+2.2,sz+i*2.4,1.6,4,1.6,hex('#303840'),0);mG.box(sx-8.1,sy+3.3,sz+i*2.4,.1,.35,.9,i%4?[.2,1,.5]:[.3,.6,1],0)}
+sbox(mS,sx+8,sy+1.5,sz-6,3,3,3,hex('#303840'),0);mG.box(sx+6.4,sy+2.2,sz-6,.1,1.4,2,[.3,1,.5],0);mG.box(sx,sy+9.5,sz,10,.2,.6,[.8,.9,1],0);
+mG.box(sx,sy+2,sz-10.4,3,2,.1,[.2,.9,1],0);
+for(let k=0;k<4;k++)mG.box(sx-10,sy+9.8,sz-8+k*5,.4,.2,.4,[1,.8,.4],0);
+// arena nodes + pillars
+for(let i=0;i<3;i++){const a=i*2.094+.5,x=ARN[0]+Math.cos(a)*17,z=ARN[1]+Math.sin(a)*17,y=H(x,z);mS.cyl(x,y,z,1.3,.9,3,hex('#40303c'),0)}
+for(let i=0;i<60;i++){const a=R()*6.28,r=18+R()*60,x=ARN[0]+Math.cos(a)*r,z=ARN[1]+Math.sin(a)*r;mS.box(x,H(x,z)+1,z,.8+R()*1.4,.5,1+R(),hex(['#b8b8c0','#e0d070','#7090d0'][i%3],.2),0)}
 
-  <!--
-    Terms/consent state is versioned here because main.js historically stored
-    only `tosAccepted=true`. The homepage now treats the Terms version as the
-    source of truth and invalidates acceptance from older versions.
-  -->
-  <script>
-    (function () {
-      var CURRENT_TOS_VERSION = '2026-10-08';
-      window.CURRENT_TOS_VERSION = CURRENT_TOS_VERSION;
-      window.dataLayer = window.dataLayer || [];
-      window.__siteAnalyticsLoaded = false;
-
-      try {
-        var storedVersion = window.localStorage.getItem('tosAcceptedVersion');
-        if (storedVersion !== CURRENT_TOS_VERSION) {
-          // Force the site's existing TOS modal to appear for a new Terms version.
-          window.localStorage.removeItem('tosAccepted');
-          window.localStorage.removeItem('tosAcceptedVersion');
-        }
-      } catch (error) {
-        // If storage is unavailable, main.js will keep the Terms modal visible.
-      }
-
-      function loadAnalytics() {
-        if (window.__siteAnalyticsLoaded) return;
-        window.__siteAnalyticsLoaded = true;
-
-        window.gtag = window.gtag || function () { window.dataLayer.push(arguments); };
-        window.gtag('js', new Date());
-        window.gtag('config', 'G-TLMGMFFK63', {
-          allow_google_signals: false,
-          allow_ad_personalization_signals: false
-        });
-
-        var script = document.createElement('script');
-        script.async = true;
-        script.src = 'https://www.googletagmanager.com/gtag/js?id=G-TLMGMFFK63';
-        script.setAttribute('data-site-purpose', 'post-tos-analytics');
-        document.head.appendChild(script);
-      }
-
-      window.enableSiteAnalytics = loadAnalytics;
-
-      // Only load Analytics when the current Terms version has actually been accepted.
-      try {
-        if (window.localStorage.getItem('tosAcceptedVersion') === CURRENT_TOS_VERSION &&
-            window.localStorage.getItem('tosAccepted') === 'true') {
-          loadAnalytics();
-        }
-      } catch (error) {
-        // If storage is unavailable, wait for an explicit Terms acceptance.
-      }
-    }());
-  </script>
-</head>
-<body>
-  <noscript>
-    <p style="position:fixed;inset:0;margin:0;padding:24px;background:#008080;color:#fff;font-family:'W95FA','MS Sans Serif',sans-serif;font-size:16px">
-      ColtonOS 95 needs JavaScript to run. Please enable JavaScript and reload this page.
-    </p>
-  </noscript>
-
-  <!-- Screen-reader announcements for window changes -->
-  <div id="a11y-live" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
-
-  <main id="desktop" aria-label="ColtonOS desktop">
-    <div id="wallpaper" aria-hidden="true"><img src="images/winBG.PNG" alt="" decoding="async" draggable="false" /></div>
-    <div id="icon-layer" role="listbox" aria-label="Desktop icons. Use arrow keys to move between icons, Enter to open, Alt plus arrow keys to move an icon." aria-multiselectable="true"></div>
-    <div id="windows-layer"></div>
-  </main>
-
-  <nav class="taskbar" id="taskbar" aria-label="Taskbar">
-    <button type="button" class="tb-btn tb-start" id="start-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="start-menu" aria-keyshortcuts="Control+Escape Meta">
-      <img src="images/windows.png" alt="" width="20" height="20" /><span>Start</span>
-    </button>
-    <div class="tb-sep" role="separator"></div>
-    <div class="tb-quick" id="tb-quick" role="toolbar" aria-label="Quick Launch"></div>
-    <div class="tb-sep" role="separator"></div>
-    <div class="tb-tasks" id="tb-tasks" role="toolbar" aria-label="Open windows"></div>
-    <div class="tb-tray" id="tb-tray" role="group" aria-label="System tray"></div>
-  </nav>
-
-  <div id="ping-banner" class="win dialog" role="alert" hidden>
-    <div class="win-title"><span class="wt-text">Notification</span></div>
-    <div class="dialog-body"><img class="di" src="images/icons/info.svg" alt="" width="32" height="32" /><div class="msg" id="ping-banner-text"></div></div>
-  </div>
-
-  <div id="tos-modal-overlay" class="tos-overlay">
-    <div class="win active dialog" role="dialog" aria-modal="true" aria-labelledby="tos-title" aria-describedby="tos-intro">
-      <div class="win-title"><img class="wt-icon" src="images/icons/document.svg" alt="" width="16" height="16" /><span class="wt-text" id="tos-title">Terms of Service</span></div>
-      <div class="win-body">
-        <div class="dialog-pad" style="padding-bottom:4px"><strong>Site Terms of Service &amp; Usage Agreement</strong> — please scroll and read before continuing.</div>
-        <div class="tos-scroll sunken" tabindex="0" role="document" aria-label="Terms of service text">
-          <p><strong>Effective: October 8, 2026 &nbsp;|&nbsp; Version: 2026-10-08</strong></p>
-          <p id="tos-intro"><strong>Please read this before continuing.</strong> By clicking “I ACCEPT &amp; CONTINUE,” you confirm that you have read and understood these Terms, agree to follow them, and consent to the site practices specifically described as part of acceptance. If you do not agree, do not use the site or its community features.</p>
-
-          <h3>1. About These Terms</h3>
-          <p>These Terms govern your use of Colton Bennett’s personal website, project launcher, games, applets, arcade pages, chat/community features, and related services (collectively, the “Site”). The Site is a personal, independently operated project and is not a company, school, employer, or commercial service unless a particular page expressly says otherwise.</p>
-          <p>These Terms are intended to explain the rules and expectations for using the Site. They do not grant you ownership of the Site or its content, and they do not replace rights or obligations that cannot legally be waived.</p>
-
-          <h3>2. Intellectual Property and Site Content</h3>
-          <p>Unless otherwise identified, the original source code, original game designs, original artwork, text, interface designs, branding, and other original material created for the Site are owned by or licensed to Colton Bennett. No general Creative Commons, open-source, or other broad reuse license is granted merely because the Site or its source repository is publicly accessible.</p>
-          <p>You may view and use the Site through its intended interfaces. You may not, without permission, copy, republish, redistribute, sell, sublicense, substantially reproduce, or create a competing public service from the Site’s original material. Nothing in this section is intended to restrict rights granted by applicable law or by a separate license that expressly applies to particular material.</p>
-          <p>Third-party software, games, names, trademarks, libraries, images, music, videos, and other references remain the property of their respective owners and may be governed by separate licenses or terms.</p>
-
-          <h3>3. GitHub Repository and Public Source Availability</h3>
-          <p>The Site may be accompanied by a public GitHub repository. Public availability on GitHub does not, by itself, mean that all repository content is open source or freely reusable. GitHub’s own platform terms govern GitHub functionality, including viewing and forking of public repositories; any broader reuse of original Site material remains subject to the applicable license or permission from its owner.</p>
-
-          <h3>4. AI Crawling, Scraping, and Automated Data Collection</h3>
-          <p>The operator does not grant permission for automated collection of the Site’s original content for AI model training, dataset creation, bulk extraction, or similar data-mining purposes, except where a separate license, legal requirement, or explicit written permission provides otherwise.</p>
-          <ul>
-            <li><strong>Disallowed by policy:</strong> bulk scraping, automated dataset construction, and automated collection whose purpose is AI training or model development.</li>
-            <li><strong>Permitted by policy:</strong> ordinary search indexing and automated retrieval performed in response to a specific real-time request from a human user, provided the retrieval otherwise respects applicable technical and legal restrictions.</li>
-          </ul>
-          <p>This policy is also expressed through the Site’s crawler-related files. It is a statement of the operator’s requested access policy and does not itself determine the legal status of every possible act of crawling or copying.</p>
-
-          <h3>5. Acceptable Use</h3>
-          <p>You may use the Site for lawful personal, educational, entertainment, communicative, and development-related purposes. You agree not to intentionally interfere with the Site, its hosting, its network services, or other users’ access.</p>
-          <p>You may not use the Site to distribute malware, conduct attacks, impersonate another person, attempt unauthorized access, evade moderation in order to abuse other users, deliberately overload infrastructure, or use Site features to facilitate unlawful harm.</p>
-
-          <h3>6. Community Conduct</h3>
-          <p>When using chat or other community features, you must not use the Site for threats, targeted harassment, stalking, doxxing, non-consensual disclosure of private information, sexual exploitation, credible incitement of violence, malicious impersonation, spam, or other abusive conduct.</p>
-          <p>Casual language, jokes, memes, criticism, and disagreement are not automatically prohibited. The operator may intervene when behavior becomes abusive, disruptive, unsafe, unlawful, or materially harmful to the community or Site.</p>
-
-          <h3>7. Chat, Usernames, and Public Visibility</h3>
-          <p>The Site includes a public-facing chat system. Depending on the feature being used, usernames, messages, replies, reactions, presence/activity information, attachments, and other content may be visible to other users.</p>
-          <p><strong>Do not treat chat as private communications.</strong> Other users may copy, screenshot, quote, save, or redistribute information they can see. The operator cannot guarantee that deleting something from the Site will cause every copy made by another person to disappear.</p>
-
-          <h3>8. Public Archives, Backups, and Chat History</h3>
-          <p>Community records may be exported, backed up, archived, synchronized, or otherwise retained as part of operating and maintaining the Site. Some historical records may become publicly accessible, including through repository files or other public Site resources.</p>
-          <p>Because of this, do not submit passwords, financial information, precise location information, private correspondence, medical information, or other sensitive information to public chat or uploads.</p>
-
-          <h3>9. User-Submitted Content</h3>
-          <p>You retain ownership of original content you submit to the extent you legally own it. By submitting content to the Site, you grant the operator a non-exclusive, worldwide, royalty-free license to host, store, reproduce, display, transmit, back up, moderate, format, and distribute that content through Site features as reasonably necessary to operate, maintain, troubleshoot, preserve, or improve the Site and its community history.</p>
-          <p>You represent that you have the rights needed to submit the content and that your submission does not knowingly violate another person’s privacy, intellectual property rights, or applicable law.</p>
-          <p>You may ask the operator to remove content that you submitted, but removal may not be possible from backups, third-party caches, screenshots, copies held by other users, or external services. Nothing in these Terms guarantees deletion from every location once information has been transmitted to the Internet.</p>
-
-          <h3>10. Moderation and Enforcement</h3>
-          <p>The operator may remove, hide, restrict, archive, edit for technical formatting, or refuse to display content. The operator may also restrict, suspend, or terminate access to some or all Site features when reasonably necessary to protect users, the Site, or its operation.</p>
-          <p>Moderation may be performed without prior notice when circumstances require it. No particular moderation response time, preservation period, or level of enforcement is guaranteed. The operator may consider context, severity, repetition, intent, technical limitations, and the effect of conduct on other users.</p>
-
-          <h3>11. Accounts, Identity, and Authentication</h3>
-          <p>The Site may use browser-stored usernames, identifiers, or other client-side state rather than a traditional server-backed account system. Such identifiers should not be treated as proof of legal identity, ownership of a real-world identity, or secure authentication.</p>
-          <p>Do not impersonate another user or deliberately choose an identifier intended to deceive people about who you are. Because the Site is substantially client-side, certain account, moderation, or presence features may not provide the same security guarantees as a conventional server-backed service.</p>
-
-          <h3>12. Analytics and Site Measurement</h3>
-          <p>After acceptance of this version of the Terms, the Site may load Google Analytics for site measurement. The configured implementation is intended to collect information such as page views, approximate geographic information, browser/device characteristics, session information, and interactions with Site features.</p>
-          <p>The Site’s configured event tracking is not intended to send chat messages, chat usernames, email addresses, or other directly identifying information as Analytics event parameters. However, analytics services are operated by third parties and may process technical information under their own terms and policies.</p>
-          <p><strong>Analytics is not described as anonymous.</strong> The information collected by analytics services may be pseudonymous or associated with identifiers used to distinguish sessions or visits. The Site does not control every aspect of Google’s processing once data has been transmitted to Google.</p>
-
-          <h3>13. Privacy and Information Handling</h3>
-          <p>The Site may process information you provide directly and information generated through normal browser operation. Depending on the feature, this can include usernames, messages, uploaded files, preferences, application state, diagnostic information, timestamps, cached content, and technical information needed to operate the Site.</p>
-          <p>The Site does not promise that information transmitted over public Internet services can remain confidential. Information stored in public repositories, public chat exports, public third-party services, or on another user’s device may remain accessible outside the operator’s control.</p>
-          <p>For privacy questions or requests concerning information under the operator’s control, use the contact method made available by the Site or its repository. The operator will make reasonable efforts to respond, but this personal project does not guarantee a particular response time or formal data-subject-request workflow.</p>
-
-          <h3>14. Cookies, Local Storage, IndexedDB, Cache Storage, and Offline Data</h3>
-          <p>The Site may store information locally in your browser using cookies, localStorage, sessionStorage, IndexedDB, Cache Storage, or similar browser mechanisms. This may include preferences, application state, chat history, settings, cached games and applets, offline resources, recent items, and Terms acceptance status.</p>
-          <p>Clearing browser data, using private browsing, changing browsers, or using another device may remove or reset some of this information. The Site cannot guarantee that locally stored information will survive browser updates, storage eviction, device changes, or user-initiated clearing.</p>
-
-          <h3>15. Third-Party Services and External Content</h3>
-          <p>The Site may rely on third-party services, libraries, content delivery networks, APIs, repositories, game hosts, analytics providers, messaging brokers, video platforms, or other external infrastructure. Examples may include GitHub, Google Analytics, HiveMQ/MQTT infrastructure, CDNs, Ruffle, YouTube, and other providers used by individual games or applets.</p>
-          <p>Third-party services have their own availability, security practices, licenses, privacy policies, and terms. The operator does not control those services and cannot guarantee their continued operation or policies.</p>
-
-          <h3>16. Third-Party Games and Linked Material</h3>
-          <p>The Site may provide links, launchers, embeds, or directories for games and other material that were not created by the operator. Such material may be hosted elsewhere and may be subject to separate ownership and licensing terms. The presence of a link or launcher does not necessarily mean the operator owns, endorses, or guarantees the linked content.</p>
-
-          <h3>17. Security and Responsible Testing</h3>
-          <p>You agree not to exploit vulnerabilities, bypass access controls, steal or manipulate information belonging to other users, interfere with infrastructure, distribute malicious code, or intentionally degrade the service.</p>
-          <p>Good-faith security research should be limited to systems and data you are authorized to test, should avoid accessing other users’ private information, and should avoid unnecessary disruption. If you believe you have found a serious security issue, report it through the Site’s published security contact rather than publicly releasing sensitive exploit details first.</p>
-
-          <h3>18. Copyright Complaints and Rights Claims</h3>
-          <p>If you believe material hosted or displayed through the Site infringes your copyright or other legal rights, provide a clear description of the material, identify the work or right involved, explain why you believe the use is unauthorized, and provide a reliable way for the operator to contact you. The operator may remove or restrict disputed material while investigating a legitimate complaint.</p>
-          <p>This section is an informal notice-and-response process for a personal project and is not a statement that the Site qualifies as a designated service provider under any particular statutory safe-harbor regime.</p>
-
-          <h3>19. No Warranties</h3>
-          <p>The Site is provided on an “as is” and “as available” basis, to the fullest extent permitted by law, without warranties of any kind, express or implied. This includes, where legally permitted, warranties of merchantability, fitness for a particular purpose, non-infringement, availability, accuracy, compatibility, or uninterrupted operation.</p>
-          <p>The operator does not guarantee that games will run correctly, that chat history will be preserved, that external services will remain available, or that the Site will be free of bugs or security vulnerabilities.</p>
-
-          <h3>20. Limitation of Liability</h3>
-          <p>To the fullest extent permitted by applicable law, the operator will not be liable for indirect, incidental, special, consequential, exemplary, or punitive damages arising from or related to use of the Site, loss of data, loss of access, third-party services, user-generated content, or inability to use a Site feature.</p>
-          <p>Nothing in these Terms is intended to exclude or limit liability that cannot legally be excluded or limited.</p>
-
-          <h3>21. Indemnification</h3>
-          <p>To the extent permitted by applicable law, if your unlawful or unauthorized use of the Site causes a third party to bring a claim against the operator, you agree to be responsible for losses, damages, liabilities, and reasonable costs directly resulting from that conduct. This provision does not require you to indemnify the operator for the operator’s own unlawful conduct.</p>
-
-          <h3>22. Age Requirement</h3>
-          <p>You must be at least <strong>13 years old</strong> to use the Site or its chat features. By clicking “I ACCEPT &amp; CONTINUE,” you affirm that you meet this minimum age requirement. If you are under the age of majority where you live, you should use the Site only with any parental or guardian involvement required by applicable law.</p>
-
-          <h3>23. Changes to the Site</h3>
-          <p>The operator may add, remove, redesign, suspend, rename, or discontinue games, applets, chat features, accounts, storage mechanisms, external integrations, or other Site functionality at any time. Features may change as the project develops.</p>
-
-          <h3>24. Changes to These Terms</h3>
-          <p>These Terms may be revised from time to time. A revised version will display a new effective date/version. Where the Site can technically enforce versioned acceptance, you may be asked to accept the updated version before continuing to use the homepage. Continued use after an updated version is presented may constitute acceptance to the extent permitted by applicable law.</p>
-
-          <h3>25. Governing Law, Venue, and Severability</h3>
-          <p>These Terms are intended to be interpreted under applicable law. If a specific governing-law or venue rule is required for a dispute, the applicable law and competent courts determined under the operator’s place of residence or other legally applicable rules will control. The operator does not intend this provision to create a jurisdiction that applicable law would not otherwise permit.</p>
-          <p>If any provision is found invalid or unenforceable, that provision will be limited or removed to the minimum extent necessary, and the remaining provisions will continue in effect. A failure to enforce a provision on one occasion does not waive the operator’s ability to enforce it later.</p>
-
-          <h3>26. Entire Agreement</h3>
-          <p>These Terms, together with any specific rules or notices presented for a particular Site feature, describe the principal agreement governing your use of the Site. If a feature-specific rule conflicts with these Terms, the more specific rule applies to that feature unless it expressly says otherwise.</p>
-
-          <h3>27. Acceptance</h3>
-          <p>By clicking “I ACCEPT &amp; CONTINUE,” you confirm that you are at least 13 years old, that you have had an opportunity to read these Terms, that you agree to follow the Site’s usage and community rules, that you understand the public nature of chat and user-submitted content, and that you consent to the analytics practices described in Section 12 for this version of the Terms.</p>
-        </div>
-        <div class="dialog-btns"><button id="tos-accept-btn" class="btn default" type="button">I ACCEPT &amp; CONTINUE</button></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- CRT: one static overlay, decorative only -->
-  <div id="crt" aria-hidden="true"><div class="scan"></div><div class="mask"></div><div class="glass"></div><div class="vig"></div><div class="roll" id="crt-roll"></div></div>
-
-  <script src="data.js"></script>
-  <script src="vfs.js"></script>
-  <script src="main.js"></script>
-  <script src="os-extras.js"></script>
-  <script src="os-more.js"></script>
-  <script src="os-plus.js"></script>
-
-  <!--
-    Compatibility bridge for the versioned Terms acceptance. main.js still
-    handles the existing `tosAccepted` flag and modal behavior; this bridge
-    additionally records the exact accepted Terms version and starts Analytics
-    only after that acceptance has occurred. Keeping this here means older
-    cached copies of main.js do not silently break consent/analytics behavior.
-  -->
-  <script>
-    (function () {
-      var TOS_VERSION = window.CURRENT_TOS_VERSION || '2026-10-08';
-
-      function recordCurrentTermsAcceptance() {
-        try {
-          window.localStorage.setItem('tosAccepted', 'true');
-          window.localStorage.setItem('tosAcceptedVersion', TOS_VERSION);
-          window.localStorage.setItem('tosAcceptedAt', new Date().toISOString());
-        } catch (error) {
-          // The site's existing TOS flow can still proceed if storage is blocked.
-        }
-
-        if (typeof window.enableSiteAnalytics === 'function') {
-          window.enableSiteAnalytics();
-          try { window.gtag('event', 'tos_accepted', { tos_version: TOS_VERSION }); } catch (e) {}
-        }
-      }
-
-      document.addEventListener('DOMContentLoaded', function () {
-        var acceptButton = document.getElementById('tos-accept-btn');
-        if (!acceptButton) return;
-
-        acceptButton.addEventListener('click', recordCurrentTermsAcceptance);
-
-        // If the user accepted the current Terms before this script initialized,
-        // ensure Analytics still starts for the current session.
-        try {
-          if (window.localStorage.getItem('tosAccepted') === 'true' &&
-              window.localStorage.getItem('tosAcceptedVersion') === TOS_VERSION &&
-              typeof window.enableSiteAnalytics === 'function') {
-            window.enableSiteAnalytics();
-          }
-        } catch (error) {
-          // Ignore storage access failures.
-        }
-      });
-    }());
-  </script>
-
-  <script>
-    if ('serviceWorker' in navigator) {
-      (function () {
-        var reloadAfterUpdate = false;
-
-        // A service-worker update is checked independently of Cache Storage.
-        // This is what lets users stuck on an older cache migrate without
-        // opening System Monitor or manually clearing browser storage.
-        // Was this page already controlled by a worker when it loaded?
-        var hadController = !!navigator.serviceWorker.controller;
-
-        navigator.serviceWorker.addEventListener('controllerchange', function () {
-          if (reloadAfterUpdate) return;
-          // First-ever visit: the worker just took control of a page that already loaded
-          // the latest files from the network, so there is nothing to reload for. A reload
-          // here is what used to tear down the boot sequence halfway and pop up the ToS.
-          if (!hadController) return;
-          reloadAfterUpdate = true;
-          // Real update: never reload in the middle of the boot sequence. Wait until it
-          // has completely finished (boot.js fires 'gh-boot-complete').
-          if (window.__ghBooting) {
-            window.addEventListener('gh-boot-complete', function () { window.location.reload(); }, { once: true });
-          } else {
-            window.location.reload();
-          }
-        });
-
-        window.addEventListener('load', function () {
-          navigator.serviceWorker.register('service-worker.js', {
-            scope: './',
-            updateViaCache: 'none'
-          }).then(function (registration) {
-            return registration.update().then(function () {
-              if (registration.waiting) {
-                registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-              }
-              return navigator.serviceWorker.ready;
-            });
-          }).then(function (readyRegistration) {
-            if (readyRegistration.active) {
-              readyRegistration.active.postMessage({ type: 'REFRESH_CORE' });
-              // Big optional files (3D Pinball) are cached in the background once the browser is idle,
-              // so they never compete with startup.
-              var askBackground = function () {
-                try { readyRegistration.active.postMessage({ type: 'CACHE_BACKGROUND' }); } catch (e) {}
-              };
-              if ('requestIdleCallback' in window) window.requestIdleCallback(askBackground, { timeout: 15000 });
-              else setTimeout(askBackground, 5000);
-            }
-          }).catch(function (error) {
-            console.warn('Service worker registration/update failed:', error);
-          });
-        });
-      }());
-    }
-  </script>
-</body>
-</html>
+const VX=96,VZ=10;for(let i=0;i<6;i++){const a=i*1.05,r=4+R()*10,x=VX+Math.cos(a)*r,z=VZ+Math.sin(a)*r,y=H(x,z);VENTS.push({x,y,z});mS.cyl(x,y-.5,z,2,.8,2.4,hex('#3a2a28'),0);mG.cyl(x,y+1.8,z,.5,.15,7,[1,.5,.1],0,5);mG.blob(x,y+9,z,.8,.8,.8,[1,.6,.2],0,3)}
+for(let i=0;i<12;i++){const a=R()*6.28,r=3+R()*16,x=VX+Math.cos(a)*r,z=VZ+Math.sin(a)*r;NOD.push({t:'sulf',x,y:H(x,z)+.8,z,cd:0})}
+const LX=58,LZ=-34;for(let i=0;i<46;i++){const a=R()*6.28,r=R()*20,x=LX+Math.cos(a)*r,z=LZ+Math.sin(a)*r,y=H(x,z),hh=1+R()*3,c=[[.2,1,.9],[1,.3,.9],[.5,.6,1]][i%3];mS.cyl(x,y,z,.15,.1,hh,hex('#3a4a5a'),0);mG.blob(x,y+hh+.3,z,.6+R()*.4,.4,.6,c,0,3)}
+for(let i=0;i<6;i++){const a=i*1.05,x=LX+Math.cos(a)*7,z=LZ+Math.sin(a)*7;NOD.push({t:'frag',x,y:H(x,z)+1,z,cd:0})}
+for(let i=0;i<4;i++){const x=-95-R()*30,z=30+R()*50;NOD.push({t:'frag',x,y:H(x,z)+1,z,cd:0})}
+for(let i=0;i<3;i++){const x=-48+i*9,z=-42,y=H(x,z);sbox(mS,x,y+3.5,z,6.5,7,.8,hex('#2a3040'),0);mS.box(x,y+5.4,z+.45,3.6,2.8,.1,hex('#cfd8e6'),0);mG.box(x,y+2.2,z+.45,2.4,1.6,.12,[.2,.5,1],0)}
+})();
+const LG=(x,z,n,t,y)=>({x,z,y:y===undefined?H(x,z)+1:y,n,t});
+const LOGS=[LG(14,26,'Marrow, Day 1','Project FATHOM is live. Macrohard cools its servers with the deep ocean. Free cooling, free fish. Management calls it synergy.'),
+LG(-26,32,'Intern memo','To whoever finds this: I was told to carry the backup tapes to Abyssal Station. They are heavy. The ocean is very big. Please send help.'),
+LG(-62,-22,'Marrow, Day 40','The Cache Coral copies whatever it touches. We showed it a spreadsheet. It showed us the spreadsheet back, but older.'),
+LG(-100,42,'Marrow, Day 88','Everything we delete from the servers vanishes from the drives and surfaces in the trench. The ocean keeps a Recycle Bin. We should have asked who empties it.'),
+LG(SW[0]-8,SW[1]+12,'Redmond captain','Cargo is forty tonnes of tape and one very polite intern. Orders from Mr. Colton: sail, do not stop, do not read the manifest.'),
+LG(SW[0]+10,SW[1]-12,'Colton memo','URGENT: Exhibit Z and all discovery documents for Windows v. Macrohard are to be deleted at depth. Nobody can subpoena the sea. - C.'),
+LG(0,STN[1]+16,'SCANDISK boot log','Incident day 1. Crew evacuated by order. Not all crew. I counted again. Scanning for Dr. Marrow. Scanning. Scanning.'),
+LG(-8,STN[1]+4,'Marrow, Day 190','The Bin is full and something beneath it is waking. Colton keeps sending more to delete. I told him it would wake. He said that is a Q4 problem.',-54.5),
+LG(8,STN[1]-6,'Reactor tech','Power draw doubled overnight. Not us. The trench. Whatever it is, it is warm, and it is learning to hum our startup chime.',-54.5),
+LG(90,15,'Vent crew','Vent crystals make great fins. The trench currents are brutal. Do not go below 100 m without thrusters. We lost two tapes and a stapler to the current. He was fine. He is just shy.'),
+LG(61,-31,'Marrow, Day 300','It is not hostile. It is lonely. It keeps everything because nobody else will. I am going down to ask what it wants. If I do not come back, do not empty anything.'),
+LG(16,ARN[1]+8,'Exhibit Z','Exhibit Z: the evidence that Macrohard copied the Windows start button, then deleted the proof. Colton is in every frame, wearing the start button as a hat.')];
+const CODEX={fish:['Torrent Shoal','Schools of fish that follow tide data. Harmless, tasty, billed to nobody.'],eel:['Firewall Eel','Blocks anything it does not recognize. Stun it; do not argue with it.'],jel:['Bluescreen Jelly','Shocks on contact. Always blue right before it ruins your day.'],puf:['Pop-up Pufferfish','Appears when nobody asked. Inflates. Cannot be closed.'],ray:['Cursor Ray','Glides in arrow shapes. Nobody knows what it is pointing at.'],frag:['Cache Coral','Remembers everything it touches. Hums deleted files.'],sulf:['Vent Crystal','Sulfur crystals grown by hot vents. Smells like a jammed printer.'],flop:['Floppy Monument','Three giant disks of 1.44 MB each. Someone really wanted these saved.'],lant:['Lantern Garden','Glowing fungi that pulse in time with the station clock.'],sleep:['The Sleeper','Keeper of the trench Recycle Bin. Currently dreaming of Solitaire.']};
+const POIS=[['flop',-39,-42],['lant',58,-34],['sleep',0,-130]];
+const SQ=[['Pest Control','Neutralize 3 Firewall Eels.',()=>S.kills>=3,{scrap:25}],['Marine Census','Scan 6 species or landmarks.',()=>S.scan.length>=6,{scrap:20,kelp:5}],['Crystal Rush','Harvest 8 vent crystals.',()=>S.hs>=8,{scrap:20}],['Lighthouse Keeper','Build 2 Floodlights.',()=>S.mods.filter(m=>m.t=='lamp').length>=2,{scrap:15}],['Landlord','Build 4 Hab Rooms.',()=>S.mods.filter(m=>m.t=='room').length>=4,{scrap:30,kelp:5}],['Deep Diver','Reach 100 m depth.',()=>S.maxd>=100,{scrap:30}],['Archivist','Recover all 12 data logs.',()=>S.logs.length>=12,{frag:2}],['Infrastructure Audit','Build four habitat pieces and three powered devices.',()=>S.mods.filter(m=>m.t=='room'||m.t=='corr').length>=4&&S.mods.filter(m=>['pump','fab','lamp'].includes(m.t)&&devicePowered(m)).length>=3,{scrap:45,sulf:3}],['Deep Storage','Build an Archive Core and a Hard Disk Scrapper.',()=>S.mods.some(m=>m.t=='archive')&&S.mods.some(m=>m.t=='scrapper'),{frag:3,scrap:35}]];
+const fwd=()=>[Math.sin(P.yaw)*Math.cos(P.pitch),Math.sin(P.pitch),-Math.cos(P.yaw)*Math.cos(P.pitch)];
+function scan(){if(!playing||uiOpen)return;const f=fwd(),c=[];fish.forEach(a=>c.push(['fish',a.x,a.y,a.z,22]));eels.forEach(a=>a.dead<=0&&c.push(['eel',a.x,a.y,a.z,22]));jels.forEach(a=>c.push(['jel',a.x,a.y,a.z,22]));pufs.forEach(a=>c.push(['puf',a.x,a.y,a.z,22]));rays.forEach(a=>c.push(['ray',a.x,a.y,a.z,40]));NOD.forEach(a=>c.push([a.t,a.x,a.y,a.z,22]));POIS.forEach(a=>c.push([a[0],a[1],a[0]=='sleep'?-100:H(a[1],a[2])+3,a[2],45]));
+let best=null,bs=0;for(const e of c){const dx=e[1]-P.x,dy=e[2]-P.y,dz=e[3]-P.z,d=Math.hypot(dx,dy,dz),dot=(dx*f[0]+dy*f[1]+dz*f[2])/d;if(d<e[4]&&dot>(d<6?.8:.93)&&dot/(1+d*.02)>bs){bs=dot/(1+d*.02);best=e}}
+snd(1200,.15,'sine',.05);if(!best){toast('Nothing to scan - aim at a creature or landmark');return}const id=best[0],cx=CODEX[id];if(S.scan.includes(id)){toast(cx[0]+' (already scanned)');return}S.scan.push(id);S.res.scrap+=3;toast('Scanned: '+cx[0]+' (+3 scrap)');say('CODEX // '+cx[0],cx[1])}
+const addCh=(mb,mat)=>{mb.chunks(50).forEach(g=>{const m=new THREE.Mesh(g,mat);m.matrixAutoUpdate=false;scene.add(m)});mb.v=[]};
+addCh(mT,mLit);addCh(mS,mLit);addCh(mG,mGlow);
+const CW=new CANNON.World({gravity:new CANNON.Vec3(0,0,0)});CW.allowSleep=false;CW.defaultContactMaterial.friction=0;CW.defaultContactMaterial.restitution=0;
+const pb=new CANNON.Body({mass:1,shape:new CANNON.Sphere(.55),fixedRotation:true});CW.addBody(pb);
+SOL.forEach(b=>{const bd=new CANNON.Body({mass:0,shape:new CANNON.Box(new CANNON.Vec3((b[3]-b[0])/2,(b[4]-b[1])/2,(b[5]-b[2])/2))});bd.position.set((b[0]+b[3])/2,(b[1]+b[4])/2,(b[2]+b[5])/2);CW.addBody(bd)});
+// small shared shapes
+const shp=(f)=>{const m=new MB();f(m);return m.up()};
+const FISH=shp(m=>{m.blob(0,0,0,.18,.22,.5,[1,1,1],0,3);m.t([0,0,.45],[0,.25,.8],[0,-.25,.8],[.8,.8,.8]);m.t([0,.2,.1],[0,.45,-.1],[0,.2,-.2],[.9,.9,.9])}),
+CUBE=shp(m=>m.box(0,0,0,1,1,1,[1,1,1])),SCR=shp(m=>{m.box(0,0,0,.5,.35,.5,[1,.85,.25]);m.box(.1,.3,0,.3,.3,.3,[.9,.9,1])}),
+JEL=shp(m=>{m.blob(0,0,0,1,.8,1,[.5,.7,1],0,4);for(let i=0;i<5;i++){const a=i*1.256;m.box(Math.cos(a)*.6,-1.6,Math.sin(a)*.6,.1,1.6,.1,[.7,.8,1])}}),
+SEG=shp(m=>m.blob(0,0,0,1,1,1,[1,1,1],0,4)),SHARD=shp(m=>{m.blob(0,0,0,.5,.5,.9,[1,.3,.3],0,3)});
+const PUFF=shp(m=>{m.blob(0,0,0,.6,.5,.6,[1,.85,.3],0,4);for(let i=0;i<8;i++){const a=i*.785;m.box(Math.cos(a)*.62,0,Math.sin(a)*.62,.5,.07,.07,[.7,.45,.1])}}),RAY=shp(m=>{m.t([0,0,-2],[-1.2,0,1.2],[0,0,.4],[.9,.95,1]);m.t([0,0,-2],[0,0,.4],[1.2,0,1.2],[.7,.85,1]);m.box(0,0,1.6,.18,.05,1.4,[.5,.7,1])});
+const PUMP=shp(m=>{m.cyl(0,0,0,1.1,1.1,.5,hex('#555a60'));m.cyl(0,.5,0,.7,.7,2,hex('#2c90d0'));m.blob(0,2.7,0,.7,.4,.7,[.4,.9,1],0,3)}),
+BCN=shp(m=>{m.cyl(0,0,0,.6,.3,3,hex('#d0a020'));m.blob(0,3.3,0,.6,.6,.6,[.4,1,.5],0,3)});
+/* ---------- state ---------- */
+const S0=()=>({step:0,got:0,res:{scrap:0,kelp:0,sulf:0,frag:0},mods:[],tank:1,suit:1,purged:0,time:0,spawn:[0,1.5,6],ended:0,logs:[],scan:[],sq:[],kills:0,hs:0,hf:0,maxd:0,fins:0,prod2:0}),S=Object.assign(S0(),{lowp:false,snd:true,scraps:[]});
+const P={x:0,y:1.5,z:6,vx:0,vy:0,vz:0,yaw:Math.PI,pitch:-.1,o2:100,hp:100,light:true,boost:0};
+const SUIT=[0,30,65,125],OMAX=()=>100*(1+.5*(S.tank-1));
+function seedScrap(){S.scraps=[];sd=99;const add=(n,fx)=>{for(let i=0;i<n;i++){const p=fx();if(!p)continue;S.scraps.push({x:p[0],z:p[1],y:H(p[0],p[1])+.4,cd:0,v:1+(R()>.8?1:0)})}};
+add(70,()=>{const a=R()*6.28,r=14+R()*85;return[Math.cos(a)*r,Math.sin(a)*r+8]});
+add(34,()=>[SW[0]+(R()-.5)*50,SW[1]+(R()-.5)*40]);add(26,()=>[STN[0]+(R()-.5)*40,STN[1]+(R()-.3)*34]);add(22,()=>[(R()-.5)*60,ARN[1]+(R()-.5)*50]);add(24,()=>[-40-R()*100,(R()-.5)*120])}
+seedScrap();
+/* ---------- story ---------- */
+const NODEP=[0,1,2].map(i=>{const a=i*2.094+.5,x=ARN[0]+Math.cos(a)*17,z=ARN[1]+Math.sin(a)*17;return{x,z,y:H(x,z)+3.6,t:0,done:0}});
+const T=(x,z,r,dy=0)=>({x,y:H(x,z)+dy,z,r});
+const EA=11,EP=12,EN=13;
+const OB=[
+['Dive in and collect 5 scrap from the seabed.',null,()=>S.got>=5,[['STAPLETON','Five pieces of scrap. Do not get attached. It is company property.']]],
+['Gather scrap, then open BUILD (B): place a Hab Room and a Tidal Turbine.',null,()=>S.mods.some(m=>m.t=='room')&&S.mods.some(m=>m.t=='turb'),[['BANDY','We have a base! And power! Rooms keep the air fresh, and anything with a plug needs the turbine. A signal buoy is still pinging from the kelp forest to the west.']]],
+['Reach the signal buoy in the kelp forest.',T(...BUOY,10,3),()=>0,[['LOG // DR. MARROW','Day 212. The Cache Coral copies everything we delete. Not copies. The originals. I think the ocean has a Recycle Bin.'],['STAPLETON','That was not in the brochure. Build a Fabricator and craft a Pressure Suit Mk2 so you can reach 65 metres.']]],
+['Place a Fabricator (inside your room), then craft Pressure Suit Mk2 (35 scrap, 5 kelp).',null,()=>S.suit>=2,[['STAPLETON','Mk2 online. The MS Redmond sank south of the dock. It carried the station backups.']]],
+['Find the wreck of the MS Redmond.',T(SW[0],SW[1],16,6),()=>0,[['LOG // MANIFEST','Redmond cargo: forty tonnes of backup tapes and one intern.'],['BANDY','...I was the intern. I may have left the hatch open. Please do not tell Stapleton.'],['STAPLETON','I heard that. Marrow kept notes on something called Cache Coral. Bring me three fragments: the glowing nodes in the Lantern Garden to the north-east, or deep in the kelp.']]],
+['Collect 3 Cache Coral fragments (Lantern Garden, north-east).',null,()=>S.hf>=3,[['BANDY','The coral is replaying something. Voices. The station crew arguing about a deletion order. Stapleton, did you hear that?'],['STAPLETON','Static. Keep swimming. Station airlock, north of here, down the ledge.']],{x:58,y:H(58,-34)+4,z:-34}],
+['Reach the Abyssal Station airlock.',T(STN[0],STN[1]+20,12,-52-H(STN[0],STN[1]+20)),()=>0,[['SCANDISK','SCANDISK v9.5 online. Hello, Tape. I have been scanning for 331 days. Please do not touch the red thing.']]],
+['Enter the Server Hall.',{x:STN[0],y:-52,z:STN[1],r:7},()=>0,[['SCANDISK','Drive Z: is not mine. Everything ever deleted ends up in the trench. The Sleeper keeps it all, and lately it has been remembering. I keep it asleep with one very long scan.'],['SCANDISK','Dr. Marrow went down to speak to it. Her logs are scattered across this ocean. Please read six of them. Aim for the glowing pads and press E.']]],
+['Read 6 data logs (glowing pads, press E).',null,()=>S.logs.length>=6,[['STAPLETON','Fine. Colton ordered it. Exhibit Z, the whole lawsuit, went into the trench so no judge would ever see it. I came for Exhibit Z, not for a rescue. I was going to tell you. Eventually.'],['BANDY','Stapleton!'],['SCANDISK','The trench current exceeds 8 metres per second. You need Thruster Fins: vent crystals from the Vent Field, east, crafted at your Fabricator.']]],
+['Harvest 6 vent crystals (Vent Field, east) and craft Thruster Fins.',null,()=>S.fins,[['BANDY','Fins fitted! Whatever you decide down there, I will back you. Probably. Mostly. Yes.']],{x:96,y:H(96,10)+6,z:10}],
+['Craft Pressure Suit Mk3 at your Fabricator (60 scrap, 10 kelp).',null,()=>S.suit>=3,[['STAPLETON','Mk3 is rated to 125 metres. The trench floor is at 112. For what it is worth, I am sorry. Do the right thing. And keep the receipts.']]],
+['Descend to the Sleeper in the trench.',{x:ARN[0],y:-100,z:ARN[1]+15,r:26},()=>0,[['SCANDISK','Three Purge Nodes. Hold E on each. Dodge the red shards. Dr. Marrow signature is in the Sleeper core. I think she is still in there.']]],
+['Hold E at the 3 Purge Nodes (%p/3).',null,()=>S.purged>=3,[]],
+['Free dive. Explore, scrap, build.',null,()=>0,[]]];
+const ENDS={e:['EMPTY THE BIN','You empty the Bin. The Sleeper dissolves into quiet and Exhibit Z goes with it. The signature of Dr. Marrow fades from the core. SCANDISK finishes its scan: 0 errors. Stapleton files the invoice and Colton keeps his hat. Bandy does not speak to you for a week.'],r:['RESTORE ALL','You give everything back. Eleven months of deleted things float up like lanterns: lost homework, lost saves, one very old game of Solitaire, and Exhibit Z, which Bandy mails to a judge. Dr. Marrow steps out of the dark, tired and delighted. Macrohard loses the lawsuit. Stapleton quits, then asks if you are hiring.'],d:['DEFRAGMENT','You sort the Bin, folder by folder. The Sleeper becomes the station archive, Dr. Marrow its curator, SCANDISK its keeper. Anything lost can be found if you ask nicely. Exhibit Z is filed under Z, in public. Stapleton: That is a business model.']};
+const Qd=[];let qT=0;
+const pxSprite=(a,b,c,d)=>'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" shape-rendering="crispEdges"><rect width="64" height="64" fill="#071724"/><path fill="${a}" d="M12 58V42l5-8V17l8-8h15l9 8v17l5 8v16z"/><path fill="${b}" d="M18 22h28v18H18zM23 14h18v6H23zM15 45h34v5H15z"/><path fill="${c}" d="M22 22h20v17H22z"/><path fill="#06101a" d="M25 27h5v5h-5zM36 27h5v5h-5zM28 35h9v3h-9z"/><path fill="${b}" d="${d}"/><path fill="#b9eaff" d="M8 58h48v3H8z"/></svg>`);
+const SPRITES={'STAPLETON':pxSprite('#344c60','#e3a64a','#c98d70','M9 8h7v7H9zM48 8h7v7h-7z'),'BANDY':pxSprite('#174e6a','#55e2ee','#7dc6d7','M25 5h14v5H25zM12 20h6v12h-6zM46 20h6v12h-6z'),'LOG // DR. MARROW':pxSprite('#263b46','#8dceaa','#d5a98d','M22 8h20v5H22zM15 20h7v6h-7zM42 20h7v6h-7z'),'SCANDISK':pxSprite('#28334c','#ff5757','#b8c4d0','M10 17h44v5H10zM18 45h28v5H18z'),'CODEX':pxSprite('#143e55','#52d5bd','#b8e4ec','M7 12h50v7H7zM7 45h50v7H7z')};
+function say(w,t){Qd.push([w,t])}
+function tickSay(dt){const w=$('sub').firstChild;if(qT>0){qT-=dt;if(qT<=0&&!Qd.length)w.style.display='none'}if(Qd.length&&qT<=0){const[a,b]=Qd.shift();$('who').textContent=a;$('say').textContent=b;const sp=$('whoSprite');if(a==='Agent Tapey'){sp.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" shape-rendering="crispEdges"><rect x="1" y="1" width="62" height="62" fill="#000" stroke="#777" stroke-width="2"/><path fill="#888" d="M29 12h7v7h-7zM22 19h7v7h-7zM36 19h7v7h-7zM29 26h7v14h-7zM29 45h7v7h-7z"/></svg>')}else sp.src=(a.startsWith('LOG //')?SPRITES['LOG // DR. MARROW']:SPRITES[a])||SPRITES.CODEX;w.style.display='block';qT=Math.max(3.5,b.length*.055);snd(a=='SCANDISK'?330:200,.15,'square',.03)}}
+let tt=0;function toast(s){const e=$('toast');e.textContent=s;e.style.opacity=1;tt=2.5}
+const ZONES=[['Sunlit Shallows',(x,z)=>Math.hypot(x,z)<60],['Kelp Forest',(x,z)=>x<-40],['Wreck Graveyard',(x,z)=>z>55],['Abyssal Station',(x,z)=>Math.hypot(x-STN[0],z-STN[1])<24],['The Trench',(x,z)=>z<-50],['Vent Field',(x,z)=>x>72],['Lantern Garden',(x,z)=>Math.hypot(x-58,z+34)<22],['Floppy Ruins',(x,z)=>Math.hypot(x+39,z+42)<16]];
+/* ---------- creatures ---------- */
+let fish=[],eels=[],jels=[],shards=[],pufs=[],rays=[],bt={t:0};
+function spawnLife(){sd=5;fish=[];for(let s=0;s<9;s++){const cx=(R()-.5)*200,cz=(R()-.5)*200,cy=Math.max(H(cx,cz)+4,-30)+R()*3,tint=[[1,.6,.2],[.5,.8,1],[1,.9,.4],[.8,.5,1]][s%4];for(let i=0;i<5;i++)fish.push({x:cx+R()*4,y:cy+R()*2,z:cz+R()*4,yw:0,cx,cy,cz,tint,sp:1.5+R(),ph:R()*6})}
+eels=[[SW[0],SW[1]],[STN[0],STN[1]+24],[96,10],[-92,45],[0,-105]].map(([px,pz],i)=>({x:px,y:H(px,pz)+5,z:pz,yw:0,h:[],cd:0,a:i*1.3,hp:30,stun:0,dead:0,px,pz}));
+jels=[];for(let i=0;i<9;i++){const x=-50-R()*70,z=(R()-.5)*100;jels.push({x,y:H(x,z)+6+R()*6,z,ph:R()*6,cd:0,r:5})}for(let i=0;i<5;i++){const x=ARN[0]+(R()-.5)*60,z=ARN[1]+(R()-.5)*50;jels.push({x,y:-95-R()*10,z,ph:R()*6,cd:0,r:5})}
+pufs=[];for(let i=0;i<8;i++){const a=R()*6.28,r=18+R()*70,x=Math.cos(a)*r,z=Math.sin(a)*r+8,y=H(x,z)+1.5;if(y>-3)continue;pufs.push({x,y,z,s:1,cd:0})}
+rays=[[30,-25,35,14,.18],[-20,-60,40,18,.12],[70,40,50,16,.15]].map(([cx,cz,r,cy,sp],i)=>({cx,cz,r,cy:-cy,sp,a:i*2,x:0,y:0,z:0,yw:0}));}
+spawnLife();
+/* ---------- input ---------- */
+const K={},tch={mx:0,my:0,up:0,dn:0,bst:0,use:0};let locked=false,playing=false,uiOpen=false,isTouch=false;
+addEventListener('keydown',e=>{if(!playing)return;K[e.code]=1;if(e.code=='KeyB')toggleBP();if(e.code=='KeyQ')zap();if(e.code=='KeyG')scan();if(e.code=='KeyJ')showMenu('journal');if((e.code=='Delete'||e.code=='Backspace')&&bm)deleteAimed();if(e.code=='KeyR'&&bm)bm.r=((bm.r||0)+1)%4;if(e.code=='KeyE'&&bm){placeNow();K.KeyE=0}if(e.code=='KeyF')P.light=!P.light;if(e.code=='KeyM'){S.snd=!S.snd;toast(S.snd?'Sound on':'Sound off')}if(e.code=='KeyH')note();if(['Space','ArrowUp','ArrowDown','Tab'].includes(e.code))e.preventDefault()});
+addEventListener('keyup',e=>{K[e.code]=0});addEventListener('blur',()=>{for(const k in K)K[k]=0});
+function look(dx,dy,s){P.yaw+=dx*s;P.pitch=cl(P.pitch-dy*s,-1.5,1.5)}
+let mdown=0;cv.addEventListener('mousedown',e=>{if(!playing||isTouch||uiOpen)return;mdown=1;if(!locked){if(cv.requestPointerLock)try{cv.requestPointerLock()}catch(x){}}else if(bm)placeNow();else zap()});
+addEventListener('mouseup',()=>mdown=0);
+addEventListener('mousemove',e=>{if(!playing||isTouch||uiOpen)return;if(locked||mdown)look(e.movementX,-e.movementY*-1,.0022)});
+document.addEventListener('pointerlockchange',()=>{locked=document.pointerLockElement===cv;if(!locked&&playing&&!uiOpen&&!isTouch)showMenu('pause')});
+// touch
+let sId=null,sx0=0,sy0=0,lId=null,lx=0,ly=0;const tc=$('touch'),stk=$('stk'),knb=$('knb');
+tc.addEventListener('pointerdown',e=>{if(e.pointerType=='mouse')return;setTouch();e.preventDefault();if(e.clientX<innerWidth*.45&&sId===null){sId=e.pointerId;sx0=e.clientX;sy0=e.clientY;stk.style.display='block';stk.style.left=sx0+'px';stk.style.top=sy0+'px';knb.style.transform='translate(0,0)'}else if(lId===null){lId=e.pointerId;lx=e.clientX;ly=e.clientY}});
+addEventListener('pointermove',e=>{if(e.pointerId===sId){let dx=e.clientX-sx0,dy=e.clientY-sy0;const l=Math.hypot(dx,dy),m=48;if(l>m){dx*=m/l;dy*=m/l}knb.style.transform=`translate(${dx}px,${dy}px)`;tch.mx=dx/m;tch.my=dy/m}else if(e.pointerId===lId&&playing&&!uiOpen){look(e.clientX-lx,e.clientY-ly,.0055);lx=e.clientX;ly=e.clientY}});
+const pe=e=>{if(e.pointerId===sId){sId=null;tch.mx=tch.my=0;stk.style.display='none'}if(e.pointerId===lId)lId=null};addEventListener('pointerup',pe);addEventListener('pointercancel',pe);
+const TB=[['▲','up',null,'right:78px;bottom:112px'],['▼','dn',null,'right:78px;bottom:24px'],['BOOST','bst',null,'right:16px;bottom:68px'],['E','use',null,'right:16px;bottom:140px'],['BUILD',null,()=>toggleBP(),'right:150px;bottom:68px'],['LAMP',null,()=>P.light=!P.light,'right:150px;bottom:136px'],['ZAP',null,()=>zap(),'right:150px;bottom:204px'],['PLACE',null,()=>placeNow(),'right:16px;bottom:212px','pl'],['ROT',null,()=>{if(bm)bm.r=((bm.r||0)+1)%4},'right:84px;bottom:212px','pl'],['SCAN',null,()=>scan(),'right:16px;bottom:284px'],['LOG',null,()=>showMenu('journal'),'right:150px;bottom:272px']];
+TB.forEach(([t,k,f,st,c])=>{const b=document.createElement('div');b.className='tbtn'+(c?' '+c:'');b.textContent=t;b.style.cssText=st;b.addEventListener('pointerdown',e=>{e.stopPropagation();e.preventDefault();setTouch();if(k){tch[k]=1;b.classList.add('on')}else f()});const off=()=>{if(k){tch[k]=0;b.classList.remove('on')}};b.addEventListener('pointerup',off);b.addEventListener('pointercancel',off);b.addEventListener('pointerleave',off);tc.appendChild(b)});
+function setTouch(){if(!isTouch){isTouch=true;document.body.classList.add('tch')}}
+if(matchMedia('(pointer:coarse)').matches)setTouch();
+$('pzb').onclick=()=>showMenu('pause');$('bx').onclick=()=>toggleBP();
+/* ---------- audio ---------- */
+let ac;function snd(f,d,ty='sine',v=.05){if(!S.snd||!ac)return;try{const o=ac.createOscillator(),g=ac.createGain();o.type=ty;o.frequency.value=f;g.gain.value=v;g.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+d);o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+d)}catch(e){}}
+function initAudio(){if(ac)return;try{ac=new(window.AudioContext||window.webkitAudioContext)();const o=ac.createOscillator(),g=ac.createGain(),l=ac.createOscillator(),lg=ac.createGain();o.frequency.value=48;g.gain.value=.05;l.frequency.value=.13;lg.gain.value=.03;l.connect(lg);lg.connect(g.gain);o.connect(g);g.connect(ac.destination);o.start();l.start();window.__drone=g}catch(e){}}
+/* ---------- build / craft ---------- */
+const PC={room:{n:'Hab Room',d:'Dry-air room: refills O2, heals you. Doors on all four sides.',cost:{scrap:14},cell:1},
+corr:{n:'Corridor',d:'Links rooms together. R rotates.',cost:{scrap:6},cell:1,rot:1},
+fab:{n:'Fabricator',d:'Crafts upgrades within 14 m. Uses 1 power. Fits inside rooms.',cost:{scrap:15,kelp:2},ind:1,rot:1},
+turb:{n:'Tidal Turbine',d:'Generates +3 power.',cost:{scrap:10,kelp:2}},
+pump:{n:'Air Pump',d:'Refills oxygen within 15 m. Uses 1 power.',cost:{scrap:8}},
+lamp:{n:'Floodlight',d:'Lights the seabed. Uses 1 power. Fits inside rooms.',cost:{scrap:5},ind:1},
+beacon:{n:'Beacon',d:'Place multiple; interact with one to set your respawn point.',cost:{scrap:6,kelp:2}},
+scrapper:{n:'Hard Disk Scrapper',d:'Uses 7 power. Passively produces 1 scrap every 6 seconds.',cost:{scrap:28,frag:2}},
+archive:{n:'Archive Core',d:'Advanced data vault for late-game research.',cost:{scrap:45,frag:5,sulf:5}},
+reactor:{n:'Crystal Reactor',d:'Advanced generator. Produces 30 power.',cost:{scrap:50,sulf:8,frag:3}}};
+const CRAFT=[['tank','O2 Tank upgrade','+50% oxygen capacity (max 3)',{scrap:20,kelp:3}],['suit2','Pressure Suit Mk2','Safe to 65 m',{scrap:35,kelp:5}],['suit3','Pressure Suit Mk3','Safe to 125 m',{scrap:60,kelp:10}],['fins','Thruster Fins','+25% swim speed',{scrap:25,sulf:6}],['prod2','Stun Prod Mk2','Range 18 m, hits harder',{scrap:30,frag:4}]];
+const can=c=>Object.keys(c).every(k=>S.res[k]>=c[k]),costStr=c=>Object.keys(c).map(k=>c[k]+' '+k).join(', ');
+function connectedPower(m){
+const turbines=S.mods.filter(x=>x.t=='turb'),sources=S.mods.filter(x=>x.t=='reactor');
+const linked=new Set(),tq=[];
+for(const t of turbines){if(![...linked].some(x=>x===t)){linked.add(t);tq.push(t);while(tq.length){const a=tq.shift();for(const b of turbines)if(!linked.has(b)&&Math.hypot(a.x-b.x,a.y-b.y,a.z-b.z)<=7){linked.add(b);tq.push(b)}}}}
+const powerSources=[...linked,...sources];
+if(powerSources.some(x=>Math.hypot(x.x-m.x,x.y-m.y,x.z-m.z)<=30))return true;
+const net=S.mods.filter(x=>x.t=='room'||x.t=='corr'),seen=new Set(),queue=[];
+for(let i=0;i<net.length;i++)if(powerSources.some(p=>Math.hypot(p.x-net[i].x,p.y-net[i].y,p.z-net[i].z)<=30)){seen.add(i);queue.push(i)}
+for(let q=0;q<queue.length;q++){const a=net[queue[q]];for(let i=0;i<net.length;i++){if(seen.has(i))continue;const b=net[i];if(Math.hypot(a.x-b.x,a.z-b.z)<=6.2){seen.add(i);queue.push(i)}}}
+return net.some((n,i)=>seen.has(i)&&Math.hypot(n.x-m.x,n.z-m.z)<=5)}
+function power(){let pr=0,us=0;for(const m of S.mods){if(m.t=='turb')pr+=3;else if(m.t=='reactor')pr+=30;else if(['pump','fab','lamp','scrapper'].includes(m.t)&&connectedPower(m))us+=m.t=='scrapper'?7:1}return{pr,us,ok:pr>=us}}
+const devicePowered=m=>connectedPower(m)&&power().pr>=power().us;
+function inRoom(x,y,z){for(const m of S.mods){if(m.t=='room'){if(Math.abs(x-m.x)<2.85&&Math.abs(z-m.z)<2.85&&y>m.y+.3&&y<m.y+3.8)return 1}else if(m.t=='corr'){const a=(m.r||0)*Math.PI/2,c=Math.cos(a),sn=Math.sin(a),lx=(x-m.x)*c-(z-m.z)*sn,lz=(x-m.x)*sn+(z-m.z)*c,arms=m.shape=='corner'?[[0,1],[-1,0]]:[[0,-1],[0,1]];if(y>m.y+.3&&y<m.y+3.4&&(Math.abs(lx)<1.5&&Math.abs(lz)<1.5||arms.some(([dx,dz])=>Math.abs(lx-dx*1.5)<1.5&&Math.abs(lz-dz*1.5)<1.5)))return 1}}return 0}
+function eelSafeZone(x,y,z){const within=(px,py,pz,cx,cy,cz,hx,hy,hz)=>{const dx=Math.max(0,Math.abs(px-cx)-hx),dy=Math.max(0,Math.abs(py-cy)-hy),dz=Math.max(0,Math.abs(pz-cz)-hz);return dx*dx+dy*dy+dz*dz<=25};for(const m of S.mods){if(m.t=='room'){if(within(x,y,z,m.x,m.y+2.05,m.z,3,1.9,3))return 1}else if(m.t=='corr'){const a=(m.r||0)*Math.PI/2,c=Math.cos(a),sn=Math.sin(a),lx=(x-m.x)*c-(z-m.z)*sn,lz=(x-m.x)*sn+(z-m.z)*c,arms=m.shape=='corner'?[[0,1],[-1,0]]:[[0,-1],[0,1]];const py=y-(m.y+1.95);if(within(lx,py,lz,0,0,0,1.65,1.8,1.65)||arms.some(([dx,dz])=>within(lx,py,lz,dx*1.5,0,dz*1.5,1.65,1.8,1.65)))return 1}}return 0}
+const fabNear=()=>S.mods.some(m=>m.t=='fab'&&devicePowered(m)&&inRoom(m.x,m.y+1.5,m.z)&&Math.hypot(m.x-P.x,m.y-P.y,m.z-P.z)<14);
+let bm=null;function setBM(v){bm=v;document.body.classList.toggle('plc',!!v);ghost.visible=!!v}
+function toggleBP(){if(bm){setBM(null);toast('Build cancelled');return}const o=$('bp').style.display!='block';$('bp').style.display=o?'block':'none';uiOpen=o;if(o){if(document.exitPointerLock)document.exitPointerLock();drawBP()}else if(!isTouch&&cv.requestPointerLock)try{cv.requestPointerLock()}catch(e){}}
+function startPlace(t){$('bp').style.display='none';uiOpen=false;setBM({t,r:0,shape:t=='corr'?($('corrshape')?.value||'straight'):'straight'});if(!isTouch&&cv.requestPointerLock)try{cv.requestPointerLock()}catch(e){}}
+function drawBP(){const bl=$('bl'),pw=power();bl.innerHTML='<div style="margin:2px 4px 6px">Scrap <b>'+S.res.scrap+'</b> &nbsp; Kelp <b>'+S.res.kelp+'</b> &nbsp; Power <b>'+pw.pr+'</b> made / <b>'+pw.us+'</b> used</div><div style="margin:4px;opacity:.8">HABITAT BUILDER: pick a piece, aim, then click / E (or PLACE) to build. Hab rooms and corridors have a 5 m eel-safe buffer around their outer surfaces.</div>';
+const cs=document.createElement('label');cs.style.cssText='display:block;margin:6px 4px';cs.innerHTML='Corridor layout ';const csel=document.createElement('select');csel.id='corrshape';csel.className='b';csel.style.cssText='min-height:28px;padding:3px';[['straight','Straight'],['corner','Corner']].forEach(([v,n])=>{const o=document.createElement('option');o.value=v;o.textContent=n;csel.appendChild(o)});cs.appendChild(csel);bl.appendChild(cs);
+for(const t in PC){const d=PC[t],b=document.createElement('button');b.className='b';b.disabled=!can(d.cost);b.innerHTML='<b>'+d.n+'</b><small>'+d.d+' - '+costStr(d.cost)+'</small>';b.onclick=()=>startPlace(t);bl.appendChild(b)}
+const del=document.createElement('button');del.className='b';del.textContent='DELETE BUILDING (50% refund)';del.onclick=()=>{uiOpen=false;$('bp').style.display='none';setBM({t:'__delete',r:0});toast('Aim at a building and press Delete / click')};bl.appendChild(del);
+const h=document.createElement('div');h.style.cssText='margin:8px 4px 2px;opacity:.8';h.textContent='FABRICATOR: '+(fabNear()?'ready':'needs a powered Fabricator within 14 m');bl.appendChild(h);
+for(const[id,n,d,c]of CRAFT){const done=(id=='suit2'&&S.suit>=2)||(id=='suit3'&&(S.suit>=3||S.suit<2))||(id=='tank'&&S.tank>=3)||(id=='fins'&&S.fins)||(id=='prod2'&&S.prod2);const b=document.createElement('button');b.className='b';b.disabled=done||!can(c)||!fabNear();b.innerHTML='<b>'+n+(done?' (done)':'')+'</b><small>'+d+' - '+costStr(c)+'</small>';b.onclick=()=>craft(id);bl.appendChild(b)}}
+function craft(id){const r=CRAFT.find(x=>x[0]==id);if(!can(r[3])||!fabNear())return;for(const k in r[3])S.res[k]-=r[3][k];if(id=='tank'){S.tank++;P.o2=OMAX()}else if(id=='suit2')S.suit=2;else if(id=='suit3')S.suit=3;else if(id=='fins')S.fins=1;else if(id=='prod2')S.prod2=1;snd(520,.2,'triangle');toast('Crafted: '+r[1]);drawBP();save()}
+const PDc={};
+function getPD(t,shape='straight'){const key=t=='corr'?'corr:'+shape:t;if(PDc[key])return PDc[key];const L=new MB(),G=new MB(),sol=[],W=hex('#8a97a6'),F=hex('#566170'),DK=hex('#2c333c');const add=(x,y,z,sx,sy,sz,k)=>{L.box(x,y,z,sx,sy,sz,k);sol.push([x,y,z,sx,sy,sz])};
+if(t=='room'){add(0,.15,0,6,.3,6,F);add(0,3.85,0,6,.3,6,W);L.box(0,-1,0,5.6,2,5.6,DK);for(const q of[1,-1]){add(-2.25,2,q*2.85,1.5,4,.3,W);add(2.25,2,q*2.85,1.5,4,.3,W);add(0,3.5,q*2.85,3,1,.3,W);add(q*2.85,2,-2.25,.3,4,1.5,W);add(q*2.85,2,2.25,.3,4,1.5,W);add(q*2.85,3.5,0,.3,1,3,W);G.box(q*2.7,3.2,0,.1,.2,3,[.4,.9,1]);G.box(0,3.2,q*2.7,3,.2,.1,[.4,.9,1])}G.box(0,3.65,0,2.4,.1,.5,[1,.95,.8])}
+else if(t=='corr'){const arms=shape=='corner'?[[0,1],[-1,0]]:[[0,-1],[0,1]];
+add(0,.15,0,3.3,.3,3.3,F);add(0,3.45,0,3.3,.3,3.3,W);L.box(0,-.8,0,3,1.6,3,DK);
+for(const [dx,dz] of arms){const cx=dx*1.5,cz=dz*1.5;add(cx,.15,cz,3.3,.3,3.3,F);add(cx,3.45,cz,3.3,.3,3.3,W);const sides=dx?[[0,-1],[0,1]]:[[-1,0],[1,0]];for(const [sx,sz] of sides){if(shape=='straight'){if(dx)add(cx,1.8,cz+sz*1.5,3.3,3.6,.3,W);else add(cx+sx*1.5,1.8,cz,.3,3.6,3.3,W);continue}const inner=arms.some(([ax,az])=>ax===sx&&az===sz);const len=inner?1.5:4.8;const shift=dx?(inner?.9:-.75):(inner?-.9:.75);if(dx)add(cx+shift,1.8,cz+sz*1.5,len,3.6,.3,W);else add(cx+sx*1.5,1.8,cz+shift,.3,3.6,len,W)}G.box(cx,3.25,cz,.4,.1,3,[.8,.95,1])}}
+else if(t=='fab'){add(0,.7,0,1.6,1.4,.8,DK);L.box(0,1.5,.15,1.6,.3,.5,F);G.box(0,1.25,-.42,1.3,.6,.05,[.3,1,.6])}
+else if(t=='turb'){add(0,3,0,.8,6,.8,hex('#9aa4ae'));L.box(0,6,.3,.7,.7,1,DK);G.blob(0,6,.9,.42,.42,.28,[.4,1,.6],0,4);L.box(0,.3,0,2,.6,2,DK)}
+else if(t=='pump'){L.cyl(0,0,0,1.1,1.1,.5,hex('#555a60'));L.cyl(0,.5,0,.7,.7,2,hex('#2c90d0'));G.blob(0,2.8,0,.6,.4,.6,[.4,.9,1],0,3);sol.push([0,1.5,0,1.6,3,1.6])}
+else if(t=='lamp'){add(0,1.2,0,.3,2.4,.3,hex('#777f88'));G.blob(0,2.6,0,.5,.4,.5,[1,.95,.7],0,3);L.box(0,.1,0,.9,.2,.9,DK)}
+else if(t=='scrapper'){add(0,1,0,2.4,2,.9,DK);L.box(0,2.1,0,1.8,.25,.7,F);G.box(0,1.2,-.48,1.5,.7,.08,[.2,1,.7]);L.cyl(-.75,.2,0,.25,.25,.3,W);L.cyl(.75,.2,0,.25,.25,.3,W)}
+else if(t=='archive'){add(0,2,0,3,4,2.2,DK);L.box(0,2,1.15,2.5,3,.1,F);G.box(0,2,1.22,1.8,1.4,.08,[.2,.8,1])}
+else if(t=='reactor'){add(0,2,0,2.4,4,2.4,F);L.cyl(0,.5,0,.9,.9,2.5,hex('#344c60'));G.cyl(0,1,0,.55,.55,2,[.2,.8,1]);G.blob(0,3.2,0,.6,.6,.6,[.2,.9,1],0,4)}
+else{L.cyl(0,0,0,.6,.3,3,hex('#d0a020'));G.blob(0,3.3,0,.6,.6,.6,[.4,1,.5],0,3);sol.push([0,1.5,0,1,3,1])}
+return PDc[key]={lit:L.up(),glow:G.v.length?G.up():null,sol}}
+const modM=[],modB=[];
+function addMod(m){const p=getPD(m.t,m.shape),g=new THREE.Group();g.add(new THREE.Mesh(p.lit,mLit));if(p.glow)g.add(new THREE.Mesh(p.glow,mGlow));g.position.set(m.x,m.y,m.z);g.rotation.y=(m.r||0)*Math.PI/2;
+if(m.t=='turb'){const rotor=new THREE.Group(),bladeMat=new THREE.MeshLambertMaterial({color:0xd9e7ee,emissive:0x142b36});for(const side of [-1,1]){const blade=new THREE.Mesh(new THREE.BoxGeometry(.34,2.15,.22),bladeMat);blade.position.y=side===-1?1.35:2.9;rotor.add(blade)}const hub=new THREE.Mesh(new THREE.CylinderGeometry(.34,.34,.38,8),new THREE.MeshLambertMaterial({color:0x607987}));hub.rotation.x=Math.PI/2;rotor.add(hub);rotor.position.set(0,4.75,.95);g.add(rotor);g.userData.rotor=rotor}
+if(m.t=='room'||m.t=='corr'){const doorMat=new THREE.MeshLambertMaterial({color:0x254d60,emissive:0x092331});const doors=[];
+const all=[[-1,0],[1,0],[0,-1],[0,1]],arms=m.t=='room'?all:(m.shape=='corner'?[[0,1],[-1,0]]:[[0,-1],[0,1]]);
+const rotSide=(dx,dz)=>{const a=(m.r||0)*Math.PI/2;return[Math.round(dx*Math.cos(a)+dz*Math.sin(a)),Math.round(-dx*Math.sin(a)+dz*Math.cos(a))]};
+for(const [dx,dz] of arms){const [wx,wz]=rotSide(dx,dz);const linked=S.mods.some(n=>n!==m&&(n.t=='room'||n.t=='corr')&&Math.abs(n.x-(m.x+wx*6))<.2&&Math.abs(n.z-(m.z+wz*6))<.2);
+if(linked)continue;const panel=new THREE.Mesh(new THREE.BoxGeometry(dx?0.16:2.9,2.95,dz?0.16:2.9),doorMat.clone());panel.position.set(dx*2.82,1.8,dz*2.82);g.add(panel);
+const body=new CANNON.Body({mass:0,shape:new CANNON.Box(new CANNON.Vec3(wx?.08:1.45,1.475,wz?.08:1.45))});body.position.set(m.x+wx*2.82,m.y+1.8,m.z+wz*2.82);CW.addBody(body);modB.push(body);doors.push({mesh:panel,body,dx:wx,dz:wz,closed:true,open:0,target:0})}g.userData.doors=doors}
+scene.add(g);modM.push(g);const ang=(m.r||0)*Math.PI/2,c=Math.cos(ang),sn=Math.sin(ang);
+for(const[cx,cy,cz,sx,sy,sz]of p.sol){const sc=1,rs=m.r?[sz*sc,sy*sc,sx*sc]:[sx*sc,sy*sc,sz*sc],bd=new CANNON.Body({mass:0,shape:new CANNON.Box(new CANNON.Vec3(rs[0]/2,rs[1]/2,rs[2]/2))});bd.position.set(m.x+(cx*c+cz*sn)*sc,m.y+cy*sc,m.z+(-cx*sn+cz*c)*sc);CW.addBody(bd);modB.push(bd)}}
+function rebuildMods(){modM.forEach(o=>scene.remove(o));modM.length=0;modB.forEach(b=>CW.removeBody(b));modB.length=0;S.mods.forEach(addMod)}
+function calcPlace(){const d=PC[bm.t],f=[Math.sin(P.yaw)*Math.cos(P.pitch),Math.sin(P.pitch),-Math.cos(P.yaw)*Math.cos(P.pitch)];let x=P.x+f[0]*8,z=P.z+f[2]*8,y,why='',hx,hy,hz;const cells=S.mods.filter(m=>m.t=='room'||m.t=='corr');
+if(d.cell){x=Math.round(x/6)*6;z=Math.round(z/6)*6;const hs=[];for(let ix=-2.5;ix<=2.5;ix+=1)for(let iz=-2.5;iz<=2.5;iz+=1)hs.push(H(x+ix,z+iz));y=Math.max(...hs);const nb=cells.find(m=>Math.abs(m.x-x)<6.3&&Math.abs(m.z-z)<6.3&&(Math.abs(m.x-x)>5.9||Math.abs(m.z-z)>5.9));if(nb)y=nb.y;else if(y-Math.min(...hs)>3.2)why='Ground too steep';y=Math.round(y*2)/2;hx=hz=3;hy=4;
+if(!why&&y>-2)why='Must be underwater';if(!why&&bm.t=='corr'&&!nb)why='Corridors must attach to a Hab Room or corridor';if(!why&&cells.some(m=>Math.abs(m.x-x)<5.9&&Math.abs(m.z-z)<5.9))why='Space taken'}
+else{x=Math.round(x*2)/2;z=Math.round(z*2)/2;const rm=S.mods.find(m=>m.t=='room'&&Math.abs(x-m.x)<2.3&&Math.abs(z-m.z)<2.3);y=rm?rm.y+.3:H(x,z);hx=hz=.8;hy=2.5;
+if(!d.ind&&cells.some(m=>Math.abs(m.x-x)<3.5&&Math.abs(m.z-z)<3.5))why='Too close to a wall';
+if(!why&&d.ind&&!rm)why='Must be placed inside a Hab Room';
+if(!why&&!rm&&y>-1)why='Must be underwater';if(!why&&S.mods.some(m=>m.t!='room'&&m.t!='corr'&&Math.hypot(m.x-x,m.z-z)<2&&Math.abs(m.y-y)<2.5))why='Too close to another piece'}
+if(!why)for(const b of SOL)if(x+hx>b[0]&&x-hx<b[3]&&y+hy>b[1]&&y<b[4]&&z+hz>b[2]&&z-hz<b[5]){why='Blocked';break}
+if(!why&&!can(d.cost))why='Not enough materials';return{ok:!why,why,x,y,z}}
+function deleteAimed(){
+const f=[Math.sin(P.yaw)*Math.cos(P.pitch),Math.sin(P.pitch),-Math.cos(P.yaw)*Math.cos(P.pitch)];let best=-1,bd=10;
+S.mods.forEach((m,i)=>{const dx=m.x-P.x,dy=m.y-P.y,dz=m.z-P.z,d=Math.hypot(dx,dy,dz);if(d<bd&&d>1&&(dx*f[0]+dy*f[1]+dz*f[2])/d>.72){best=i;bd=d}});
+if(best<0){toast('Aim at a building within 10 m');return}const m=S.mods[best],cost=PC[m.t]?.cost||{};for(const k in cost)S.res[k]=(S.res[k]||0)+Math.floor(cost[k]/2);S.mods.splice(best,1);rebuildMods();toast('Building dismantled - 50% materials refunded');save();if($('bp').style.display=='block')drawBP()}
+function placeNow(){if(!bm)return;if(bm.t=='__delete'){deleteAimed();return}const r=calcPlace(),d=PC[bm.t];if(!r.ok){toast(r.why);return}for(const k in d.cost)S.res[k]-=d.cost[k];const mm={t:bm.t,x:r.x,y:r.y,z:r.z,r:bm.t=='corr'?((bm.r||0)%4):0,shape:bm.t=='corr'?bm.shape:'straight'};S.mods.push(mm);rebuildMods();if(bm.t=='beacon')S.spawn=[mm.x,mm.y+2,mm.z];snd(520,.2,'triangle');toast('Built: '+d.n);if(!power().ok)say('BANDY','Power is short. Add another Tidal Turbine or the pumps, fabricators and floodlights go dark.');save();if(!can(d.cost))setBM(null)}
+let zcd=0,boltT=0;const bolt=new THREE.Mesh(CUBE,new THREE.MeshBasicMaterial({color:0x8cf4ff}));bolt.visible=false;scene.add(bolt);
+function zap(){if(!playing||uiOpen||zcd>0)return;zcd=.6;const f=[Math.sin(P.yaw)*Math.cos(P.pitch),Math.sin(P.pitch),-Math.cos(P.yaw)*Math.cos(P.pitch)],o=[P.x+f[0]*.5,P.y-.3+f[1]*.5,P.z+f[2]*.5];let best=null,bd=S.prod2?18:12;
+for(const e of eels){if(e.dead>0)continue;const dx=e.x-P.x,dy=e.y-P.y,dz=e.z-P.z,d=Math.hypot(dx,dy,dz);if(d<bd&&(dx*f[0]+dy*f[1]+dz*f[2])/d>(d<5?.8:.93)){best=e;bd=d}}
+const en=best?[best.x,best.y,best.z]:[P.x+f[0]*7,P.y+f[1]*7,P.z+f[2]*7],len=Math.hypot(en[0]-o[0],en[1]-o[1],en[2]-o[2]);bolt.position.set((o[0]+en[0])/2,(o[1]+en[1])/2,(o[2]+en[2])/2);bolt.lookAt(en[0],en[1],en[2]);bolt.scale.set(.07,.07,len);bolt.visible=true;boltT=.09;snd(900,.12,'sawtooth',.05);
+if(best){best.hp-=S.prod2?20:12;if(best.hp<=0){best.dead=80;S.kills++;S.res.scrap+=4;toast('Firewall Eel neutralized (+4 scrap)')}else{best.stun=5;toast('Eel stunned!')}}}
+/* ---------- save ---------- */
+function save(){LS('as_save',JSON.stringify({S:{...S,scraps:S.scraps.map(s=>s.cd>0?1:0)},P:{x:P.x,y:P.y,z:P.z,yaw:P.yaw,o2:P.o2,hp:P.hp}}))}
+function load(){try{const j=JSON.parse(LS('as_save'));if(!j)return false;const sc=j.S.scraps;Object.assign(S,S0(),j.S,{scraps:S.scraps});S.mods=(S.mods||[]).map(m=>m.t==='corr'&&(m.shape==='tee'||m.shape==='cross')?{...m,shape:'straight'}:m);S.res=Object.assign({scrap:0,kelp:0,sulf:0,frag:0},j.S.res);S.scraps.forEach((s,i)=>s.cd=sc&&sc[i]?60:0);Object.assign(P,j.P,{vx:0,vy:0,vz:0,pitch:-.1});S.lowp=!!j.S.lowp;return true}catch(e){return false}}
+const note=()=>{const o=OB[S.step];toast(o[0].replace('%p',S.purged))};
+addEventListener('pagehide',()=>{if(playing)save()});document.addEventListener('visibilitychange',()=>{if(playing&&document.hidden)save()});
+/* ---------- menus ---------- */
+function showMenu(k){uiOpen=true;playing=k=='pause'||k=='journal';const m=$('menu'),c=$('mc');m.style.display='flex';$('hud').style.display=playing?'block':'none';if((k=='pause'||k=='journal')&&document.exitPointerLock)document.exitPointerLock();
+const has=!!LS('as_save');
+const ctl='<p><b>Keyboard:</b> WASD swim, Mouse look (click to capture), Space up, C / Ctrl down, Shift boost, E interact / harvest, B build &amp; craft, Q or click: stun prod (zap eels), R rotate piece, G scan, J journal, F lamp, M sound, H objective, Esc pause.<br><b>Touch:</b> left side = floating stick, drag anywhere on the right to look, buttons for up / down / boost / E / build / lamp / zap.</p>';
+const lp='<button class="b" id="mlp">Low power graphics: '+(S.lowp?'ON':'OFF')+'</button>';
+if(k=='title')c.innerHTML='<p><b>MACROHARD ABYSSAL STATION // REMOTE ACCESS</b><br>Station telemetry has been silent for eleven months. Agent Tapey, recover the archive, rebuild the station network, and determine what is running beneath the trench.</p>'+ctl+'<div class="row" style="align-items:center"><button class="b" id="mc2" '+(has?'':'disabled')+'>Continue Dive</button><button class="b" id="mn" style="position:absolute;right:10px;bottom:8px;font-size:10px;padding:4px 7px;min-height:0;opacity:.72">Start New Save</button>'+lp+'</div>';
+else if(k=='pause')c.innerHTML='<p><b>Paused.</b> Progress is saved automatically.</p>'+ctl+'<div class="row"><button class="b" id="mr">Resume</button><button class="b" id="mj">Journal</button><button class="b" id="mq">Save &amp; Quit to Title</button>'+lp+'</div>';
+else if(k=='end'){const e=ENDS[S.ended];c.innerHTML='<p><b>ENDING: '+e[0]+'</b></p><p>'+e[1]+'</p><p>Scrap collected: '+S.got+'. Time: '+Math.round(S.time/60)+' min.</p><div class="row"><button class="b" id="mr">Keep Exploring</button><button class="b" id="mq">Title</button></div>'}
+else if(k=='journal'){const o=OB[S.step];c.innerHTML='<p><b>Objective:</b> '+o[0].replace('%p',S.purged)+'</p><p><b>Contracts</b> ('+S.sq.length+'/'+SQ.length+')<br>'+SQ.map((q,i)=>(S.sq.includes(i)?'[x] ':'[ ] ')+q[0]+': '+q[1]).join('<br>')+'</p><p><b>Data logs</b> ('+S.logs.length+'/'+LOGS.length+') - tap one to re-read</p><div class="row" id="jl"></div><p id="lt"></p><p><b>Codex:</b> '+S.scan.length+'/'+Object.keys(CODEX).length+' scanned</p><div class="row"><button class="b" id="mr">Resume</button></div>'}
+else if(k=='choice')c.innerHTML='<p><b>The Sleeper is awake and listening.</b> All three Purge Nodes are open. What do you do with the Recycle Bin?</p><div class="row" style="flex-direction:column"><button class="b" id="ce">Empty the Bin (delete everything, forever)</button><button class="b" id="cr">Restore All (give it all back)</button><button class="b" id="cd" '+(S.logs.length>=LOGS.length?'':'disabled')+'>Defragment (sort it, keep it)'+(S.logs.length>=LOGS.length?'':' - needs all '+LOGS.length+' data logs ('+S.logs.length+')')+'</button></div>';
+const g=id=>$(id);
+if(g('mn'))g('mn').onclick=()=>begin(false);if(g('mc2'))g('mc2').onclick=()=>begin(true);if(g('mr'))g('mr').onclick=resume;
+if(g('mj'))g('mj').onclick=()=>showMenu('journal');if(k=='journal'){S.logs.forEach(i=>{const b=document.createElement('button');b.className='b';b.textContent=LOGS[i].n;b.onclick=()=>{$('lt').textContent=LOGS[i].t};$('jl').appendChild(b)})}
+if(g('mq'))g('mq').onclick=()=>{save();playing=false;showMenu('title')};
+if(g('mlp'))g('mlp').onclick=()=>{S.lowp=!S.lowp;resize();showMenu(k)};
+['e','r','d'].forEach(x=>{const b=g('c'+x);if(b)b.onclick=()=>{S.ended=x;S.step=EN;S.endingApplied=1;if(x=='e'){S.res.scrap+=45;S.mods=S.mods.filter(m=>m.t!='archive')}else if(x=='r'){S.res.frag+=12;S.res.sulf+=12;S.kills=0}else{S.res.scrap+=20;S.res.frag+=5;S.res.sulf+=5;S.scan=Object.keys(CODEX)}save();rebuildMods();showMenu('end')}});}
+function resume(){$('menu').style.display='none';uiOpen=false;playing=true;$('hud').style.display='block';initAudio();if(ac&&ac.state=='suspended')ac.resume();if(!isTouch&&cv.requestPointerLock)try{cv.requestPointerLock()}catch(e){}}
+function begin(cont){initAudio();if(!(cont&&load())){Object.assign(S,S0());seedScrap();NODEP.forEach(n=>n.done=0);Object.assign(P,{x:0,y:1.5,z:6,vx:0,vy:0,vz:0,yaw:Math.PI,pitch:-.1,o2:100,hp:100});spawnLife();say('STAPLETON','This is Stapleton on the barge SS Backup. Tape, you are the only diver we could afford. Find out why Abyssal Station went silent. Try not to bill us for it.');say('BANDY','Hi! Bandy here, your comms. Please do not stretch the oxygen budget.')}
+NODEP.forEach((n,i)=>n.done=i<S.purged?1:0);setBM(null);rebuildMods();resume()}
+/* ---------- dynamic modules mesh ---------- */
+/* ---------- physics ---------- */
+function hurt(n){if(P.hp<=0)return;P.hp-=n;{const f=$('flash');f.style.opacity=n>=1?.8:.25;setTimeout(()=>{f.style.opacity=0},90)}snd(110,.25,'sawtooth',.08);if(P.hp<=0)die()}
+function die(){const lost=Math.floor(S.res.scrap*.25);S.res.scrap-=lost;toast('BLACKOUT - recovered at the beacon (lost '+lost+' scrap)');say('STAPLETON','You flatlined for eleven seconds. I have deducted it from your break.');Object.assign(P,{x:S.spawn[0],y:S.spawn[1],z:S.spawn[2],vx:0,vy:0,vz:0,hp:100,o2:OMAX()})}
+let acc=0,saveT=0,t=0,fps=60,frameDt=1/60;
+function update(dt){t+=dt;S.time+=dt;
+const f=[Math.sin(P.yaw)*Math.cos(P.pitch),Math.sin(P.pitch),-Math.cos(P.yaw)*Math.cos(P.pitch)],r=[Math.cos(P.yaw),0,Math.sin(P.yaw)];
+let mx=(K.KeyD?1:0)-(K.KeyA?1:0)+tch.mx,mz=(K.KeyW?1:0)-(K.KeyS?1:0)-tch.my,my=(K.Space||tch.up?1:0)-(K.KeyC||K.ControlLeft||tch.dn?1:0);
+if(uiOpen){mx=mz=my=0}const bst=(K.ShiftLeft||K.ShiftRight||tch.bst)&&P.o2>2&&!uiOpen;
+const dry=inRoom(P.x,P.y,P.z),under=P.y<0&&!dry,sp=(bst?8:4.4)*(S.fins?1.25:1);P.boost=bst&&(mx||mz||my)?1:0;
+let wx=r[0]*mx+f[0]*mz,wy=f[1]*mz+my,wz=r[2]*mx+f[2]*mz;const wl=Math.hypot(wx,wy,wz);if(wl>1){wx/=wl;wy/=wl;wz/=wl}
+if(under){const k=Math.min(1,dt*2.6);P.vx+=(wx*sp-P.vx)*k;P.vy+=(wy*sp-P.vy)*k;P.vz+=(wz*sp-P.vz)*k;P.vy+=Math.sin(t*1.3)*.01}
+else{P.vy-=22*dt;P.vx+=(wx*5.2-P.vx)*Math.min(1,dt*6);P.vz+=(wz*5.2-P.vz)*Math.min(1,dt*6);if(my>0&&P.y<1.5&&P.vy<3)P.vy=9.5}
+pb.position.set(P.x,P.y,P.z);pb.velocity.set(P.vx,P.vy,P.vz);CW.step(1/60,dt,3);P.x=pb.position.x;P.y=pb.position.y;P.z=pb.position.z;P.vx=pb.velocity.x;P.vy=pb.velocity.y;P.vz=pb.velocity.z;{const g=H(P.x,P.z)+.7;if(P.y<g){P.y=g;if(P.vy<0)P.vy=0}P.x=cl(P.x,-HALF+2,HALF-2);P.z=cl(P.z,-HALF+2,HALF-2)}
+// oxygen
+const PW=power();S.scrapClock=(S.scrapClock||0)+dt;if(S.scrapClock>=6){S.scrapClock-=6;for(const m of S.mods)if(m.t=='scrapper'&&devicePowered(m))S.res.scrap++}const pumpN=inRoom(P.x,P.y,P.z)||(S.mods.some(m=>m.t=='pump'&&devicePowered(m)&&Math.hypot(m.x-P.x,m.z-P.z)<15&&Math.abs(m.y-P.y)<18));const dep=Math.max(0,-P.y);
+if(P.y>-.1||pumpN)P.o2=Math.min(OMAX(),P.o2+30*dt);else P.o2-=(P.boost?2.6:1)*dt*(1+dep/200);
+if(P.o2<=0){P.o2=0;hurt(6*dt)}
+if(dep>SUIT[S.suit]){hurt(5*dt);if(Math.floor(t*2)%2==0)toast('PRESSURE WARNING - go shallower')}else if(P.hp<100&&P.y>-.1)P.hp=Math.min(100,P.hp+8*dt);
+if(pumpN&&P.hp<100)P.hp=Math.min(100,P.hp+4*dt);
+// use / harvest
+let pr='';if(P.y>-1&&P.y<1.3&&Math.abs(P.x)<10&&P.z>-16&&P.z<14)pr='Space / UP button - climb onto the dock';const use=K.KeyE||tch.use;
+const near=S.scraps.filter(s=>s.cd<=0&&Math.hypot(s.x-P.x,s.y-P.y,s.z-P.z)<2.6);near.forEach(s=>{s.cd=100;S.res.scrap+=s.v;S.got+=s.v;snd(740,.1,'triangle',.05)});
+let kn=null;if(under)for(const k of KEL)if(k.cd<=0&&Math.hypot(k.x-P.x,k.y-P.y,k.z-P.z)<4.5){kn=k;break}
+const nearBeacon=S.mods.find(m=>m.t=='beacon'&&Math.hypot(m.x-P.x,m.y-P.y,m.z-P.z)<3);
+if(nearBeacon){pr='E - set this beacon as spawn';if(use){S.spawn=[nearBeacon.x,nearBeacon.y+2,nearBeacon.z];toast('Spawn point updated');save()}}
+const nearLamp=S.mods.find(m=>m.t=='lamp'&&Math.hypot(m.x-P.x,m.y-P.y,m.z-P.z)<3);
+if(nearLamp){pr='E - toggle floodlight';if(use){nearLamp.on=nearLamp.on===false;snd(480,.08,'square')}}
+if(kn){pr='E - harvest kelp';if(use){kn.cd=25;S.res.kelp++;snd(300,.12,'sine',.05)}}
+for(const k of KEL)if(k.cd>0)k.cd-=dt;
+for(const n of NOD)if(n.cd>0)n.cd-=dt;
+if(!kn){let nn=null;for(const n of NOD)if(n.cd<=0&&Math.hypot(n.x-P.x,n.y-P.y,n.z-P.z)<4.5){nn=n;break}
+if(nn){pr='E - harvest '+(nn.t=='frag'?'Cache Coral fragment':'vent crystal');if(use){nn.cd=120;S.res[nn.t]=(S.res[nn.t]||0)+1;if(nn.t=='sulf')S.hs++;else S.hf++;snd(420,.12,'triangle',.05)}}}
+for(let i=0;i<LOGS.length;i++){const l=LOGS[i];if(!S.logs.includes(i)&&Math.hypot(l.x-P.x,l.y-P.y,l.z-P.z)<4.5){pr='E - read data log';if(use){S.logs.push(i);say('LOG // '+l.n,l.t);toast('Data log recovered ('+S.logs.length+'/'+LOGS.length+')');snd(600,.2,'triangle',.06)}break}}
+if(S.step==EP){for(const n of NODEP){if(n.done)continue;const d=Math.hypot(n.x-P.x,n.y-P.y,n.z-P.z);if(d<5){pr='Hold E - purge node '+Math.floor(n.t/2*100)+'%';if(use){n.t+=dt;if(n.t>=2){n.done=1;S.purged++;snd(880,.4,'triangle',.07);toast('Node purged ('+S.purged+'/3)');shards.length=0}}else n.t=Math.max(0,n.t-dt)}}}
+{const sf=!!eelSafeZone(P.x,P.y,P.z);let md=99;for(const e of eels)if(e.dead<=0)md=Math.min(md,Math.hypot(e.x-P.x,e.y-P.y,e.z-P.z));if(md<24&&under&&!sf)pr='WARNING - Firewall Eel nearby ('+Math.round(md)+' m) - Q / click / ZAP to stun it';else if(md<24&&sf)pr=pr||'Safe zone: eels will not hunt you here'}
+if(bm&&bm.t!='__delete'){const r=calcPlace(),d=PC[bm.t];ghost.geometry=getPD(bm.t,bm.shape).lit;ghost.position.set(r.x,r.y,r.z);ghost.rotation.y=(bm.t=='corr'?(bm.r||0):0)*Math.PI/2;ghostMat.color.setHex(r.ok?0x40ff80:0xff4040);pr=d.n+' ('+costStr(d.cost)+') - '+(r.ok?'Click / E / PLACE to build':'X '+r.why)+' - R rotate - B cancel'}
+$('prompt').textContent=pr;
+// scraps respawn
+for(const s of S.scraps)if(s.cd>0&&s.cd<100){s.cd-=dt}else if(s.cd>=100)s.cd=90;
+// creatures
+for(const fh of fish){const dx=fh.cx-fh.x,dz=fh.cz-fh.z,dy=fh.cy-fh.y;fh.yw=Math.atan2(dx+Math.sin(t+fh.ph)*3,-dz+Math.cos(t*.7+fh.ph)*3);const s=fh.sp*dt;fh.x+=Math.sin(fh.yw)*s;fh.z-=Math.cos(fh.yw)*s;fh.y+=dy*dt*.3;if(R()<.002){fh.cx+=(R()-.5)*20;fh.cz+=(R()-.5)*20;fh.cx=cl(fh.cx,-140,140);fh.cz=cl(fh.cz,-140,140)}}
+const safe=!!eelSafeZone(P.x,P.y,P.z);for(const e of eels){if(e.dead>0){e.dead-=dt;if(e.dead<=0){e.hp=30;e.dead=0;e.h=[]}continue}const d=Math.hypot(e.x-P.x,e.y-P.y,e.z-P.z);e.a+=dt*.3;let tx,ty,tz,spd=2.6;if(e.stun>0){e.stun-=dt;tx=e.x*2-P.x;tz=e.z*2-P.z;ty=e.y;spd=8}else if(d<20&&!safe&&P.y<-3&&dep<=SUIT[S.suit]+30){tx=P.x;ty=P.y;tz=P.z;spd=6.2}else{tx=e.px+Math.cos(e.a)*14;tz=e.pz+Math.sin(e.a)*14;ty=H(tx,tz)+6}
+const dx=tx-e.x,dy=ty-e.y,dz=tz-e.z,l=Math.hypot(dx,dy,dz)||1;e.yw=Math.atan2(dx,-dz);e.x+=dx/l*spd*dt;e.y+=dy/l*spd*dt;e.z+=dz/l*spd*dt;e.h.unshift([e.x,e.y,e.z]);if(e.h.length>60)e.h.pop();e.cd-=dt;if(d<2.2&&e.cd<=0&&!safe&&!(e.stun>0)){e.cd=1.4;toast('Firewall Eel bite!');hurt(10);P.vx+=(P.x-e.x)*3;P.vz+=(P.z-e.z)*3}}
+for(const p of pufs){const d=Math.hypot(p.x-P.x,p.y-P.y,p.z-P.z);p.s+=((d<7?2.4:1)-p.s)*dt*3;p.cd-=dt;if(p.s>1.9&&d<p.s+1.1&&p.cd<=0){p.cd=1.5;hurt(8);toast('Pop-up Pufferfish spikes!')}}
+for(const r of rays){r.a+=dt*r.sp;r.x=r.cx+Math.cos(r.a)*r.r;r.z=r.cz+Math.sin(r.a)*r.r;r.y=r.cy+Math.sin(r.a*2)*2;r.yw=Math.atan2(Math.sin(r.a),-Math.cos(r.a))}
+for(const v of VENTS)if(Math.hypot(v.x-P.x,v.z-P.z)<3&&P.y>v.y&&P.y<v.y+9){hurt(6*dt);if(Math.floor(t*2)%4==0)toast('Scalding vent!')}
+S.maxd=Math.max(S.maxd,dep);
+for(const j of jels){j.ph+=dt;j.y+=Math.sin(j.ph)*dt*.8;j.cd-=dt;if(Math.hypot(j.x-P.x,j.y-P.y,j.z-P.z)<2.4&&j.cd<=0){j.cd=1.2;hurt(6);toast('Bluescreen Jelly shock!')}}
+// boss shards
+if(S.step==EP||S.step==EA&&Math.hypot(P.x-ARN[0],P.z-ARN[1])<40){bt.t+=dt;if(bt.t>2.4-S.purged*.4){bt.t=0;for(let i=0;i<3;i++){const a=(R()-.5)*.5;const dx=P.x-ARN[0]+(R()-.5)*8,dy=P.y+1-(-104),dz=P.z-ARN[1],l=Math.hypot(dx,dy,dz);shards.push({x:ARN[0],y:-104,z:ARN[1],vx:dx/l*13,vy:dy/l*13,vz:dz/l*13,l:6})}}}
+for(let i=shards.length-1;i>=0;i--){const s=shards[i];s.x+=s.vx*dt;s.y+=s.vy*dt;s.z+=s.vz*dt;s.l-=dt;if(Math.hypot(s.x-P.x,s.y-P.y,s.z-P.z)<1.3){hurt(9);toast('Shard hit!');s.l=0}if(s.l<=0)shards.splice(i,1)}
+// quest
+qT0+=dt;if(qT0>.25){qT0=0;SQ.forEach((q,i)=>{if(!S.sq.includes(i)&&q[2]()){S.sq.push(i);for(const k in q[3])S.res[k]=(S.res[k]||0)+q[3][k];toast('Contract complete: '+q[0]);say('BANDY','Contract complete: '+q[0]+'. Wiring you '+costStr(q[3])+'.')}});const o=OB[S.step];if(o){let ok=o[2]();if(o[1]){const g=o[1];ok=Math.hypot(P.x-g.x,P.y-g.y,P.z-g.z)<g.r}if(ok&&S.step<EN){o[3].forEach(l=>say(l[0],l[1]));S.step++;snd(660,.3,'triangle',.07);toast('Objective complete');if(S.step==EN&&!S.ended)setTimeout(()=>showMenu('choice'),1200);save()}}
+let zn='Open Ocean';for(const z of ZONES)if(z[1](P.x,P.z)){zn=z[0]}if(zn!=zoneName){zoneName=zn;if(P.y<0)toast(zn)}}
+saveT+=dt;if(saveT>12){saveT=0;save()}
+if(zcd>0)zcd-=dt;if(boltT>0){boltT-=dt;if(boltT<=0)bolt.visible=false}if(tt>0){tt-=dt;if(tt<=0)$('toast').style.opacity=0}tickSay(dt);
+// HUD
+$('o2f').style.width=P.o2/OMAX()*100+'%';$('hpf').style.width=cl(P.hp,0,100)+'%';$('res').innerHTML='Scrap <b>'+S.res.scrap+'</b> &nbsp; Kelp <b>'+S.res.kelp+'</b>'+(S.res.sulf?' &nbsp; Crystal <b>'+S.res.sulf+'</b>':'')+(S.res.frag?' &nbsp; Coral <b>'+S.res.frag+'</b>':'')+(PW.us||PW.pr?'<br>Power <b>'+PW.pr+'</b> / '+PW.us+' used':'');
+$('dep').textContent=Math.max(0,Math.round(-P.y))+' m';$('suit').textContent='Suit Mk'+S.suit+' ('+SUIT[S.suit]+' m)';$('zone').textContent=zoneName;
+const o=OB[S.step];$('ot').textContent=o[0].replace('%p',S.purged);let tg=o[1]||o[4];if(!tg&&S.step==EP){const n=NODEP.find(n=>!n.done);if(n)tg=n}
+if(tg){const dx=tg.x-P.x,dz=tg.z-P.z;let a=Math.atan2(dx,-dz)-P.yaw;$('arr').style.transform='rotate('+a+'rad)';$('od').textContent='('+Math.round(Math.hypot(dx,tg.y-P.y,dz))+' m)'}else{$('arr').style.transform='none';$('od').textContent=''}}
+let qT0=0,zoneName='';
+/* ---------- render ---------- */
+const D=new THREE.Object3D(),CC=new THREE.Color();
+const inst=(g,n,mat)=>{const m=new THREE.InstancedMesh(g,mat,n);m.frustumCulled=false;m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);scene.add(m);return m};
+const setM=(im,i,x,y,z,yw,sx,sy,sz)=>{D.position.set(x,y,z);D.rotation.set(0,yw,0);D.scale.set(sx,sy||sx,sz||sx);D.updateMatrix();im.setMatrixAt(i,D.matrix)};
+const iFish=inst(FISH,fish.length,mGlow.clone()),iScr=inst(SCR,S.scraps.length,mLam),iEel=inst(SEG,45,mGlow.clone()),iJel=inst(JEL,14,new THREE.MeshLambertMaterial({vertexColors:true,transparent:true,opacity:.8,emissive:0x2060aa})),iSh=inst(SHARD,30,mGlow),iCube=inst(CUBE,16,mLam),iTen=inst(SEG,50,mLam),iNode=inst(SEG,3,mGlow.clone());
+iTen.material=new THREE.MeshLambertMaterial({vertexColors:true,color:0x6a4fb0});
+const iPuf=inst(PUFF,8,mLam),iRay=inst(RAY,3,new THREE.MeshBasicMaterial({vertexColors:true,side:THREE.DoubleSide})),iDoc=inst(CUBE,40,mGlow.clone()),iNod=inst(SEG,NOD.length,mGlow.clone()),iLog=inst(CUBE,LOGS.length,mGlow.clone());
+NOD.forEach((n,i)=>iNod.setColorAt(i,n.t=='frag'?CC.setRGB(.3,1,1):CC.setRGB(1,.85,.2)));LOGS.forEach((l,i)=>iLog.setColorAt(i,CC.setRGB(1,.7,.2)));for(let i=0;i<40;i++)iDoc.setColorAt(i,i%3==0?CC.setRGB(.9,.95,1):i%3==1?CC.setRGB(1,.9,.4):CC.setRGB(.5,.7,1));
+fish.forEach((f,i)=>iFish.setColorAt(i,CC.setRGB(f.tint[0],f.tint[1],f.tint[2])));for(let i=0;i<45;i++)iEel.setColorAt(i,i%9==0?CC.setRGB(1,.6,.1):CC.setRGB(1,.2+.15*(i%2),.3));for(let i=0;i<16;i++)iCube.setColorAt(i,i%2?CC.setRGB(.95,.85,.4):CC.setRGB(.9,.9,1));
+const boss=new THREE.Group();boss.position.set(ARN[0],-100,ARN[1]);const bCore=new THREE.Mesh(SEG,new THREE.MeshLambertMaterial({vertexColors:true,color:0x40307a,emissive:0x1a0c3a})),bEye=new THREE.Mesh(SEG,new THREE.MeshBasicMaterial({vertexColors:true,color:0xff3322}));bCore.scale.setScalar(6);bEye.scale.set(2.2,2.2,1);bEye.position.z=4.5;boss.add(bCore,bEye);scene.add(boss);
+const ghostMat=new THREE.MeshBasicMaterial({color:0x40ff80,transparent:true,opacity:.45,depthWrite:false}),ghost=new THREE.Mesh(new THREE.BoxGeometry(1,1,1),ghostMat);ghost.visible=false;ghost.frustumCulled=false;scene.add(ghost);
+const pumpBubbles=[];const bubbleGeo=new THREE.SphereGeometry(.09,6,5),bubbleMat=new THREE.MeshBasicMaterial({color:0x9deeff,transparent:true,opacity:.65});
+function ensurePumpBubbles(){const count=S.mods.filter(m=>m.t=='pump').length*7;while(pumpBubbles.length<count){const b=new THREE.Mesh(bubbleGeo,bubbleMat);scene.add(b);pumpBubbles.push({mesh:b,phase:R()*5})}while(pumpBubbles.length>count){scene.remove(pumpBubbles.pop().mesh)}}
+let wsh=null;const wmat=new THREE.MeshBasicMaterial({color:0x1f86b0,transparent:true,opacity:.85,side:THREE.DoubleSide,depthWrite:false});
+wmat.onBeforeCompile=sh=>{sh.uniforms.uT={value:0};wsh=sh;
+sh.vertexShader=sh.vertexShader.replace('void main() {','uniform float uT;varying float vH;\nvoid main() {').replace('#include <begin_vertex>','#include <begin_vertex>\nvec2 w=(modelMatrix*vec4(position,1.)).xz;float h=sin(w.x*.35+uT*1.3)*.24+sin(w.y*.5+uT*1.7)*.18+sin((w.x+w.y)*.8+uT*2.3)*.08+sin(w.x*1.7-w.y*1.3+uT*3.1)*.04;transformed.y+=h;vH=h;');
+sh.fragmentShader=sh.fragmentShader.replace('void main() {','varying float vH;\nvoid main() {').replace('#include <color_fragment>','#include <color_fragment>\ndiffuseColor.rgb=mix(diffuseColor.rgb,vec3(.8,.97,1.),smoothstep(.28,.5,vH)*.7)+vH*.3;')};
+const wg=new THREE.PlaneGeometry(700,700,140,140);wg.rotateX(-Math.PI/2);const water=new THREE.Mesh(wg,wmat);water.frustumCulled=false;scene.add(water);
+const PN=400,pa=new Float32Array(PN*3),PART=[];for(let i=0;i<PN;i++)PART.push([R()*60-30,R()*40-20,R()*60-30]);
+const pg=new THREE.BufferGeometry();pg.setAttribute('position',new THREE.BufferAttribute(pa,3));const pts=new THREE.Points(pg,new THREE.PointsMaterial({color:0xcfefff,size:.14,transparent:true,opacity:.6,depthWrite:false}));pts.frustumCulled=false;scene.add(pts);
+let pr=1,ema=.016,adj=0;const maxPR=()=>S.lowp?.6:Math.min(devicePixelRatio||1,1.5);
+function resize(){pr=Math.min(pr,maxPR());renderer.setPixelRatio(pr);renderer.setSize(innerWidth,innerHeight,false);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix()}
+pr=maxPR();addEventListener('resize',resize);resize();
+function render(){const under=P.y<.05,dep=Math.max(0,-P.y),dd=Math.min(1,dep/110);
+if(under)fogc.setRGB(.04+.03*(1-dd),.28*(1-dd*.85)+.02,.42*(1-dd*.85)+.04);else fogc.setRGB(.55,.78,.95);scene.fog.color.copy(fogc);scene.fog.density=under?.016+.012*dd:.002;
+amb.intensity=under?.55*(1-dd*.7)+.12:.9;sun.intensity=under?.7*(1-dd):.8;lamp.intensity=P.light&&under?2.4:0;pts.visible=under&&!S.lowp;
+for(let i=0;i<modM.length;i++){const g=modM[i],m=S.mods[i];if(!m)continue;if(g.userData.doors)for(const d of g.userData.doors){const rx=d.dx,rz=d.dz;
+const near=Math.hypot(P.x-m.x-rx*2.82,P.y-(m.y+1.8),P.z-m.z-rz*2.82)<3.6;d.target=near?1:0;d.open+=(d.target-d.open)*Math.min(1,frameDt*3.8);if(Math.abs(d.target-d.open)<.012)d.open=d.target;d.mesh.position.y=mix(1.8,5.25,d.open);
+if(d.open>.92&&d.closed){CW.removeBody(d.body);d.closed=false}else if(d.open<.08&&!d.closed){CW.addBody(d.body);d.closed=true}}if(m.t=='turb'&&g.userData.rotor)g.userData.rotor.rotation.z=t*2.4}
+{const pw=power(),c=S.mods.filter(m=>(m.t=='lamp'&&m.on!==false&&devicePowered(m))||m.t=='room').map(m=>[m,(m.x-P.x)**2+(m.z-P.z)**2]).sort((a,b)=>a[1]-b[1]);for(let i=0;i<3;i++){const e=c[i];if(e){const m=e[0],l=m.t=='lamp';pls[i].position.set(m.x,m.y+(l?2.8:3),m.z);pls[i].intensity=l?3.4:1.5;pls[i].distance=l?42:16}else pls[i].intensity=0}}
+ensurePumpBubbles();let bi=0;for(const m of S.mods.filter(m=>m.t=='pump'))for(let j=0;j<7;j++){const b=pumpBubbles[bi++],active=devicePowered(m);b.mesh.visible=active;if(active){const h=((t*3+b.phase)%Math.max(2,-m.y-1));b.mesh.position.set(m.x+Math.sin(t*1.4+j)*.16,m.y+2+h,m.z+Math.cos(t+j)*.16);b.mesh.scale.setScalar(.65+h*.04)}}
+const cameraDry=inRoom(P.x,P.y,P.z);cam.position.set(P.x,P.y+(cameraDry?1.05:0),P.z);cam.rotation.set(P.pitch,-P.yaw,0);water.position.set(Math.round(P.x/5)*5,0,Math.round(P.z/5)*5);if(wsh)wsh.uniforms.uT.value=t;wmat.opacity=under?.5:.88;
+for(let i=0;i<fish.length;i++){const f=fish[i];setM(iFish,i,f.x,f.y,f.z,-f.yw+Math.PI,1.2)}iFish.instanceMatrix.needsUpdate=true;
+for(let i=0;i<S.scraps.length;i++){const s=S.scraps[i],v=s.cd<=0&&Math.abs(s.x-P.x)<70&&Math.abs(s.z-P.z)<70;setM(iScr,i,s.x,s.y+Math.sin(t*2+s.x)*.1,s.z,t+s.x,v?1:0)}iScr.instanceMatrix.needsUpdate=true;
+eels.forEach((e,k)=>{const z=e.dead>0?0:1;for(let i=0;i<9;i++){const p=e.h[Math.min(e.h.length-1,i*5)]||[e.x,e.y,e.z];setM(iEel,k*9+i,p[0],p[1]+Math.sin(t*4+i)*.15,p[2],0,(.95-i*.05)*z,(.85-i*.04)*z,(1.1-i*.07)*z)}});iEel.instanceMatrix.needsUpdate=true;
+for(let i=0;i<14;i++){const j=jels[i];if(j)setM(iJel,i,j.x,j.y,j.z,t*.3,1.3+Math.sin(j.ph*2)*.15,1.3,1.3);else setM(iJel,i,0,0,0,0,0)}iJel.instanceMatrix.needsUpdate=true;
+for(let i=0;i<30;i++){const k=shards[i];if(k)setM(iSh,i,k.x,k.y,k.z,Math.atan2(k.vx,-k.vz),1.6);else setM(iSh,i,0,0,0,0,0)}iSh.instanceMatrix.needsUpdate=true;
+for(let i=0;i<8;i++){const p=pufs[i];if(p)setM(iPuf,i,p.x,p.y+Math.sin(t+i)*.2,p.z,t*.2+i,p.s);else setM(iPuf,i,0,0,0,0,0)}iPuf.instanceMatrix.needsUpdate=true;
+for(let i=0;i<3;i++){const r=rays[i];setM(iRay,i,r.x,r.y,r.z,r.yw,3.2,3.2,3.2)}iRay.instanceMatrix.needsUpdate=true;
+for(let i=0;i<NOD.length;i++){const n=NOD[i];setM(iNod,i,n.x,n.y+Math.sin(t*2+i)*.15,n.z,t+i,n.cd>0?0:.7)}iNod.instanceMatrix.needsUpdate=true;
+for(let i=0;i<LOGS.length;i++){const l=LOGS[i];setM(iLog,i,l.x,l.y+Math.sin(t*2+i)*.2,l.z,t*1.5,S.logs.includes(i)?0:.6,.9,.2)}iLog.instanceMatrix.needsUpdate=true;
+const nb=Math.hypot(P.x-ARN[0],P.z-ARN[1])<130;iDoc.visible=nb;if(nb){for(let i=0;i<40;i++){const a=i*2.4+t*.05,r=8+(i%7)*5;setM(iDoc,i,ARN[0]+Math.cos(a)*r,-112+((t*2.5+i*9)%100),ARN[1]+Math.sin(a)*r,a,.9,1.2,.1)}iDoc.instanceMatrix.needsUpdate=true}
+boss.visible=nb&&!S.endingApplied;iCube.visible=iTen.visible=iNode.visible=nb;
+if(nb){const aw=S.purged>=3?.4:1,cx=ARN[0],cy=-100,cz=ARN[1];boss.scale.setScalar(S.purged==0?1:S.purged==1?1.08:S.purged==2?1.16:1.25);bEye.material.color.setRGB(1,.12+.12*Math.sin(t*3),S.purged>=2?.7:.2);
+for(let i=0;i<16;i++){const a=t*.25*aw+i*.39,r=11+(i%3)*3;D.position.set(cx+Math.cos(a)*r,cy+Math.sin(a*2+i)*5,cz+Math.sin(a)*r);D.rotation.set(0,a,0);D.scale.set(1.6+i%3*.6,2.1+i%2,.4);D.updateMatrix();iCube.setMatrixAt(i,D.matrix)}iCube.instanceMatrix.needsUpdate=true;iCube.instanceColor.needsUpdate=true;
+for(let j=0;j<5;j++)for(let i=0;i<10;i++){const a=j*1.26+Math.sin(t*.8+i*.4)*.3,s=1.1-i*.09;setM(iTen,j*10+i,cx+Math.cos(a)*(6+i*1.5),cy-4+Math.sin(t+i*.5+j)*2-i*.35,cz+Math.sin(a)*(6+i*1.5),0,s)}iTen.instanceMatrix.needsUpdate=true;
+NODEP.forEach((n,i)=>{setM(iNode,i,n.x,n.y,n.z,0,1);iNode.setColorAt(i,n.done?CC.setRGB(.3,1,.5):CC.setRGB(1,.2,.2))});iNode.instanceMatrix.needsUpdate=true;iNode.instanceColor.needsUpdate=true}
+if(pts.visible){for(let i=0;i<PN;i++){const p=PART[i];p[1]+=i%5==0?.02:-.005;p[0]+=Math.sin(t+i)*.002;if(p[1]>20)p[1]-=40;if(p[1]<-20)p[1]+=40;pa[i*3]=P.x+((p[0]+30-(P.x%60)+60)%60)-30;pa[i*3+1]=P.y+p[1];pa[i*3+2]=P.z+((p[2]+30-(P.z%60)+60)%60)-30}pg.attributes.position.needsUpdate=true}
+renderer.render(scene,cam)}
+let last=0;function loop(ts){requestAnimationFrame(loop);const dt=Math.min(.05,(ts-last)/1000||.016);last=ts;frameDt=dt;if(playing&&!uiOpen||playing&&$('bp').style.display=='block')update(playing?dt:0);else if(!playing){t+=dt*.2}
+if(!playing){P.yaw+=dt*.05}render();ema+=(dt-ema)*.05;adj-=dt;if(adj<0){if(ema>.026&&pr>.5){pr=Math.max(.5,pr-.1);resize();adj=2;ema=.017}else if(ema<.0185&&pr<maxPR()-.01){pr=Math.min(maxPR(),pr+.1);resize();adj=4}}}
+window.__AS={S,P,H,SW,STN,ARN,update,render,begin,showMenu,startPlace,placeNow,zap,scan,craft,power,inRoom,LOGS,NOD,SQ,EA,EP,EN,eels:()=>eels,get bm(){return bm}};
+// title scene
+P.x=-6;P.y=-8;P.z=18;P.yaw=Math.PI*.9;P.pitch=-.12;showMenu('title');requestAnimationFrame(loop);
+})();
+</script></body></html>
