@@ -59,7 +59,7 @@ const projects = [
     type: 'Survival',
     tags: ['Underwater', 'Base Building', 'Survival', 'Under Development'],
     description: 'Dive into the depths of an expansive underwater world, where every wreck holds a story and every expedition brings you closer to the truth. Scavenge, build, craft, and explore as you follow the trail of a missing scientist and uncover the secrets buried beneath the ocean… …some of which were never meant to be found.',
-    featured: false,
+    featured: true,
     'desktop-feature': true,
   },
   {
@@ -95,7 +95,7 @@ const projects = [
     type: 'Simulation',
     tags: ['War', 'Historical', 'Under development', 'Top Pick'],
     description: 'Become the legendary Mongol leader and lead the Mongol Horde to conquer China! Use strategic placements to ensure your victory!',
-    featured: true,
+    featured: false,
     'desktop-feature': true
   },
   {
