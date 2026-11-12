@@ -132,7 +132,6 @@ const CORE = [
 const IMAGES = [
   "./images/Beam.cur",
   "./images/Cursor_15.cur",
-  "./images/abyssal-station.jpg",
   "./images/IMG_1002.jpeg",
   "./images/IMG_1604.jpeg",
   "./images/IMG_1605.jpeg",
@@ -154,6 +153,7 @@ const IMAGES = [
   "./images/IMG_1941.jpeg",
   "./images/IMG_1987.jpeg",
   "./images/IMG_2376.jpeg",
+  "./images/abyssal-station.jpeg",
   "./images/arrow.cur",
   "./images/construction.GIF",
   "./images/icon.JPG",

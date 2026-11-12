@@ -975,7 +975,7 @@
     return '';
   }
   const slug = u => String(u || '').split('/').pop().replace(/\.html?$/i, '');
-  const SLOT_GAMES = { 'asphalt-rush': 1, 'city-striker': 1, 'gh-clicker': 1, 'ghengis': 1, 'megalith': 1, 'pixel-ops': 1 };
+  const SLOT_GAMES = { 'abyssal-station': 1, 'asphalt-rush': 1, 'city-striker': 1, 'gh-clicker': 1, 'ghengis': 1, 'megalith': 1, 'pixel-ops': 1 };
   const gameStart = {}, sessionGames = new Set();
   let ghostN = 0;
   GH.on((name, d) => {
@@ -1241,7 +1241,7 @@
 
   /* ===================== save slots (local games only) ===================== */
   const SLKEY = 'gh-slots-v1', NSLOT = 6;
-  const PREFIX = { 'games/asphalt-rush.html': ['ar_'], 'games/city-striker.html': ['driving_sim'], 'games/gh-clicker.html': ['goblinSaveData'], 'games/ghengis.html': ['gk_'], 'games/megalith.html': ['megalith_'], 'games/pixel-ops.html': ['po_'] };
+  const PREFIX = { 'games/abyssal-station.html': ['abyss_'], 'games/asphalt-rush.html': ['ar_'], 'games/city-striker.html': ['driving_sim'], 'games/gh-clicker.html': ['goblinSaveData'], 'games/ghengis.html': ['gk_'], 'games/megalith.html': ['megalith_'], 'games/pixel-ops.html': ['po_'] };
   const SHELLKEY = /^(gh-|project-launcher|colton-launcher|coltonos|chat|mqtt|__|ruffle|localforage)/i;
   const slotsAll = () => LS.get(SLKEY, {}) || {};
   const snapLS = () => { const m = {}; try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); m[k] = localStorage.getItem(k); } } catch (e) {} return m; };

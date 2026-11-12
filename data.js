@@ -1,7 +1,7 @@
 // data.js
 
 const siteData = {
-  version: "v4.6.1",
+  version: "v4.7.0",
   author: "COLTON BENNETT",
   location: "Waukesha, WI",
   heroTitle: "Project Launcher",
@@ -13,6 +13,10 @@ const siteData = {
 };
 
 const announcements = [
+  {
+    title: "v4.7.0 — NEW GAME: Abyssal Station, a story-driven deep-sea adventure",
+    content: "<b>Abyssal Station</b> is a big new 3D adventure under the sea. You are a lone technician sent to restore Pelagia-9, a research station that went silent eleven years ago. Dive from the sunlit reef through the Kelp Forest and the Wreck Graveyard down into the Hadal Trench, repair and expand the station room by room, craft deeper-rated suits, scan the wildlife, read the crew's last logs, and uncover what has been singing in the dark. <b>Three endings.</b> Works with keyboard + mouse and touch (floating stick, drag to look), tuned to run smoothly on low-power devices, and it also runs completely on its own as a single HTML file."
+  },
   {
     title: "v4.6.0 — Five deep text adventures, Wordle, 3D Pinball and a dozen new classics",
     content: "<b>The text adventures are now huge:</b> The Copper Key has three storylines and six endings, plus four brand-new adventures (Station Omega, Murder at Blackwood Manor, The Dragon's Tooth, Neon Heist) with ASCII art, automatic saving and every ending tracked. <b>Wordle</b> with a 10,000-word dictionary, <b>3D Pinball: Space Cadet</b> with touch controls, and 2048, Block Drop, Connect Four, Sudoku, Memory Match, Simon, Lights Out, Code Breaker, Tape Dash and Flap Tape. Minesweeper, Solitaire, Reversi and FreeCell now have Help (press F1). Games flagged unfinished live in <b>Games &gt; Unfinished / Poor Quality</b>. Zooming is disabled everywhere, ScanDisk runs after POST (and sometimes at random), and Tapey has parallel eyes, faster reactions and a cap-free chat frequency."
@@ -51,23 +55,11 @@ const announcements = [
  * (it moves to Games > "Unfinished / Poor Quality" and out of Tapey's random picks). */
 const projects = [
   {
-    title: 'Abyssal Station',
-    url: 'games/abyssal-station.html',
-    image: 'images/abyssal-station.jpg',
-    alt: 'Abyssal Station',
-    statusKey: 'new',
-    type: 'Survival',
-    tags: ['Underwater', 'Base Building', 'Survival', 'Under Development'],
-    description: 'Dive into the depths of an expansive underwater world, where every wreck holds a story and every expedition brings you closer to the truth. Scavenge, build, craft, and explore as you follow the trail of a missing scientist and uncover the secrets buried beneath the ocean… …some of which were never meant to be found.',
-    featured: true,
-    'desktop-feature': true,
-  },
-  {
     title: 'Asphalt Rush',
     url: 'games/asphalt-rush.html',
     image: 'images/IMG_2376.jpeg',
     alt: 'Asphalt Rush',
-    statusKey: 'complete',
+    statusKey: 'new',
     type: 'Racing',
     tags: ['Street Racing', 'Customization', 'Driving', 'Racing', 'City', 'Underground', 'Under development', 'Top Pick'],
     description: 'Race through the night city to earn your respect amongst the other racers, take down the corrupt police, and buy, customize, and upgrade your rides to stay competitive!',
@@ -95,7 +87,19 @@ const projects = [
     type: 'Simulation',
     tags: ['War', 'Historical', 'Under development', 'Top Pick'],
     description: 'Become the legendary Mongol leader and lead the Mongol Horde to conquer China! Use strategic placements to ensure your victory!',
-    featured: false,
+    featured: true,
+    'desktop-feature': true
+  },
+  {
+    title: 'Abyssal Station',
+    url: 'games/abyssal-station.html',
+    image: 'images/abyssal-station.jpeg',
+    alt: 'Abyssal Station',
+    statusKey: 'new',
+    type: 'Adventure',
+    tags: ['Adventure', 'Open World', 'Story', 'Building', 'Mobile', 'Top Pick'],
+    description: 'Restore a silent deep-sea research station, dive from the reef to the trench floor, build and power your base, craft deeper suits and uncover the secret singing in the dark. Story-driven, 3 endings.',
+    featured: true,
     'desktop-feature': true
   },
   {
