@@ -1,7 +1,7 @@
 // data.js
 
 const siteData = {
-  version: "v4.7.0",
+  version: "v4.6.2",
   author: "COLTON BENNETT",
   location: "Waukesha, WI",
   heroTitle: "Project Launcher",
@@ -9,12 +9,12 @@ const siteData = {
   heroNote: "These are all made by me over the last year, and I do hope you enjoy!<br>Please excuse any bugs you find; I am still ironing things out.",
   marqueeText: "★★★ WELCOME TO COLTON'S PROJECT LAUNCHER ★★★ &nbsp;|&nbsp; BEST VIEWED IN 1024x768 &nbsp;|&nbsp; NETSCAPE NAVIGATOR 4.0 RECOMMENDED &nbsp;|&nbsp; ★★★ SIGN MY GUESTBOOK ★★★",
   footerCopyright: "© 2026 Colton Bennett",
-  footerLastUpdated: "November 11, 2026"
+  footerLastUpdated: "November 12, 2026"
 };
 
 const announcements = [
   {
-    title: "v4.7.0 — NEW GAME: Abyssal Station, a story-driven deep-sea adventure",
+    title: "v4.6.2 — NEW GAME: Abyssal Station, a story-driven deep-sea adventure",
     content: "<b>Abyssal Station</b> is a big new 3D adventure under the sea. You are a lone technician sent to restore Pelagia-9, a research station that went silent eleven years ago. Dive from the sunlit reef through the Kelp Forest and the Wreck Graveyard down into the Hadal Trench, repair and expand the station room by room, craft deeper-rated suits, scan the wildlife, read the crew's last logs, and uncover what has been singing in the dark. <b>Three endings.</b> Works with keyboard + mouse and touch (floating stick, drag to look), tuned to run smoothly on low-power devices, and it also runs completely on its own as a single HTML file."
   },
   {
