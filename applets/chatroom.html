@@ -739,7 +739,7 @@
         const CHAT_HISTORY_MODE_KEY = "mqtt_chat_history_mode_v1";
         const DEFAULT_CHAT_RETENTION_DAYS = 0;
         const DEFAULT_CHAT_HISTORY_MODE = "full-media";
-        const ALLOWED_INCOMING_TYPES = new Set(['ATT_PULL', 'ATT_LIVE_BUSY', 'ATT_LIVE_IDLE', 'ATT_PING', 'ATT_PONG', 'ATT_PEER_QUERY', 'ATT_PEER_HAVE', 'ATT_PEER_PULL', 
+        const ALLOWED_INCOMING_TYPES = new Set(['ATT_PULL', 'ATT_LIVE_BUSY', 'ATT_LIVE_IDLE', 'ATT_PING', 'ATT_PONG', 'ATT_PEER_QUERY', 'ATT_PEER_HAVE', 'ATT_PEER_PULL', 'ATT_CHUNK_REQ', 
             'MSG', 'DM', 'EDIT_MSG', 'DELETE_MSG', 'RESTORE_MSG', 'REACT_MSG', 'CLEAR_ALL', 'CLEAR_RECENT',
             'CMD', 'PRESENCE', 'PING', 'RENAME', 'TYPING', 'MUTE_ATTEMPT', 'DM_READ',
             'JOIN', 'LEAVE', 'CLEAR_SYSTEM_ALL', 'SYNC_MANIFEST_REQ', 'SYNC_MANIFEST', 'SYNC_PULL', 'SYNC_PULL_RANGE', 'SYNC_CHUNK', 'SYNC_TOMB_PAGE_REQ', 'SYNC_TOMB_PAGE'
@@ -811,6 +811,7 @@
         let pingIntervalTimer = null;
         let currentActivity = { id: null, kind: "homepage", name: "" };
         let hasJoinedRoomWindow = false;
+        let pingSeq = 0; const pingSeqSeen = new Map(); // per-session heartbeat counter: lets receivers drop stale/replayed PINGs without trusting clocks
         let rejoinPending = false; // set whenever we may have been dropped from others' online lists (went inactive / slept)
         let lastSeenTime = 0;
         let pendingMentionAuthor = null;
@@ -1437,24 +1438,37 @@
             return out;
         }
         const COMPRESSIBLE_MIME = /^(text\/|application\/(json|xml|pdf|javascript|x-ndjson|rtf)|image\/(bmp|svg\+xml)|audio\/(wav|x-wav))/i;
-        const ATT_CHUNK_BYTES = 32 * 1024;   // per-frame body size; well under any broker packet limit
+        const ATT_CHUNK_BYTES = 128 * 1024;  // per-frame body size; receivers accept any chunk size, so older 32KB senders still interoperate
+        const ATT_WINDOW = 6;                // chunks kept in flight per attachment (each still QoS 1 with its own retry)
         const attAsm = new Map();           // in-progress chunked attachments being reassembled
+        function attReceivingRecently(id, now = Date.now(), within = 6000) {
+            for (const [k, a] of attAsm) if (k.startsWith(id + '|') && now - a.t < within) return true;
+            return false;
+        }
         setInterval(() => { const now = Date.now(); attAsm.forEach((a, k) => {
             if (now - a.t > 600000) { attAsm.delete(k); return; }
-            // A single recovery request can itself be lost or answered by a peer
-            // that has gone offline. Re-request stalled assemblies periodically;
-            // already received chunks are retained and duplicate chunks are ignored.
+            const id = k.split('|')[0];
+            if (attHave.has(id)) return;
+            const canSel = a.got > 0 && a.got < a.cn && (a.selTries || 0) < 4 && a.from && isValidUsername(a.from) && activeUsers.has(a.from) && client && isConnected;
+            // 1) Stalled mid-transfer: ask the sender for just the chunks we are missing (cheap, no full re-send).
+            if (canSel) {
+                if (now - a.t > 4000 && now - (a.lastSelAt || 0) > 6000) {
+                    const missing = [];
+                    for (let i = 0; i < a.cn && missing.length < 4096; i++) if (!a.parts[i]) missing.push(i);
+                    a.lastSelAt = now; a.selTries = (a.selTries || 0) + 1;
+                    publishMessage({ type: 'ATT_CHUNK_REQ', author: myUsername, target: a.from, attachmentId: id, cn: a.cn, missing, timestamp: now });
+                }
+                return;
+            }
+            // 2) Nobody to ask selectively (or it did not help): fall back to a full re-request. Already received chunks are kept.
             if (now - a.t > 8000 && now - (a.lastPullAt || 0) > 12000) {
                 a.lastPullAt = now;
-                const id = k.split('|')[0];
-                if (!attHave.has(id)) {
-                    let w = attWanted.get(id);
-                    if (!w) { w = { tries: 0, nextAt: 0, asked: new Set(), hint: a.from || null }; attWanted.set(id, w); }
-                    w.nextAt = 0; w.asked.clear();
-                    scheduleAttPump(250);
-                }
+                let w = attWanted.get(id);
+                if (!w) { w = { tries: 0, nextAt: 0, asked: new Set(), hint: a.from || null }; attWanted.set(id, w); }
+                w.nextAt = 0; w.asked.clear();
+                scheduleAttPump(250);
             }
-        }); }, 4000);
+        }); }, 2000);
         let capturedBufferCtor = null;
         function toWireBuffer(u8) {
             const B = (typeof Buffer !== 'undefined' && Buffer) || (window.mqtt && window.mqtt.Buffer) || capturedBufferCtor;
@@ -1463,6 +1477,7 @@
         // New attachments created in the current session use a high-priority queue.
         // Retroactive ATT_PULL transfers yield between chunks whenever this queue has work.
         const liveAttQueue = [];
+        let liveAttCurrent = null; // job being sent right now
         let liveAttSending = false;
         const waitForLiveAttQueue = async (to = null) => {
             while (true) {
@@ -1473,7 +1488,7 @@
                 await new Promise(r => setTimeout(r, 40));
             }
         };
-        async function sendAttachmentFrame(id, { to = null, yieldIfLive = false } = {}) {
+        async function sendAttachmentFrame(id, { to = null, yieldIfLive = false, onlyChunks = null, expectCn = 0 } = {}) {
             if (!client || !isConnected || isGhost) return false;
             // Historical sync must wait even for a one-frame/small attachment. The
             // chunk-loop check below then keeps yielding between chunks for large files.
@@ -1514,21 +1529,32 @@
             // made a dropped/late chunk harder to recover from under broker load.
             // QoS-1 publish completion is awaited for every chunk before advancing.
             const cn = Math.ceil(body.length / ATT_CHUNK_BYTES);
-            for (let i = 0; i < cn; i++) {
-                // Historical/backfill transfers yield at every chunk boundary so
-                // current-session attachments can take priority immediately.
-                if (yieldIfLive) await waitForLiveAttQueue(to);
-                if (client !== c0 || !isConnected) return false;
-                const part = body.subarray(i * ATT_CHUNK_BYTES, (i + 1) * ATT_CHUNK_BYTES);
-                const sent = await publishOne(encodeFrame(Object.assign({ ci: i, cn }, base), part, gz));
-                if (!sent) return false;
-                for (let w = 0; w < 200; w++) {
-                    const sock = c0.stream && (c0.stream.socket || c0.stream), buffered = (sock && sock.bufferedAmount) || 0;
-                    if (buffered < 256 * 1024) break;
-                    await new Promise(r => setTimeout(r, 25));
+            // Selective retransmit is only valid when our chunking matches the requester's; otherwise send everything.
+            const only = (Array.isArray(onlyChunks) && (!expectCn || expectCn === cn)) ? new Set(onlyChunks) : null;
+            const order = [];
+            for (let i = 0; i < cn; i++) if (!only || only.has(i)) order.push(i);
+            // Sliding window: several QoS-1 chunks in flight at once. Each chunk still has its own ack + retry and the
+            // receiver reassembles by index, so out-of-order arrival is fine. One-at-a-time was capped at (chunk size / round-trip time).
+            let cursor = 0, failed = false;
+            const lane = async () => {
+                while (!failed) {
+                    const i = order[cursor++];
+                    if (i === undefined) return;
+                    // Historical/backfill transfers yield at every chunk boundary so current-session attachments take priority.
+                    if (yieldIfLive) await waitForLiveAttQueue(to);
+                    if (client !== c0 || !isConnected) { failed = true; return; }
+                    const part = body.subarray(i * ATT_CHUNK_BYTES, (i + 1) * ATT_CHUNK_BYTES);
+                    const sent = await publishOne(encodeFrame(Object.assign({ ci: i, cn }, base), part, gz));
+                    if (!sent) { failed = true; return; }
+                    for (let w = 0; w < 200; w++) {
+                        const sock = c0.stream && (c0.stream.socket || c0.stream), buffered = (sock && sock.bufferedAmount) || 0;
+                        if (buffered < 1024 * 1024) break;
+                        await new Promise(r => setTimeout(r, 25));
+                    }
                 }
-            }
-            return true;
+            };
+            await Promise.all(Array.from({ length: Math.min(ATT_WINDOW, order.length) }, lane));
+            return !failed;
         }
         // Serialize incoming attachment frames and always process current-session
         // deliveries before queued historical-sync frames. Historical senders mark
@@ -1588,6 +1614,7 @@
                 if (!Number.isInteger(h.ci) || !Number.isInteger(h.cn) || h.cn < 2 || h.cn > 4096 || h.ci < 0 || h.ci >= h.cn) return;
                 const key = h.id + '|' + (h.cid || '') + '|' + (h.to || '');
                 let a = attAsm.get(key);
+                if (a && a.cn !== h.cn) { attAsm.delete(key); a = undefined; } // sender re-chunked (different size): restart this assembly
                 if (!a) { if (attAsm.size >= 128) return; a = { parts: new Array(h.cn), got: 0, bytes: 0, cn: h.cn, t: Date.now(), lastPullAt: 0 }; attAsm.set(key, a); }
                 if (a.cn !== h.cn) return;
                 a.t = Date.now(); a.nudged = false; a.from = h.from;
@@ -1645,17 +1672,20 @@
                 const id = m.text.slice(4);
                 registerAttRef(id, m.id);
                 if (wantRemote && !attHave.has(id) && !attWanted.has(id)) {
-                    attWanted.set(id, { tries: 0, nextAt: Date.now() + (live ? 4000 : 0), asked: new Set(), hint: m.author === myUsername ? null : m.author });
+                    attWanted.set(id, { tries: 0, nextAt: Date.now() + (live ? 8000 : 0), asked: new Set(), hint: m.author === myUsername ? null : m.author });
                 }
             }
-            if (attWanted.size) scheduleAttPump(live ? 4500 : 1500);
+            if (attWanted.size) scheduleAttPump(live ? 8500 : 1500);
         }
         function noteAllAttachmentRefs() {
             noteAttachmentRefs(messageHistory);
             Object.values(dmHistories).forEach(l => noteAttachmentRefs(l));
         }
+        let attPumpDue = 0;
         function scheduleAttPump(delay = 4000) {
-            if (attPumpTimer) return;
+            const due = Date.now() + delay;
+            if (attPumpTimer) { if (attPumpDue <= due) return; clearTimeout(attPumpTimer); } // an earlier request wins
+            attPumpDue = due;
             attPumpTimer = setTimeout(() => { attPumpTimer = null; pumpAttachmentPulls(); }, delay);
         }
         function pumpAttachmentPulls() {
@@ -2023,7 +2053,7 @@
         // ---------------------------------------------------------------------
         //  Transport: routing, QoS, outbox with retry
         // ---------------------------------------------------------------------
-        const DIRECT_TYPES = new Set(['DM', 'DELETE_MSG', 'RESTORE_MSG', 'SYNC_MANIFEST', 'SYNC_PULL', 'SYNC_PULL_RANGE', 'SYNC_CHUNK', 'SYNC_TOMB_PAGE_REQ', 'SYNC_TOMB_PAGE', 'DM_READ', 'ATT_PULL', 'ATT_LIVE_BUSY', 'ATT_LIVE_IDLE', 'ATT_PING', 'ATT_PONG', 'ATT_PEER_HAVE', 'ATT_PEER_PULL']);
+        const DIRECT_TYPES = new Set(['DM', 'DELETE_MSG', 'RESTORE_MSG', 'SYNC_MANIFEST', 'SYNC_PULL', 'SYNC_PULL_RANGE', 'SYNC_CHUNK', 'SYNC_TOMB_PAGE_REQ', 'SYNC_TOMB_PAGE', 'DM_READ', 'ATT_PULL', 'ATT_LIVE_BUSY', 'ATT_LIVE_IDLE', 'ATT_PING', 'ATT_PONG', 'ATT_PEER_HAVE', 'ATT_PEER_PULL', 'ATT_CHUNK_REQ']);
         const QOS1_TYPES = new Set(['MSG', 'DM', 'EDIT_MSG', 'DELETE_MSG', 'RESTORE_MSG', 'REACT_MSG', 'CLEAR_ALL', 'CLEAR_RECENT', 'CLEAR_SYSTEM_ALL', 'RENAME', 'ATT_LIVE_BUSY', 'ATT_LIVE_IDLE']);
         function topicsFor(data) {
             if (DIRECT_TYPES.has(data.type) && data.target) {
@@ -2521,6 +2551,7 @@
 
             const previousChatWindowOpen = isChatWindowOpen;
             const previousLowPowerMode = parentLowPowerMode;
+            const activitySigBefore = `${isOnHomepage}|${currentActivity && currentActivity.id}|${currentActivity && currentActivity.kind}`;
 
             isChatWindowOpen = data.chatWindowOpen !== undefined
                 ? !!data.chatWindowOpen
@@ -2543,6 +2574,8 @@
             }
 
             updateActivityDisplay();
+            // switching windows / pages in the parent shell is the user doing something, even though no input event reaches this iframe
+            if (activitySigBefore !== `${isOnHomepage}|${currentActivity && currentActivity.id}|${currentActivity && currentActivity.kind}` || previousChatWindowOpen !== isChatWindowOpen) noteUserInteraction();
 
             const selfData = activeUsers.get(myUsername);
             if (selfData) {
@@ -4095,7 +4128,7 @@
             activeUsers.set(myUsername, uData);
             if (wasIdle !== idleNow) renderUserList();
             const published = publishMessage({
-                type: "PING", cid: myCid,
+                type: "PING", cid: myCid, pseq: ++pingSeq, iv: getPingIntervalMs(),
                 author: myUsername,
                 isGhost: isGhost,
                 isOnHomepage: isOnHomepage,
@@ -4180,6 +4213,8 @@
                 return;
             }
 
+            if (data.action === 'userActivity' || data.action === 'chatWindowOpened' || data.action === 'chatWindowClosed') noteUserInteraction(); // activity outside this iframe is still activity
+            if (data.action === 'userActivity') return;
             if (data.action === 'chatWindowOpened') {
                 handleChatWindowOpened(data);
             } else if (data.action === 'chatWindowClosed') {
@@ -4279,7 +4314,7 @@
             client.on("connect", () => {
                 connSeq++; connStats.connects++; isConnected = true; lastInboundAt = Date.now(); lastConnectedAt = Date.now();
                 /* we were deaf while disconnected: give everyone a fresh grace period instead of reaping them as "disconnected" */
-                activeUsers.forEach(u => { u.lastSeen = Date.now(); });
+                touchAllPresence(Date.now());
                 updateConnectionStatus("CONNECTED", "good");
                 setTimeout(() => { if (isConnected) publishPing(true); }, 2500); // second announce so peers that missed the first one re-learn us
                 client.subscribe(ROOM_TOPIC, { qos: 1 }, (err) => {
@@ -4369,10 +4404,13 @@
         }
 
         /* ---- presence notices: deterministic ids, derived from observed state, not from a single lossy packet ---- */
-        const PRESENCE_TIMEOUT_MS = 45000;
+        const PRESENCE_TIMEOUT_MS = 30000;
         const IDLE_GRACE_MS = 5 * 60000 + 20000; // only used by the hidden-tab socket watchdog now; "inactive" no longer buys extra time on the online list
         // Inactive (idle/hidden) tabs keep heartbeating, so a user whose heartbeat stops is booted after the same short timeout as anyone else.
         function willDelay(name) { return WILL_GRACE_MS; }
+        // A user is gone after ~4 missed heartbeats (never less than PRESENCE_TIMEOUT_MS); low-power clients beat slower, so they get proportionally longer.
+        function presenceTimeoutFor(u) { return Math.max(PRESENCE_TIMEOUT_MS, ((u && u.iv) || 5000) * 4); }
+        function touchAllPresence(t = Date.now()) { activeUsers.forEach(u => { u.lastSeen = t; u.lastBeat = t; }); }
         function latestPresenceEvent(user) {
             let best = null, bi = -1;
             messageHistory.forEach((m, i) => {
@@ -4419,7 +4457,7 @@
             setTimeout(() => l.forEach(d => { try { client.emit('message', ROOM_TOPIC, JSON.stringify(d)); } catch (e) {} }), 50);
         }
         function wakeUp(restored) {
-            const now = Date.now(); activeUsers.forEach(u => { u.lastSeen = now; });
+            const now = Date.now(); touchAllPresence(now);
             if (!client) return;
             if (!client.connected && !client.reconnecting) { try { client.reconnect(); } catch (e) {} return; }
             if (restored) { connSeq++; announceMyJoin(); }
@@ -4450,6 +4488,7 @@
         });
         window.addEventListener('online', () => wakeUp(false));
         window.addEventListener('pageshow', (e) => { if (e.persisted) wakeUp(true); });
+        document.addEventListener('resume', () => wakeUp(true)); // a frozen (background-suspended) tab was thawed: others may have dropped us
 
         /* ---- reactions: one last-writer-wins register per (emoji, user) so sync, replays and reordering can't lose or resurrect reactions ---- */
         const RX_SEP = '\u0001';
@@ -4532,7 +4571,7 @@
                 ['Last error', connStats.lastError || 'none'],
                 ['Data received', fmtAgo(lastInboundAt)],
                 ['Heartbeat sent', fmtAgo(lastPingPublishedAt)],
-                ['This tab', document.hidden ? 'hidden (inactive)' : 'visible'],
+                ['This tab', document.hidden ? 'hidden (AFK)' : 'visible'],
                 ['Users online', online],
                 ['Unsent messages', `${outbox.size} (${failed} failed)`],
                 ['Downloads', `${attWanted.size} wanted, ${attAsm.size} in progress, ${attHave.size} stored`],
@@ -4592,7 +4631,7 @@
                             willTimers.set(name, setTimeout(() => {
                                 willTimers.delete(name);
                                 const u = activeUsers.get(name);
-                                if (!u || u.lastSeen > marker || !isConnected || name === myUsername) return; // they came back
+                                if (!u || (u.lastBeat || u.lastSeen) > marker || !isConnected || name === myUsername) return; // they came back
                                 activeUsers.delete(name);
                                 if (!u.isGhost && !name.startsWith('ghost-')) announceLeaveNotice(name, u.sid || data.sid, Date.now(), true);
                                 renderUserList(); evaluateAdminRole(); updateAndBroadcastPresence();
@@ -4611,8 +4650,20 @@
                     if ((data.type === "MSG" || data.type === "DM") && !validateMessagePayloadAfterDecompression(data)) return;
                     
                     if ((data.type === "MSG" || data.type === "DM") && data.author !== myUsername && incomingFlood(data.author)) return;
+                    if (data.type === "PING" && data.cid && Number.isSafeInteger(data.pseq)) {
+                        const prevSeq = pingSeqSeen.get(data.cid);
+                        if (prevSeq !== undefined && data.pseq <= prevSeq) return; // stale / replayed / duplicate heartbeat must never keep someone listed
+                        pingSeqSeen.set(data.cid, data.pseq);
+                        if (pingSeqSeen.size > 400) pingSeqSeen.delete(pingSeqSeen.keys().next().value);
+                    }
                     if (data.author && !String(data.type || '').startsWith('ATT_') && !blockedUsers.has(data.author) && !(data.timestamp && Date.now() - data.timestamp > 90000 && data.type !== "PING")) {
                         const existing = activeUsers.get(data.author); data.__wasKnown = !!existing;
+                        // Only real liveness signals extend someone's stay on the list: fresh heartbeats, joins and live chat traffic.
+                        // Sync/manifest/typing/etc. packets can still introduce a user, but only for a few seconds unless a heartbeat follows.
+                        const pktAge = data.timestamp ? Date.now() - data.timestamp : 0;
+                        const isBeat = (data.type === "PING" && (Number.isSafeInteger(data.pseq) || pktAge < 90000)) || data.type === "JOIN" ||
+                            ((data.type === "MSG" || data.type === "DM" || data.type === "GROUP_MSG") && pktAge < 30000);
+                        const beatIv = Number.isFinite(data.iv) ? Math.min(60000, Math.max(1000, data.iv)) : ((existing && existing.iv) || 5000);
                         const incomingActivity = data.activity
                             ? normalizeActivity(data.activity, data.isOnHomepage === true)
                             : (existing?.activity
@@ -4622,7 +4673,9 @@
                                     : { id: null, kind: "chatroom", name: "Chatroom" }));
 
                         activeUsers.set(data.author, {
-                            lastSeen: Date.now(),
+                            lastSeen: Date.now(), iv: beatIv,
+                            lastBeat: isBeat ? Date.now() : (existing ? existing.lastBeat : Date.now() - Math.max(0, presenceTimeoutFor({ iv: beatIv }) - 12000)),
+                            cidIdle: existing ? existing.cidIdle : undefined,
                             joinTime: data.joinTime || (existing ? existing.joinTime : Date.now()),
                             isOnHomepage: data.isOnHomepage !== undefined
                                 ? data.isOnHomepage
@@ -4635,7 +4688,16 @@
                             idle: data.idle !== undefined ? data.idle === true : ((data.type === "PING" || data.type === "JOIN") ? false : !!(existing && existing.idle)),
                             room: data.type === 'PING' && ['global','other'].includes(data.room) || (data.type === 'PING' && typeof data.room === 'string' && /^group:[A-Za-z0-9_-]{8,64}$/.test(data.room)) ? data.room : (existing && existing.room) || 'global'
                         });
-                        { const ue = activeUsers.get(data.author); if (ue) ue.idleSince = ue.idle ? ((existing && existing.idle && existing.idleSince) || Date.now()) : 0; }
+                        { // one person with several tabs: only AFK if every live tab is AFK (a hidden duplicate tab must not mark an active user AFK)
+                            const ue = activeUsers.get(data.author);
+                            if (ue) {
+                                const tabs = ue.cidIdle || (ue.cidIdle = new Map()), tNow = Date.now();
+                                if (data.cid && (data.type === "PING" || data.type === "JOIN") && data.idle !== undefined) tabs.set(data.cid, { idle: data.idle === true, at: tNow });
+                                tabs.forEach((v, k) => { if (tNow - v.at > 25000) tabs.delete(k); });
+                                if (tabs.size > 1) ue.idle = Array.from(tabs.values()).every(v => v.idle);
+                                ue.idleSince = ue.idle ? ((existing && existing.idle && existing.idleSince) || tNow) : 0;
+                            }
+                        }
                         // someone we never saw arrive (their JOIN was lost or we connected late) still gets a join notice once we've been listening a while
                         if (!existing && data.author !== myUsername && data.type !== "JOIN" && data.type !== "LEAVE" && !data.isGhost && !data.author.startsWith("ghost-") &&
                             isConnected && Date.now() - lastConnectedAt > 12000 && (!data.timestamp || Date.now() - data.timestamp < 30000)) {
@@ -4724,6 +4786,9 @@
                     }
                     else if (data.type === 'ATT_PEER_PULL') {
                         handleAttachmentPeerPull(data);
+                    }
+                    else if (data.type === 'ATT_CHUNK_REQ') {
+                        handleAttChunkReq(data);
                     }
                     else if (data.type === "JOIN") {
                         if (blockedUsers.has(data.author)) return;
@@ -6400,10 +6465,10 @@
         function checkPresence() {
             const now = Date.now(), gap = now - lastPresenceRun; lastPresenceRun = now;
             if (!isConnected || now - lastConnectedAt < 8000) { updateAndBroadcastPresence(); return; } // never reap people while WE are the one who is offline
-            if (gap > 20000) { rejoinPending = true; activeUsers.forEach(u => { u.lastSeen = now; }); updateAndBroadcastPresence(); return; } // we were asleep/throttled, so silence proves nothing
+            if (gap > 20000) { rejoinPending = true; touchAllPresence(now); updateAndBroadcastPresence(); return; } // we were asleep/throttled, so silence proves nothing
             let changed = false;
             activeUsers.forEach((userData, user) => {
-                if (user !== myUsername && now - userData.lastSeen > PRESENCE_TIMEOUT_MS) {
+                if (user !== myUsername && now - (userData.lastBeat || userData.lastSeen) > presenceTimeoutFor(userData)) {
                     activeUsers.delete(user);
                     if (!userData.isGhost && !user.startsWith('ghost-')) announceLeaveNotice(user, userData.sid, now, true);
                     changed = true;
@@ -6435,11 +6500,11 @@
                     badge.textContent = ` [${userData.status}]`;
                     item.appendChild(badge);
                 }
-                const isInactive = !!userData.idle;
+                const isInactive = !!userData.idle && userData.status !== 'AFK'; // a manual AFK status already shows its own badge
                 if (isInactive) {
                     const inactive = document.createElement('span');
                     inactive.style.cssText = 'font-size:11px;color:#888;';
-                    inactive.textContent = ' [Inactive]';
+                    inactive.textContent = ' [AFK]';
                     item.appendChild(inactive);
                 } else {
                     const activityBadge = getActivityPresenceBadge(userData);
@@ -6533,6 +6598,9 @@
             if (data.cid !== undefined && (typeof data.cid !== 'string' || data.cid.length > 80)) return false;
             if (data.sid !== undefined && (typeof data.sid !== 'string' || data.sid.length > 80)) return false;
             if (data.idle !== undefined && typeof data.idle !== 'boolean') return false;
+            if (data.pseq !== undefined && !Number.isSafeInteger(data.pseq)) return false;
+            if (data.type === 'ATT_CHUNK_REQ' && (!ATT_ID_RE.test(data.attachmentId || '') || !Number.isInteger(data.cn) || !Array.isArray(data.missing) || data.missing.length > 4096 || data.missing.some(n => !Number.isInteger(n) || n < 0 || n > 4095))) return false;
+            if (data.iv !== undefined && !Number.isFinite(data.iv)) return false;
             if (data.sig !== undefined && (typeof data.sig !== 'string' || data.sig.length > 200)) return false;
             if (data.tab !== undefined && data.tab !== 'global' && data.tab !== 'dm') return false;
             if (data.room !== undefined && (typeof data.room !== 'string' || data.room.length > 100)) return false;
@@ -7007,7 +7075,7 @@
                 const wanted = attWanted.get(id);
                 if (wanted) Object.assign(wanted, meta);
                 else if ((wantRemote || options.live) && !attHave.has(id)) {
-                    attWanted.set(id, Object.assign({ tries:0, nextAt:Date.now() + (options.live ? 4000 : 0),
+                    attWanted.set(id, Object.assign({ tries:0, nextAt:Date.now() + (options.live ? 8000 : 0),
                         asked:new Set(), hint:msg && msg.author === myUsername ? null : (msg && msg.author) }, meta));
                 }
                 if (options.live && msg && msg.author !== myUsername && !attHave.has(id)) noteLiveIncomingAttachment(id, msg.author);
@@ -7024,7 +7092,7 @@
                     remember(a.id, a.kind, timestamp, a.size, m);
                 });
             });
-            if (attWanted.size) scheduleAttPump(options.live ? 4500 : 1500);
+            if (attWanted.size) scheduleAttPump(options.live ? 8500 : 1500);
         };
         const xBasePumpAttachmentPulls = pumpAttachmentPulls;
         pumpAttachmentPulls = function() {
@@ -7138,6 +7206,7 @@
         }
         function startAttachmentPeerQuery(state) {
             if (!state || attHave.has(state.id) || attPeerRecovery.get(state.id) !== state) return;
+            if (attReceivingRecently(state.id)) { armAttachmentRecoveryTimer(state, 4000, () => startAttachmentPeerQuery(state)); return; } // bytes are arriving: don't pile on
             if (!(state.room === 'global' || state.room.startsWith('group:'))) {
                 state.phase = 'waiting-join'; // DMs have no third-party room peers.
                 return;
@@ -7158,6 +7227,7 @@
         }
         function requestNextAttachmentPeer(state) {
             if (!state || attHave.has(state.id) || attPeerRecovery.get(state.id) !== state) return;
+            if (attReceivingRecently(state.id)) { armAttachmentRecoveryTimer(state, 4000, () => requestNextAttachmentPeer(state)); return; }
             const candidate = (state.candidates || []).shift();
             if (!candidate) { state.phase = 'waiting-join'; state.selected = null; return; }
             state.selected = candidate;
@@ -7186,7 +7256,7 @@
                 requestId:generateId(), phase:'author-ping', candidates:[], selected:null, timer:null
             };
             attPeerRecovery.set(id, state);
-            if (author && isValidUsername(author)) {
+            if (author && isValidUsername(author) && activeUsers.has(author)) { // offline author: no point waiting for a pong
                 publishMessage({
                     type:'ATT_PING', author:myUsername, target:author, cid:myCid,
                     attachmentId:id, messageId:state.messageId, room:state.room,
@@ -7207,6 +7277,7 @@
                     type:'ATT_PONG', author:myUsername, target:data.author, cid:myCid,
                     attachmentId:data.attachmentId, messageId:data.messageId,
                     room:data.room, requestId:data.requestId, available:true,
+                    queued: !!(liveAttCurrent && liveAttCurrent.id === data.attachmentId) || liveAttQueue.some(j => j.id === data.attachmentId),
                     timestamp:Date.now()
                 });
                 // The ping is silent to the user; the stored blob is sent directly
@@ -7220,7 +7291,7 @@
             if (!state || state.phase === 'peer-transfer' || state.requestId !== data.requestId || state.messageId !== data.messageId || state.room !== data.room) return;
             state.phase = 'author-transfer';
             state.selected = { author:data.author, cid:data.cid || null };
-            armAttachmentRecoveryTimer(state, ATT_PEER_TRANSFER_STALL_MS, () => startAttachmentPeerQuery(state));
+            armAttachmentRecoveryTimer(state, data.queued ? 25000 : ATT_PEER_TRANSFER_STALL_MS, () => startAttachmentPeerQuery(state)); // queued behind other files: be patient (every received chunk re-arms this)
         }
         async function handleAttachmentPeerQuery(data) {
             if (!data || data.author === myUsername && data.cid === myCid || blockedUsers.has(data.author)) return;
@@ -7262,6 +7333,14 @@
             if (!rec || !rec.blob) return;
             queueAttBroadcast(data.attachmentId, data.author);
         }
+        function handleAttChunkReq(data) {
+            if (!data || data.target !== myUsername || isGhost || blockedUsers.has(data.author) || !isValidUsername(data.author)) return;
+            if (!ATT_ID_RE.test(data.attachmentId || '') || !Array.isArray(data.missing) || !data.missing.length || !attHave.has(data.attachmentId)) return;
+            const ctx = findAttachmentContext(data.attachmentId);
+            if (!ctx) return;
+            if (ctx.room.startsWith('dm:') && ctx.room !== 'dm:' + data.author) return; // never hand a DM attachment to a third party
+            queueAttBroadcast(data.attachmentId, data.author, 0, data.missing.filter(n => Number.isInteger(n) && n >= 0 && n < 4096), Number(data.cn) || 0);
+        }
         function retryPeerRecoveryOnJoin() {
             if (!attPeerRecovery.size) return;
             attPeerRecovery.forEach(state => {
@@ -7284,10 +7363,11 @@
                 if (av !== bv) return av - bv;
                 return (Number(mb.timestamp)||0) - (Number(ma.timestamp)||0);
             });
-            let started = 0;
+            let started = 0, active = 0;
+            attPeerRecovery.forEach(st => { if (st.phase !== 'waiting-join') active++; });
             for (const [id,w] of ordered) {
-                if (started >= 3) break; // cap simultaneous probes to avoid room-wide bursts
-                if (w.nextAt > now || attPeerRecovery.has(id)) continue;
+                if (active + started >= 8) break; // cap simultaneous recoveries (in-flight ones count) to avoid room-wide bursts
+                if (w.nextAt > now || attPeerRecovery.has(id) || attReceivingRecently(id, now)) continue;
                 beginAttachmentRecovery(id,w);
                 w.nextAt = now + 15000;
                 started++;
@@ -7299,6 +7379,7 @@
             clearAttachmentRecovery(id);
             for (const [key, assembly] of attAsm) if (key.startsWith(id + '|')) attAsm.delete(key);
             xBaseOnAttStoredPeerRecovery(id);
+            if (attWanted.size) scheduleAttPump(150); // start the next missing attachment right away instead of waiting for the 5s tick
         };
         const xBaseSetAttProgressPeerRecovery = setAttProgress;
         setAttProgress = function(id, got, cn) {
@@ -8762,16 +8843,27 @@
         // Current-session attachments always take priority over historical sync.
         // Keep them FIFO (rather than size-sorting them) so every newly sent image/file
         // is completed before the lower-priority ATT_PULL queue resumes.
-        queueAttBroadcast = function(id,to,tries=0) {
+        queueAttBroadcast = function(id,to,tries=0,only=null,expectCn=0) {
             if(!client||!isConnected) {
-                attBroadcastBacklog.push({id,to});
+                if(!only) attBroadcastBacklog.push({id,to});
                 return Promise.resolve(false);
             }
             return new Promise(resolve => {
-                const key = `${id}|${to||''}`;
+                const sel = Array.isArray(only) && only.length;
+                const key = `${id}|${to||''}${sel?'|sel':''}`;
                 const existing = liveAttQueue.find(job => job.key === key);
-                if (existing) existing.waiters.push(resolve);
-                else liveAttQueue.push({id,to,tries,key,waiters:[resolve]});
+                if (existing) {
+                    existing.waiters.push(resolve);
+                    if (sel && existing.only) existing.only = Array.from(new Set(existing.only.concat(only))); // merge missing-chunk requests
+                    return pumpLiveAttQueue();
+                }
+                // A directed copy is redundant while the same file is still waiting in the queue as a room broadcast
+                // (the requester is subscribed to it and will receive it in full).
+                if (to && !sel && liveAttQueue.some(job => job.id === id && !job.to && !job.only)) {
+                    liveAttQueue.find(job => job.id === id && !job.to && !job.only).waiters.push(resolve);
+                    return pumpLiveAttQueue();
+                }
+                liveAttQueue.push({id,to,tries,key,only:sel?only.slice():null,expectCn,waiters:[resolve]});
                 pumpLiveAttQueue();
             });
         };
@@ -8781,20 +8873,22 @@
             try {
                 while (liveAttQueue.length) {
                     const job = liveAttQueue.shift();
+                    liveAttCurrent = job;
                     let ok = false;
                     for (let attempt = job.tries || 0; attempt <= 3 && !ok; attempt++) {
                         if (!client || !isConnected) {
-                            attBroadcastBacklog.push({id:job.id,to:job.to});
+                            if (!job.only) attBroadcastBacklog.push({id:job.id,to:job.to});
                             break;
                         }
-                        try { ok = await sendAttachmentFrame(job.id,{to:job.to}); }
+                        try { ok = await sendAttachmentFrame(job.id,{to:job.to,onlyChunks:job.only,expectCn:job.expectCn}); }
                         catch (e) { ok = false; }
                         if (!ok && attempt < 3) await new Promise(r => setTimeout(r, 700 * (attempt + 1)));
                     }
+                    liveAttCurrent = null;
                     job.waiters.forEach(done => { try { done(ok); } catch (e) {} });
                 }
             } finally {
-                liveAttSending = false;
+                liveAttSending = false; liveAttCurrent = null;
                 // Wake the lower-priority sender only after the entire live batch drains.
                 if (attSendQueue.length) pumpAttSendQueue();
                 if (liveAttQueue.length) pumpLiveAttQueue();
