@@ -1,3 +1,4 @@
+<!-- STUN PROD FIX: sphere meshes are stripped from the held model; firing effect is a line beam only. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1582,18 +1583,43 @@ function renderSlate(){const sl=h('div',{class:'sl plate'});const rail=h('div',{
  const body=h('div',{class:'sbody'});const head=h('div',{class:'shead'},h('h2',{text:TABNAME[ui.tab]}),h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},h('span',{class:'tag',text:'DATA '+G.data}),h('button',{class:'btn sm',onclick:closeSlate},'Close')));const sc=h('div',{class:'sscroll'});body.append(head,sc);sl.append(rail,body);elSlate.innerHTML='';elSlate.append(sl);TABS[ui.tab](sc);}
 const costTxt=(o)=>Object.entries(o).map(([k,n])=>h('span',{class:(G.inv[k]||0)>=n?'y':'n',text:n+' '+ITEMS[k].n+'  '}));
 function missionCraftBreakdown(needs){
- const totals={},depths={};
- const byOutput={};RECIPES.forEach(r=>{if(r.out)Object.entries(r.out).forEach(([k,n])=>byOutput[k]={recipe:r,yield:n});});
- const add=(id,n,depth)=>{totals[id]=(totals[id]||0)+n;depths[id]=depths[id]===undefined?depth:Math.min(depths[id],depth);if(depth>=10)return;const entry=byOutput[id];if(!entry)return;const crafts=Math.ceil(n/entry.yield);Object.entries(entry.recipe.in||{}).forEach(([mat,qty])=>add(mat,qty*crafts,depth+1));};
- Object.entries(needs||{}).forEach(([id,n])=>add(id,n,0));
- return Object.entries(totals).map(([id,n])=>({id,n,name:ITEMS[id]?.n||id,depth:depths[id]||0,primary:Object.prototype.hasOwnProperty.call(needs,id)}));
+ const byOutput={},byId={};
+ RECIPES.forEach(r=>{byId[r.id]=r;if(r.out)Object.entries(r.out).forEach(([k,n])=>byOutput[k]={recipe:r,yield:n});});
+ const build=(id,n,depth,path)=>{
+  const entry=byOutput[id]|| (byId[id]?{recipe:byId[id],yield:1}:null);
+  const node={id,n,depth,children:[]};
+  if(!entry||depth>=10||path.includes(id))return node;
+  const crafts=Math.ceil(n/entry.yield);
+  const nextPath=path.concat(id);
+  Object.entries(entry.recipe.in||{}).forEach(([mat,qty])=>node.children.push(build(mat,qty*crafts,depth+1,nextPath)));
+  return node;
+ };
+ return Object.entries(needs||{}).map(([id,n])=>build(id,n,0,[]));
+}
+function missionCraftLabel(id,n){
+ const labels={tplate:'Ti Plate',titanium:'Titanium ore',scrap:'Scrap metal',wire:'Copper wire',copper:'Copper nodule',quartz:'Quartz',pearl:'Glow pearl',crystal:'Vent crystal'};
+ const base=labels[id]||ITEMS[id]?.n||id;
+ return base+(n===1?'':'s');
 }
 function appendMissionCraftTracker(sc,step){
  if(!step||!step.craft)return;
- const rows=missionCraftBreakdown(step.craft);
+ const roots=missionCraftBreakdown(step.craft);
  const card=h('div',{class:'card',style:{marginTop:'10px',border:'1px solid var(--line)'}});
- card.append(h('div',{class:'sec',text:'Crafting resource tracker'}));
- rows.forEach(r=>card.append(h('div',{class:'row',style:{paddingLeft:(r.depth*14)+'px',opacity:r.primary?1:.82}},h('label',{text:(r.depth?'↳ '.repeat(r.depth):'')+r.n+' '+r.name}),h('span',{class:'tag',text:r.primary?'REQUIRED':'INGREDIENT'}))));
+ card.append(h('div',{class:'sec',text:'Crafting checklist'}));
+ roots.forEach(root=>{
+  const recipe=RECIPES.find(r=>r.id===root.id);
+  const title=recipe?.n||ITEMS[root.id]?.n||root.id;
+  card.append(h('div',{style:{fontWeight:'700',margin:'4px 0 8px',color:'var(--accent)'},text:'Craft '+title+':'}));
+  const draw=(node)=>{
+   const have=G.inv[node.id]||0,done=have>=node.n;
+   const row=h('div',{style:{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:'8px',padding:'3px 0 3px '+(node.depth*16)+'px',fontSize:'13px'}});
+   row.append(h('span',{style:{minWidth:'0',color:done?'#75d6a7':'var(--text)'} ,text:(done?'☑ ':'☐ ')+node.n+' '+missionCraftLabel(node.id,node.n)}));
+   row.append(h('span',{class:'tag',style:{flexShrink:'0',color:done?'#75d6a7':'var(--muted)'},text:have+'/'+node.n}));
+   card.append(row);
+   node.children.forEach(draw);
+  };
+  draw(root);
+ });
  sc.append(card);
 }
 const TABS={
