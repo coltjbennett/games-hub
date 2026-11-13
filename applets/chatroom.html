@@ -811,6 +811,7 @@
         let pingIntervalTimer = null;
         let currentActivity = { id: null, kind: "homepage", name: "" };
         let hasJoinedRoomWindow = false;
+        let rejoinPending = false; // set whenever we may have been dropped from others' online lists (went inactive / slept)
         let lastSeenTime = 0;
         let pendingMentionAuthor = null;
         let currentStatus = "Online";
@@ -2068,8 +2069,18 @@
             });
         }
         const MQTT_MAX_PACKET = 700 * 1024; // the public EMQX broker closes the connection on oversized packets (and that fires our will)
+        // Failsafe: if we were inactive (and may have been booted by others), a message carries a JOIN with it.
+        // Receivers only render it if we weren't on their online list.
+        function maybeAnnounceRejoin() {
+            if (!rejoinPending || isGhost || !myUsername || !hasJoinedRoomWindow || !isConnected) return;
+            rejoinPending = false;
+            const now = Date.now();
+            publishMessage({ type: "JOIN", failsafe: true, cid: myCid, sid: mySid, author: myUsername, joinTime: (activeUsers.get(myUsername) || {}).joinTime || now, timestamp: now, idle: false,
+                id: `pj-${myUsername}-${mySid}-rj${now.toString(36)}`, isOnHomepage: isOnHomepage, chatWindowOpen: isChatWindowOpen, status: currentStatus, activity: { ...currentActivity } });
+        }
         function publishMessage(data) {
             if (!data || !validateChatPayload(data)) return false;
+            if ((data.type === 'MSG' || data.type === 'DM' || data.type === 'GROUP_MSG') && data.author === myUsername) maybeAnnounceRejoin();
             try { if (JSON.stringify(data).length > MQTT_MAX_PACKET) { console.warn('[chat] payload too large for the broker, not sent:', data.type); return false; } } catch (e) { return false; }
             const qos = QOS1_TYPES.has(data.type) ? 1 : 0;
             const topics = topicsFor(data);
@@ -4077,6 +4088,7 @@
             const wasIdle = lastLocalIdleState;
             const idleNow = localPresenceIsIdle();
             lastLocalIdleState = idleNow;
+            if (idleNow) rejoinPending = true;
             uData.idle = idleNow;
             uData.idleSince = idleNow ? (uData.idleSince || Date.now()) : 0;
             uData.lastSeen = Date.now();
@@ -4358,8 +4370,9 @@
 
         /* ---- presence notices: deterministic ids, derived from observed state, not from a single lossy packet ---- */
         const PRESENCE_TIMEOUT_MS = 45000;
-        const IDLE_GRACE_MS = 5 * 60000 + 20000; // inactive users remain listed for a grace period before disconnect cleanup
-        function willDelay(name) { const u = activeUsers.get(name); return u && u.idle ? Math.max(WILL_GRACE_MS, (u.idleSince || Date.now()) + IDLE_GRACE_MS - Date.now()) : WILL_GRACE_MS; }
+        const IDLE_GRACE_MS = 5 * 60000 + 20000; // only used by the hidden-tab socket watchdog now; "inactive" no longer buys extra time on the online list
+        // Inactive (idle/hidden) tabs keep heartbeating, so a user whose heartbeat stops is booted after the same short timeout as anyone else.
+        function willDelay(name) { return WILL_GRACE_MS; }
         function latestPresenceEvent(user) {
             let best = null, bi = -1;
             messageHistory.forEach((m, i) => {
@@ -4418,6 +4431,7 @@
             const me = activeUsers.get(myUsername);
             if (document.visibilityState === 'hidden') {
                 hiddenAt = Date.now();
+                rejoinPending = true;
                 lastLocalIdleState = true;
                 if (me) { me.idle = true; me.idleSince = hiddenAt; }
                 renderUserList();
@@ -4429,7 +4443,7 @@
                 lastLocalIdleState = false;
                 if (me) { me.idle = false; me.idleSince = 0; me.lastSeen = Date.now(); }
                 renderUserList();
-                wakeUp(away > IDLE_GRACE_MS); // away long enough that others dropped us: announce a fresh join
+                wakeUp(away > PRESENCE_TIMEOUT_MS); // away long enough that others dropped us: announce a fresh join
                 // a socket the OS silently killed while we were away: if nothing arrives shortly, rebuild it
                 setTimeout(() => { if (client && isConnected && activeUsers.size > 1 && Date.now() - lastInboundAt > 9000) forceReconnect('stale after tab return'); }, 9000);
             }
@@ -4714,6 +4728,7 @@
                     else if (data.type === "JOIN") {
                         if (blockedUsers.has(data.author)) return;
                         if (data.author !== myUsername) {
+                            if (data.failsafe === true && data.__wasKnown === true) return; // still on our online list: nothing to announce
                             retryPeerRecoveryOnJoin();
                             roomPresenceEpoch++;
                             const lp = latestPresenceEvent(data.author);
@@ -6385,10 +6400,10 @@
         function checkPresence() {
             const now = Date.now(), gap = now - lastPresenceRun; lastPresenceRun = now;
             if (!isConnected || now - lastConnectedAt < 8000) { updateAndBroadcastPresence(); return; } // never reap people while WE are the one who is offline
-            if (gap > 20000) { activeUsers.forEach(u => { u.lastSeen = now; }); updateAndBroadcastPresence(); return; } // we were asleep/throttled, so silence proves nothing
+            if (gap > 20000) { rejoinPending = true; activeUsers.forEach(u => { u.lastSeen = now; }); updateAndBroadcastPresence(); return; } // we were asleep/throttled, so silence proves nothing
             let changed = false;
             activeUsers.forEach((userData, user) => {
-                if (user !== myUsername && now - userData.lastSeen > (userData.idle ? IDLE_GRACE_MS : PRESENCE_TIMEOUT_MS)) {
+                if (user !== myUsername && now - userData.lastSeen > PRESENCE_TIMEOUT_MS) {
                     activeUsers.delete(user);
                     if (!userData.isGhost && !user.startsWith('ghost-')) announceLeaveNotice(user, userData.sid, now, true);
                     changed = true;
