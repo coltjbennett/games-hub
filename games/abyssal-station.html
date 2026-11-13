@@ -1,3 +1,4 @@
+<!-- STUN PROD FIX: sphere meshes are stripped from the held model; firing effect is a line beam only. -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -67,10 +68,20 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
 #compass .ob{position:absolute;bottom:0;width:10px;height:10px;transform:translateX(-50%) rotate(45deg);border:2px solid var(--amber);background:rgba(255,178,74,.2)}
 #compass .ctr{position:absolute;left:50%;bottom:-1px;margin-left:-5px;border:5px solid transparent;border-bottom:7px solid var(--line)}
 /* objective */
-#objective{position:absolute;right:14px;top:14px;width:min(270px,44vw);padding:10px 14px 11px 16px;border-left:2px solid var(--amber)}
-#objective .t{font-size:12px;color:var(--amber);letter-spacing:.18em;text-transform:uppercase}
-#objective .d{margin-top:3px;font-size:16px;line-height:1.2;color:#fff}
-#objective .m{margin-top:5px;font:400 12px var(--mono);color:var(--dim)}
+#objective{position:absolute;right:14px;top:14px;width:min(320px,46vw);max-height:calc(100% - 28px);padding:10px 14px 11px 16px;border-left:2px solid var(--amber);display:flex;flex-direction:column;overflow:hidden}
+#objective .t{font-size:12px;color:var(--amber);letter-spacing:.18em;text-transform:uppercase;flex:none}
+#objective .d{margin-top:3px;font-size:16px;line-height:1.2;color:#fff;flex:none}
+#objective .m{margin-top:5px;font:400 12px var(--mono);color:var(--dim);flex:none}
+#ores{margin-top:7px;padding-top:6px;border-top:1px solid var(--line2);font:400 10px/1.18 var(--mono);color:var(--dim);max-height:34vh;overflow-y:auto;overscroll-behavior:contain;pointer-events:auto;touch-action:pan-y;scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+#ores:empty{display:none}
+#ores .reshead{font-size:9px;letter-spacing:.16em;color:var(--line);margin:0 0 4px;text-transform:uppercase}
+#ores .resgroup{margin:0 0 5px}
+#ores .resgroup-title{color:#fff;font-size:10px;margin-bottom:2px}
+#ores .resrow{display:flex;justify-content:space-between;gap:5px;padding:1px 0 1px 9px;min-width:0}
+#ores .resrow .resname{min-width:0;overflow-wrap:anywhere}
+#ores .resrow .resqty{white-space:nowrap;color:var(--warn)}
+#ores .resrow.ready .resqty{color:var(--ok)}
+#ores .resrow.child .resname:before{content:'- ';color:var(--dim)}
 /* tools */
 #tools{position:absolute;left:50%;bottom:12px;touch-action:manipulation;transform:translateX(-50%);display:flex;gap:6px;pointer-events:auto}
 .tool{position:relative;width:62px;height:50px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;letter-spacing:.14em;color:var(--dim);cursor:pointer;--cut:7px}
@@ -184,7 +195,7 @@ body.touch #touch{display:block}
 .tb:active,.tb.hold{background:rgba(255,178,74,.3);border-color:var(--amber)}
 .tb svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 @media (max-height:520px){#objective{width:min(250px,34vw);padding:6px 10px 7px 12px}#objective .d{font-size:14px}#objective .t{font-size:11px}#comm{left:42%;width:min(430px,56vw);bottom:70px;padding:7px 12px 8px 9px}#comm .tx{font-size:15px}#comm .av{width:34px;height:34px}.tool{width:54px;height:44px}.tool svg{width:18px;height:18px}#o2{width:78px;height:78px}#o2 .ct b{font-size:18px}#ladder,#depthbox,#suitline{display:none}.sl{height:96vh}.rail{width:56px}.rail button span{display:none}}
-@media (max-width:640px){.rail{width:52px}.rail button span{display:none}.sbody .shead h2{font-size:16px}#objective{width:40vw}#vitals{transform:scale(.85);transform-origin:left bottom}}
+@media (max-width:640px){.rail{width:52px}.rail button span{display:none}.sbody .shead h2{font-size:16px}#objective{width:42vw;padding:7px 9px 8px 11px}#objective .d{font-size:14px}#ores{font-size:9px;max-height:31vh}#vitals{transform:scale(.85);transform-origin:left bottom}}
 #decbtn{display:none}body.touch #bpbox{right:auto!important;left:12px!important;top:66px!important;bottom:auto!important;width:min(250px,38vw)!important;max-height:calc(100% - 66px - 110px);padding:6px 8px!important}body.touch #bpbox .row{padding:10px 8px!important;min-height:42px}body.touch.build #decbtn{display:flex}
 @media (prefers-reduced-motion:reduce){.toast{animation:none}}
 </style>
@@ -204,7 +215,7 @@ body.touch #touch{display:block}
     <div id="hpwrap"><div class="tag">Vitals</div><div id="hp"></div><div id="pwr"></div></div>
   </div>
   <div id="compass"><div class="ctr"></div></div>
-  <div id="objective" class="plate"><div class="t" id="otitle"></div><div class="d" id="otext"></div><div class="m" id="ometa"></div></div>
+  <div id="objective" class="plate"><div class="t" id="otitle"></div><div class="d" id="otext"></div><div class="m" id="ometa"></div><div id="ores"></div></div>
   <div id="comm" class="plate"><div class="av"><i></i><i></i><i></i><i></i><i></i></div><div><div class="nm" id="cnm"></div><div class="tx" id="ctx"></div></div></div>
   <div id="toasts"></div>
   <div id="tools"></div>
@@ -1527,7 +1538,7 @@ function hubEvent(n,d){try{if(window.parent&&window.parent!==window)window.paren
 /* ================= UI: HUD, slate, menus, saves ================= */
 const ui={open:null,tab:'bag',at:null},gs={state:'boot'};
 uiBlock=()=>ui.open!==null;canPlay=()=>gs.state==='play';
-const hudEl=$('#hud'),elTape=$('#tape'),elDnum=$('#dnum'),elO2=$('#o2'),elO2a=$('#o2arc'),elO2n=$('#o2n'),elHp=$('#hp'),elPwr=$('#pwr'),elComp=$('#compass'),elSuit=$('#suitline'),elSuitT=$('#suittx'),elSuitB=$('#suitbar'),elPrompt=$('#prompt'),elCross=$('#cross'),elScanR=$('#scanring'),elScanA=$('#scanarc'),elHurt=$('#hurt'),elLow=$('#lowair'),elObj=$('#objective'),elOT=$('#otitle'),elOX=$('#otext'),elOM=$('#ometa'),elFade=$('#fade'),elCard=$('#card'),elTools=$('#tools'),elToasts=$('#toasts');
+const hudEl=$('#hud'),elTape=$('#tape'),elDnum=$('#dnum'),elO2=$('#o2'),elO2a=$('#o2arc'),elO2n=$('#o2n'),elHp=$('#hp'),elPwr=$('#pwr'),elComp=$('#compass'),elSuit=$('#suitline'),elSuitT=$('#suittx'),elSuitB=$('#suitbar'),elPrompt=$('#prompt'),elCross=$('#cross'),elScanR=$('#scanring'),elScanA=$('#scanarc'),elHurt=$('#hurt'),elLow=$('#lowair'),elObj=$('#objective'),elOT=$('#otitle'),elOX=$('#otext'),elOM=$('#ometa'),elOres=$('#ores'),elFade=$('#fade'),elCard=$('#card'),elTools=$('#tools'),elToasts=$('#toasts');
 /* depth ladder */
 (function(){let h='';for(let m=0;m<=400;m+=5){const y=m*6;h+='<div class="tk'+(m%20===0?' m':'')+'" style="top:'+y+'px"></div>';if(m%20===0)h+='<div class="tn" style="top:'+y+'px">'+m+'</div>';}elTape.innerHTML=h;elTape.style.height='2400px';})();
 for(let i=0;i<10;i++)elHp.append(h('i'));
@@ -1571,7 +1582,7 @@ function updateHUD(dt,time){hudT-=dt;
  updateBuildPalette();
  elCross.classList.toggle('hot',!!(curInter||curNode||P.scanTarget));
  elScanR.style.opacity=P.scanT>0?1:0;elScanA.style.strokeDashoffset=(125.7*(1-clamp(P.scanT,0,1))).toFixed(1);}
-let _lastObj='';function updateObjective(){const s=curS(),q=curQ();let t,x;if(G.ending){t='Free dive';x='Explore, build, and find everything the Trench still hides.';}else if(!s){t='Free dive';x='All directives complete.';}else{t='Directive '+String(G.qi+1).padStart(2,'0')+' · '+q.title;x=s.txt;}if(t+x!==_lastObj){_lastObj=t+x;elOT.textContent=t;elOX.textContent=x;elObj.animate&&elObj.animate([{opacity:.3},{opacity:1}],{duration:400});}}
+let _lastObj='';function updateObjective(){const s=curS(),q=curQ();let t,x;if(G.ending){t='Free dive';x='Explore, build, and find everything the Trench still hides.';}else if(!s){t='Free dive';x='All directives complete.';}else{t='Directive '+String(G.qi+1).padStart(2,'0')+' · '+q.title;x=s.txt;}if(t+x!==_lastObj){_lastObj=t+x;elOT.textContent=t;elOX.textContent=x;elObj.animate&&elObj.animate([{opacity:.3},{opacity:1}],{duration:400});}updateMissionResourceTracker();}
 /* ---------- slate ---------- */
 const elSlate=$('#slate');
 const RAIL=[['bag','Bag','M6 8h12l1 12H5L6 8zM9 8V6a3 3 0 016 0v2'],['fab','Fab','M12 8a4 4 0 100 8 4 4 0 000-8zM12 3v3M12 18v3M3 12h3M18 12h3'],['lab','Lab','M9 3h6M10 3v6l-5 9a2 2 0 002 3h10a2 2 0 002-3l-5-9V3'],['journal','Log','M5 4h12a2 2 0 012 2v14H7a2 2 0 01-2-2V4zM9 8h6M9 12h6'],['codex','Codex','M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 100 6 3 3 0 000-6'],['map','Map','M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14'],['base','Base','M3 20h18M5 20V10l7-5 7 5v10M10 20v-5h4v5'],['system','Sys','M4 6h16M4 12h16M4 18h16']];
@@ -1581,45 +1592,72 @@ function closeSlate(){if(ui.open!=='slate')return;ui.open=null;ui.at=null;elSlat
 function renderSlate(){const sl=h('div',{class:'sl plate'});const rail=h('div',{class:'rail'});RAIL.forEach(([id,nm,path])=>{const locked=(id==='fab'||id==='lab')&&ui.at!==id&&!(P.mode==='walk');rail.append(h('button',{class:ui.tab===id?'on':'',onclick:()=>{ui.tab=id;ui.opts={};if(id==='fab'||id==='lab')ui.at=ui.at||id;AU.click();renderSlate();},html:'<svg viewBox="0 0 24 24"><path d="'+path+'"/></svg><span>'+nm+'</span>'}));});
  const body=h('div',{class:'sbody'});const head=h('div',{class:'shead'},h('h2',{text:TABNAME[ui.tab]}),h('div',{style:{display:'flex',gap:'8px',alignItems:'center'}},h('span',{class:'tag',text:'DATA '+G.data}),h('button',{class:'btn sm',onclick:closeSlate},'Close')));const sc=h('div',{class:'sscroll'});body.append(head,sc);sl.append(rail,body);elSlate.innerHTML='';elSlate.append(sl);TABS[ui.tab](sc);}
 const costTxt=(o)=>Object.entries(o).map(([k,n])=>h('span',{class:(G.inv[k]||0)>=n?'y':'n',text:n+' '+ITEMS[k].n+'  '}));
-function missionCraftBreakdown(needs){
- const byOutput={},byId={};
- RECIPES.forEach(r=>{byId[r.id]=r;if(r.out)Object.entries(r.out).forEach(([k,n])=>byOutput[k]={recipe:r,yield:n});});
- const build=(id,n,depth,path)=>{
-  const entry=byOutput[id]|| (byId[id]?{recipe:byId[id],yield:1}:null);
-  const node={id,n,depth,children:[]};
-  if(!entry||depth>=10||path.includes(id))return node;
-  const crafts=Math.ceil(n/entry.yield);
-  const nextPath=path.concat(id);
-  Object.entries(entry.recipe.in||{}).forEach(([mat,qty])=>node.children.push(build(mat,qty*crafts,depth+1,nextPath)));
-  return node;
- };
- return Object.entries(needs||{}).map(([id,n])=>build(id,n,0,[]));
+function missionResourceGroups(step){
+  if(!step)return [];
+  const groups=[];
+  if(step.t==='have'&&step.items)groups.push({title:'Gather materials',items:step.items});
+  if(step.craft)Object.entries(step.craft).forEach(([id,n])=>{
+    const recipe=RBY[id];if(!recipe)return;
+    if(recipe.out){const out=Object.entries(recipe.out)[0];if(out)groups.push({title:'Craft '+recipe.n,items:{[out[0]]:n*out[1]}});}
+    else groups.push({title:'Craft '+recipe.n,items:recipe.in||{}});
+  });
+  if(step.t==='flag'){
+    const fs=Array.isArray(step.f)?step.f:[step.f];
+    fs.forEach(flag=>{
+      if(typeof flag!=='string')return;
+      if(flag.startsWith('rep_')){
+        const id=flag.slice(4),cost=REPAIR[id];
+        if(cost)groups.push({title:'Repair '+({reactor:'Power Panel',o2:'O2 Regenerator',fab:'Fabricator',lab:'Research Console',bunk:'Bunk',storage:'Storage'}[id]||id),items:cost});
+      }else if(flag.startsWith('built_')){
+        const id=flag.slice(6),mod=MODS[id];
+        if(mod)groups.push({title:'Build '+mod.n,items:mod.cost||{}});
+      }
+    });
+  }
+  return groups.filter(g=>Object.keys(g.items||{}).length);
 }
-function missionCraftLabel(id,n){
- const labels={tplate:'Ti Plate',titanium:'Titanium ore',scrap:'Scrap metal',wire:'Copper wire',copper:'Copper nodule',quartz:'Quartz',pearl:'Glow pearl',crystal:'Vent crystal'};
- const base=labels[id]||ITEMS[id]?.n||id;
- return base+(n===1?'':'s');
+function missionResourceRecipe(id){
+  const output=RECIPES.find(r=>r.out&&Object.prototype.hasOwnProperty.call(r.out,id));
+  if(output)return {recipe:output,yield:output.out[id]||1};
+  const direct=RBY[id];
+  if(direct&&direct.in&&!direct.out)return {recipe:direct,yield:1};
+  return null;
+}
+function appendMissionResourceItem(parent,id,required,depth,stack){
+  const have=G.inv[id]||0,remaining=Math.max(0,required-have);
+  const row=h('div',{class:'resrow'+(depth?' child':'')+(have>=required?' ready':'')});
+  row.append(h('span',{class:'resname',text:(ITEMS[id]?.n||id)}),h('span',{class:'resqty',text:have+'/'+required}));
+  row.style.paddingLeft=(depth*9)+'px';
+  parent.append(row);
+  if(remaining<=0||depth>=8||stack.has(id))return;
+  const found=missionResourceRecipe(id);
+  if(!found)return;
+  const nextStack=new Set(stack);nextStack.add(id);
+  const crafts=Math.ceil(remaining/found.yield);
+  Object.entries(found.recipe.in||{}).forEach(([mat,qty])=>appendMissionResourceItem(parent,mat,qty*crafts,depth+1,nextStack));
 }
 function appendMissionCraftTracker(sc,step){
- if(!step||!step.craft)return;
- const roots=missionCraftBreakdown(step.craft);
- const card=h('div',{class:'card',style:{marginTop:'10px',border:'1px solid var(--line)'}});
- card.append(h('div',{class:'sec',text:'Crafting checklist'}));
- roots.forEach(root=>{
-  const recipe=RECIPES.find(r=>r.id===root.id);
-  const title=recipe?.n||ITEMS[root.id]?.n||root.id;
-  card.append(h('div',{style:{fontWeight:'700',margin:'4px 0 8px',color:'var(--accent)'},text:'Craft '+title+':'}));
-  const draw=(node)=>{
-   const have=G.inv[node.id]||0,done=have>=node.n;
-   const row=h('div',{style:{display:'flex',alignItems:'baseline',justifyContent:'space-between',gap:'8px',padding:'3px 0 3px '+(node.depth*16)+'px',fontSize:'13px'}});
-   row.append(h('span',{style:{minWidth:'0',color:done?'#75d6a7':'var(--text)'} ,text:(done?'☑ ':'☐ ')+node.n+' '+missionCraftLabel(node.id,node.n)}));
-   row.append(h('span',{class:'tag',style:{flexShrink:'0',color:done?'#75d6a7':'var(--muted)'},text:have+'/'+node.n}));
-   card.append(row);
-   node.children.forEach(draw);
-  };
-  draw(root);
- });
- sc.append(card);
+  const groups=missionResourceGroups(step);if(!groups.length)return;
+  const card=h('div',{class:'card',style:{marginTop:'10px',border:'1px solid var(--line)'}});
+  card.append(h('div',{class:'sec',text:'Mission resource tracker'}));
+  groups.forEach(group=>{
+    const section=h('div',{style:{marginBottom:'8px'}},h('div',{class:'tag',style:{marginBottom:'3px'},text:group.title}));
+    Object.entries(group.items).forEach(([id,n])=>appendMissionResourceItem(section,id,n,0,new Set()));
+    card.append(section);
+  });
+  sc.append(card);
+}
+function updateMissionResourceTracker(){
+  if(!elOres)return;
+  const step=curS(),groups=G.ending?[]:missionResourceGroups(step);
+  elOres.innerHTML='';if(!groups.length)return;
+  elOres.append(h('div',{class:'reshead',text:'Resource checklist'}));
+  groups.forEach(group=>{
+    const box=h('div',{class:'resgroup'});
+    box.append(h('div',{class:'resgroup-title',text:group.title}));
+    Object.entries(group.items).forEach(([id,n])=>appendMissionResourceItem(box,id,n,0,new Set()));
+    elOres.append(box);
+  });
 }
 const TABS={
  bag(sc){sc.append(h('div',{class:'sec',text:'Carried'}));const ch=h('div',{class:'chips'});const ids=Object.keys(G.inv);if(!ids.length)ch.append(h('div',{class:'empty',text:'Nothing carried. Swim out and collect materials from the seabed.'}));ids.forEach(k=>{const c=h('div',{class:'chip',text:ITEMS[k].n},h('b',{text:G.inv[k]+(ITEMS[k].c==='raw'||ITEMS[k].c==='part'?'/'+BASE.cap:'')}));ch.append(c);if(k==='medkit'||k==='o2cap')ch.append(h('button',{class:'btn sm',onclick:()=>{useConsumable(k);renderSlate();}},'Use '+ITEMS[k].n));});sc.append(ch);
@@ -1709,12 +1747,13 @@ function updateSnow(dt){const cx=camera.position.x,cy=camera.position.y,cz=camer
  snowGeo.attributes.position.needsUpdate=true;snow.visible=camera.position.y<-.5;}
 function updatePicks(dt,time,px,pz){let nearTone=null,nd=60;for(const p of PICKS){if(p.taken){continue;}const d=Math.hypot(p.x-px,p.z-pz),vis=d<95;if(p.mesh.visible!==vis)p.mesh.visible=vis;if(vis){p.mesh.rotation.y=time*1.2;const s=p.s*(1+Math.sin(time*3+p.x)*.12);p.mesh.scale.set(s,s*1.3,s);if(p.id.startsWith('tone')){const dd=Math.hypot(p.x-px,p.y-P.pos.y,p.z-pz);if(dd<nd){nd=dd;nearTone=p;}}}}
  if(nearTone){humT-=dt;if(humT<=0){humT=lerp(.9,2.6,nd/60);const i=+nearTone.id.slice(4);AU.tone([261.63,293.66,329.63,392,440,523.25][i],1.1,'sine',.1*(1-nd/60),0,0,1);}}}
-let _wasCr=false,humT=0,saveT=0,achT=0,qT=0,gT=0;
+let _wasCr=false,humT=0,saveT=0,achT=0,qT=0,gT=0,resT=0;
 function frame(now){requestAnimationFrame(frame);let dt=Math.min(.05,(now-lastNow)/1000);lastNow=now;if(!(dt>=0))dt=.016;time+=dt;perfTick(dt,now);
  if(gs.state==='title'||gs.state==='boot'){const a=time*.06;camera.position.set(STATION.x+Math.cos(a)*36,-15+Math.sin(time*.2)*1.5,STATION.z+Math.sin(a)*36);camera.lookAt(STATION.x,BASEY+3,STATION.z);camDir.set(0,0,-1);camera.getWorldDirection(camDir);U.uLC.value.z=0;envUpdate(camera.position.y,false,dt,0);streamWorld(STATION.x,STATION.z,1);updateFauna(dt,camera.position.x,camera.position.y,camera.position.z,time);updateSnow(dt);U.uTime.value=time;surf.position.set(camera.position.x,0,camera.position.z);rays.position.set(camera.position.x,0,camera.position.z);STRUCT.forEach(s=>{s.g.visible=Math.hypot(s.x-camera.position.x,s.z-camera.position.z)<s.r+90;});renderer.render(scene,camera);updateComm(dt);IN.endFrame();AU.env&&AU.env(15,false,0,0,dt);return;}
  const paused=ui.open!==null;
  // global key actions
  if(gs.state==='play'&&ui.open==='slate')updateCraft(dt);
+  if(gs.state==='play'){resT-=dt;if(resT<=0){resT=.3;updateMissionResourceTracker();}}
  if(gs.state==='play'){if(IN.hit('slate')){if(ui.open==='slate')closeSlate();else if(!paused)openSlate('bag');}if(IN.hit('map')){if(ui.open==='slate'&&ui.tab==='map')closeSlate();else if(!paused||ui.open==='slate')openSlate('map');}if(IN.hit('journal')){if(ui.open==='slate'&&ui.tab==='journal')closeSlate();else if(!paused||ui.open==='slate')openSlate('journal');}if(IN.hit('pausebtn'))onPauseReq(false);
   if(ui.open==='slate'&&ui.tab==='fab'&&(crafting||_wasCr)){gT-=dt;if(gT<=0){gT=.25;_wasCr=!!crafting;renderSlateKeep();}}}
  if(gs.state==='play'&&!paused){
