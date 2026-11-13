@@ -1210,10 +1210,10 @@ function vmHand(g,x,y,z){const glove=lit(0x27343c),cuff=lit(0xc8903a),suit=lit(0
  VMT.forEach(t=>{t.visible=false;VM.add(t);});})();
 function vmFire(k){vmS[k]=1;if(k==='prod')spawnBolt();}
 function vmPulse(k){vmS.pk=k;vmS.pt=1;}
-function spawnBolt(){const d=camDir,g=new T.Group();for(let i=0;i<3;i++){const m=new T.Mesh(UG.box,boltMat);m.scale.set(.06,.06,1.4);m.rotation.z=i*1.05;g.add(m);}g.position.copy(camera.position).addScaledVector(d,1.3);g.position.x+=Math.cos(P.yaw)*.22;g.position.z-=Math.sin(P.yaw)*.22;g.position.y-=.18;g.lookAt(g.position.clone().add(d));scene.add(g);BOLTS.push({g,d:d.clone(),l:0});}
+function spawnBolt(){const d=camDir.clone().normalize(),g=new T.Group();const geo=new T.BufferGeometry().setFromPoints([new T.Vector3(0,0,0),new T.Vector3(0,0,-10)]);const mat=new T.LineBasicMaterial({color:0x7feaff,transparent:true,opacity:.95,blending:T.AdditiveBlending,depthWrite:false});const beam=new T.Line(geo,mat);g.add(beam);g.position.copy(camera.position).addScaledVector(d,1.05);g.position.x+=Math.cos(P.yaw)*.22;g.position.z-=Math.sin(P.yaw)*.22;g.position.y-=.18;g.quaternion.setFromUnitVectors(new T.Vector3(0,0,-1),d);scene.add(g);BOLTS.push({g,d,l:0,life:.14,mat,geo});}
 const _vc=new T.Color(),_vb=new T.Color(0x2a8aff),_vg=new T.Color(0x40ff90),_vr=new T.Color(0xff4a3a);
 function updateViewmodel(dt,time){const show=!G.dead&&gs.state==='play';VM.visible=show;
- for(let i=BOLTS.length-1;i>=0;i--){const b=BOLTS[i];b.g.position.addScaledVector(b.d,62*dt);b.l+=62*dt;b.g.scale.setScalar(.8+Math.random()*.5);b.g.rotation.z+=dt*30;if(b.l>11){scene.remove(b.g);BOLTS.splice(i,1);}}
+ for(let i=BOLTS.length-1;i>=0;i--){const b=BOLTS[i];b.life-=dt;b.mat.opacity=Math.max(0,b.life/.14);if(b.life<=0){scene.remove(b.g);b.geo.dispose();b.mat.dispose();BOLTS.splice(i,1);}}
  if(!show)return;const t=P.tool;if(vmS.last!==t){vmS.last=t;vmS.eq=0;}vmS.eq=Math.min(1,vmS.eq+dt*4.5);
  VMT.forEach((g,i)=>{g.visible=i===t&&(P.mode!=='walk'||t===0||t===3);});const g=VMT[t];if(!g||!g.visible)return;
  const eq=1-Math.pow(1-vmS.eq,3);let px=.27,py=-.27-(1-eq)*.35,pz=-.52,rx=0,ry=.08,rz=0;
