@@ -435,7 +435,7 @@ const POI={
  calloway:pol(330,110),halden:pol(385,50),hesper:pol(400,20),maren:pol(395,145),yuki:pol(430,95),
  island:pol(210,235),vents:pol(215,-30),echo:pol(205,160),camp:axPt(470),drill:axPt(530),lantern:axPt(575)};
 const TONES=[{p:[-96,-62],n:'Reef Cave'},{p:[262,128],n:'Kelp Ridge'},{p:[POI.workshop[0]-4,POI.workshop[2]+4],n:"Bell's Workshop"},{p:[POI.hesper[0]+5,POI.hesper[2]-9],n:'Hesper Wreck'},{p:[pol(540,100)[0],pol(540,100)[2]],n:'Trench Ledge'},{p:[pol(555,45)[0],pol(555,45)[2]],n:'Echo Grotto'}];
-const WELL={};let H=null;
+const WELL={};let H=null;let _np=false;const SITES=[[POI.calloway,40,66],[POI.halden,40,66],[POI.hesper,26,44],[POI.maren,20,36],[POI.yuki,12,28]].map(a=>({x:a[0][0],z:a[0][2],r0:a[1],r1:a[2],d:0}));
 const HOT=[],HUSKS=[];
 function biomeAt(x,z){if(Math.hypot(x-POI.island[0],z-POI.island[2])<46)return 8;if(Math.hypot(x-POI.vents[0],z-POI.vents[2])<105)return 6;if(Math.hypot(x-POI.echo[0],z-POI.echo[2])<100)return 7;return 0;}
 function baseDepth(z){let i=1;while(i<DP.length-1&&z>DP[i][0])i++;const a=DP[i-1],b=DP[i],t=sstep(a[0],b[0],z);return lerp(a[1],b[1],t);}
@@ -462,10 +462,11 @@ function rawDepth(x,z){
  d=plat(d,338,POI.camp[0],POI.camp[2],x,z,14,32);
  d=plat(d,368,POI.drill[0],POI.drill[2],x,z,18,36);
  d=plat(d,374,POI.lantern[0],POI.lantern[2],x,z,40,92);
+ if(!_np)for(const q of SITES)d=plat(d,q.d,q.x,q.z,x,z,q.r0,q.r1);
  d-=sstep(650,700,rr)*200;
  return Math.max(d,-5);
 }
-function buildGrid(prog){H=new Float32Array(GW*GH);for(let j=0;j<GH;j++){const z=WZ0+j*CELL;for(let i=0;i<GW;i++)H[j*GW+i]=-rawDepth(WX0+i*CELL,z);if(prog&&j%40===0)prog(j/GH);}}
+function buildGrid(prog){_np=true;for(const q of SITES)q.d=rawDepth(q.x,q.z);_np=false;H=new Float32Array(GW*GH);for(let j=0;j<GH;j++){const z=WZ0+j*CELL;for(let i=0;i<GW;i++)H[j*GW+i]=-rawDepth(WX0+i*CELL,z);if(prog&&j%40===0)prog(j/GH);}}
 function heightAt(x,z){let fx=(x-WX0)/CELL,fz=(z-WZ0)/CELL;fx=clamp(fx,0,GW-1.001);fz=clamp(fz,0,GH-1.001);const i=fx|0,j=fz|0,u=fx-i,v=fz-j,k=j*GW+i;return H[k]*(1-u)*(1-v)+H[k+1]*u*(1-v)+H[k+GW]*(1-u)*v+H[k+GW+1]*u*v;}
 function slopeAt(x,z){const e=2;return Math.hypot(heightAt(x+e,z)-heightAt(x-e,z),heightAt(x,z+e)-heightAt(x,z-e))/(2*e);}
 function zoneOf(z,x){const pg=x===undefined?z:prog(x,z);return pg<8?1:pg<215?2:pg<415?3:pg<700?4:5;}
@@ -863,16 +864,28 @@ const VENT_CELLS=[[-2,1],[2,1],[0,3],[3,-1]],VENT_VIS=[];
  // decorative reef props around the plateau
  const R=mulberry(31);for(let i=0;i<10;i++){const a=R()*TAU,d=34+R()*8,x=STATION.x+Math.cos(a)*d,z=STATION.z+Math.sin(a)*d,y=heightAt(x,z),s=1.5+R()*2.5;st.add(UG.ico1,x,y+s*.2,z,s*1.4,s*.8,s*1.2,R()*3,R()*6,0,0x56606a,.3);COL.sphere(x,y+s*.2,z,s*.55,'rock');}
  finishStruct(g,st,gl);addScan('vent',STATION.x+VENT_CELLS[0][0]*6,BASEY+1,STATION.z+VENT_CELLS[0][1]*6,6);})();
-/* ---- MV Calloway (solid hull, log on the bridge) ---- */
+/* ---- MV Calloway (hollow hull, enterable via west breach + deck hatch; log on the bridge) ---- */
 (function(){const [px,,pz]=POI.calloway,y0=heightAt(px,pz),g=structGroup(px,pz,120),st=new GB(),gl=new GB(),rust=0x6a4a38,dk=0x2b2420;
- bx(st,px,y0+4,pz,16,9,64,rust,true);bx(st,px+1,y0+9.5,pz+4,13,2,48,0x4a3a30,true);bx(st,px+2,y0+13,pz-22,8,7,10,0x7a7f84,true);bx(st,px+2,y0+18.5,pz-22,5,4,6,0x8a8f94,true);
- for(let i=0;i<4;i++)bx(st,px+1,y0+10.7,pz+24-i*12,9,.5,6,dk,false);
- st.add(UG.cyl,px-5,y0+14,pz+10,.5,22,.5,0,0,.55,0x3a3330,.2);st.add(UG.box,px+9,y0+2,pz+4,2,3,12,.2,0,.6,0x5a3c2e,.3);
- logPoint('log_calloway',px+2,y0+21.2,pz-22,'calloway',gl);addScan('w_calloway',px,y0+8,pz,28);
+ const wy0=y0+.9,wy1=y0+9.5,wh=wy1-wy0,wc=(wy0+wy1)/2;
+ bx(st,px,y0+.5,pz,16.8,.8,65,0x3a2c24,true);
+ bx(st,px+8,wc,pz,.8,wh,64,rust,true);
+ bx(st,px-8,wc,pz-18,.8,wh,28,rust,true);bx(st,px-8,wc,pz+20,.8,wh,24,rust,true);
+ bx(st,px,wc,pz-32,16.8,wh,.8,rust,true);
+ bx(st,px-5.5,wc,pz+32,5,wh,.8,rust,true);bx(st,px+5.5,wc,pz+32,5,wh,.8,rust,true);bx(st,px,wy1-.6,pz+32,6.2,1.2,.8,rust,true);
+ bx(st,px-5,wc,pz-14,6,wh,.6,0x5a3c2e,true);bx(st,px+6,wc,pz-14,4,wh,.6,0x5a3c2e,true);
+ bx(st,px-3,wc,pz+18,10,wh,.6,0x5a3c2e,true);
+ bx(st,px,y0+9.5,pz-14,17,.6,36,0x4a3a30,true);
+ bx(st,px-5.7,y0+9.5,pz+9,5.6,.6,10,0x4a3a30,true);bx(st,px+5.7,y0+9.5,pz+9,5.6,.6,10,0x4a3a30,true);
+ bx(st,px,y0+9.5,pz+23,17,.6,18,0x4a3a30,true);
+ bx(st,px+2,y0+13.3,pz-22,8,7,10,0x7a7f84,true);bx(st,px+2,y0+18.8,pz-22,5,4,6,0x8a8f94,true);
+ for(let i=0;i<3;i++)bx(st,px+1,y0+10.1,pz+25-i*6,9,.3,3,dk,false);
+ st.add(UG.cyl,px-4,y0+14,pz+25,.5,20,.5,0,0,.55,0x3a3330,.2);st.add(UG.box,px+10.5,y0+1.6,pz+4,2,3,12,0,0,0,0x5a3c2e,.3);
+ gl.add(UG.box,px-7.4,y0+7,pz+2,.2,.5,4,0,0,0,0xffa040,0);gl.add(UG.box,px+7.4,y0+6,pz+14,.2,.5,3,0,0,0,0x40e0ff,0);
+ logPoint('log_calloway',px+2,y0+21.8,pz-22,'calloway',gl);addScan('w_calloway',px,y0+8,pz,28);
  finishStruct(g,st,gl);
- const cp=makePickup('core2',px+2,y0+10.9,pz+10,0x7fffd4,'oct',.9);addInter({id:'core2',x:px+2,y:y0+11.4,z:pz+10,r:4,label:()=>'Retrieve MARA memory core',act:()=>takePick(cp,()=>{giveItem('core',1);ev('core',2);}),vis:()=>!cp.taken});})();
+ const cp=makePickup('core2',px+2,y0+2.3,pz+10,0x7fffd4,'oct',.9);addInter({id:'core2',x:px+2,y:y0+2.6,z:pz+10,r:4.5,label:()=>'Retrieve MARA memory core',act:()=>takePick(cp,()=>{giveItem('core',1);ev('core',2);}),vis:()=>!cp.taken});})();
 /* ---- Tender Halden: enterable wreck maze ---- */
-(function(){const [cx,,cz]=POI.halden,yF=heightAt(cx,cz)+.6,g=structGroup(cx,cz,110),st=new GB(),gl=new GB(),W=0x3b4c5a,W2=0x30404c,T0=.9,Y0=yF-5,Y1=yF+11;
+(function(){const [cx,,cz]=POI.halden,yF=heightAt(cx,cz)+1.4,g=structGroup(cx,cz,110),st=new GB(),gl=new GB(),W=0x3b4c5a,W2=0x30404c,T0=.9,Y0=yF-1.2,Y1=yF+11;
  const wall=(x0,z0,x1,z1,col)=>bx(st,(x0+x1)/2,(Y0+Y1)/2,(z0+z1)/2,Math.abs(x1-x0)||T0,Y1-Y0,Math.abs(z1-z0)||T0,col||W,true);
  const X=x=>cx+x,Z=z=>cz+z;
  bx(st,cx,yF-.5,cz,27,1.4,66,0x2a3640,true,0,.1);
@@ -881,7 +894,7 @@ const VENT_CELLS=[[-2,1],[2,1],[0,3],[3,-1]],VENT_VIS=[];
  wall(X(-13),Z(9.6),X(3),Z(10.4),W2);wall(X(9),Z(9.6),X(13),Z(10.4),W2);
  wall(X(-3),Z(21.6),X(13),Z(22.4),W2);wall(X(-13),Z(21.6),X(-9),Z(22.4),W2);
  bx(st,cx-5,yF+11.4,cz-9,16,1,46,0x2c3944,true);bx(st,cx+6,yF+11.4,cz-9,6,1,46,0x2c3944,true);bx(st,cx,yF+11.4,cz+14,27,1,16,0x2c3944,true);bx(st,cx+8,yF+11.4,cz+27,13,1,10,0x2c3944,true);bx(st,cx-8,yF+11.4,cz+27,10,1,10,0x2c3944,true);
- for(let i=0;i<7;i++)bx(st,cx+rand(-9,9),yF+1,cz+rand(-28,28),rand(1,2.4),rand(1,2.2),rand(1,2.4),0x4c5a64,true);
+ for(let i=0;i<7;i++){const dx=rand(-9,9),dz=rand(-28,28),a=rand(1,2.4),b=rand(1,2.2),c=rand(1,2.4);if([-14,10,22].some(w=>Math.abs(dz-w)<4)||dx<-8||(dz>-9&&dz<1&&dx<-4)||(dz>21&&dz<31&&dx>2&&dx<10))continue;bx(st,cx+dx,yF+.2+b/2,cz+dz,a,b,c,0x4c5a64,true);}
  gl.add(UG.box,cx-12,yF+5,cz-3,.2,.5,5,0,0,0,0xffa040,0);gl.add(UG.box,cx+4,yF+5,cz+16,.5,.2,3,0,0,0,0x40e0ff,0);gl.add(UG.sph,cx-2,yF+4,cz-22,.5,.5,.5,0,0,0,0x30ffd0,0);
  logPoint('log_manifest',cx-8,yF+1.2,cz-26,'manifest',gl);logPoint('log_voss1',cx+8,yF+1.2,cz+16,'voss1',gl);
  finishStruct(g,st,gl);addScan('w_halden',cx,yF+4,cz,34);
@@ -892,7 +905,7 @@ const VENT_CELLS=[[-2,1],[2,1],[0,3],[3,-1]],VENT_VIS=[];
  COL.sphere(px+6,y+3,pz-3,3.6,'sub');COL.sphere(px,y+3,pz,3.6,'sub');COL.sphere(px-6,y+3,pz+3,3.6,'sub');
  finishStruct(g,st,gl);addScan('w_hesper',px,y+3,pz,18);
  const [mx,,mz]=POI.maren,my=heightAt(mx,mz),g2=structGroup(mx,mz,90),s2=new GB(),g2l=new GB();
- s2.add(UG.box,mx,my+2.2,mz,6,3.6,17,.12,.3,.45,0x7b5a40,.3);s2.add(UG.box,mx-1,my+4.5,mz-3,3.5,2.6,4.5,.12,.3,.45,0xb8b0a0,.2);COL.sphere(mx,my+2.2,mz,4.4,'ship');COL.sphere(mx+3,my+2,mz+5,3.2,'ship');COL.sphere(mx-3,my+2,mz-5,3.2,'ship');
+ s2.add(UG.box,mx,my+2.1,mz,6,3.6,17,0,.3,0,0x7b5a40,.3);s2.add(UG.box,mx-1,my+5.2,mz-3,3.5,2.6,4.5,0,.3,0,0xb8b0a0,.2);COL.sphere(mx,my+2.2,mz,4.4,'ship');COL.sphere(mx+3,my+2,mz+5,3.2,'ship');COL.sphere(mx-3,my+2,mz-5,3.2,'ship');
  finishStruct(g2,s2,g2l);addScan('w_maren',mx,my+2.5,mz,14);
  const hp=makePickup('tone3',px+5,y+7.5,pz-9,0x9fffe0,'oct',.7);addInter({id:'tone3',x:px+5,y:y+7.5,z:pz-9,r:4,label:()=>'Resonance fragment',act:()=>takePick(hp,()=>ev('tone',3)),vis:()=>!hp.taken});})();
 /* ---- Yuki's camp ---- */
