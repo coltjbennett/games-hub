@@ -479,7 +479,107 @@ const LAMP_CODE='vec3 dv=vWP-uLP;float dd=max(length(dv),.001);vec3 Ld=dv/dd;flo
 function kcShadowHook(sh){sh.fragmentShader=sh.fragmentShader.replace(/void main\(\)\s*\{/,m=>m+'float kcSh=1.0;');
  if(sh.fragmentShader.indexOf('#include <lights_fragment_begin>')>=0){const ch=T.ShaderChunk.lights_fragment_begin.replace(/directLight\.color\s*\*=\s*(all\(\s*bvec2\(\s*directLight\.visible,\s*receiveShadow\s*\)\s*\)\s*\?\s*getShadow\(\s*directionalShadowMap\[\s*i\s*\][^;]*;)/,'kcSh = $1 directLight.color *= kcSh;');sh.fragmentShader=sh.fragmentShader.replace('#include <lights_fragment_begin>',ch);}}
 function kcSetup(sh,mat){const ud=(mat&&mat.userData)||{};sh.uniforms.uKc={value:ud.kc!=null?ud.kc:.12};sh.uniforms.uKd={value:ud.kcd!=null?ud.kcd:40};kcShadowHook(sh);}
-function patchLit(sh){kcSetup(sh,this);Object.assign(sh.uniforms,U);sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vWP;varying vec3 vN;').replace('#include <begin_vertex>','#include <begin_vertex>\nvWP=(modelMatrix*vec4(position,1.0)).xyz;vN=normalize(mat3(modelMatrix)*normal);');sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\n'+LAMP_FRAG).replace('#include <aomap_fragment>','#include <aomap_fragment>\n'+LAMP_CODE);}
+/* ---------- procedural surface materials (world-space solid noise, no UVs) ---------- */
+const TZ_LIB=`
+float tzh(vec3 p){p=fract(p*.1031);p+=dot(p,p.zyx+31.32);return fract((p.x+p.y)*p.z);}
+float tzn(vec3 p){vec3 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+ float a=tzh(i),b=tzh(i+vec3(1.,0.,0.)),c=tzh(i+vec3(0.,1.,0.)),d=tzh(i+vec3(1.,1.,0.)),e=tzh(i+vec3(0.,0.,1.)),g=tzh(i+vec3(1.,0.,1.)),h=tzh(i+vec3(0.,1.,1.)),k=tzh(i+vec3(1.,1.,1.));
+ return mix(mix(mix(a,b,f.x),mix(c,d,f.x),f.y),mix(mix(e,g,f.x),mix(h,k,f.x),f.y),f.z);}
+float tzf(vec3 p){return tzn(p)*.55+tzn(p*2.07+5.3)*.3+tzn(p*4.3+1.7)*.15;}
+vec2 tzh2(vec2 p){vec3 q=fract(vec3(p.xyx)*vec3(.1031,.1030,.0973));q+=dot(q,q.yzx+33.33);return fract((q.xx+q.yz)*q.zy);}
+vec3 tzv(vec2 x){vec2 n=floor(x),f=fract(x);float m1=8.,m2=8.,id=0.;
+ for(int j=-1;j<=1;j++){for(int i=-1;i<=1;i++){vec2 g=vec2(float(i),float(j));vec2 o=tzh2(n+g);vec2 r=g+o-f;float d=dot(r,r);if(d<m1){m2=m1;m1=d;id=o.x;}else if(d<m2){m2=d;}}}
+ return vec3(sqrt(m1),sqrt(m2)-sqrt(m1),id);}
+vec2 tzp(vec3 p,vec3 n){vec3 a=abs(n);if(a.y>=a.x&&a.y>=a.z)return p.xz;if(a.x>a.z)return p.zy;return p.xy;}
+void tzRock(inout vec3 c,inout float H,vec3 wp,vec3 nn,float lod,float lg){
+ vec2 q=tzp(wp,nn);
+ float stv=sin(wp.y*2.4+tzf(wp*.3)*6.)*.5+.5;float stl=smoothstep(.82,.98,stv);
+ float gr=tzn(wp*46.)-.5,gr2=tzn(wp*13.+4.)-.5,bl=tzf(wp*.9+7.)-.5;
+ vec3 vv=tzv(q*.8+tzf(wp*.5)*.6);float crack=1.-smoothstep(0.,.07,vv.y);
+ vec3 sc=c*(1.+gr*.16*lg+gr2*.14+bl*.3-stl*.16);
+ sc=mix(sc,sc*.42,crack*.85);
+ float al=smoothstep(.55,.75,tzf(wp*2.1+3.))*smoothstep(.1,.6,nn.y);sc=mix(sc,vec3(.22,.34,.18),al*.5);
+ sc+=step(.965,tzh(floor(wp*38.)))*.1*lg;
+ c=mix(c,sc,lod);H+=(gr*.006*lg+gr2*.018+bl*.05-crack*.05+stl*.02)*lod;}
+void tzTerr(inout vec3 c,inout float H,vec3 wp,vec3 nn,float dist){
+ float lod=smoothstep(130.,40.,dist),lg=smoothstep(32.,7.,dist);
+ float lum=dot(c,vec3(.3,.59,.11)),sl=1.-nn.y;
+ float vent=smoothstep(.3,.22,c.b)*smoothstep(.18,.3,c.r);
+ float sandw=smoothstep(.06,.16,c.r-c.b)*smoothstep(.38,.5,lum)*(1.-vent);
+ float rk=smoothstep(.36,.6,sl)*(1.-vent);
+ float coral=smoothstep(.11,.17,c.r-c.g)*smoothstep(.34,.44,c.b)*smoothstep(.45,.6,lum)*(1.-vent)*(1.-rk);
+ float silt=clamp(1.-max(max(sandw,rk),max(vent,coral)),0.,1.);
+ vec3 sc=c;float h=0.;
+ if(sandw>.01){vec2 rp=wp.xz;float w=tzf(vec3(rp*.25,3.))*5.;float rip=sin((rp.x*.8+rp.y*.55)*2.2+w);float crest=1.-abs(rip);
+  float fine=tzh(floor(wp*70.))-.5;vec3 pv=tzv(rp*.9+3.);float pb=(1.-smoothstep(.05,.16,pv.x))*step(.9,pv.z);
+  vec3 s2=c*(1.+rip*.07+fine*.14*lg+(tzf(wp*.6)-.5)*.16);s2=mix(s2,s2*(.55+pv.z*.5),pb);
+  sc=mix(sc,s2,sandw);h+=(crest*.035+fine*.003*lg+pb*.03)*sandw;}
+ if(rk>.01){vec3 r2=c;float h2=0.;tzRock(r2,h2,wp,nn,1.,lg);sc=mix(sc,r2,rk);h+=h2*rk;}
+ if(vent>.01){vec2 q=tzp(wp,nn);vec3 vv=tzv(q*3.5+tzf(wp*.4)*1.2);float crack=1.-smoothstep(0.,.09,vv.y);
+  vec3 cr=mix(vec3(.82,.68,.16),vec3(.95,.9,.6),vv.z);vec3 s2=mix(c*(.8+vv.z*.5),cr*(.55+.5*vv.z),.45);
+  s2=mix(s2,vec3(1.,.42,.08),crack*.7);s2*=1.+(tzn(wp*40.)-.5)*.2*lg;sc=mix(sc,s2,vent);h+=(vv.x*.06-crack*.05)*vent;}
+ if(coral>.01){vec3 vv=tzv(wp.xz*5.+tzn(wp*2.)*1.5);float pol=1.-smoothstep(.1,.4,vv.x);
+  vec3 pc=mix(c,vec3(.95,.52,.58),.4*vv.z)*(1.15+(vv.z-.5)*.3);vec3 s2=mix(c*.8,pc,pol);s2*=1.+(tzf(wp*3.)-.5)*.2;
+  sc=mix(sc,s2,coral);h+=pol*.05*coral;}
+ if(silt>.01){vec3 pv=tzv(wp.xz*2.2+3.);float pit=(1.-smoothstep(.0,.2,pv.x))*step(.82,pv.z);float peb=(1.-smoothstep(.04,.12,pv.x))*step(.5,pv.z)*step(pv.z,.65);
+  float fine=tzh(floor(wp*55.))-.5;vec3 s2=c*(1.+(tzf(wp*.5)-.5)*.3+(tzf(wp*3.1)-.5)*.16+fine*.12*lg);s2=mix(s2,s2*.55,pit*.8);s2=mix(s2,s2*1.45,peb);
+  sc=mix(sc,s2,silt);h+=(-pit*.04+peb*.03+fine*.003*lg)*silt;
+  float vein=1.-abs(2.*tzf(wp*.12+vec3(3.))-1.);float vn=smoothstep(.93,.99,vein)*step(250.,-wp.y)*step(c.r,c.g);sc=mix(sc,vec3(.1,.55,.5),vn*.6);}
+ c=mix(c,sc,lod);H+=h*lod;}
+void tzStruct(inout vec3 c,inout float H,vec3 wp,vec3 nn,float id,float dist){
+ float lod=smoothstep(120.,35.,dist),lg=smoothstep(34.,7.,dist);
+ float lum=dot(c,vec3(.3,.59,.11));float sat=max(c.r,max(c.g,c.b))-min(c.r,min(c.g,c.b));
+ vec2 q=tzp(wp,nn);int m=int(id+.5);
+ if(m==13){if(sat>.26)m=12;else if(c.r>c.b*1.15&&lum>.45)m=14;else m=11;}
+ if(m==0){if(c.r>c.b*1.7&&c.g>c.b*1.35&&lum>.4)m=7;else if(c.r>c.b*1.18&&lum<.62&&c.r-c.g>.1)m=4;else if(c.r>c.b*1.12&&lum<.7)m=5;else m=3;}
+ if(m==11){tzRock(c,H,wp,nn,lod,lg);return;}
+ vec3 sc=c;float h=0.;
+ if(m==2){float n1=tzn(wp*60.)-.5,n2=tzn(wp*19.+3.)-.5,n3=tzf(wp*1.1)-.5;float pit=smoothstep(.84,.9,tzn(wp*34.+9.));
+  sc=c*(1.+n1*.11*lg+n2*.08+n3*.12)*(1.-pit*.14*lg);float seam=0.;
+  if(abs(nn.y)>.5){vec2 lp=(fract(q/1.5)-.5)*1.5;float ed=.75-max(abs(lp.x),abs(lp.y));seam=1.-smoothstep(0.,.02,ed);}
+  else{float ly=(fract(wp.y/1.2)-.5)*1.2;float form=1.-smoothstep(0.,.012,.6-abs(ly));float lx=(fract(q.x/1.2+.25)-.5)*1.2;float hole=1.-smoothstep(.022,.034,length(vec2(lx,ly)));
+   seam=form*.8+hole;float st=tzn(vec3(q.x*5.,wp.y*.4,3.));sc*=1.-.1*smoothstep(.5,.85,st);}
+  sc*=1.-seam*.2;h+=n1*.002*lg+n2*.004-pit*.004*lg-seam*.004;}
+ else if(m==1){vec2 uv=q*36.;vec2 fu=fract(uv);float chk=mod(floor(uv.x)+floor(uv.y),2.);float th=mix(sin(fu.x*3.1416),sin(fu.y*3.1416),chk);th=mix(.5,th,lg);
+  float fz=tzn(wp*150.)-.5;vec2 lp=(fract(q/.45)-.5)*.45;float ed=.225-max(abs(lp.x),abs(lp.y));float line=1.-smoothstep(0.,.006,ed);float puff=smoothstep(0.,.1,ed);
+  sc=c*(.82+.28*th+fz*.1*lg+(tzf(wp*2.)-.5)*.15)*(1.-line*.35)*(.9+.1*puff);h+=th*.0012*lg+puff*.02-line*.004;}
+ else if(m==4){float r1=tzf(wp*1.2+4.),r2=tzf(wp*5.5+11.);float rr=smoothstep(.38,.7,r1*.65+r2*.35);
+  vec3 rc=mix(vec3(.5,.22,.08),vec3(.68,.36,.13),tzn(wp*9.));sc=mix(c*(.85+(r2-.5)*.35),rc*(.75+(r2-.5)*.5),rr);
+  float stk=tzn(vec3(wp.x*8.,wp.y*.55,wp.z*8.));sc*=1.-.3*smoothstep(.5,.85,stk)*(1.-abs(nn.y));
+  float pit=smoothstep(.78,.88,tzn(wp*24.));sc*=1.-pit*.35*lg;vec3 vv=tzv(q*3.);float fl=1.-smoothstep(0.,.05,vv.y);sc=mix(sc,sc*.55,fl*rr*.7);
+  vec2 lp=(fract(q/vec2(1.6,.8))-.5)*vec2(1.6,.8);float seam=1.-smoothstep(0.,.02,min(.8-abs(lp.x),.4-abs(lp.y)));sc*=1.-seam*.3;
+  h+=rr*.01-pit*.01*lg-fl*.008*rr+(r2-.5)*.01-seam*.006;}
+ else if(m==5){float rows=q.y*4.;float row=floor(rows);float rf=fract(rows);float off=tzh(vec3(row,1.,2.)),tone=tzh(vec3(row,5.,7.));float al=q.x+off*5.;
+  float gr=tzn(vec3(al*2.,q.y*30.+row*13.,row));float rg=sin((gr*8.+tzn(vec3(al*.5,q.y*3.,row))*6.)*3.1416)*.5+.5;
+  sc=c*(.78+tone*.35)*(.85+rg*.22+(gr-.5)*.15);float seam=1.-smoothstep(0.,.05,min(rf,1.-rf));seam=max(seam,1.-smoothstep(0.,.012,abs(fract(al/1.8)-.5)*0.0+fract(al/1.8)));
+  sc*=1.-seam*.45;sc=mix(sc,vec3(lum),.25*smoothstep(.4,.8,tzf(wp*1.5)));vec3 kv=tzv(vec2(al*.6,row*3.7));float kn=(1.-smoothstep(.02,.07,kv.x))*step(.85,kv.z);sc*=1.-kn*.5;
+  h+=-seam*.012+rg*.002*lg-kn*.01;}
+ else if(m==6){vec3 vv=tzv(q*14.+tzn(wp*6.)*1.5);float cl=smoothstep(0.,.5,vv.x);sc=c*(.7+.5*tzn(wp*30.))*(.8+cl*.3);sc=mix(sc,sc*1.5,step(.93,vv.z)*(1.-cl));h+=(1.-cl)*.02+(tzn(wp*30.)-.5)*.004*lg;}
+ else if(m==7){float br=tzn(vec3(q.x*1.2,q.y*120.,2.))-.5;float tar=smoothstep(.5,.8,tzf(wp*3.+1.));sc=c*(1.+br*.25*lg);sc=mix(sc,vec3(.28,.32,.2)*(lum+.3),tar*.4);sc+=step(.96,tzn(vec3(q.x*6.,q.y*200.,9.)))*.2*lg;h+=br*.0008*lg;}
+ else if(m==12){vec3 vv=tzv(q*7.+tzn(wp*2.)*1.2);float pol=1.-smoothstep(.12,.42,vv.x);vec3 pc=c*(1.15+(vv.z-.5)*.5);sc=mix(c*.78,pc,pol)*(1.+(tzf(wp*3.)-.5)*.2);h+=pol*.05;}
+ else if(m==14){vec3 vv=tzv(q*9.);float hl=(1.-smoothstep(0.,.14,vv.x))*step(.7,vv.z);sc=c*(.9+(tzf(wp*4.)-.5)*.3)*(1.-hl*.5);h+=-hl*.02+(tzf(wp*4.)-.5)*.01;}
+ else{float brush=tzn(vec3(q.x*1.5,q.y*80.,3.7))-.5;vec2 P=vec2(2.,1.);vec2 cell=q/P;vec2 lp=(fract(cell)-.5)*P;float eb=min(P.x*.5-abs(lp.x),P.y*.5-abs(lp.y));
+  float seam=1.-smoothstep(0.,.025,eb);float band=smoothstep(.13,.1,eb)*smoothstep(.05,.08,eb);vec2 rg=fract(lp/.22+.5)-.5;float rivet=(1.-smoothstep(.12,.2,length(rg)))*band;
+  sc=c;float scr=step(.94,tzn(vec3(q.x*7.,q.y*140.,5.)));sc+=scr*.09*lg;
+  float wear=smoothstep(.62,.78,tzf(wp*1.7+2.));sc=mix(sc,vec3(.35,.2,.12)*(.8+brush),wear*.75*(1.-step(.62,lum)*.6));
+  float gm=tzn(vec3(wp.x*7.,wp.y*.6,wp.z*7.));sc*=1.-.25*smoothstep(.45,.8,gm)*(1.-abs(nn.y));
+  sc=sc*(1.-seam*.35)*(1.+brush*.1*lg)+rivet*.08;h+=-seam*.006+rivet*.006+brush*.0006*lg-wear*.003;}
+ if(m==3||m==4||m==5){float dp=smoothstep(-.5,-3.,wp.y);float up=smoothstep(.15,.7,nn.y);float gw=smoothstep(.5,.72,tzf(wp*2.4+8.))*up*dp;
+  sc=mix(sc,vec3(.16,.27,.12)*(.8+.4*tzn(wp*20.)),gw*.7);vec3 bv=tzv(q*9.);float bar=(1.-smoothstep(.1,.24,bv.x))*step(.78,bv.z)*smoothstep(.45,.6,tzf(wp*1.3+2.))*dp;
+  sc=mix(sc,vec3(.62,.6,.54),bar*.9);h+=bar*.02+gw*.01;}
+ c=mix(c,sc,lod);H+=h*lod;}
+`;
+const TZ_MAIN={
+ 1:'float tzH=0.;{float tzd=length(vWP-cameraPosition);if(tzd<135.){vec3 tzc=diffuseColor.rgb;tzTerr(tzc,tzH,vWP,normalize(vN),tzd);diffuseColor.rgb=tzc;}}',
+ 2:'float tzH=0.;{float tzd=length(vWP-cameraPosition);if(tzd<125.){vec3 tzc=diffuseColor.rgb;tzStruct(tzc,tzH,vWP,normalize(vN),vMat,tzd);diffuseColor.rgb=tzc;}}',
+ 3:'float tzH=0.;{float tzd=length(vWP-cameraPosition);if(tzd<125.){vec3 tzc=diffuseColor.rgb;tzRock(tzc,tzH,vWP,normalize(vN),smoothstep(120.,35.,tzd),smoothstep(32.,7.,tzd));diffuseColor.rgb=tzc;}}'};
+const TZ_BUMP='{vec3 tq0=dFdx(-vViewPosition),tq1=dFdy(-vViewPosition);vec3 tR1=cross(tq1,normal),tR2=cross(normal,tq0);float tdet=dot(tq0,tR1);if(abs(tdet)>1e-12){vec3 tg=sign(tdet)*(dFdx(tzH)*tR1+dFdy(tzH)*tR2);normal=normalize(abs(tdet)*normal-tg);}}';
+function texPatch(sh,mat){const t=mat.userData&&mat.userData.tex;if(!t)return;let vs=sh.vertexShader,fs=sh.fragmentShader;
+ if(t===2){vs=vs.replace('#include <common>','#include <common>\nattribute float aMat;varying float vMat;').replace('#include <begin_vertex>','#include <begin_vertex>\nvMat=aMat;');}
+ fs=fs.replace('#include <common>','#include <common>\n'+(t===2?'varying float vMat;\n':'')+TZ_LIB).replace('#include <color_fragment>','#include <color_fragment>\n'+TZ_MAIN[t]);
+ if(fs.indexOf('#include <normal_fragment_maps>')>=0)fs=fs.replace('#include <normal_fragment_maps>','#include <normal_fragment_maps>\n'+TZ_BUMP);
+ sh.vertexShader=vs;sh.fragmentShader=fs;}
+function patchLit(sh){kcSetup(sh,this);texPatch(sh,this);Object.assign(sh.uniforms,U);sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vWP;varying vec3 vN;').replace('#include <begin_vertex>','#include <begin_vertex>\nvWP=(modelMatrix*vec4(position,1.0)).xyz;vN=normalize(mat3(modelMatrix)*normal);');sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\n'+LAMP_FRAG).replace('#include <aomap_fragment>','#include <aomap_fragment>\n'+LAMP_CODE);}
 function patchKelp(sh){kcSetup(sh,this);Object.assign(sh.uniforms,U);sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nvarying vec3 vWP;varying vec3 vN;attribute float aSway;uniform float uTime;').replace('#include <begin_vertex>','#include <begin_vertex>\nfloat sw=aSway*aSway;float ph=uTime*.8+position.x*.17+position.z*.13;transformed.x+=sin(ph)*sw*1.1+sin(ph*1.9+1.3)*sw*.35;transformed.z+=cos(ph*.83)*sw*.8;vWP=(modelMatrix*vec4(transformed,1.0)).xyz;vN=normalize(mat3(modelMatrix)*normal);');sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\n'+LAMP_FRAG).replace('#include <aomap_fragment>','#include <aomap_fragment>\n'+LAMP_CODE);}
 U.uSunD={value:new T.Vector3(0,1,0)};U.uDayK={value:1};U.uRoofY={value:BASEY+4.2-.6};
 const mkPhong=()=>new T.MeshPhongMaterial({color:0xffffff,vertexColors:true,side:T.DoubleSide,shininess:20,specular:0x2a343c});
@@ -493,7 +593,7 @@ function patchBasicC(sh){Object.assign(sh.uniforms,U);sh.vertexShader=sh.vertexS
 const lit=(color,o)=>{const m=new T.MeshLambertMaterial(Object.assign({color},o||{}));m.onBeforeCompile=patchLit;return m;};
 const MAT={terrain:(()=>{const m=new T.MeshPhongMaterial({color:0xffffff,vertexColors:true,shininess:1,specular:0x000000});m.onBeforeCompile=patchLit;return m;})(),stat:(()=>{const m=mkPhong();m.onBeforeCompile=patchLit;return m;})(),glow:new T.MeshBasicMaterial({vertexColors:true}),kelp:null};
 MAT.kelp=new T.MeshLambertMaterial({vertexColors:true,side:T.DoubleSide});MAT.kelp.onBeforeCompile=patchKelpC;
-MAT.terrain.userData.kc=.55;MAT.terrain.userData.kcd=36;MAT.stat.userData.kc=.45;MAT.stat.userData.kcd=100;MAT.statW=mkPhong();MAT.statW.onBeforeCompile=patchLitC;
+MAT.terrain.userData.tex=1;MAT.stat.userData.tex=2;MAT.terrain.userData.kc=.55;MAT.terrain.userData.kcd=36;MAT.stat.userData.kc=.45;MAT.stat.userData.kcd=100;MAT.statW=mkPhong();MAT.statW.userData.tex=2;MAT.statW.onBeforeCompile=patchLitC;[[MAT.terrain,'tz1'],[MAT.stat,'tz2'],[MAT.statW,'tz2w']].forEach(([m,k])=>{m.customProgramCacheKey=()=>k;m.extensions={derivatives:true};});
 MAT.glowW=new T.MeshBasicMaterial({vertexColors:true});MAT.glowW.onBeforeCompile=patchBasicC;
 /* ---------- renderer / scene ---------- */
 const renderer=new T.WebGLRenderer({canvas:cv,antialias:Q.level!=='low',powerPreference:'high-performance',alpha:false,stencil:false});
@@ -506,12 +606,12 @@ const amb=new T.AmbientLight(0x6aa8c0,.9),sun=new T.DirectionalLight(0xcfeeff,1)
 const UG={};function ug(name,geo){UG[name]=geo.index?geo.toNonIndexed():geo;return UG[name];}
 ug('box',new T.BoxGeometry(1,1,1));ug('cyl',new T.CylinderGeometry(.5,.5,1,7,1));ug('cone',new T.ConeGeometry(.5,1,7,1));ug('ico0',new T.IcosahedronGeometry(.5,0));ug('ico1',new T.IcosahedronGeometry(.5,1));ug('oct',new T.OctahedronGeometry(.5,0));ug('sph',new T.SphereGeometry(.5,7,5));ug('hemi',new T.SphereGeometry(.5,8,5,0,TAU,0,Math.PI/2));
 const _mt=new T.Matrix4(),_qq=new T.Quaternion(),_ee=new T.Euler(),_pv=new T.Vector3(),_sv=new T.Vector3(),_nm=new T.Matrix3(),_vv=new T.Vector3();
-class GB{constructor(sway){this.p=[];this.n=[];this.c=[];this.s=sway?[]:null;}
+class GB{constructor(sway){this.p=[];this.n=[];this.c=[];this.mt=[];this.m=0;this.s=sway?[]:null;}
  add(g,x,y,z,sx,sy,sz,rx,ry,rz,col,jit){_ee.set(rx||0,ry||0,rz||0);_qq.setFromEuler(_ee);_mt.compose(_pv.set(x,y,z),_qq,_sv.set(sx,sy,sz));_nm.getNormalMatrix(_mt);const pa=g.attributes.position.array,na=g.attributes.normal.array;const r=(col>>16&255)/255,gg=(col>>8&255)/255,b=(col&255)/255,j=1+(jit?(Math.random()-.5)*jit:0);
-  for(let i=0;i<pa.length;i+=3){_vv.set(pa[i],pa[i+1],pa[i+2]).applyMatrix4(_mt);this.p.push(_vv.x,_vv.y,_vv.z);_vv.set(na[i],na[i+1],na[i+2]).applyMatrix3(_nm).normalize();this.n.push(_vv.x,_vv.y,_vv.z);this.c.push(r*j,gg*j,b*j);if(this.s)this.s.push(0);}}
- raw(pos,nrm,col,sw){for(let i=0;i<pos.length;i++){this.p.push(pos[i]);this.n.push(nrm[i]);}for(let i=0;i<col.length;i++)this.c.push(col[i]);if(this.s)for(let i=0;i<sw.length;i++)this.s.push(sw[i]);}
+  for(let i=0;i<pa.length;i+=3){_vv.set(pa[i],pa[i+1],pa[i+2]).applyMatrix4(_mt);this.p.push(_vv.x,_vv.y,_vv.z);_vv.set(na[i],na[i+1],na[i+2]).applyMatrix3(_nm).normalize();this.n.push(_vv.x,_vv.y,_vv.z);this.c.push(r*j,gg*j,b*j);this.mt.push(this.m);if(this.s)this.s.push(0);}}
+ raw(pos,nrm,col,sw){for(let i=0;i<pos.length;i++){this.p.push(pos[i]);this.n.push(nrm[i]);}for(let i=0;i<col.length;i++)this.c.push(col[i]);for(let i=0;i<pos.length/3;i++)this.mt.push(this.m);if(this.s)for(let i=0;i<sw.length;i++)this.s.push(sw[i]);}
  get count(){return this.p.length/3;}
- build(){if(!this.p.length)return null;const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(this.p,3));g.setAttribute('normal',new T.Float32BufferAttribute(this.n,3));g.setAttribute('color',new T.Float32BufferAttribute(this.c,3));if(this.s)g.setAttribute('aSway',new T.Float32BufferAttribute(this.s,1));g.computeBoundingSphere();return g;}}
+ build(){if(!this.p.length)return null;const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(this.p,3));g.setAttribute('normal',new T.Float32BufferAttribute(this.n,3));g.setAttribute('color',new T.Float32BufferAttribute(this.c,3));g.setAttribute('aMat',new T.Float32BufferAttribute(this.mt,1));if(this.s)g.setAttribute('aSway',new T.Float32BufferAttribute(this.s,1));g.computeBoundingSphere();return g;}}
 function hexMix(a,b,t){const ar=a>>16&255,ag=a>>8&255,ab=a&255,br=b>>16&255,bg=b>>8&255,bb=b&255;return(Math.round(lerp(ar,br,t))<<16)|(Math.round(lerp(ag,bg,t))<<8)|Math.round(lerp(ab,bb,t));}
 /* ---------- colliders (static, spatial hash) ---------- */
 const COL={cell:16,map:new Map(),list:[],
@@ -549,8 +649,9 @@ function buildChunk(ci,cj){const pos=new Float32Array(33*33*3),nor=new Float32Ar
 /* ---------- sector decor (merged, one draw each) ---------- */
 const nodes=[],NODEDEF={
  scrap:{c:0x8a7a68,g:'box'},copper:{c:0xc9703a,g:'ico0'},quartz:{c:0xcfe9ff,g:'oct',e:1},titanium:{c:0x8a98a8,g:'ico0'},pearl:{c:0xf2f0ff,g:'sph',e:1},crystal:{c:0xff7a3a,g:'oct',e:1},fiber:{c:0x2f9a52,g:'cone'},sulfur:{c:0xe8d23a,g:'oct',e:1},coral:{c:0xff7ab8,g:'cone',e:1},sand:{c:0xe6d3a0,g:'ico0'}};
-const ndMat={};function nodeMat(k){return ndMat[k]||(ndMat[k]=NODEDEF[k].e?new T.MeshBasicMaterial({color:NODEDEF[k].c}):lit(NODEDEF[k].c));}
-const nm2={};function nodeMat2(c){return nm2[c]||(nm2[c]=lit(c));}
+const texLit=m=>{m.userData.tex=3;m.customProgramCacheKey=()=>'tz3';return m;};
+const ndMat={};function nodeMat(k){return ndMat[k]||(ndMat[k]=NODEDEF[k].e?new T.MeshBasicMaterial({color:NODEDEF[k].c}):texLit(lit(NODEDEF[k].c)));}
+const nm2={};function nodeMat2(c){return nm2[c]||(nm2[c]=texLit(lit(c)));}
 const nodeRoot=new T.Group();scene.add(nodeRoot);
 function makeNode(kind,x,z,opts){opts=opts||{};const y=opts.y!=null?opts.y:heightAt(x,z);const grp=new T.Group();grp.position.set(x,y,z);const M=nodeMat(kind);
  const add=(g,px,py,pz,sx,sy,sz,rx,ry,rz,mat)=>{const m=new T.Mesh(UG[g],mat||M);m.position.set(px,py,pz);m.scale.set(sx,sy,sz);m.rotation.set(rx||0,ry||0,rz||0);grp.add(m);return m;};
@@ -573,7 +674,7 @@ function glowSpot(g,x,y,z,col,s){g.add(UG.oct,x,y,z,s,s*1.4,s,0,0,0,col,0);}
 function kelpStrand(gb,x,y,z,h,w,seed){const seg=6,bx=rand(-1,1)*h*.07,bz=rand(-1,1)*h*.07,col=[.12+Math.random()*.12,.42+Math.random()*.2,.15+Math.random()*.1];
  for(let s=0;s<2;s++){const ang=s*Math.PI/2+seed,cx=Math.cos(ang),sz=Math.sin(ang);const P=[];for(let i=0;i<=seg;i++){const t=i/seg,ww=w*(1-t*.75),px=x+bx*t*t*h*.4,pz=z+bz*t*t*h*.4,py=y+t*h;P.push([px-cx*ww,py,pz-sz*ww,px+cx*ww,py,pz+sz*ww,t]);}
   for(let i=0;i<seg;i++){const a=P[i],b=P[i+1];const nx=-sz,nz=cx;const pos=[a[0],a[1],a[2],a[3],a[4],a[5],b[0],b[1],b[2],a[3],a[4],a[5],b[3],b[4],b[5],b[0],b[1],b[2]];const nr=[nx,0,nz,nx,0,nz,nx,0,nz,nx,0,nz,nx,0,nz,nx,0,nz];const sh=1-i/seg*.25;const cl=[col[0]*sh,col[1]*sh,col[2]*sh,col[0]*sh,col[1]*sh,col[2]*sh,col[0]*sh*1.1,col[1]*sh*1.1,col[2]*sh*1.1,col[0]*sh,col[1]*sh,col[2]*sh,col[0]*sh*1.1,col[1]*sh*1.1,col[2]*sh*1.1,col[0]*sh*1.1,col[1]*sh*1.1,col[2]*sh*1.1];gb.raw(pos,nr,cl,[a[6],a[6],b[6],a[6],b[6],b[6]]);}}}
-function buildSector(ci,cj){const rng=mulberry(ih(ci,cj,991)),x0=WX0+ci*CH,z0=WZ0+cj*CH,st=new GB(),gl=new GB(),kb=new GB(true),root=new T.Group();const dens=(Q.decor||1);
+function buildSector(ci,cj){const rng=mulberry(ih(ci,cj,991)),x0=WX0+ci*CH,z0=WZ0+cj*CH,st=(()=>{const g=new GB();g.m=13;return g;})(),gl=new GB(),kb=new GB(true),root=new T.Group();const dens=(Q.decor||1);
  const pick=(n,fn)=>{n=Math.round(n*dens);for(let i=0;i<n;i++){const x=x0+rng()*CH,z=z0+rng()*CH;if(Math.hypot(x-CTR[0],z-CTR[1])>690)continue;const y=heightAt(x,z);if(y>-1)continue;fn(x,y,z,rng);}};
  const nearStation=(x,z,r)=>Math.hypot(x-STATION.x,z-STATION.z)<r;
  const pgc=prog(x0+50,z0+50),zc=zoneOf(z0+50,x0+50),cxs=x0+50;
@@ -617,8 +718,8 @@ function buildSector(ci,cj){const rng=mulberry(ih(ci,cj,991)),x0=WX0+ci*CH,z0=WZ
  if(zmid>40&&zmid<460)pick(12,(x,y,z,r)=>{if(nearStation(x,z,46)||-y<18)return;const c=zmid>300?[0x35e8ff,0xb668ff,0xff5ad0][(r()*3)|0]:[0x7affb0,0xffd070,0xff9ac8][(r()*3)|0],hh=.4+r()*1.1;st.add(UG.cyl,x,y+hh*.5,z,.14,hh,.14,0,0,0,0x3a3a46,.1);gl.add(UG.hemi,x,y+hh,z,.7+r()*.6,.4,.7+r()*.6,0,0,0,c,.2);if(r()<.5)gl.add(UG.hemi,x+.4,y+hh*.6,z+.2,.4,.25,.4,0,0,0,c,.2);});
  if(zmid>30&&zmid<420)pick(5,(x,y,z,r)=>{if(nearStation(x,z,46)||-y<20)return;const c=[0xd0a060,0x9a6aa0,0xc86a50][(r()*3)|0];for(let i=0;i<5;i++){const a=r()*TAU,q=r()*1.1,hh=.5+r()*1.3;st.add(UG.cyl,x+Math.cos(a)*q,y+hh*.5,z+Math.sin(a)*q,.22,hh,.22,0,0,0,c,.25);st.add(UG.cyl,x+Math.cos(a)*q,y+hh+.02,z+Math.sin(a)*q,.16,.05,.16,0,0,0,0x15151c,0);}});
  // graveyard / trench debris
- if(zc===3||zc===4){pick(zc===3?10:4,(x,y,z,r)=>{const k=r(),c=hexMix(0x6d4a38,0x3a2c26,r());if(k<.35){const s=1+r()*2.4;st.add(UG.box,x,y+s*.25,z,s*2.6,.18,s*1.4,r()*.4,r()*6,r()*.4,c,.3);}else if(k<.6){const l=2+r()*5;st.add(UG.cyl,x,y+.3,z,.35,l,.35,0,0,1.45,hexMix(0x7a7f84,0x3a3f44,r()),.2);st.add(UG.cyl,x,y+.3,z,.5,.3,.5,0,0,1.45,0x5a4a40,.2);}else if(k<.8){st.add(UG.cyl,x,y+.5,z,.8,1,.8,0,0,0,0x7a4a32,.2);st.add(UG.cyl,x,y+1.02,z,.84,.06,.84,0,0,0,0x2a2a30,0);}else{st.add(UG.cyl,x,y+1,z,.18,2,.18,0,0,.25,0x6a6a70,.2);st.add(UG.cyl,x+.4,y+.2,z,1.0,.14,.14,0,0,0,0x6a6a70,.2);}});}
- // crystals (deep)
+ st.m=0;if(zc===3||zc===4){pick(zc===3?10:4,(x,y,z,r)=>{const k=r(),c=hexMix(0x6d4a38,0x3a2c26,r());if(k<.35){const s=1+r()*2.4;st.add(UG.box,x,y+s*.25,z,s*2.6,.18,s*1.4,r()*.4,r()*6,r()*.4,c,.3);}else if(k<.6){const l=2+r()*5;st.add(UG.cyl,x,y+.3,z,.35,l,.35,0,0,1.45,hexMix(0x7a7f84,0x3a3f44,r()),.2);st.add(UG.cyl,x,y+.3,z,.5,.3,.5,0,0,1.45,0x5a4a40,.2);}else if(k<.8){st.add(UG.cyl,x,y+.5,z,.8,1,.8,0,0,0,0x7a4a32,.2);st.add(UG.cyl,x,y+1.02,z,.84,.06,.84,0,0,0,0x2a2a30,0);}else{st.add(UG.cyl,x,y+1,z,.18,2,.18,0,0,.25,0x6a6a70,.2);st.add(UG.cyl,x+.4,y+.2,z,1.0,.14,.14,0,0,0,0x6a6a70,.2);}});}
+ st.m=13;// crystals (deep)
  if(zc>=3)pick(zc>=4?5:2.5,(x,y,z,r)=>{const c=zc>=4?[0x35e8ff,0xb668ff,0xff5ad0][(r()*3)|0]:[0x2cd0b0,0x6aa8ff][(r()*2)|0],n=3+(r()*4|0);for(let i=0;i<n;i++){const hh=1.2+r()*3.5,a=r()*TAU,q=r()*1.2;gl.add(UG.oct,x+Math.cos(a)*q,y+hh*.5,z+Math.sin(a)*q,.55+r()*.4,hh,.55+r()*.4,(r()-.5)*.5,r()*3,(r()-.5)*.5,c,.25);}st.add(UG.ico0,x,y+.2,z,2.2,.8,2.2,0,r()*3,0,0x2a3038,.3);});
  // glowing tendril plants + lure lights (abyss)
  if(zc>=4)pick(14,(x,y,z,r)=>{const c=[0x35e8ff,0xb668ff,0x7affc8][(r()*3)|0],hh=1.5+r()*3;for(let i=0;i<5;i++){const a=r()*TAU;gl.add(UG.cone,x+Math.cos(a)*.3,y+hh*.5,z+Math.sin(a)*.3,.08,hh,.08,Math.cos(a)*.35,0,Math.sin(a)*.35,c,.2);gl.add(UG.sph,x+Math.cos(a)*(.3+hh*.18),y+hh,z+Math.sin(a)*(.3+hh*.18),.22,.22,.22,0,0,0,hexMix(c,0xffffff,.5),0);}});
@@ -1332,7 +1433,7 @@ function buildModMesh(m){
  const hull=brk?0x56483f:0x50697a,hull2=brk?0x453a33:0x3d5260,trim=brk?0x6b4a2b:0xc9a640,Y0=BASEY;
  const B=(x,y,z,sx,sy,sz,col,coll)=>{gb.add(UG.box,cx+x,y,cz+z,sx,sy,sz,0,0,0,col,.12);if(coll!==false)cols.push(COL.box(cx+x-sx/2,y-sy/2,cz+z-sz/2,cx+x+sx/2,y+sy/2,cz+z+sz/2,'base'));};
  const G_=(x,y,z,sx,sy,sz,col)=>gl.add(UG.box,cx+x,y,cz+z,sx,sy,sz,0,0,0,col,0);
- const nb=nbrs(m),has=i=>!!nb[i];/* 0:+x 1:-x 2:+z 3:-z */
+ gb.m=2;const nb=nbrs(m),has=i=>!!nb[i];/* 0:+x 1:-x 2:+z 3:-z */
  const hatchDir=m.hatch||null;
  const wallSide=(i,windowed)=>{const d=DIRS[i],ax=d[0]!==0;const off=2.83;const L=6,cxp=ax?d[0]*off:0,czp=ax?0:d[1]*off;
   const piece=(a,b,y0,y1,col)=>{const len=b-a,mid=(a+b)/2,h=y1-y0;if(len<=.01||h<=.01)return;if(ax)B(cxp,(y0+y1)/2,mid,WT,h,len,col||hull);else B(mid,(y0+y1)/2,czp,len,h,WT,col||hull);};
@@ -1349,7 +1450,7 @@ function buildModMesh(m){
   pn.add(UG.box,cx,Y0+HT-.18,cz,1.2,.06,1.2,0,0,0,0xffffff,0);}
  else{B(0,Y0-.16,0,6,.4,6,hull2);B(0,Y0+HT+.05,0,6,.4,6,hull2);for(let i=0;i<4;i++){if(m.type==='dock'&&hatchDir&&DIRS[i][0]===hatchDir[0]&&DIRS[i][1]===hatchDir[1]){wallSide(i,false);}else wallSide(i,m.type==='window');}
   pn.add(UG.box,cx,Y0+HT-.12,cz,1.6,.07,1.6,0,0,0,0xffffff,0);if(m.type==='hab'||m.type==='window'){pn.add(UG.box,cx-1.8,Y0+HT-.12,cz+1.8,.8,.06,.8,0,0,0,0xffffff,0);}}
- // pylons
+ gb.m=0;// pylons
  const sx=m.type==='corridor'?1:2.4;for(const a of[-1,1])for(const b of[-1,1]){const x=cx+a*sx,z=cz+b*sx,h=heightAt(x,z);if(h<Y0-.5){const len=Y0-.4-h;gb.add(UG.cyl,x,h+len/2,z,.5,len,.5,0,0,0,0x44525a,.2);}}
  // props
  const FB=Y0+.04;let RR=0;
@@ -1375,24 +1476,24 @@ function buildModMesh(m){
    bb(-2.0,-2.0,1.5,.9,1.0,0x5a6a74);cy(-2.0,-2.1,.35,.5,0x2a343c,.9,false);bn(-2.0,-2.1,.18,.4,.18,0xaab4ba,1.0);gq(-1.5,-1.9,.3,.03,.3,0x6aff9a,.9);
    cy(-2.0,2.0,1.4,.2,0x2f3f49,0,true);gc(-2.0,2.0,1.25,1.6,0x2fc8d8,.2);cy(-2.0,2.0,1.4,.2,0x2f3f49,1.8,false);for(let i=0;i<3;i++)gq(-2.0+(i-1)*.25,2.0,.14,.14,.14,0xffffff,.6+i*.35);
    bb(2.2,2.0,.9,2.4,1.0,0x2c3a44);for(let i=0;i<6;i++)gq(1.74,1.75+(i%2)*.4,.03,.08,.3,i%3?0x35f0c0:0xffb24a,.4+i*.35);}break;
-  case'bunk':{RR=freeR();bb(-2.1,0,1.0,.4,2.1,0x7a8a94);bn(-2.1,0,.95,.2,2.0,G.mach.bunk?0x3a6a8a:0x4a4040,.4);bn(-2.1,-.8,.7,.14,.4,0xd8dde0,.6);bn(-2.1,.3,.95,.05,1.2,0x2a4a6a,.6);bb(-2.58,0,.08,1.0,2.0,0x56667a,.4);
+  case'bunk':{RR=freeR();bb(-2.1,0,1.0,.4,2.1,0x7a8a94);gb.m=1;bn(-2.1,0,.95,.2,2.0,G.mach.bunk?0x3a6a8a:0x4a4040,.4);bn(-2.1,-.8,.7,.14,.4,0xd8dde0,.6);bn(-2.1,.3,.95,.05,1.2,0x2a4a6a,.6);gb.m=0;bb(-2.58,0,.08,1.0,2.0,0x56667a,.4);
    bb(-2.3,1.5,.6,.6,.6,0x56667a);gq(-2.3,1.5,.2,.04,.2,0xffd27f,.65);
    bb(2.1,-2.0,1.5,.75,.7,0x6a5a48);bb(2.45,-2.0,.1,.55,.9,0x2c3a44,.75);gq(2.39,-2.0,.03,.4,.7,0x35c8ff,.85);cy(1.3,-2.0,.5,.45,0x44525a,0,false);
-   bb(2.3,2.0,.65,2.0,1.4,0x5a6a74);gq(1.97,1.8,.03,1.4,.04,0x35f0c0,.3);bn(.2,0,1.8,.03,1.4,0x5a3a4a,0);}break;
+   bb(2.3,2.0,.65,2.0,1.4,0x5a6a74);gq(1.97,1.8,.03,1.4,.04,0x35f0c0,.3);gb.m=1;bn(.2,0,1.8,.03,1.4,0x5a3a4a,0);gb.m=0;}break;
   case'storage':{RR=freeR();const c=G.mach.storage?0x9a7a40:0x5a4a36,cs=[c,0x7a6a44,0x5a6a74,0x8a5a3a];for(const z of[-2.15,0,2.15])bb(-2.45,z,.5,2.2,.08,0x56667a);
-   for(let l=0;l<3;l++){bb(-2.45,0,.55,.05,4.3,0x6a7a84,.3+l*.7);for(let i=0;i<7;i++)bn(-2.4,-1.9+i*.62,.42,.28+((i*3+l)%3)*.08,.5,cs[(i+l)%4],.35+l*.7);}
-   bb(2.0,-2.0,1.1,.9,1.1,c);bb(2.0,-2.0,.9,.8,.9,0x8a6a40,.9);cy(2.1,2.0,.7,1.0,0x5a6a74,0,true);cy(1.4,2.25,.7,1.0,0x7a4a3a,0,true);}break;
+   for(let l=0;l<3;l++){bb(-2.45,0,.55,.05,4.3,0x6a7a84,.3+l*.7);gb.m=5;for(let i=0;i<7;i++)bn(-2.4,-1.9+i*.62,.42,.28+((i*3+l)%3)*.08,.5,cs[(i+l)%4],.35+l*.7);gb.m=0;}
+   gb.m=5;bb(2.0,-2.0,1.1,.9,1.1,c);bb(2.0,-2.0,.9,.8,.9,0x8a6a40,.9);gb.m=0;cy(2.1,2.0,.7,1.0,0x5a6a74,0,true);cy(1.4,2.25,.7,1.0,0x7a4a3a,0,true);}break;
   case'reactor':{cy(-1.9,-1.9,1.7,.5,0x37444e,0,true);gc(-1.9,-1.9,1.1,2.6,stOn('reactor',0xff8a3a),.5);cy(-1.9,-1.9,1.7,.4,0x37444e,3.1,false);for(let i=0;i<3;i++)gc(-1.9,-1.9,1.25,.1,stOn('reactor',0xffd27f),.9+i*.7);
    bb(2.2,-1.9,.9,1.0,1.9,0x4a5660);bb(2.35,-1.9,.12,.6,1.8,0x2c3a44,1.0);gq(2.28,-1.9,.03,.4,1.5,stOn('reactor',0x6aff9a),1.1);
    cy(2.0,2.0,.9,2.2,0x5a6a74,0,true);gc(2.0,2.0,.95,.1,0x35c8ff,1.0);cy(1.1,2.2,.7,1.6,0x5a6a74,0,true);cy(-2.0,2.0,.9,2.2,0x5a6a74,0,true);gc(-2.0,2.0,.95,.1,0x35c8ff,1.0);}break;
   case'dock':{if(hatchDir){const hx=hatchDir[0]*3.12,hz=hatchDir[1]*3.12,rx=hatchDir[1]!==0?Math.PI/2:0,rz=hatchDir[0]!==0?Math.PI/2:0;gb.add(UG.cyl,cx+hx,Y0+1.3,cz+hz,2.5,.16,2.5,rx,0,rz,0x2a3a42,0);gl.add(UG.cyl,cx+hx+hatchDir[0]*.1,Y0+1.3,cz+hz+hatchDir[1]*.1,1.9,.12,1.9,rx,0,rz,0x2fe0a0,0);gl.add(UG.box,cx+hx*1.01,Y0+3.2,cz+hz*1.01,hatchDir[1]!==0?.8:.1,.2,hatchDir[0]!==0?.8:.1,0,0,0,0xffb24a,0);}
    for(let i=0;i<3;i++){cy(-2.2,1.6+i*.42,.38,1.2,0x5a6a74,.1,true);cy(-2.2,1.6+i*.42,.4,.2,0xff9a3a,1.3,false);}bn(-2.1,2.1,.7,.12,1.5,0x6a5a48,.45);
    bb(2.3,2.0,.5,1.9,1.2,0x2a6a7a);gq(2.04,2.0,.03,.1,.9,0x35f0c0,1.6);bb(2.3,-2.0,.7,1.3,.8,0x44525a);gq(1.94,-2.0,.03,.3,.5,0x6aff9a,.8);}break;
-  case'hab':{RR=freeR();bb(-2.2,0,.9,.5,2.4,0x5a6a8a);bb(-2.55,0,.2,.9,2.4,0x4a5a7a,.1);bn(-2.0,0,.5,.1,2.2,0x6a7a9a,.5);bb(2.2,2.1,.8,.5,.8,0x5a4a36);gc(2.2,2.1,.5,.35,0x2a8a3a,.5);gc(2.2,2.1,.9,.3,0x7aff7a,.8);bb(2.2,-2.1,.15,1.7,.15,0x44525a);gq(2.2,-2.1,.5,.3,.5,0xffd27f,1.7);bn(.2,0,1.8,.03,1.6,0x4a3a5a,0);}break;
+  case'hab':{RR=freeR();gb.m=1;bb(-2.2,0,.9,.5,2.4,0x5a6a8a);bb(-2.55,0,.2,.9,2.4,0x4a5a7a,.1);bn(-2.0,0,.5,.1,2.2,0x6a7a9a,.5);gb.m=6;bb(2.2,2.1,.8,.5,.8,0x5a4a36);gb.m=0;gc(2.2,2.1,.5,.35,0x2a8a3a,.5);gc(2.2,2.1,.9,.3,0x7aff7a,.8);bb(2.2,-2.1,.15,1.7,.15,0x44525a);gq(2.2,-2.1,.5,.3,.5,0xffd27f,1.7);gb.m=1;bn(.2,0,1.8,.03,1.6,0x4a3a5a,0);gb.m=0;}break;
   case'bio':{cy(-2.0,-2.0,1.5,3.0,0x5a6a60,0,true);gc(-2.0,-2.0,1.2,2.4,0x7aff6a,.3);cy(2.0,2.0,1.5,3.0,0x5a6a60,0,true);gc(2.0,2.0,1.2,2.4,0x7aff6a,.3);bb(2.2,-2.0,.9,1.0,1.4,0x4a5660);gq(1.74,-2.0,.03,.4,.9,0x6aff9a,.6);cy(-2.1,2.1,.5,.9,0x7a6a44,0,true);}break;
   case'o2pump':{cy(-2.0,-2.0,1.4,.6,0x4a6660,0,true);cy(-2.0,-2.0,.9,3.4,0x6a8a80,.6,false);gc(-2.0,-2.0,1.0,.1,0x6affd0,1.4);gc(-2.0,-2.0,1.0,.1,0x6affd0,2.4);bb(2.2,2.0,.9,1.2,1.2,0x4a5660);gq(1.74,2.0,.03,.5,.8,0x6affd0,.5);for(let i=0;i<3;i++)gb.add(UG.cyl,cx+2.5,Y0+3.0,cz-1.5+i*.35,.3,4.8,.3,0,0,Math.PI/2,0x6a7a80,0);}break;
-  case'greenhouse':{RR=freeR();bb(-2.3,0,.8,.55,4.6,0x5a4a36);bn(-2.3,0,.7,.08,4.5,0x2a1f1a,.55);for(let i=0;i<8;i++){const z=-2.0+i*.57;gc(-2.3,z,.1,.9,0x2a8a3a,.6);gq(-2.3,z,.42,.3,.42,i%2?0x7aff7a:0xc8ff6a,1.3);}for(let i=0;i<4;i++){gq(-2.3,-1.7+i*1.1,.05,.8,.05,0x6a5a7a,3.4);}gq(-2.3,0,.3,.06,4.2,0xc8a0ff,3.35);
-   bb(2.2,2.0,.8,.55,1.2,0x5a4a36);gc(2.2,2.0,.1,.9,0x2a8a3a,.6);gq(2.2,2.0,.5,.4,.5,0xc8ff6a,1.4);bb(2.2,-2.0,.8,.55,1.2,0x5a4a36);gc(2.2,-2.0,.1,.9,0x2a8a3a,.6);gq(2.2,-2.0,.5,.4,.5,0x7aff7a,1.4);}break;
+  case'greenhouse':{RR=freeR();gb.m=6;bb(-2.3,0,.8,.55,4.6,0x5a4a36);bn(-2.3,0,.7,.08,4.5,0x2a1f1a,.55);gb.m=0;for(let i=0;i<8;i++){const z=-2.0+i*.57;gc(-2.3,z,.1,.9,0x2a8a3a,.6);gq(-2.3,z,.42,.3,.42,i%2?0x7aff7a:0xc8ff6a,1.3);}for(let i=0;i<4;i++){gq(-2.3,-1.7+i*1.1,.05,.8,.05,0x6a5a7a,3.4);}gq(-2.3,0,.3,.06,4.2,0xc8a0ff,3.35);
+   gb.m=6;bb(2.2,2.0,.8,.55,1.2,0x5a4a36);gb.m=0;gc(2.2,2.0,.1,.9,0x2a8a3a,.6);gq(2.2,2.0,.5,.4,.5,0xc8ff6a,1.4);gb.m=6;bb(2.2,-2.0,.8,.55,1.2,0x5a4a36);gb.m=0;gc(2.2,-2.0,.1,.9,0x2a8a3a,.6);gq(2.2,-2.0,.5,.4,.5,0x7aff7a,1.4);}break;
   case'sonar':{bb(-2.1,-2.0,1.0,1.1,1.8,0x3a4852);bb(-2.5,-2.0,.12,.8,1.6,0x2c3a44,1.1);gq(-2.43,-2.0,.04,.6,1.4,0x35c8ff,1.2);bb(2.2,2.0,.9,2.2,1.0,0x2c3a44);for(let i=0;i<5;i++)gq(1.74,1.7+(i%2)*.5,.03,.08,.3,i%2?0x35f0c0:0xffb24a,.4+i*.4);
    gb.add(UG.cyl,cx,Y0+HT+1.4,cz,.2,2.6,.2,0,0,0,0x7a8a94,0);gb.add(UG.hemi,cx,Y0+HT+2.6,cz,2.2,1.2,2.2,Math.PI,0,0,0x9aa6ae,0);gl.add(UG.sph,cx,Y0+HT+2.7,cz,.35,.35,.35,0,0,0,0x35f0ff,0);}break;
   case'thermal':{cy(-2.0,-2.0,1.5,3.2,0x5a4a44,0,true);gc(-2.0,-2.0,1.15,.4,0xff7a2a,3.2);gc(-2.0,-2.0,1.0,.1,0xff7a2a,1.2);bb(2.2,2.0,.9,1.4,.9,0x37444e);gq(1.74,2.0,.03,.4,.5,0xff7a2a,.7);cy(2.1,-2.0,.6,1.0,0x5a6a74,0,true);}break;
