@@ -142,6 +142,10 @@ canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block;background
 .card .cost{font:400 12px var(--mono);color:var(--dim);margin-bottom:8px}
 .card .cost .y{color:var(--ok)}.card .cost .n{color:var(--warn)}
 .card.locked{opacity:.5}
+.craftqty{display:flex;align-items:center;gap:7px;margin:0 0 8px;font:400 11px var(--mono);color:var(--dim)}
+.craftqty label{letter-spacing:.08em;text-transform:uppercase}
+.craftqty input{width:68px;min-width:0;padding:5px 6px;background:#04202c;color:#fff;border:1px solid var(--line2);font:400 15px var(--mono)}
+.craftqty .max{color:var(--dim);margin-left:auto}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{font:400 12px var(--mono);padding:4px 9px;border:1px solid var(--line2);color:var(--txt)}
 .chip b{color:var(--amber);font-weight:400;margin-left:6px}
@@ -1764,11 +1768,16 @@ let buildPaletteDirty=true;
 /* ---------- gear/crafting ---------- */
 function canCraft(r){return hasItems(r.in)&&(r.known||(r.data&&G.bps['r_'+r.id])||(r.bp&&G.bps[r.bp])||G.bps['r_'+r.id]);}
 function isKnown(r){return r.known||G.bps['r_'+r.id]||(r.bp&&G.bps[r.bp]);}
+// Bulk crafting is available only for repeatable recipes that produce inventory items.
+function maxCraftable(r){if(!r||!r.in||r.gear)return 1;let max=Infinity;for(const k in r.in)max=Math.min(max,Math.floor((G.inv[k]||0)/r.in[k]));return Number.isFinite(max)?Math.max(0,max):0;}
 let crafting=null;
-function startCraft(r){if(crafting||!G.mach.fab)return;if(!isKnown(r)){AU.deny();return;}if(!hasItems(r.in)){toast('Missing materials','w');AU.deny();return;}
- if(r.gear){const[k,t]=r.gear;if((G.gear[k]||0)>=t){toast('Already installed');AU.deny();return;}if(t>(G.gear[k]||0)+1&&GEAR[k]){toast('Craft the earlier tier first','w');AU.deny();return;}}
- takeItems(r.in);crafting={r,t:0,dur:r.t/(BASE.ratio>.5?1:2)};AU.craft();}
-function finishCraft(){const r=crafting.r;crafting=null;if(r.out)Object.entries(r.out).forEach(([k,n])=>giveItem(k,n,true));if(r.gear){G.gear[r.gear[0]]=r.gear[1];applyGear();if(r.gear[0]==='tank')P.o2=P.o2max;}G.stats.crafts++;AU.ok();toast('Fabricated: '+r.n,'a');ev('craft',r.id);}
+function startCraft(r,amount=1){if(crafting||!G.mach.fab)return;if(!isKnown(r)){AU.deny();return;}
+ if(r.gear){amount=1;const[k,t]=r.gear;if((G.gear[k]||0)>=t){toast('Already installed');AU.deny();return;}if(t>(G.gear[k]||0)+1&&GEAR[k]){toast('Craft the earlier tier first','w');AU.deny();return;}}
+ else{amount=Math.max(1,Math.min(maxCraftable(r),Math.floor(+amount||1)));}
+ const costs=Object.fromEntries(Object.entries(r.in).map(([k,n])=>[k,n*amount]));
+ if(!amount||!hasItems(costs)){toast('Missing materials','w');AU.deny();return;}
+ takeItems(costs);crafting={r,count:amount,t:0,dur:r.t/(BASE.ratio>.5?1:2)};AU.craft();}
+function finishCraft(){const job=crafting,r=job.r,count=job.count||1;crafting=null;if(r.out)Object.entries(r.out).forEach(([k,n])=>giveItem(k,n*count,true));if(r.gear){G.gear[r.gear[0]]=r.gear[1];applyGear();if(r.gear[0]==='tank')P.o2=P.o2max;}G.stats.crafts+=count;AU.ok();toast('Fabricated: '+r.n+(count>1?' ×'+count:''),'a');ev('craft',r.id);}
 function updateCraft(dt){if(!crafting)return;crafting.t+=dt;if(Math.random()<dt*3)AU.noise(.05,1800,.04,2);if(crafting.t>=crafting.dur)finishCraft();}
 function useConsumable(id){if(id==='medkit'&&G.inv.medkit){if(P.hp>=P.hpmax-1){toast('Health is full');return;}takeItem('medkit');P.hp=Math.min(P.hpmax,P.hp+60);AU.ok();toast('Health restored');}else if(id==='o2cap'&&G.inv.o2cap){takeItem('o2cap');P.o2=Math.min(P.o2max,P.o2+P.o2max*.35);AU.ok();toast('+35% air');}}
 function restAtBunk(){P.hp=P.hpmax;P.o2=P.o2max;AU.ok();saveGame('auto',true);toast('Rested — progress saved','a');ev('rest');}
@@ -2025,9 +2034,12 @@ const TABS={
   sc.append(h('div',{class:'sec',text:'Gear'}));const gl=[['Air tank',GEAR.tank[G.gear.tank]+' s'],['Dive suit','rated '+suitRating()+' m'],['Fins',G.gear.fins?'+16% speed':'none'],['Scooter',G.gear.scooter?'installed':'none'],['Lamp',G.gear.light?'Mk II':'Mk I'],['Scanner',G.gear.scanner?'Mk II':'Mk I'],['Stun Prod',G.gear.prod?'installed':'not built'],['Constructor',G.gear.build?'unlocked':'locked']];const gc=h('div',{class:'chips'});gl.forEach(([a,b])=>gc.append(h('div',{class:'chip',text:a},h('b',{text:b}))));sc.append(gc);
   const kk=Object.keys(G.inv).filter(k=>ITEMS[k].c==='key');if(kk.length){sc.append(h('div',{class:'sec',text:'Key items'}));kk.forEach(k=>sc.append(h('div',{class:'empty',text:ITEMS[k].n+(G.inv[k]>1?' ×'+G.inv[k]:'')})));}},
  fab(sc){if(!G.mach.fab||ui.at!=='fab'){sc.append(h('div',{class:'empty',text:G.mach.fab?'Use the Fabricator inside Pelagia (west room) to craft.':'Repair the Fabricator in Pelagia first.'}));return;}
-  const pw=BASE.ratio;sc.append(h('div',{class:'tag',style:{marginBottom:'8px'},text:crafting?'FABRICATING: '+crafting.r.n.toUpperCase()+'  '+Math.round(crafting.t/crafting.dur*100)+'%':'POWER '+Math.round(pw*100)+'%'+(pw<.5?'  ·  UNDERPOWERED (slow)':'')}));
-  const g=h('div',{class:'grid2'});RECIPES.forEach(r=>{const known=isKnown(r),can=hasItems(r.in);const done=r.gear&&(G.gear[r.gear[0]]||0)>=r.gear[1];const lock=!known;const c=h('div',{class:'card'+(lock?' locked':'')},h('h3',{},h('span',{text:r.n}),done?h('span',{class:'tag',text:'DONE'}):null),h('p',{text:lock?(r.data?'Research in the Lab ('+r.data+' data).':'Blueprint not found yet.'):r.d}),h('div',{class:'cost'},costTxt(r.in)),h('button',{class:'btn sm pri',disabled:lock||done||!can||!!crafting,onclick:()=>{startCraft(r);renderSlate();}},done?'Installed':'Fabricate'));g.append(c);});sc.append(g);},
- lab(sc){if(!G.mach.lab||ui.at!=='lab'){sc.append(h('div',{class:'empty',text:G.mach.lab?'Use the Research Console inside Pelagia (east room).':'Repair the Research Console in Pelagia first.'}));return;}
+   const pw=BASE.ratio;sc.append(h('div',{class:'tag',style:{marginBottom:'8px'},text:crafting?'FABRICATING: '+crafting.r.n.toUpperCase()+(crafting.count>1?' ×'+crafting.count:'')+'  '+Math.round(crafting.t/crafting.dur*100)+'%':'POWER '+Math.round(pw*100)+'%'+(pw<.5?'  ·  UNDERPOWERED (slow)':'')}));
+   const g=h('div',{class:'grid2'});RECIPES.forEach(r=>{const known=isKnown(r),max=maxCraftable(r),can=max>0;const done=r.gear&&(G.gear[r.gear[0]]||0)>=r.gear[1];const lock=!known;const bulk=!r.gear;const qty=h('input',{type:'number',min:'1',max:String(Math.max(1,max)),step:'1',value:'1',disabled:!bulk||!can||!!crafting,'aria-label':'Craft quantity for '+r.n});
+    qty.addEventListener('change',()=>{qty.value=Math.max(1,Math.min(max||1,Math.floor(+qty.value||1)));});
+    const qtyRow=bulk?h('div',{class:'craftqty'},h('label',{},'Amount'),qty,h('span',{class:'max',text:'MAX '+max})):null;
+    const c=h('div',{class:'card'+(lock?' locked':'')},h('h3',{},h('span',{text:r.n}),done?h('span',{class:'tag',text:'DONE'}):null),h('p',{text:lock?(r.data?'Research in the Lab ('+r.data+' data).':'Blueprint not found yet.'):r.d}),h('div',{class:'cost'},costTxt(r.in)),qtyRow,h('button',{class:'btn sm pri',disabled:lock||done||!can||!!crafting,onclick:()=>{startCraft(r,bulk?qty.value:1);renderSlate();}},done?'Installed':'Fabricate'));g.append(c);});sc.append(g);},
+lab(sc){if(!G.mach.lab||ui.at!=='lab'){sc.append(h('div',{class:'empty',text:G.mach.lab?'Use the Research Console inside Pelagia (east room).':'Repair the Research Console in Pelagia first.'}));return;}
   sc.append(h('div',{class:'tag',style:{marginBottom:'10px'},text:'RESEARCH DATA: '+G.data+'  ·  scan creatures, wrecks and sites to earn more'}));const g=h('div',{class:'grid2'});let any=0;RECIPES.filter(r=>r.data).forEach(r=>{const got=!!G.bps['r_'+r.id];any=1;g.append(h('div',{class:'card'+(got?' locked':'')},h('h3',{},h('span',{text:r.n}),got?h('span',{class:'tag',text:'KNOWN'}):h('span',{class:'tag',text:r.data+' DATA'})),h('p',{text:r.d}),h('button',{class:'btn sm pri',disabled:got||G.data<r.data,onclick:()=>{G.data-=r.data;G.bps['r_'+r.id]=1;AU.ok();toast('Researched: '+r.n,'a');renderSlate();}},got?'Researched':'Research')));});sc.append(g);},
  journal(sc){const q=curQ(),s=curS();sc.append(h('div',{class:'sec',text:'Current directive'}));if(G.ending||!s)sc.append(h('div',{class:'card'},h('h3',{text:'Free dive'}),h('p',{text:'The story is told. Pelagia is yours. Build, explore and find what is left.'})));else sc.append(h('div',{class:'card'},h('h3',{text:q.title}),h('p',{text:s.txt}),h('div',{class:'cost',text:'Act '+q.act+' · step '+(G.si+1)+' of '+q.steps.length})));
   sc.append(h('div',{class:'sec',text:'Completed'}));let n=0;QUESTS.forEach((qq,i)=>{if(i<G.qi){n++;sc.append(h('div',{class:'row'},h('label',{text:qq.title}),h('span',{class:'tag',text:'ACT '+qq.act})));}});if(!n)sc.append(h('div',{class:'empty',text:'None yet.'}));
