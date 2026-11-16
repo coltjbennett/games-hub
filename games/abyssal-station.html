@@ -340,11 +340,11 @@ const ITEMS={
  scrap:{n:'Scrap Metal',c:'raw'},fiber:{n:'Kelp Fiber',c:'raw'},copper:{n:'Copper Nodule',c:'raw'},quartz:{n:'Quartz Shard',c:'raw'},titanium:{n:'Titanium Ore',c:'raw'},pearl:{n:'Glow Pearl',c:'raw'},crystal:{n:'Vent Crystal',c:'raw'},
  sulfur:{n:'Brimstone',c:'raw'},coral:{n:'Echo Coral',c:'raw'},sand:{n:'Silica Sand',c:'raw'},glass:{n:'Glass Pane',c:'part'},
  wire:{n:'Copper Wire',c:'part'},plate:{n:'Hull Plate',c:'part'},circuit:{n:'Circuit',c:'part'},battery:{n:'Cell',c:'part'},tplate:{n:'Titanium Plate',c:'part'},
- flare:{n:'Flare',c:'use',d:'Throw to blind and scare Lurkers. [3]'},medkit:{n:'Medkit',c:'use',d:'Restores 60 health. [use in Bag]'},o2cap:{n:'O2 Capsule',c:'use',d:'Refills 35% of your tank. [use in Bag]'},
+ flare:{n:'Flare',c:'use',d:'Throw to blind and scare Lurkers. [3]'},medkit:{n:'Medkit',c:'use',d:'Fully restores health. [use in Bag]'},o2cap:{n:'O2 Capsule',c:'use',d:'Refills 35% of your tank. [use in Bag]'},
  core:{n:'MARA Memory Core',c:'key'},blackbox:{n:"Halden's Black Box",c:'key'},camera:{n:"Yuki's Dive Camera",c:'key'},ring:{n:'Pressure Ring',c:'key'}};
 const CAP0=40;
 /* gear: tier upgrades */
-const GEAR={tank:[90,150,240,360],suit:[45,115,215,400],fins:[1,1.16],scooter:[0,1],light:[1,1.45],scanner:[1,2]};
+const GEAR={tank:[90,150,240,360],suit:[45,115,215,400],fins:[1,1.16],scooter:[0,1],light:[1,1.45],scanner:[1,2],prod:[1,2],armor:[1]};
 const RECIPES=[
  {id:'wire',n:'Copper Wire',d:'Wiring for everything electrical.',out:{wire:2},in:{copper:1},known:1,t:2},
  {id:'plate',n:'Hull Plate',d:'Pressed scrap, the station\'s bread and butter.',out:{plate:1},in:{scrap:2},known:1,t:3},
@@ -357,7 +357,9 @@ const RECIPES=[
  {id:'tank2',n:'Air Tank Mk II',d:'Air capacity 90 s → 150 s.',gear:['tank',1],in:{plate:4,wire:2,quartz:2},bp:'tank2',t:6},
  {id:'suit2',n:'Dive Suit Mk II',d:'Rated to 115 m. Opens the Kelp Forest.',gear:['suit',1],in:{plate:6,wire:4,fiber:6,quartz:4},bp:'suit2',t:8},
  {id:'fins',n:'Swim Fins',d:'+16% swim speed.',gear:['fins',1],in:{fiber:4,plate:2},data:20,t:4},
- {id:'prod',n:'Stun Prod',d:'Short-range shock. Makes predators back off.',gear:['prod',1],in:{wire:3,battery:2,plate:2},bp:'prod',t:6},
+ {id:'prod',n:'Stun Prod Mk I',d:'Short-range shock. Stuns predators and makes them back off.',gear:['prod',1],in:{wire:3,battery:2,plate:2},bp:'prod',t:6},
+ {id:'prod2',n:'Stun Prod Mk II',d:'Four-times the range and a heavier charge. Kills Lurkers and Gulpers; deals double damage to the Charybdis.',gear:['prod',2],in:{tplate:3,circuit:2,battery:2},bp:'prod2',t:9},
+ {id:'armor',n:'Reinforced Dive Armor',d:'Layered plating reduces incoming health damage by 35%, including predator and boss hits.',gear:['armor',1],in:{tplate:4,circuit:3,plate:4,battery:1},bp:'armor',t:10},
  {id:'light2',n:'Lamp Mk II',d:'Wider, brighter, longer beam.',gear:['light',1],in:{circuit:2,pearl:1,quartz:2},data:30,t:5},
  {id:'scanner2',n:'Scanner Mk II',d:'Scan twice as fast.',gear:['scanner',1],in:{circuit:2,quartz:3},data:30,t:5},
  {id:'scooter',n:'Marcus\'s Scooter',d:'Boost swims twice as fast.',gear:['scooter',1],in:{tplate:4,circuit:4,battery:2},bp:'scooter',t:8},
@@ -1493,8 +1495,8 @@ function bossBuild(){const B=BOSS;if(B.built)return;B.built=true;
  const swr=new T.Mesh(UG.cyl,new T.MeshBasicMaterial({color:0xff3a2a,transparent:true,opacity:.18,depthWrite:false,side:T.DoubleSide}));swr.visible=false;scene.add(swr);B.sweepRing=swr;
  B.bar=document.createElement('div');B.bar.style.cssText='position:absolute;left:50%;top:58px;transform:translateX(-50%);width:min(560px,72vw);pointer-events:none;display:none;text-align:center;font:700 13px system-ui,sans-serif;letter-spacing:.28em;color:#ffd9a0;text-shadow:0 0 8px #000';B.bar.innerHTML='THE CHARYBDIS<div style="margin-top:5px;height:10px;border:1px solid #ffb24a;background:rgba(0,0,0,.55);position:relative"><div class="fill" style="height:100%;width:100%;background:linear-gradient(90deg,#ff5a3a,#ffb24a)"></div><i style="position:absolute;left:33%;top:-2px;bottom:-2px;width:2px;background:#ffd9a0"></i><i style="position:absolute;left:66%;top:-2px;bottom:-2px;width:2px;background:#ffd9a0"></i></div>';document.getElementById('hud').appendChild(B.bar);B.fill=B.bar.querySelector('.fill');
  B.fl=document.createElement('div');B.fl.style.cssText='position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:9;transition:opacity .15s';document.body.appendChild(B.fl);}
-function bossStep(){const q=QUESTS[G.qi];return q&&q.title==='The Lantern'&&G.si===1&&!flags.bossDown;}
-function bossSpawn(){const B=BOSS;bossBuild();B.alive=true;B.hp=B.max;B.phase=1;B.state='intro';B.t=0;B.ai=0;B.exposed=false;B.waveHit=false;flags.bossOn=1;const C=B.center;B.H.set(C.x+70,C.y+34,C.z);B.vel.set(0,0,0);B.ang=0;B.segs.forEach((q,i)=>{if(i>0)q.pos.set(C.x+70+i*4,C.y+34,C.z);q.g.visible=true;});B.headG.visible=true;B.bar.style.display='block';B.fill.style.width='100%';
+function bossStep(){const q=QUESTS[G.qi],ready=!!(q&&q.title==='The Lantern'&&G.si===1&&!flags.bossDown);if(ready){if(!G.bps.prod2)giveBP('prod2','Stun Prod Mk II');if(!G.bps.armor)giveBP('armor','Reinforced Dive Armor');}return ready;}
+function bossSpawn(){const B=BOSS;if(G.gear.prod<2){if(B.lockNotice==null||G.stats.time-B.lockNotice>8){toast('Stun Prod Mk II required before engaging the Charybdis','w');B.lockNotice=G.stats.time;}return false;}bossBuild();B.alive=true;B.hp=B.max;B.phase=1;B.state='intro';B.t=0;B.ai=0;B.exposed=false;B.waveHit=false;flags.bossOn=1;const C=B.center;B.H.set(C.x+70,C.y+34,C.z);B.vel.set(0,0,0);B.ang=0;B.segs.forEach((q,i)=>{if(i>0)q.pos.set(C.x+70+i*4,C.y+34,C.z);q.g.visible=true;});B.headG.visible=true;B.bar.style.display='block';B.fill.style.width='100%';
  say([M('Rook. Something is moving under the basin. A lot of something.'),M('I know that shape. I have been trying not to remember it since the first dive. It is the Charybdis. Use the pillars. It cannot turn as fast as it charges.')]);AU.setChord(4);AU.tone(46,2.4,'sawtooth',.34,-12,0,1);AU.noise(1.6,90,.3,1,'lowpass');}
 function bossClear(){const B=BOSS;B.alive=false;flags.bossOn=0;if(B.built){B.headG.visible=false;B.segs.forEach(q=>q.g.visible=false);B.wave.visible=false;B.sweepRing.visible=false;B.marks.forEach(m=>{m.d.visible=false;m.sp.visible=false;});B.bar.style.display='none';B.fl.style.opacity=0;}
  B.minions.forEach(h=>{const i=hostiles.indexOf(h);if(i>=0)hostiles.splice(i,1);scene.remove(h.g);});B.minions.length=0;const s=SCANS.find(q=>q.id==='charybdis');if(s)s.y=1e6;AU.setChord(3);}
@@ -1504,7 +1506,7 @@ function bossRoar(v){AU.tone(52,1.3,'sawtooth',v||.3,-14,0,1);AU.tone(78,1.1,'sq
 function bossBlocked(){const B=BOSS;for(const p of B.pillars){const ax=B.H.x,az=B.H.z,bx=P.pos.x,bz=P.pos.z,dx=bx-ax,dz=bz-az,l2=dx*dx+dz*dz||1;let t=((p.x-ax)*dx+(p.z-az)*dz)/l2;if(t<=0||t>=1)continue;t=clamp(t,0,1);if(Math.hypot(ax+dx*t-p.x,az+dz*t-p.z)<p.r+1.2)return true;}return false;}
 function bossSteer(tx,ty,tz,sp,dt){const H=BOSS.H;_bd2.set(tx-H.x,ty-H.y,tz-H.z);const l=_bd2.length();if(l<.01)return;const st=Math.min(l,sp*dt);H.addScaledVector(_bd2,st/l);}
 const _bd2=new T.Vector3(),_bd3=new T.Vector3();
-function bossNext(){const B=BOSS,ph=B.phase,seq=ph===1?['lunge','roar','lunge','sweep']:ph===2?['lunge','slam','vortex','lunge','roar','sweep']:['flash','lunge','summon','slam','lunge','vortex','roar','sweep'];const a=seq[B.ai++%seq.length];B.state=a+'_t';B.t=0;B.hitL=false;B.waveHit=false;
+function bossNext(){const B=BOSS,ph=B.phase,seq=ph===1?['lunge','roar','lunge','sweep']:ph===2?['lunge','slam','lunge','roar','sweep']:['flash','lunge','summon','slam','lunge','roar','sweep'];const a=seq[B.ai++%seq.length];B.state=a+'_t';B.t=0;B.hitL=false;B.waveHit=false;
  if(a==='slam'){const C=B.center;B.marks.forEach((m,i)=>{const a2=i/5*TAU+Math.random(),r=i===0?0:3+Math.random()*7,mx=P.pos.x+Math.cos(a2)*r,mz=P.pos.z+Math.sin(a2)*r;m.x=mx;m.z=mz;m.y=heightAt(mx,mz);m.d.position.set(mx,m.y+.3,mz);m.d.visible=true;m.sp.visible=false;m.sp.position.set(mx,m.y,mz);m.sp.scale.set(.1,.1,.1);});}
  if(a==='sweep'){B.sweepRing.visible=true;B.sweepRing.position.set(B.center.x,B.center.y+16,B.center.z);B.sweepRing.scale.set(26,32,26);}
  if(a==='roar'||a==='summon'||a==='flash')bossRoar(.2);}
@@ -1534,8 +1536,6 @@ function updateBoss(dt,time){const B=BOSS;
   case'sweep':{B.ang+=dt*1.35*spd;bossSteer(C.x+Math.cos(B.ang)*26,fy+16,C.z+Math.sin(B.ang)*26,60,dt);B.sweepRing.visible=true;if(B.t>3.6){B.sweepRing.visible=false;B.state='recover';B.t=0;B.dur=2;}break;}
   case'slam_t':{bossSteer(px,py+30,pz,14,dt);jawT=.7;B.marks.forEach((m,i)=>{m.d.material.opacity=.3+.3*Math.sin(time*18+i);});if(B.t>1.7){B.state='slam';B.t=0;B.marks.forEach(m=>{m.sp.visible=true;m.sp.scale.set(2.6,.1,2.6);if(Math.hypot(px-m.x,pz-m.z)<3.8&&py<m.y+16)damagePlayer(30,'boss');});bossRoar(.16);B.shake=.7;}break;}
   case'slam':{const k=Math.min(1,B.t/.25);B.marks.forEach(m=>{m.sp.scale.set(2.6,14*k,2.6);m.sp.position.set(m.x,m.y+7*k,m.z);});if(B.t>1.3){B.marks.forEach(m=>{m.d.visible=false;m.sp.visible=false;});B.state='recover';B.t=0;B.dur=2;}break;}
-  case'vortex_t':{bossSteer(C.x,fy+30,C.z,28,dt);jawT=1;if(B.t>1.4){B.state='vortex';B.t=0;B.wave.visible=true;}break;}
-  case'vortex':{B.ang+=dt*2.4;bossSteer(C.x+Math.cos(B.ang)*5,fy+30,C.z+Math.sin(B.ang)*5,40,dt);jawT=1;_bd3.set(H.x-px,H.y-py,H.z-pz);const d=_bd3.length()||1;P.vel.addScaledVector(_bd3,(13+B.t*3)/d*dt*14);B.wave.position.copy(H);B.waveR=28+Math.sin(time*8)*3;B.wave.scale.setScalar(B.waveR);B.wave.material.opacity=.1;B.shake=.35;if(d<10){B.sweepT-=dt;if(B.sweepT<=0){B.sweepT=.7;damagePlayer(16,'boss');}}if(B.t>4.8){B.wave.visible=false;B.state='recover';B.t=0;B.dur=2.8;}break;}
   case'flash_t':{bossSteer(C.x+Math.cos(B.ang)*46,fy+30,C.z+Math.sin(B.ang)*46,14,dt);B.lure.scale.setScalar(2.2+B.t*2.6);B.halo.scale.setScalar(5.2+B.t*8);if(B.t>1.2){_bd3.set(H.x-px,H.y-py,H.z-pz).normalize();if(_bd3.dot(camDir)>.15){B.blind=2.4;damagePlayer(8,'boss');}B.fl.style.opacity=1;B.state='flash';B.t=0;B.lure.scale.setScalar(2.2);B.halo.scale.setScalar(5.2);}break;}
   case'flash':{if(B.t>.5)B.fl.style.opacity=B.blind>0?.9:0;if(B.t>1.8){B.state='circle';B.t=0;B.dur=1.6;}break;}
   case'summon_t':{bossSteer(C.x,fy+36,C.z,16,dt);jawT=1;if(B.t>1.2){bossSummon();B.state='recover';B.t=0;B.dur=3.2;}break;}
@@ -1598,7 +1598,7 @@ function seedFauna(){const R=mulberry(2024);
  sets('lurker',lk);
  // drifter(s)
  spawnDrifter();seedCritters();}
-function spawnHostile(kind,x,z){const g=new T.Group(),y=heightAt(x,z)+rand(3,10);
+function spawnHostile(kind,x,z){const id=kind+':'+x.toFixed(2)+':'+z.toFixed(2),g=new T.Group(),y=heightAt(x,z)+rand(3,10);
  const isG=kind==='gulper',n=isG?1:7;const body=[];
  if(isG){const skin=lit(0x3e5846),skin2=lit(0x5f7a58),belly=lit(0xb89a90),vein=lit(0x7a3a46),dark=lit(0x1f2a22),tooth=new T.MeshBasicMaterial({color:0xeee6cf}),pm=new T.MeshBasicMaterial({color:0x101010}),eye=new T.MeshBasicMaterial({color:0xffe060}),lureM=new T.MeshBasicMaterial({color:0xff6aa8}),PT=(p,geo,mat,x,y,z,sx,sy,sz,rx,ry,rz)=>{const q=new T.Mesh(UG[geo],mat);q.position.set(x,y,z);q.scale.set(sx,sy,sz);q.rotation.set(rx||0,ry||0,rz||0);p.add(q);return q;};
   PT(g,'ico1',skin,0,.1,.6,3.0,2.5,5.2);
@@ -1616,7 +1616,7 @@ function spawnHostile(kind,x,z){const g=new T.Group(),y=heightAt(x,z)+rand(3,10)
    if(i>0){const sp=new T.Mesh(UG.cone,lit(0x0e141c));sp.scale.set(.18,.55,.3);sp.position.set(0,.5,0);m.add(sp);if(i%2===0&&i<6){for(const sd of[-1,1]){const fn=new T.Mesh(UG.ico0,lit(0x1c2638));fn.scale.set(.9,.08,.6);fn.position.set(sd*.7,-.05,0);fn.rotation.z=sd*.4;m.add(fn);}}}
    else{const jw=new T.Mesh(UG.box,lit(0x0a0f16));jw.scale.set(.8,.18,.9);jw.position.set(0,-.38,.75);m.add(jw);const tt=new T.MeshBasicMaterial({color:0xdcdcdc});for(let q=0;q<6;q++){const t=new T.Mesh(UG.cone,tt);const sd=q%2?1:-1;t.scale.set(.07,.28,.07);t.position.set(sd*.3,-.25,.45+(q>>1)*.22);t.rotation.x=Math.PI;m.add(t);}const st2=new T.Mesh(UG.cyl,lit(0x0a0f16));st2.scale.set(.05,1.2,.05);st2.position.set(0,.85,.5);st2.rotation.x=-.8;m.add(st2);const lure=new T.Mesh(UG.sph,new T.MeshBasicMaterial({color:0x7affea}));lure.scale.set(.3,.3,.3);lure.position.set(0,1.15,1.1);m.add(lure);}}}
  g.position.set(x,y,z);scene.add(g);g.visible=false;
- const h={kind,g,body,pos:g.position,vel:new T.Vector3(),yaw:rand(0,TAU),state:'roam',home:new T.Vector3(x,y,z),t:rand(0,3),cool:0,stun:0,flee:0,trail:[],hp:3,wp:new T.Vector3(x,y,z),active:false,seed:Math.random()*10,spd:isG?4.2:3.2,react:isG?30:34,bite:isG?22:18};
+ const h={id,kind,g,body,pos:g.position,vel:new T.Vector3(),yaw:rand(0,TAU),state:'roam',home:new T.Vector3(x,y,z),t:rand(0,3),cool:0,stun:0,flee:0,trail:[],hp:3,wp:new T.Vector3(x,y,z),active:false,seed:Math.random()*10,spd:isG?4.2:3.2,react:isG?30:34,bite:isG?22:18};
  if(!isG){for(let i=0;i<body.length;i++)h.trail.push(new T.Vector3(x,y,z-i*1.1));}
  hostiles.push(h);return h;}
 let drifter=null;
@@ -1688,9 +1688,11 @@ function updateCritters(dt,px,py,pz,time){for(let i=0;i<critters.length;i++){con
   else if(o.kind==='eel'){for(let q=0;q<o.segs.length;q++){const m=o.segs[q];m.position.x=Math.sin(tm*3.2-q*.7)*.22*(1+q*.08);}}}}
 /* ---- hostile AI ---- */
 function hostileNoise(){return(P.boosting?1.9:1)*(P.mode==='swim'?1:.2)*(P.sneak?.55:1);}
-function damagePlayer(a,src){if(P.inv>0||G.dead)return;P.hp-=a;P.inv=src==='bite'?1.4:.3;hurtFlash();AU.hit();if(P.hp<=0)die(src);}
+function damageFactor(){return (G.gear&&G.gear.armor)?0.65:1;}
+function damagePlayer(a,src){if(P.inv>0||G.dead)return;P.hp-=Math.max(1,a*damageFactor());P.inv=src==='bite'?1.4:.3;hurtFlash();AU.hit();if(P.hp<=0)die(src);}
 function updateHostiles(dt,px,py,pz,time){
- for(let i=0;i<hostiles.length;i++){const h=hostiles[i],dx=h.pos.x-px,dz=h.pos.z-pz,d2=dx*dx+dz*dz;
+ G.hostileRespawns=G.hostileRespawns||{};
+ for(let i=0;i<hostiles.length;i++){const h=hostiles[i],until=G.hostileRespawns[h.id];if(until!=null&&G.stats.time<until){h.active=false;h.g.visible=false;continue;}if(until!=null){delete G.hostileRespawns[h.id];h.hp=3;h.state='roam';h.stun=0;h.flee=0;h.pos.copy(h.home);h.vel.set(0,0,0);}const dx=h.pos.x-px,dz=h.pos.z-pz,d2=dx*dx+dz*dz;
   if(d2>170*170){if(h.active){h.active=false;h.g.visible=false;}continue;}
   if(!h.active){h.active=true;h.g.visible=true;}
   if(d2>110*110&&h.kind==='lurker'&&G.act<3){h.g.visible=false;continue;}
@@ -1717,7 +1719,8 @@ function updateHostiles(dt,px,py,pz,time){
   h.g.position.copy(h.pos);
   if(h.kind==='lurker'&&h.state==='stalk'&&!P.heard){P.heard=true;}}
 }
-function stunNearest(){let best=null,bd=9;for(const h of hostiles){if(!h.active)continue;const d=Math.hypot(h.pos.x-P.pos.x,h.pos.y-P.pos.y,h.pos.z-P.pos.z);if(d<bd){bd=d;best=h;}}if(best){best.stun=3.2;best.flee=7;best.hp--;ev('stun',best.kind);return true;}return false;}
+function killHostile(h){if(!h||h.state==='dead')return false;h.hp=0;h.state='dead';h.active=false;h.g.visible=false;h.vel.set(0,0,0);G.hostileRespawns=G.hostileRespawns||{};G.hostileRespawns[h.id]=G.stats.time+DAYLEN*2;ev('kill',h.kind);return true;}
+function stunNearest(){let best=null,bd=9;for(const h of hostiles){if(!h.active)continue;const d=Math.hypot(h.pos.x-P.pos.x,h.pos.y-P.pos.y,h.pos.z-P.pos.z);if(d<bd){bd=d;best=h;}}if(best){if(G.gear.prod>=2){killHostile(best);}else{best.stun=3.2;best.flee=7;best.hp--;ev('stun',best.kind);}return true;}return false;}
 /* flares */
 const flares=[];for(let i=0;i<3;i++){const m=new T.Mesh(UG.sph,new T.MeshBasicMaterial({color:0xff7a40}));m.scale.set(.5,.5,.5);m.visible=false;scene.add(m);flares.push({m,pos:m.position,vel:new T.Vector3(),life:0});}
 function throwFlare(){if(!takeItem('flare',1)){toast('No flares','w');AU.deny();return;}const f=flares.reduce((a,b)=>a.life<b.life?a:b);f.life=22;f.pos.copy(P.pos);f.vel.copy(camDir).multiplyScalar(11).addScaledVector(P.vel,.4);f.m.visible=true;AU.flare();ev('flare');}
@@ -1932,7 +1935,7 @@ function devTick(dt,time){
 
 /* ---------- held tools (viewmodel) ---------- */
 const VM=new T.Group();camera.add(VM);const VMT=[],BOLTS=[],vmS={eq:1,last:-1,prod:0,flare:0,pk:'',pt:0,scan:0};
-const boltMat=new T.MeshBasicMaterial({color:0xaaf4ff,transparent:true,opacity:.9,blending:T.AdditiveBlending,depthWrite:false});
+const boltOuterGeo=new T.CylinderGeometry(.018,.045,1,8,1,true);boltOuterGeo.rotateX(Math.PI/2);const boltCoreGeo=new T.CylinderGeometry(.008,.018,1,7,1,true);boltCoreGeo.rotateX(Math.PI/2);
 function vmm(g,geo,mat,x,y,z,sx,sy,sz,rx,ry,rz){const m=new T.Mesh(UG[geo],mat);m.position.set(x,y,z);m.scale.set(sx,sy,sz);m.rotation.set(rx||0,ry||0,rz||0);m.frustumCulled=false;g.add(m);return m;}
 function vmHand(g,x,y,z){const glove=lit(0x27343c),cuff=lit(0xc8903a),suit=lit(0x1d4a5c);vmm(g,'box',glove,x,y,z,.085,.075,.12);for(let i=0;i<3;i++)vmm(g,'box',glove,x+(i-1)*.026,y+.045,z-.035,.022,.03,.07);vmm(g,'box',glove,x-.05,y+.01,z-.02,.03,.04,.07,0,0,.4);vmm(g,'cyl',cuff,x,y-.005,z+.085,.1,.05,.1,Math.PI/2);vmm(g,'cyl',suit,x,y-.02,z+.42,.085,.7,.085,Math.PI/2.15,0,0);}
 (function(){const steel=lit(0x7a8a94),dark=lit(0x2a343c),rub=lit(0x1a1f24),glowC=new T.MeshBasicMaterial({color:0x35f0c0});
@@ -1942,7 +1945,7 @@ function vmHand(g,x,y,z){const glove=lit(0x27343c),cuff=lit(0xc8903a),suit=lit(0
  const bg=new T.BufferGeometry();bg.setAttribute('position',new T.Float32BufferAttribute([-.012,0,0,.012,0,0,.3,0,-1.8,-.3,0,-1.8],3));bg.setIndex([0,1,2,0,2,3]);
  const beam=new T.Mesh(bg,new T.MeshBasicMaterial({color:0x66ffcc,transparent:true,opacity:.5,blending:T.AdditiveBlending,side:T.DoubleSide,depthWrite:false}));beam.position.set(0,0,-.26);beam.visible=false;beam.frustumCulled=false;g.add(beam);g.userData={scr,beam};VMT[0]=g;
  // stun prod
- g=new T.Group();vmm(g,'cyl',steel,0,0,-.1,.034,.62,.034,Math.PI/2);vmm(g,'cyl',rub,0,0,.15,.05,.2,.05,Math.PI/2);vmm(g,'box',dark,0,0,-.01,.1,.022,.024);for(let i=0;i<3;i++)vmm(g,'cyl',lit(0xc8a030),0,0,-.34-i*.04,.062,.022,.062,Math.PI/2);for(const sd of[-1,1])vmm(g,'box',steel,sd*.028,0,-.47,.012,.012,.15);const tip=vmm(g,'box',new T.MeshBasicMaterial({color:0x9ff0ff}),0,0,-.55,.04,.04,.07);tip.visible=false;vmm(g,'box',new T.MeshBasicMaterial({color:0xffd24a}),0,.02,.02,.02,.006,.04);
+ g=new T.Group();vmm(g,'cyl',steel,0,0,-.1,.034,.62,.034,Math.PI/2);vmm(g,'cyl',rub,0,0,.15,.05,.2,.05,Math.PI/2);vmm(g,'box',dark,0,0,-.01,.1,.022,.024);for(let i=0;i<3;i++)vmm(g,'cyl',lit(0xc8a030),0,0,-.34-i*.04,.062,.022,.062,Math.PI/2);for(const sd of[-1,1])vmm(g,'box',steel,sd*.028,0,-.47,.012,.012,.15);const tip=vmm(g,'sph',new T.MeshBasicMaterial({color:0x9ff0ff}),0,0,-.55,.035,.035,.04);tip.visible=false;vmm(g,'box',new T.MeshBasicMaterial({color:0xffd24a}),0,.02,.02,.02,.006,.04);
  vmHand(g,0,-.06,.15);g.userData={tip};VMT[1]=g;
  // flare gun
  g=new T.Group();const orange=lit(0xd8601a);vmm(g,'box',orange,0,.0,-.05,.07,.07,.26);vmm(g,'cyl',dark,0,.012,-.22,.06,.18,.06,Math.PI/2);vmm(g,'cyl',steel,0,.012,-.32,.07,.025,.07,Math.PI/2);vmm(g,'box',orange,0,-.01,.07,.075,.09,.12);vmm(g,'box',rub,0,-.095,.1,.05,.14,.06,.25);vmm(g,'box',dark,0,-.045,.0,.012,.04,.06);vmm(g,'box',steel,0,.05,-.2,.012,.015,.02);const fl=vmm(g,'cyl',new T.MeshBasicMaterial({color:0xff8a3a}),0,.012,-.325,.04,.01,.04,Math.PI/2);const mf=vmm(g,'sph',new T.MeshBasicMaterial({color:0xffe6a0,transparent:true,opacity:.9}),0,.012,-.38,.2,.2,.2);mf.visible=false;
@@ -1951,12 +1954,12 @@ function vmHand(g,x,y,z){const glove=lit(0x27343c),cuff=lit(0xc8903a),suit=lit(0
  g=new T.Group();vmm(g,'box',dark,0,0,0,.13,.12,.34);vmm(g,'box',steel,0,.02,-.12,.15,.1,.14);vmm(g,'cyl',steel,0,0,-.24,.1,.1,.1,Math.PI/2);vmm(g,'cyl',lit(0x35a0ff),0,0,-.3,.075,.03,.075,Math.PI/2);vmm(g,'box',rub,0,-.09,.08,.045,.11,.055,.25);const sm=new T.MeshBasicMaterial({color:0x2a8aff});const scr2=vmm(g,'box',sm,0,.072,.02,.1,.008,.1);vmm(g,'box',dark,0,.066,.02,.115,.006,.115);for(const sd of[-1,1]){vmm(g,'box',steel,sd*.075,.02,-.02,.015,.07,.2);vmm(g,'cyl',lit(0x35c8ff),sd*.082,.02,.1,.02,.06,.02,Math.PI/2);}vmm(g,'cyl',steel,.04,.09,.1,.01,.14,.01,0,0,.2);vmm(g,'sph',new T.MeshBasicMaterial({color:0x6aff9a}),.05,.16,.1,.025,.025,.025);
  vmHand(g,0,-.1,.09);g.userData={sm,scr:scr2};VMT[3]=g;
  VMT.forEach(t=>{t.visible=false;VM.add(t);});})();
-function vmFire(k){vmS[k]=1;if(k==='prod')spawnBolt();}
+function vmFire(k,range){vmS[k]=1;if(k==='prod')spawnBolt(range||11);}
 function vmPulse(k){vmS.pk=k;vmS.pt=1;}
-function spawnBolt(){const d=camDir,g=new T.Group(),mat=new T.MeshBasicMaterial({color:0xaaf4ff,transparent:true,opacity:.95,blending:T.AdditiveBlending,depthWrite:false});for(let i=0;i<2;i++){const m=new T.Mesh(UG.box,mat);m.position.z=.5;m.scale.set(i?.03:.09,i?.09:.03,1);g.add(m);}const core=new T.Mesh(UG.box,new T.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.9,blending:T.AdditiveBlending,depthWrite:false}));core.position.z=.5;core.scale.set(.025,.025,1);g.add(core);g.position.copy(camera.position).addScaledVector(d,.9);g.position.x+=Math.cos(P.yaw)*.2;g.position.z-=Math.sin(P.yaw)*.2;g.position.y-=.16;g.lookAt(g.position.clone().add(d));g.scale.z=.01;scene.add(g);BOLTS.push({g,mat,core:core.material,t:0});}
+function spawnBolt(range){range=Math.max(1,range||11);const d=camDir,g=new T.Group(),mat=new T.MeshBasicMaterial({color:0x83edff,transparent:true,opacity:.9,blending:T.AdditiveBlending,depthWrite:false}),cm=new T.MeshBasicMaterial({color:0xeaffff,transparent:true,opacity:.95,blending:T.AdditiveBlending,depthWrite:false});const shell=new T.Mesh(boltOuterGeo,mat),core=new T.Mesh(boltCoreGeo,cm);shell.position.z=range*.5;shell.scale.set(1,1,range);core.position.z=range*.5;core.scale.set(.42,.42,range*.86);g.add(shell,core);g.position.copy(camera.position).addScaledVector(d,.9);g.position.x+=Math.cos(P.yaw)*.2;g.position.z-=Math.sin(P.yaw)*.2;g.position.y-=.16;g.lookAt(g.position.clone().add(d));g.scale.z=.01;scene.add(g);BOLTS.push({g,mat,core:cm,t:0});}
 const _vc=new T.Color(),_vb=new T.Color(0x2a8aff),_vg=new T.Color(0x40ff90),_vr=new T.Color(0xff4a3a);
 function updateViewmodel(dt,time){const show=!G.dead&&gs.state==='play';VM.visible=show;
- for(let i=BOLTS.length-1;i>=0;i--){const b=BOLTS[i];b.t+=dt;b.g.scale.z=Math.max(.01,11*Math.min(1,b.t/.09));const fa=b.t<.18?1:Math.max(0,1-(b.t-.18)/.2);b.mat.opacity=.95*fa;b.core.opacity=.9*fa;b.g.children[0].scale.x=.05+Math.random()*.1;b.g.children[1].scale.y=.05+Math.random()*.1;if(b.t>.4){scene.remove(b.g);BOLTS.splice(i,1);}}
+ for(let i=BOLTS.length-1;i>=0;i--){const b=BOLTS[i];b.t+=dt;b.g.scale.z=Math.max(.01,Math.min(1,b.t/.09));const fa=b.t<.18?1:Math.max(0,1-(b.t-.18)/.2);b.mat.opacity=.9*fa;b.core.opacity=.95*fa;if(b.t>.4){scene.remove(b.g);b.mat.dispose();b.core.dispose();BOLTS.splice(i,1);}}
  if(!show)return;const t=P.tool;if(vmS.last!==t){vmS.last=t;vmS.eq=0;}vmS.eq=Math.min(1,vmS.eq+dt*4.5);
  VMT.forEach((g,i)=>{g.visible=i===t&&(P.mode!=='walk'||t===0||t===3);});const g=VMT[t];if(!g||!g.visible)return;
  const eq=1-Math.pow(1-vmS.eq,3);let px=.27,py=-.27-(1-eq)*.35,pz=-.52,rx=0,ry=.08,rz=0;
@@ -1993,11 +1996,11 @@ function deconstructAimed(){if(deconDevice())return;let best=null,bd=.9;BASE.mod
  Object.entries(MODS[best.type].cost).forEach(([i,n])=>giveItem(i,Math.floor(n*.7),true));removeModule(best);vmPulse('remove');AU.hatch();toast('Module deconstructed (70% refunded)');}
 /* ================= STATE, INVENTORY, PLAYER ================= */
 const flags={};
-const G={act:1,qi:0,si:0,inv:{},bps:{},gear:{tank:0,suit:0,fins:0,scooter:0,light:0,scanner:0,prod:0,build:0},mach:{reactor:0,o2:0,fab:0,lab:0,bunk:0,storage:0},mods:[],codex:{},logs:{},tones:{},cores:0,data:0,depl:{},stats:{time:0,depth:0,built:0,scans:0,crafts:0,deaths:0},ach:{},dead:false,ending:null,bioOn:0,started:false,seenTips:{},devs:[],beacon:null,contract:null,cdone:0};
+const G={act:1,qi:0,si:0,inv:{},bps:{},gear:{tank:0,suit:0,fins:0,scooter:0,light:0,scanner:0,prod:0,armor:0,build:0},hostileRespawns:{},mach:{reactor:0,o2:0,fab:0,lab:0,bunk:0,storage:0},mods:[],codex:{},logs:{},tones:{},cores:0,data:0,depl:{},stats:{time:0,depth:0,built:0,scans:0,crafts:0,deaths:0},ach:{},dead:false,ending:null,bioOn:0,started:false,seenTips:{},devs:[],beacon:null,contract:null,cdone:0};
 const P={pos:new T.Vector3(),vel:new T.Vector3(),yaw:0,pitch:0,mode:'swim',hp:100,hpmax:100,o2:90,o2max:90,eye:1.55,tool:0,lampOn:true,inv:0,boosting:false,sneak:false,heard:false,over:0,bob:0,scanT:0,scanTarget:null,stepT:0,cd:0,moving:false,surface:false};
 const camDir=new T.Vector3(0,0,-1),_r=new T.Vector3(),_dv=new T.Vector3();
 const suitRating=()=>GEAR.suit[G.gear.suit],tankMax=()=>GEAR.tank[G.gear.tank];
-function itemCap(id){const c=ITEMS[id].c;return c==='raw'||c==='part'?BASE.cap:id==='flare'?10:id==='medkit'?6:id==='o2cap'?15:5;}
+function itemCap(id){const c=ITEMS[id].c,storageSlots=typeof countType==='function'?countType('storage')*2:0;return c==='raw'||c==='part'?BASE.cap:id==='flare'?10:id==='medkit'?6+storageSlots:id==='o2cap'?15+storageSlots:5;}
 function giveItem(id,n,quiet){const it=ITEMS[id];if(!it)return 0;const cur=G.inv[id]||0;let add=n;if(it.c!=='key')add=Math.max(0,Math.min(n,itemCap(id)-cur));if(add<=0){if(!quiet){toast('Carry limit reached: '+it.n,'w');AU.deny();}return 0;}G.inv[id]=cur+add;if(!quiet){toast('+'+add+' '+it.n);AU.pickup();}ev('item',id);return add;}
 function takeItem(id,n){n=n||1;if((G.inv[id]||0)<n)return false;G.inv[id]-=n;if(!G.inv[id])delete G.inv[id];return true;}
 const hasItems=o=>Object.entries(o).every(([k,n])=>(G.inv[k]||0)>=n);
@@ -2044,12 +2047,12 @@ function updatePlayer(dt,time){
   // air
   if(P.surface){P.o2=Math.min(P.o2max,P.o2+P.o2max*.4*dt);}
   else{const k=(1+depth/280)*(boost?1.8:1)*(P.moving?1:.8);P.o2-=k*dt;}
-  if(P.o2<=0){P.o2=0;P.hp-=7*dt;if(P.hp<=0)die('drown');}
+  if(P.o2<=0){P.o2=0;P.hp-=7*dt*damageFactor();if(P.hp<=0)die('drown');}
   // bubbles
   if(!P.surface&&Math.random()<dt*.35){spawnBubble(P.pos.x+camDir.x*.5,P.pos.y-.1,P.pos.z+camDir.z*.5);if(Math.random()<.3)AU.bubble();}
   // suit pressure
-  const rt=suitRating();P.over=Math.max(0,depth-rt);if(P.over>0){const dmg=(1.8+P.over*.07)*dt;P.hp-=dmg;if(P.hp<=0)die('crush');if(!flags.stressT||time-flags.stressT>5){flags.stressT=time;toast('HULL STRESS — suit rated to '+rt+' m','w');}}
-  for(const v of HOT){const dx=P.pos.x-v[0],dz=P.pos.z-v[2];if(dx*dx+dz*dz<10&&P.pos.y>v[1]-1&&P.pos.y<v[1]+11){P.hp-=7*dt;if(P.hp<=0)die('crush');if(!flags.hotT||time-flags.hotT>2.5){flags.hotT=time;toast('Scalding vent water!','w');}}}
+  const rt=suitRating();P.over=Math.max(0,depth-rt);if(P.over>0){const dmg=(1.8+P.over*.07)*dt*damageFactor();P.hp-=dmg;if(P.hp<=0)die('crush');if(!flags.stressT||time-flags.stressT>5){flags.stressT=time;toast('HULL STRESS — suit rated to '+rt+' m','w');}}
+  for(const v of HOT){const dx=P.pos.x-v[0],dz=P.pos.z-v[2];if(dx*dx+dz*dz<10&&P.pos.y>v[1]-1&&P.pos.y<v[1]+11){P.hp-=7*dt*damageFactor();if(P.hp<=0)die('crush');if(!flags.hotT||time-flags.hotT>2.5){flags.hotT=time;toast('Scalding vent water!','w');}}}
   if(P.moving&&Math.random()<dt*.5)ev('moved');
  }else{
   // walking in the station
@@ -2058,7 +2061,7 @@ function updatePlayer(dt,time){
   let nx=P.pos.x+P.vel.x*dt,nz=P.pos.z+P.vel.z*dt;if(canStand(nx,P.pos.z))P.pos.x=nx;else P.vel.x=0;if(canStand(P.pos.x,nz))P.pos.z=nz;else P.vel.z=0;
   P.onLand=true;P.jh=P.jh||0;P.jv=P.jv||0;if(IN.hit('up')&&P.jh<=0&&P.jv<=0){P.jv=4.4;AU.step();}if(P.jv>0||P.jh>0){P.jv-=13*dt;P.jh=Math.max(0,P.jh+P.jv*dt);if(P.jh===0)P.jv=0;}P.pos.y=BASEY+P.eye+P.jh;P.boosting=false;P.sneak=false;P.surface=false;P.over=0;
   const m=Math.hypot(P.vel.x,P.vel.z);if(m>.6){P.stepT-=dt*(m/3.5);P.bob+=dt*m*2.4;if(P.stepT<=0){P.stepT=.5;AU.step();}}
-  if(BASE.air>2){P.o2=Math.min(P.o2max,P.o2+P.o2max*.45*dt);if(P.hp<P.hpmax)P.hp=Math.min(P.hpmax,P.hp+2.5*dt);}else{P.o2-=1.4*dt;if(P.o2<=0){P.o2=0;P.hp-=6*dt;if(P.hp<=0)die('drown');}}
+  if(BASE.air>2){P.o2=Math.min(P.o2max,P.o2+P.o2max*.45*dt);if(P.hp<P.hpmax)P.hp=Math.min(P.hpmax,P.hp+2.5*dt);}else{P.o2-=1.4*dt;if(P.o2<=0){P.o2=0;P.hp-=6*dt*damageFactor();if(P.hp<=0)die('drown');}}
  }
 }
 function applyCamera(time){camera.position.copy(P.pos);let roll=0;if(P.mode==='walk'&&S.bob){camera.position.y+=Math.sin(P.bob)*.045;roll=Math.sin(P.bob*.5)*.004;}else if(P.mode==='swim'){const r=IN.axes().x;roll=-r*.035+Math.sin(time*.8)*.004;camera.position.y+=Math.sin(time*1.1)*.02;}
@@ -2089,7 +2092,7 @@ function updateHint(dt){_hintT-=dt;if(_hintT>0)return;if(!elHint)mkHint();_hintT
 function useTool(dt,time){updateHint(dt);if(G.dead||uiBlock()||P.mode==='walk'&&P.tool!==3&&P.tool!==0)return;
  const down=IN.down('use');
  if(P.tool===0){const t=down?findScan():null;if(t&&P.mode==='swim'){if(!P.scanTarget||P.scanTarget.id!==t.id){P.scanTarget=t;P.scanT=0;}P.scanT+=dt*(G.gear.scanner?2:1)/1.5;if(((P.scanT*10)|0)!==P.scanLast){P.scanLast=(P.scanT*10)|0;AU.scan(P.scanT);}if(P.scanT>=1){finishScan(t.id);P.scanT=0;P.scanTarget=null;IN.release('use');}}else{P.scanT=Math.max(0,P.scanT-dt*(down?.7:2));if(!down)P.scanTarget=null;}}
- else if(P.tool===1){if(IN.hit('use')&&P.cd<=0){P.cd=1.3;AU.zap();vmFire('prod');for(let i=0;i<4;i++)spawnBubble(P.pos.x+camDir.x*2,P.pos.y+camDir.y*2,P.pos.z+camDir.z*2);let hit=false;for(const h of hostiles){if(!h.active)continue;_dv.set(h.pos.x-P.pos.x,h.pos.y-P.pos.y,h.pos.z-P.pos.z);const d=_dv.length();if(d<11&&_dv.dot(camDir)/d>.8){h.stun=3.5;h.flee=8;hit=true;ev('stun',h.kind);}}if(BOSS.alive&&BOSS.exposed){_dv.set(BOSS.H.x-P.pos.x,BOSS.H.y-P.pos.y,BOSS.H.z-P.pos.z);const bd=_dv.length();if(bd<22&&_dv.dot(camDir)/bd>.7)bossHurt(44);}else if(BOSS.alive&&BOSS.state!=='dying'){toast('Its guard is up. Wait for it to open.','w');}if(hit)toast('Stunned','a');}}
+ else if(P.tool===1){if(IN.hit('use')&&P.cd<=0){const mk2=G.gear.prod>=2,range=mk2?44:11,bossRange=mk2?88:22;P.cd=mk2?1.15:1.3;AU.zap();vmFire('prod',range);for(let i=0;i<4;i++)spawnBubble(P.pos.x+camDir.x*2,P.pos.y+camDir.y*2,P.pos.z+camDir.z*2);let stunned=0,killed=0;for(const h of hostiles){if(!h.active)continue;_dv.set(h.pos.x-P.pos.x,h.pos.y-P.pos.y,h.pos.z-P.pos.z);const d=_dv.length();if(d<range&&d>.001&&_dv.dot(camDir)/d>.8){if(mk2){if(killHostile(h))killed++;}else{h.stun=3.5;h.flee=8;stunned++;ev('stun',h.kind);}}}if(BOSS.alive&&BOSS.exposed){_dv.set(BOSS.H.x-P.pos.x,BOSS.H.y-P.pos.y,BOSS.H.z-P.pos.z);const bd=_dv.length();if(bd<bossRange&&bd>.001&&_dv.dot(camDir)/bd>.7)bossHurt(mk2?88:44);}else if(BOSS.alive&&BOSS.state!=='dying'){toast('Its guard is up. Wait for it to open.','w');}if(killed)toast(killed===1?'Predator killed':'Predators killed ×'+killed,'a','Returns after two in-game days');else if(stunned)toast('Predator stunned','a');}}
  else if(P.tool===2){if(IN.hit('use')&&P.cd<=0){P.cd=.7;{const had=(G.inv.flare||0)>0;throwFlare();if(had)vmFire('flare');}}}
  else if(P.tool===3){if(IN.hit('use'))placeGhost();if(IN.hit('decon'))deconstructAimed();if(IN.hit('next'))cycleBuild(1);if(IN.hit('prev'))cycleBuild(-1);}}
 function finishScan(id){const c=CODEX[id];if(!c)return;if(G.codex[id]){toast('Already catalogued: '+c.n);AU.deny();return;}G.codex[id]=1;flags['scan_'+id]=1;G.data+=c.d;G.stats.scans++;AU.ok();AU.ping();toast('Scanned: '+c.n,'a','+'+c.d+' research data');ev('scan',id);}
@@ -2108,7 +2111,7 @@ function startCraft(r,n){n=r.gear?1:Math.max(1,Math.min(n||1,craftMax(r)||1));if
  crafting={r,n,t:0,dur:r.t/(BASE.ratio>.5?1:2)};AU.craft();}
 function finishCraft(){const r=crafting.r,cn=crafting.n||1;crafting=null;if(r.out)Object.entries(r.out).forEach(([k,n])=>giveItem(k,n*cn,true));if(r.gear){G.gear[r.gear[0]]=r.gear[1];applyGear();if(r.gear[0]==='tank')P.o2=P.o2max;}G.stats.crafts+=cn;AU.ok();toast('Fabricated: '+r.n+(cn>1?' ×'+cn:''),'a');ev('craft',r.id);}
 function updateCraft(dt){if(!crafting)return;crafting.t+=dt;if(Math.random()<dt*3)AU.noise(.05,1800,.04,2);if(crafting.t>=crafting.dur)finishCraft();}
-function useConsumable(id){if(id==='medkit'&&G.inv.medkit){if(P.hp>=P.hpmax-1){toast('Health is full');return;}takeItem('medkit');P.hp=Math.min(P.hpmax,P.hp+60);AU.ok();toast('Health restored');}else if(id==='o2cap'&&G.inv.o2cap){takeItem('o2cap');P.o2=Math.min(P.o2max,P.o2+P.o2max*.35);AU.ok();toast('+35% air');}}
+function useConsumable(id){if(id==='medkit'&&G.inv.medkit){if(P.hp>=P.hpmax-1){toast('Health is full');return;}takeItem('medkit');P.hp=P.hpmax;AU.ok();toast('Fully healed');}else if(id==='o2cap'&&G.inv.o2cap){takeItem('o2cap');P.o2=Math.min(P.o2max,P.o2+P.o2max*.35);AU.ok();toast('+35% air');}}
 function restAtBunk(){P.hp=P.hpmax;P.o2=P.o2max;AU.ok();saveGame('auto',true);toast('Rested — progress saved','a');ev('rest');}
 /* ================= STORY: comms, quests, events, achievements, endings ================= */
 const comm={q:[],cur:null,t:0,typed:0,cb:null,box:$('#comm'),nm:$('#cnm'),tx:$('#ctx'),bars:[...document.querySelectorAll('#comm .av i')]};
@@ -2213,7 +2216,7 @@ const QUESTS=[
  hS('Craft 15 O2 Capsules. Whatever guards the Lantern will take your breath. (H medkit, O capsule)',{o2cap:15},{start:()=>{say([M('Past the basin the water gets thick with something. Your tank will not last a fight down there. Fifteen capsules, Rook.'),M('When it charges, put a pillar between you. It cannot turn as fast as it runs.')]);}})]},
 {act:4,title:'The Lantern',steps:[
  gS('Swim to the heart of the Trench: the Lantern.',[POI.lantern[0],null,POI.lantern[2]],42,{start:()=>{flags.choir=1;say([M('Do you hear that? I do. All of it. I think it has been waiting for us.')]);}}),
- fS('Defeat the Charybdis. When its guard opens, hit it with the stun prod.','bossDown',{start:()=>{bossSpawn();}}),
+ fS('Upgrade the Stun Prod to Mk II, then defeat the Charybdis. Hit it when its guard opens.','bossDown',{start:()=>{giveBP('prod2','Stun Prod Mk II');giveBP('armor','Reinforced Dive Armor');bossSpawn();}}),
  fS('Use the resonance console at the Lantern\'s foot. [E]','final')]}];
 
 /* ---------- supply contracts (repeatable) ---------- */
@@ -2364,7 +2367,7 @@ function renderSlate(){const sl=h('div',{class:'sl plate'});const rail=h('div',{
 const costTxt=(o)=>Object.entries(o).map(([k,n])=>h('span',{class:(G.inv[k]||0)>=n?'y':'n',text:n+' '+ITEMS[k].n+'  '}));
 const TABS={
  bag(sc){sc.append(h('div',{class:'sec',text:'Carried'}));const ch=h('div',{class:'chips'});const ids=Object.keys(G.inv);if(!ids.length)ch.append(h('div',{class:'empty',text:'Nothing carried. Swim out and collect materials from the seabed.'}));ids.forEach(k=>{const c=h('div',{class:'chip',text:ITEMS[k].n},h('b',{text:G.inv[k]+(ITEMS[k].c==='raw'||ITEMS[k].c==='part'?'/'+BASE.cap:'')}));ch.append(c);if(k==='medkit'||k==='o2cap')ch.append(h('button',{class:'btn sm',onclick:()=>{useConsumable(k);renderSlate();}},'Use '+ITEMS[k].n));});sc.append(ch);
-  sc.append(h('div',{class:'sec',text:'Gear'}));const gl=[['Air tank',GEAR.tank[G.gear.tank]+' s'],['Dive suit','rated '+suitRating()+' m'],['Fins',G.gear.fins?'+16% speed':'none'],['Scooter',G.gear.scooter?'installed':'none'],['Lamp',G.gear.light?'Mk II':'Mk I'],['Scanner',G.gear.scanner?'Mk II':'Mk I'],['Stun Prod',G.gear.prod?'installed':'not built'],['Constructor',G.gear.build?'unlocked':'locked']];const gc=h('div',{class:'chips'});gl.forEach(([a,b])=>gc.append(h('div',{class:'chip',text:a},h('b',{text:b}))));sc.append(gc);
+  sc.append(h('div',{class:'sec',text:'Gear'}));const gl=[['Air tank',GEAR.tank[G.gear.tank]+' s'],['Dive suit','rated '+suitRating()+' m'],['Fins',G.gear.fins?'+16% speed':'none'],['Scooter',G.gear.scooter?'installed':'none'],['Lamp',G.gear.light?'Mk II':'Mk I'],['Scanner',G.gear.scanner?'Mk II':'Mk I'],['Stun Prod',G.gear.prod>=2?'Mk II · 4× range':G.gear.prod?'Mk I':'not built'],['Armor',G.gear.armor?'reinforced · −35% damage':'none'],['Constructor',G.gear.build?'unlocked':'locked']];const gc=h('div',{class:'chips'});gl.forEach(([a,b])=>gc.append(h('div',{class:'chip',text:a},h('b',{text:b}))));sc.append(gc);
   const kk=Object.keys(G.inv).filter(k=>ITEMS[k].c==='key');if(kk.length){sc.append(h('div',{class:'sec',text:'Key items'}));kk.forEach(k=>sc.append(h('div',{class:'empty',text:ITEMS[k].n+(G.inv[k]>1?' ×'+G.inv[k]:'')})));}},
  fab(sc){if(!G.mach.fab||ui.at!=='fab'){sc.append(h('div',{class:'empty',text:G.mach.fab?'Use the Fabricator inside Pelagia (west room) to craft.':'Repair the Fabricator in Pelagia first.'}));return;}
   const pw=BASE.ratio;sc.append(h('div',{class:'tag',style:{marginBottom:'8px'},text:crafting?'FABRICATING: '+crafting.r.n.toUpperCase()+(crafting.n>1?' ×'+crafting.n:'')+'  '+Math.round(crafting.t/crafting.dur*100)+'%':'POWER '+Math.round(pw*100)+'%'+(pw<.5?'  ·  UNDERPOWERED (slow)':'')}));
@@ -2410,7 +2413,7 @@ function snapshot(){const mods=[];BASE.mods.forEach(m=>mods.push({cx:m.cx,cz:m.c
 function saveGame(slot,quiet){if(gs.state!=='play'&&!quiet)return false;if(G.dead)return false;const ok=LS.set('abyss_save_'+slot,snapshot());if(!quiet)toast(ok?'Game saved':'Save failed','a');return ok;}
 function resetPicks(){PICKS.forEach(p=>{p.taken=false;p.mesh.visible=false;});}
 function applySnapshot(d){Object.keys(flags).forEach(k=>delete flags[k]);Object.assign(flags,d.flags||{});
- const base=Object.assign({},G);['act','qi','si','inv','bps','gear','mach','codex','logs','tones','cores','data','depl','stats','ach','ending','bioOn','started','tod','devs','beacon','contract','cdone'].forEach(k=>{if(d.G[k]!==undefined)G[k]=d.G[k];});G.dead=false;
+ const base=Object.assign({},G);['act','qi','si','inv','bps','gear','hostileRespawns','mach','codex','logs','tones','cores','data','depl','stats','ach','ending','bioOn','started','tod','devs','beacon','contract','cdone'].forEach(k=>{if(d.G[k]!==undefined)G[k]=d.G[k];});G.dead=false;G.gear=Object.assign({tank:0,suit:0,fins:0,scooter:0,light:0,scanner:0,prod:0,armor:0,build:0},G.gear||{});G.hostileRespawns=G.hostileRespawns||{};
  PICKS.forEach(p=>{p.taken=!!flags['pk_'+p.id];p.mesh.visible=false;});
  if(flags.weld&&workshopDoor){COL.remove(workshopDoor);workshopDoorMesh.visible=false;}
  nodes.forEach(n=>{n.cool=0;n.amt=1;const t=G.depl[n.id];if(t&&Date.now()-t<240000){n.cool=(240000-(Date.now()-t))/1000;n.grp.visible=false;n.vis=false;}});
@@ -2418,7 +2421,7 @@ function applySnapshot(d){Object.keys(flags).forEach(k=>delete flags[k]);Object.
  applyGear();P.pos.set(d.P.x,d.P.y,d.P.z);P.vel.set(0,0,0);P.yaw=d.P.yaw;P.pitch=d.P.pitch;P.mode=d.P.mode;P.hp=d.P.hp;P.o2=d.P.o2;P.tool=0;flags.edgeT=0;
  stepStarted=d.G.stepStarted!=null?d.G.stepStarted:-1;AU.setChord(G.act-1);crafting=null;comm.q.length=0;comm.cur=null;comm.box.classList.remove('on');buildPaletteDirty=true;_lastBP='';updateObjective();}
 function loadGame(slot){const d=LS.get('abyss_save_'+slot,null);if(!d)return false;fadeQuick(()=>{applySnapshot(d);if(gs.state!=='play')startPlaying();toast('Game loaded');});return true;}
-function newGame(){Object.assign(G,{act:1,qi:0,si:0,inv:{},bps:{},gear:{tank:0,suit:0,fins:0,scooter:0,light:0,scanner:0,prod:0,build:0},mach:{reactor:0,o2:0,fab:0,lab:0,bunk:0,storage:0},codex:{},logs:{},tones:{},cores:0,data:0,depl:{},stats:{time:0,depth:0,built:0,scans:0,crafts:0,deaths:0},ach:{},dead:false,ending:null,bioOn:0,started:false});
+function newGame(){Object.assign(G,{act:1,qi:0,si:0,inv:{},bps:{},gear:{tank:0,suit:0,fins:0,scooter:0,light:0,scanner:0,prod:0,armor:0,build:0},hostileRespawns:{},mach:{reactor:0,o2:0,fab:0,lab:0,bunk:0,storage:0},codex:{},logs:{},tones:{},cores:0,data:0,depl:{},stats:{time:0,depth:0,built:0,scans:0,crafts:0,deaths:0},ach:{},dead:false,ending:null,bioOn:0,started:false});
  Object.keys(flags).forEach(k=>delete flags[k]);resetPicks();if(workshopDoor){workshopDoor.on=true;workshopDoorMesh.visible=true;}nodes.forEach(n=>{n.cool=0;n.amt=1;});
  initBase(CORE.map(c=>Object.assign({init:1},c)));BASE.air=14;applyGear();P.pos.set(POI.capsule[0]+10,.3,POI.capsule[2]+6);P.vel.set(0,0,0);P.yaw=Math.PI;P.pitch=-.15;P.mode='swim';P.hp=100;P.o2=P.o2max;P.tool=0;stepStarted=-1;AU.setChord(0);crafting=null;comm.q.length=0;comm.cur=null;buildPaletteDirty=true;_lastBP='';updateObjective();}
 /* ---------- title / flow ---------- */
