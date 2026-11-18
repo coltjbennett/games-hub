@@ -4313,8 +4313,9 @@
             updateConnectionStatus("CONNECTING", "normal");
             client.on("connect", () => {
                 connSeq++; connStats.connects++; isConnected = true; lastInboundAt = Date.now(); lastConnectedAt = Date.now();
-                /* we were deaf while disconnected: give everyone a fresh grace period instead of reaping them as "disconnected" */
-                touchAllPresence(Date.now());
+                /* We were deaf while disconnected. Let peers reannounce themselves,
+                   but do not rewrite their heartbeat timestamps: stale sessions must
+                   still expire once this connection is observing the room again. */
                 updateConnectionStatus("CONNECTED", "good");
                 setTimeout(() => { if (isConnected) publishPing(true); }, 2500); // second announce so peers that missed the first one re-learn us
                 client.subscribe(ROOM_TOPIC, { qos: 1 }, (err) => {
@@ -4404,13 +4405,16 @@
         }
 
         /* ---- presence notices: deterministic ids, derived from observed state, not from a single lossy packet ---- */
-        const PRESENCE_TIMEOUT_MS = 30000;
-        const IDLE_GRACE_MS = 5 * 60000 + 20000; // only used by the hidden-tab socket watchdog now; "inactive" no longer buys extra time on the online list
-        // Inactive (idle/hidden) tabs keep heartbeating, so a user whose heartbeat stops is booted after the same short timeout as anyone else.
+        // Presence is a renewable lease. A user must keep sending their own PINGs;
+        // a two-minute window tolerates background-tab timer throttling while still
+        // clearing genuinely disconnected users without relying on a broker Last Will.
+        const PRESENCE_TIMEOUT_MS = 2 * 60 * 1000;
+        const PRESENCE_RECONNECT_GRACE_MS = 20000;
+        let presenceObservationGraceUntil = 0;
+        const IDLE_GRACE_MS = 5 * 60000 + 20000; // only used by the hidden-tab socket watchdog
         function willDelay(name) { return WILL_GRACE_MS; }
-        // A user is gone after ~4 missed heartbeats (never less than PRESENCE_TIMEOUT_MS); low-power clients beat slower, so they get proportionally longer.
+        // Slow/low-power clients get at least four heartbeat intervals before expiry.
         function presenceTimeoutFor(u) { return Math.max(PRESENCE_TIMEOUT_MS, ((u && u.iv) || 5000) * 4); }
-        function touchAllPresence(t = Date.now()) { activeUsers.forEach(u => { u.lastSeen = t; u.lastBeat = t; }); }
         function latestPresenceEvent(user) {
             let best = null, bi = -1;
             messageHistory.forEach((m, i) => {
@@ -4457,7 +4461,10 @@
             setTimeout(() => l.forEach(d => { try { client.emit('message', ROOM_TOPIC, JSON.stringify(d)); } catch (e) {} }), 50);
         }
         function wakeUp(restored) {
-            const now = Date.now(); touchAllPresence(now);
+            const now = Date.now();
+            // Give live peers a moment to resume heartbeating after this tab wakes.
+            // Do not mark every remote user as alive just because WE resumed.
+            presenceObservationGraceUntil = Math.max(presenceObservationGraceUntil, now + PRESENCE_RECONNECT_GRACE_MS);
             if (!client) return;
             if (!client.connected && !client.reconnecting) { try { client.reconnect(); } catch (e) {} return; }
             if (restored) { connSeq++; announceMyJoin(); }
@@ -6461,14 +6468,20 @@
             ui.connectionStatus.style.color = colors[1];
         }
 
-        let lastPresenceRun = 0;
         function checkPresence() {
-            const now = Date.now(), gap = now - lastPresenceRun; lastPresenceRun = now;
-            if (!isConnected || now - lastConnectedAt < 8000) { updateAndBroadcastPresence(); return; } // never reap people while WE are the one who is offline
-            if (gap > 20000) { rejoinPending = true; touchAllPresence(now); updateAndBroadcastPresence(); return; } // we were asleep/throttled, so silence proves nothing
+            const now = Date.now();
+            // Never reap users while our own MQTT connection is down or during the
+            // short reconnect/wake window. Their own next heartbeat, not our clock,
+            // is what proves that a remote session is still alive.
+            if (!isConnected || now - lastConnectedAt < PRESENCE_RECONNECT_GRACE_MS || now < presenceObservationGraceUntil) {
+                updateAndBroadcastPresence();
+                return;
+            }
+
             let changed = false;
             activeUsers.forEach((userData, user) => {
-                if (user !== myUsername && now - (userData.lastBeat || userData.lastSeen) > presenceTimeoutFor(userData)) {
+                const lastBeat = Number(userData.lastBeat) || Number(userData.lastSeen) || 0;
+                if (user !== myUsername && lastBeat > 0 && now - lastBeat > presenceTimeoutFor(userData)) {
                     activeUsers.delete(user);
                     if (!userData.isGhost && !user.startsWith('ghost-')) announceLeaveNotice(user, userData.sid, now, true);
                     changed = true;
