@@ -1,7 +1,7 @@
 // data.js
 
 const siteData = {
-  version: "v4.6.2",
+  version: "v4.7.0",
   author: "COLTON BENNETT",
   location: "Waukesha, WI",
   heroTitle: "Project Launcher",
@@ -9,10 +9,14 @@ const siteData = {
   heroNote: "These are all made by me over the last year, and I do hope you enjoy!<br>Please excuse any bugs you find; I am still ironing things out.",
   marqueeText: "★★★ WELCOME TO COLTON'S PROJECT LAUNCHER ★★★ &nbsp;|&nbsp; BEST VIEWED IN 1024x768 &nbsp;|&nbsp; NETSCAPE NAVIGATOR 4.0 RECOMMENDED &nbsp;|&nbsp; ★★★ SIGN MY GUESTBOOK ★★★",
   footerCopyright: "© 2026 Colton Bennett",
-  footerLastUpdated: "November 12, 2026"
+  footerLastUpdated: "November 17, 2026"
 };
 
 const announcements = [
+  {
+    title: "v4.7.0 — NEW GAME: Trailsmith, a vehicle-building sandbox",
+    content: "<b>Trailsmith</b> is a Trailmakers-inspired 3D workshop. Snap together blocks, beams and ramps, bolt on wheels, thrusters, propellers and wings, then hit <b>Test Drive</b> on a proving ground with jumps, a slalom, a crate wall and a checkpoint race. <b>Right-click or press and hold any block</b> to change its colour and properties (motor power, steering, controls, lift). Orbit with right-drag or two fingers, pan with middle-drag or three fingers, zoom with the wheel or a pinch. Works fully on touch."
+  },
   {
     title: "v4.6.2 — NEW GAME: Abyssal Station, a story-driven deep-sea adventure",
     content: "<b>Abyssal Station</b> is a big new 3D adventure under the sea. You are a lone technician sent to restore Pelagia-9, a research station that went silent eleven years ago. Dive from the sunlit reef through the Kelp Forest and the Wreck Graveyard down into the Hadal Trench, repair and expand the station room by room, craft deeper-rated suits, scan the wildlife, read the crew's last logs, and uncover what has been singing in the dark. <b>Three endings.</b> Works with keyboard + mouse and touch (floating stick, drag to look), tuned to run smoothly on low-power devices, and it also runs completely on its own as a single HTML file."
@@ -87,6 +91,18 @@ const projects = [
     type: 'Simulation',
     tags: ['War', 'Historical', 'Under development', 'Top Pick'],
     description: 'Become the legendary Mongol leader and lead the Mongol Horde to conquer China! Use strategic placements to ensure your victory!',
+    featured: true,
+    'desktop-feature': true
+  },
+  {
+    title: 'Trailsmith',
+    url: 'games/trailsmith.html',
+    image: 'images/trailsmith.jpeg',
+    alt: 'Trailsmith',
+    statusKey: 'new',
+    type: 'Sandbox',
+    tags: ['Sandbox', 'Building', 'Vehicles', '3D', 'Physics', 'Mobile'],
+    description: 'Build cars, planes and hovercraft from blocks, wheels, thrusters, propellers and wings, then test drive them on a physics proving ground. Right-click or press and hold a block to configure it. Fully touch compatible.',
     featured: true,
     'desktop-feature': true
   },
