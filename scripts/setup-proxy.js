@@ -18,7 +18,7 @@ const root = path.join(__dirname, '..');
 // Scramjet v1.1.0 is the last v1 release and is the API the applet is written against.
 const PACKAGES = [
   { name: '@mercuryworkshop/scramjet',          spec: '1.1.0',   out: 'scram',   required: true,  must: ['scramjet.all.js', 'scramjet.wasm.wasm'] },
-  { name: '@mercuryworkshop/bare-mux',          spec: '2.1.9',   out: 'baremux', required: true,  must: ['worker.js'] },
+  { name: '@mercuryworkshop/bare-mux',          spec: '2.1.9',   out: 'baremux', required: true,  must: ['worker.js', 'index.mjs'] },
   { name: '@mercuryworkshop/libcurl-transport', spec: '1.5.2',   out: 'curl',    required: true,  must: ['index.mjs'] },
   { name: '@mercuryworkshop/epoxy-transport',   spec: '3.0.2',   out: 'epoxy',   required: false, must: ['index.mjs'] }
 ];
