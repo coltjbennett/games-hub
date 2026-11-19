@@ -555,8 +555,34 @@
         }
 
         // 3) Root service worker (sw.js) - register, then wait until it is active
-        await navigator.serviceWorker.register(BASE + 'sw.js', { scope: BASE, updateViaCache: 'none' });
+        let reg = await navigator.serviceWorker.register(BASE + 'sw.js', { scope: BASE, updateViaCache: 'none' });
         await navigator.serviceWorker.ready;
+
+        // Does the active worker actually have the proxy engine loaded? A worker installed before
+        // /scram/ existed keeps running with the proxy disabled (and answers nothing here), which
+        // makes proxied pages fall through to GitHub's 404. If so, replace it with a fresh one.
+        const swHasProxy = worker => new Promise(resolve => {
+          if (!worker) return resolve(false);
+          const ch = new MessageChannel();
+          const timer = setTimeout(() => resolve(false), 1500);
+          ch.port1.onmessage = e => { clearTimeout(timer); resolve(!!(e.data && e.data.sj)); };
+          try { worker.postMessage({ type: 'SJ_STATUS' }, [ch.port2]); } catch (_) { clearTimeout(timer); resolve(false); }
+        });
+        if (!(await swHasProxy(reg.active))) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          for (const r of regs) { if (r.scope === new URL(BASE, location.origin).href) await r.unregister(); }
+          reg = await navigator.serviceWorker.register(BASE + 'sw.js', { scope: BASE, updateViaCache: 'none' });
+          await new Promise(resolve => {
+            const w = reg.installing || reg.waiting || reg.active;
+            if (!w || w.state === 'activated') return resolve();
+            w.addEventListener('statechange', () => { if (w.state === 'activated') resolve(); });
+            setTimeout(resolve, 8000);
+          });
+          await navigator.serviceWorker.ready;
+          if (!(await swHasProxy(reg.active))) {
+            throw new Error('The proxy service worker started without the Scramjet engine. Check that ' + BASE + 'scram/scramjet.all.js loads (open it in a tab).');
+          }
+        }
 
         // 4) Scramjet controller
         const { ScramjetController } = $scramjetLoadController();
