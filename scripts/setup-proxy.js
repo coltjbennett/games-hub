@@ -1,0 +1,63 @@
+#!/usr/bin/env node
+/*
+ * Generates the static proxy files used by the Internet Explorer applet:
+ *   scram/    <- @mercuryworkshop/scramjet            (dist)
+ *   baremux/  <- @mercuryworkshop/bare-mux            (dist)
+ *   curl/     <- @mercuryworkshop/libcurl-transport   (dist)   [default transport]
+ *   epoxy/    <- @mercuryworkshop/epoxy-transport     (dist)   [optional alternative]
+ *
+ * Usage:  node scripts/setup-proxy.js
+ * Needs Node 18+ and internet access. Packages are installed into a temporary folder,
+ * so this repository gets no node_modules and package.json is not touched.
+ * The GitHub Pages workflow runs this automatically before every deploy.
+ */
+const fs = require('fs'), path = require('path'), os = require('os');
+const { execSync } = require('child_process');
+
+const root = path.join(__dirname, '..');
+// Scramjet v1.1.0 is the last v1 release and is the API the applet is written against.
+const PACKAGES = [
+  { name: '@mercuryworkshop/scramjet',          spec: '1.1.0',   out: 'scram',   required: true,  must: ['scramjet.all.js', 'scramjet.wasm.wasm'] },
+  { name: '@mercuryworkshop/bare-mux',          spec: '2.1.9',   out: 'baremux', required: true,  must: ['worker.js'] },
+  { name: '@mercuryworkshop/libcurl-transport', spec: '1.5.2',   out: 'curl',    required: true,  must: ['index.mjs'] },
+  { name: '@mercuryworkshop/epoxy-transport',   spec: 'latest',  out: 'epoxy',   required: false, must: ['index.mjs'] }
+];
+
+function copyDir(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const s = path.join(src, entry.name), d = path.join(dest, entry.name);
+    if (entry.isDirectory()) copyDir(s, d);
+    else if (!/\.(map|d\.ts|d\.mts)$/.test(entry.name)) fs.copyFileSync(s, d);
+  }
+}
+
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gh-proxy-'));
+fs.writeFileSync(path.join(tmp, 'package.json'), '{"name":"gh-proxy-setup","private":true}');
+let failed = false;
+
+for (const pkg of PACKAGES) {
+  try {
+    console.log('Installing ' + pkg.name + '@' + pkg.spec + ' ...');
+    execSync('npm install --no-audit --no-fund --silent ' + pkg.name + '@' + pkg.spec, { cwd: tmp, stdio: 'inherit' });
+    const base = path.join(tmp, 'node_modules', pkg.name);
+    const dist = fs.existsSync(path.join(base, 'dist')) ? path.join(base, 'dist') : base;
+    const dest = path.join(root, pkg.out);
+    fs.rmSync(dest, { recursive: true, force: true });
+    copyDir(dist, dest);
+    // libcurl.js ships its wasm next to the library; keep a copy beside the transport too.
+    if (pkg.out === 'curl') {
+      const lc = path.join(tmp, 'node_modules', 'libcurl.js', 'dist');
+      if (fs.existsSync(lc)) copyDir(lc, dest);
+    }
+    const missing = pkg.must.filter(f => !fs.existsSync(path.join(dest, f)));
+    if (missing.length) throw new Error('expected file(s) missing after copy: ' + missing.join(', '));
+    console.log('  -> ' + pkg.out + '/  (' + fs.readdirSync(dest).length + ' entries)');
+  } catch (err) {
+    console.error('  !! ' + pkg.name + ': ' + err.message);
+    if (pkg.required) failed = true;
+  }
+}
+fs.rmSync(tmp, { recursive: true, force: true });
+if (failed) { console.error('Proxy setup incomplete: a required package failed.'); process.exit(1); }
+console.log('Proxy files ready.');
