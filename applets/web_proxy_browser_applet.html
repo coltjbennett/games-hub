@@ -520,6 +520,25 @@
       let scramjet = null, frameCtl = null, enginePromise = null;
       let awaitingLoad = false, loadTimer = null;
       const LOAD_TIMEOUT_MS = 45000;
+      const ENGINE_START_TIMEOUT_MS = 25000;
+
+      // Explicit-content domain blocklist. Add/remove hostnames here; subdomains
+      // are blocked too. This is a client-side convenience filter, not a network firewall.
+      const BLOCKED_HOSTS = [
+        'pornhub.com', 'xvideos.com', 'xnxx.com', 'xhamster.com',
+        'redtube.com', 'youporn.com', 'onlyfans.com'
+      ];
+      const isBlockedHost = hostname => {
+        const host = String(hostname || '').toLowerCase().replace(/\\.$/, '');
+        return BLOCKED_HOSTS.some(domain => host === domain || host.endsWith('.' + domain));
+      };
+      const withTimeout = (promise, ms, message) => new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(message)), ms);
+        Promise.resolve(promise).then(
+          value => { clearTimeout(timer); resolve(value); },
+          error => { clearTimeout(timer); reject(error); }
+        );
+      });
 
       const loadScript = src => new Promise((resolve, reject) => {
         const el = document.createElement('script');
@@ -844,6 +863,14 @@
         urlInput.value = targetUrl;
         resetUI();
 
+        try {
+          const parsedTarget = new URL(targetUrl);
+          if ((parsedTarget.protocol === 'http:' || parsedTarget.protocol === 'https:') && isBlockedHost(parsedTarget.hostname)) {
+            showError(targetUrl, 'This website is blocked.', 'This domain is on the applet explicit-content blocklist. Remove it from BLOCKED_HOSTS only if your assignment administrator approves.');
+            return;
+          }
+        } catch (_) {}
+
         if (!wispConfigured()) {
           showError(targetUrl, 'The proxy server has not been set up yet.',
             'Open applets/web_proxy_browser_applet.html and set WISP_URL (near the top of the script) to your own wss:// Wisp server address.');
@@ -856,7 +883,7 @@
         renderProgressBar();
 
         try {
-          await ensureEngine();
+          await withTimeout(ensureEngine(), ENGINE_START_TIMEOUT_MS, 'Proxy startup timed out while initializing the worker or transport. Check the Wisp server and the generated proxy files, then reload.');
           if (token !== navigationToken) return;
           loadingText.textContent = 'Connecting to site...';
           awaitingLoad = true;
@@ -865,7 +892,9 @@
             if (token !== navigationToken || !awaitingLoad) return;
             awaitingLoad = false;
             resetUI();
-            statusText.textContent = 'Still loading... (the page may be slow or blocked)';
+            statusText.textContent = 'Timed out waiting for the page.';
+            showError(lastTargetUrl, 'The website did not finish loading.',
+              'The proxy started, but the page did not signal a completed load within 45 seconds. The remote Wisp server may be unavailable, the destination may be slow, or the site may reject proxy traffic. Check the browser console and Wisp server logs.');
           }, LOAD_TIMEOUT_MS);
           frameCtl.go(targetUrl);
         } catch (error) {
