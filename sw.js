@@ -12,6 +12,7 @@
 const SCOPE_PATH = new URL(self.registration.scope).pathname;
 const SJ_PREFIX = SCOPE_PATH + 'scramjet/';   // must match "prefix" in the applet's ScramjetController
 let sj = null;
+const SW_BUILD = 'proxy-2026-11-19b';   // bump to force browsers to install a fresh copy of this worker
 
 try {
   importScripts('./scram/scramjet.all.js');
@@ -35,6 +36,13 @@ self.addEventListener('fetch', event => {
     if (sj.route(event)) return sj.fetch(event);
     return fetch(event.request);
   })());
+});
+
+// Lets the applet ask whether the proxy engine actually loaded in this worker.
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'SJ_STATUS' && event.ports && event.ports[0]) {
+    event.ports[0].postMessage({ sj: !!sj, build: SW_BUILD });
+  }
 });
 
 // The existing offline/PWA worker (install, activate, caching, messages).
