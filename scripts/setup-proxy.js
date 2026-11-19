@@ -20,14 +20,14 @@ const PACKAGES = [
   { name: '@mercuryworkshop/scramjet',          spec: '1.1.0',   out: 'scram',   required: true,  must: ['scramjet.all.js', 'scramjet.wasm.wasm'] },
   { name: '@mercuryworkshop/bare-mux',          spec: '2.1.9',   out: 'baremux', required: true,  must: ['worker.js'] },
   { name: '@mercuryworkshop/libcurl-transport', spec: '1.5.2',   out: 'curl',    required: true,  must: ['index.mjs'] },
-  { name: '@mercuryworkshop/epoxy-transport',   spec: 'latest',  out: 'epoxy',   required: false, must: ['index.mjs'] }
+  { name: '@mercuryworkshop/epoxy-transport',   spec: '3.0.2',   out: 'epoxy',   required: false, must: ['index.mjs'] }
 ];
 
 function copyDir(src, dest) {
   fs.mkdirSync(dest, { recursive: true });
   for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
     const s = path.join(src, entry.name), d = path.join(dest, entry.name);
-    if (entry.isDirectory()) copyDir(s, d);
+    if (entry.isDirectory()) { if (entry.name !== 'types') copyDir(s, d); }
     else if (!/\.(map|d\.ts|d\.mts)$/.test(entry.name)) fs.copyFileSync(s, d);
   }
 }
@@ -36,10 +36,26 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gh-proxy-'));
 fs.writeFileSync(path.join(tmp, 'package.json'), '{"name":"gh-proxy-setup","private":true}');
 let failed = false;
 
+// Retry npm a few times: a single flaky registry response used to fail the whole step.
+function npmInstall(spec, attempts) {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      // No --silent: if npm fails, its real error must show up in the Actions log.
+      execSync('npm install --no-audit --no-fund --loglevel=error --fetch-retries=5 --fetch-retry-mintimeout=2000 ' + spec,
+        { cwd: tmp, stdio: 'inherit' });
+      return;
+    } catch (err) {
+      if (i === attempts) throw err;
+      console.warn('  .. npm install failed (attempt ' + i + '/' + attempts + '), retrying in ' + (i * 3) + 's');
+      execSync('node -e "setTimeout(()=>{}, ' + (i * 3000) + ')"');
+    }
+  }
+}
+
 for (const pkg of PACKAGES) {
   try {
     console.log('Installing ' + pkg.name + '@' + pkg.spec + ' ...');
-    execSync('npm install --no-audit --no-fund --silent ' + pkg.name + '@' + pkg.spec, { cwd: tmp, stdio: 'inherit' });
+    npmInstall(pkg.name + '@' + pkg.spec, 3);
     const base = path.join(tmp, 'node_modules', pkg.name);
     const dist = fs.existsSync(path.join(base, 'dist')) ? path.join(base, 'dist') : base;
     const dest = path.join(root, pkg.out);
@@ -54,7 +70,7 @@ for (const pkg of PACKAGES) {
     if (missing.length) throw new Error('expected file(s) missing after copy: ' + missing.join(', '));
     console.log('  -> ' + pkg.out + '/  (' + fs.readdirSync(dest).length + ' entries)');
   } catch (err) {
-    console.error('  !! ' + pkg.name + ': ' + err.message);
+    console.error((pkg.required ? '::error::' : '::warning::') + 'Proxy setup: ' + pkg.name + ' failed: ' + err.message);
     if (pkg.required) failed = true;
   }
 }
