@@ -627,7 +627,7 @@
         'redtube.com', 'youporn.com', 'onlyfans.com'
       ];
       const isBlockedHost = hostname => {
-        const host = String(hostname || '').toLowerCase().replace(/\\.$/, '');
+        const host = String(hostname || '').toLowerCase().replace(/\.$/, '');
         return BLOCKED_HOSTS.some(domain => host === domain || host.endsWith('.' + domain));
       };
       const withTimeout = (promise, ms, message) => new Promise((resolve, reject) => {
@@ -672,7 +672,27 @@
           throw new Error('The BareMux files were not found in ' + BASE + 'baremux/.');
         }
 
-        console.info('[proxy] step3 service worker');
+        // BareMux v2 must have its transport configured before the service worker is ready.
+        // Its upstream upgrade guide explicitly warns that the opposite order can race and leave
+        // the service worker without the selected transport.
+        console.info('[proxy] step3 configure transport before service worker');
+        const MUX_VER = '?v=20261120c';
+        const workerPath = BASE + 'baremux/worker.js' + MUX_VER;
+        const connection = new BareMux.BareMuxConnection(workerPath);
+        const transportPath = (TRANSPORT === 'epoxy' ? BASE + 'epoxy/index.mjs' : BASE + 'transports/curl-ready.mjs') + MUX_VER;
+        const transportOpts = [{ wisp: WISP_URL, websocket: WISP_URL }];
+        window.__bareMuxConnection = connection;
+        // BareMux owns the SharedWorker port through this connection object. Keep the
+        // connection itself alive; a second SharedWorker and a timer that only pings BareMux
+        // do not keep the remote Wisp socket alive and can hide the real transport failure.
+        await connection.setTransport(transportPath, transportOpts);
+        const activeTransport = await withTimeout(connection.getTransport(), 10000,
+          'BareMux did not respond after transport setup.');
+        if (activeTransport !== transportPath) {
+          throw new Error('BareMux selected an unexpected transport: ' + (activeTransport || '(none)'));
+        }
+
+        console.info('[proxy] step4 service worker');
         // 3) Root service worker (sw.js) - register, then wait until it is active
         let reg = await navigator.serviceWorker.register(BASE + 'sw.js', { scope: BASE, updateViaCache: 'none' });
         await navigator.serviceWorker.ready;
@@ -703,8 +723,8 @@
           }
         }
 
-        console.info('[proxy] step4 scramjet controller');
-        // 4) Scramjet controller
+        console.info('[proxy] step5 scramjet controller');
+        // 5) Scramjet controller
         const { ScramjetController } = $scramjetLoadController();
         scramjet = new ScramjetController({
           prefix: BASE + 'scramjet/',
@@ -716,29 +736,6 @@
           flags: { rewriterLogs: false }
         });
         await scramjet.init();
-
-        console.info('[proxy] step5 transport');
-        // 5) BareMux transport -> external Wisp server
-        // The ?v= suffix gives this build its own SharedWorker, so a stale/zombie worker left over
-        // from an older deploy (or a browser restart) can never be reused.
-        const MUX_VER = '?v=20261120b';
-        const workerPath = BASE + 'baremux/worker.js' + MUX_VER;
-        const connection = new BareMux.BareMuxConnection(workerPath);
-        const transportPath = (TRANSPORT === 'epoxy' ? BASE + 'epoxy/index.mjs' : BASE + 'transports/curl-ready.mjs') + MUX_VER;
-        const transportOpts = [{ wisp: WISP_URL, websocket: WISP_URL }];
-        // KEEP-ALIVE: hold strong references for the life of the page. Previously the connection and
-        // its SharedWorker were locals; once garbage-collected the browser (Safari) terminated the
-        // worker, which dropped the Wisp socket ~10 s later and left the proxy with no transport.
-        window.__bareMuxConnection = connection;
-        try { window.__bareMuxWorker = new SharedWorker(workerPath, 'bare-mux-worker'); window.__bareMuxWorker.port.start(); } catch (_) {}
-        const setTransportChecked = async () => {
-          await connection.setTransport(transportPath, transportOpts);
-          await withTimeout(connection.getTransport(), 20000, 'The proxy transport did not respond after setTransport.');
-        };
-        try { await setTransportChecked(); }
-        catch (err) { console.warn('[proxy] first setTransport failed, retrying once:', err); await setTransportChecked(); }
-        clearInterval(window.__bareMuxPing);
-        window.__bareMuxPing = setInterval(() => { connection.getTransport().catch(() => { connection.setTransport(transportPath, transportOpts).catch(() => {}); }); }, 5000);
 
         console.info('[proxy] step6 attach frame');
         // 6) Attach Scramjet to the existing iframe
@@ -961,33 +958,59 @@
         }, Math.max(0, WAKE_NOTICE_AFTER_MS - (Date.now() - startedAt)));
       };
 
-      // ---- Wisp readiness probe. Free hosts put the server to sleep; the first connection after
-      // sleep fails, and a failed first connection can leave the proxy stuck. So before the proxy
-      // engine starts we open a throw-away WebSocket to the Wisp server, retrying until it answers
-      // or the deadline passes. It never reloads or navigates anything. A success is remembered
-      // for 10 minutes so normal browsing adds no delay.
-      const AWAKE_KEY = 'ie-wisp-awake-' + WISP_URL;
+      // ---- Wisp server readiness check. A Render HTTP request can wake a sleeping service.
+      // Use that ordinary health endpoint instead of opening a throw-away Wisp WebSocket; the
+      // actual Wisp session should be created by the selected BareMux transport on first request.
+      // A successful health check is cached briefly so each navigation does not add another wait.
+      const AWAKE_KEY = 'ie-wisp-health-' + WISP_URL;
       const AWAKE_FOR_MS = 10 * 60 * 1000;
+      const WISP_HEALTH_URL = (() => {
+        try {
+          const url = new URL(WISP_URL);
+          url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+          url.pathname = url.pathname.replace(/\/wisp\/?$/i, '/') || '/';
+          url.search = '';
+          url.hash = '';
+          return url.href;
+        } catch (_) { return ''; }
+      })();
       const wispRecentlyAwake = () => { try { return Date.now() - Number(sessionStorage.getItem(AWAKE_KEY) || 0) < AWAKE_FOR_MS; } catch (_) { return false; } };
       const markWispAwake = () => { try { sessionStorage.setItem(AWAKE_KEY, String(Date.now())); } catch (_) {} };
-      const probeWispOnce = () => new Promise(resolve => {
-        let done = false, ws = null;
-        const finish = ok => { if (done) return; done = true; clearTimeout(t); try { ws && ws.close(); } catch (_) {} resolve(ok); };
-        const t = setTimeout(() => finish(false), 12000);
+      const probeWispHealthOnce = async timeoutMs => {
+        if (!WISP_HEALTH_URL || typeof AbortController === 'undefined') return false;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
         try {
-          ws = new WebSocket(WISP_URL);
-          ws.binaryType = 'arraybuffer';
-          ws.onmessage = () => finish(true);     // Wisp servers send an initial packet as soon as you connect
-          ws.onopen = () => setTimeout(() => finish(true), 1500);
-          ws.onerror = () => finish(false);
-          ws.onclose = () => finish(false);
-        } catch (_) { finish(false); }
-      });
+          // Prefer a readable health response when CORS is enabled.
+          try {
+            const response = await fetch(WISP_HEALTH_URL, {
+              method: 'GET', cache: 'no-store', credentials: 'omit', signal: controller.signal
+            });
+            if (response.ok && /wisp server is running/i.test(await response.text())) return true;
+          } catch (_) {
+            // A cross-origin health endpoint may omit CORS headers. Fall back to an opaque
+            // no-cors response: it proves the host answered, but we do not trust its contents.
+          }
+          if (controller.signal.aborted) return false;
+          const response = await fetch(WISP_HEALTH_URL, {
+            method: 'GET', mode: 'no-cors', cache: 'no-store', credentials: 'omit', signal: controller.signal
+          });
+          return response.type === 'opaque';
+        } catch (_) {
+          return false;
+        } finally {
+          clearTimeout(timer);
+        }
+      };
       const waitForWisp = async (token, deadlineAt) => {
         if (wispRecentlyAwake()) return true;
         while (Date.now() < deadlineAt - 3000) {
           if (token !== navigationToken) return false;
-          if (await probeWispOnce()) { markWispAwake(); return true; }
+          const remaining = deadlineAt - Date.now() - 3000;
+          if (await probeWispHealthOnce(Math.min(25000, Math.max(1000, remaining)))) {
+            markWispAwake();
+            return true;
+          }
           await new Promise(r => setTimeout(r, 1500));
         }
         return false;
@@ -1097,7 +1120,7 @@
         try {
           const awake = await waitForWisp(token, deadlineAt);
           if (token !== navigationToken) return;
-          if (!awake) throw new Error('The Wisp server at ' + WISP_URL + ' did not answer within 1:38.');
+          if (!awake) throw new Error('The Wisp HTTP health check at ' + WISP_HEALTH_URL + ' did not report ready within 1:38.');
           await withTimeout(ensureEngine(), Math.max(5000, deadlineAt - Date.now()), 'Proxy startup timed out while initializing the worker or transport. Check the generated proxy files, then reload.');
           if (token !== navigationToken) return;
           loadingText.textContent = 'Connecting to site...';
@@ -1110,7 +1133,7 @@
             statusText.textContent = 'Timed out waiting for the page.';
             showError(lastTargetUrl, 'The website did not finish loading.',
               'The proxy started, but the page did not signal a completed load within 1:38. The remote Wisp server may be unavailable, the destination may be slow, or the site may reject proxy traffic. Check the browser console and Wisp server logs.');
-          }, Math.max(10000, deadlineAt - Date.now()));
+          }, Math.max(1000, deadlineAt - Date.now()));
           frameCtl.go(targetUrl);
         } catch (error) {
           if (token !== navigationToken) return;

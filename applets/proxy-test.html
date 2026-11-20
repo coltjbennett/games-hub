@@ -35,20 +35,6 @@
       p.then(function (v) { clearTimeout(t); res(v); }, function (e) { clearTimeout(t); rej(e); });
     });
   }
-  function probeWs(ms) {
-    return new Promise(function (resolve) {
-      var ws, done = false, t0 = Date.now(), got = [];
-      function fin(r) { if (done) return; done = true; clearTimeout(t); try { ws.close(); } catch (_) {} resolve(r + ' after ' + ((Date.now() - t0) / 1000).toFixed(1) + 's' + (got.length ? ' [' + got.join(', ') + ']' : '')); }
-      var t = setTimeout(function () { fin('TIMEOUT (no open/close)'); }, ms);
-      try {
-        ws = new WebSocket(WISP_URL); ws.binaryType = 'arraybuffer';
-        ws.onopen = function () { got.push('open'); };
-        ws.onmessage = function (e) { got.push('message ' + (e.data.byteLength || e.data.length) + ' bytes'); fin('OK'); };
-        ws.onerror = function () { got.push('error'); };
-        ws.onclose = function (e) { got.push('close code ' + e.code); fin('CLOSED'); };
-      } catch (e) { fin('EXCEPTION ' + e.message); }
-    });
-  }
   async function run() {
     out.innerHTML = ''; lines = [];
     log('info', 'Page: ' + location.href);
@@ -59,7 +45,7 @@
     log('info', 'Secure context: ' + window.isSecureContext + ', private browsing storage may block workers if tests below fail');
 
     // 1. Generated files
-    var files = ['sw.js', 'scram/scramjet.all.js', 'scram/scramjet.wasm.wasm', 'baremux/index.mjs', 'baremux/worker.js', 'curl/index.mjs'];
+    var files = ['sw.js', 'scram/scramjet.all.js', 'scram/scramjet.wasm.wasm', 'baremux/index.mjs', 'baremux/worker.js', 'curl/index.mjs', 'curl/libcurl.wasm', 'transports/curl-ready.mjs'];
     for (var i = 0; i < files.length; i++) {
       try {
         var r = await withTimeout(fetch(BASE + files[i], { cache: 'no-store' }), 15000, files[i]);
@@ -69,22 +55,38 @@
       } catch (e) { log('bad', files[i] + ' -> ' + e.message); }
     }
 
-    // 2. Wisp HTTP
+    // 2. Wisp HTTP health endpoint. Retry in no-cors mode if the endpoint omits CORS headers.
+    var healthUrl = WISP_URL.replace(/^wss/, 'https').replace(/wisp\/$/, '');
     try {
-      var h = await withTimeout(fetch(WISP_URL.replace(/^wss/, 'https').replace(/wisp\/$/, ''), { cache: 'no-store' }), 70000, 'Wisp HTTP');
+      var h = await withTimeout(fetch(healthUrl, { cache: 'no-store', credentials: 'omit' }), 70000, 'Wisp HTTP');
       var txt = await h.text();
-      log(h.ok && /Wisp server is running/.test(txt) ? 'ok' : 'warn', 'Wisp server HTTP ' + h.status + ': ' + txt.slice(0, 80));
-    } catch (e) { log('bad', 'Wisp server HTTP request failed: ' + e.message + ' (server asleep, wrong address, or blocked)'); }
-
-    // 3. Wisp WebSocket (what the proxy really needs)
-    var a = await probeWs(30000);
-    log(/^OK/.test(a) ? 'ok' : 'bad', 'Wisp WebSocket attempt 1: ' + a);
-    if (!/^OK/.test(a)) {
-      var b = await probeWs(30000);
-      log(/^OK/.test(b) ? 'ok' : 'bad', 'Wisp WebSocket attempt 2: ' + b);
+      log(h.ok && /Wisp server is running/i.test(txt) ? 'ok' : 'warn', 'Wisp server HTTP ' + h.status + ': ' + txt.slice(0, 80));
+    } catch (e) {
+      try {
+        var opaque = await withTimeout(fetch(healthUrl, { mode: 'no-cors', cache: 'no-store', credentials: 'omit' }), 30000, 'Wisp HTTP fallback');
+        log(opaque.type === 'opaque' ? 'warn' : 'bad', 'Wisp HTTP endpoint responded, but its response is opaque (CORS is not enabled).');
+      } catch (fallbackError) {
+        log('bad', 'Wisp server HTTP request failed: ' + fallbackError.message + ' (server asleep, wrong address, or unreachable)');
+      }
     }
 
-    // 4. Service worker
+    // 3. Do not create a raw, idle WebSocket here. A successful HTTP health check above
+    // only verifies server readiness; the BareMux/libcurl fetch below verifies Wisp end-to-end.
+    log('info', 'Skipping raw WebSocket probe; the end-to-end transport test below opens the real Wisp session.');
+
+    // 4. Initialize BareMux and set the transport BEFORE serviceWorker.ready.
+    // The BareMux v2 upgrade guide warns that setting the transport afterwards can race
+    // with the service worker and leave requests without the selected transport.
+    var BM, conn, client;
+    try {
+      BM = await withTimeout(import(BASE + 'baremux/index.mjs'), 15000, 'baremux import');
+      conn = new BM.BareMuxConnection(BASE + 'baremux/worker.js');
+      client = new BM.BareClient(BASE + 'baremux/worker.js');
+      await withTimeout(conn.setTransport(BASE + 'transports/curl-ready.mjs', [{ wisp: WISP_URL, websocket: WISP_URL }]), 30000, 'initial BareMux setTransport');
+      log('ok', 'BareMux transport configured before service worker ready');
+    } catch (e) { log('bad', 'BareMux setup: ' + (e && e.message ? e.message : e)); }
+
+    // 5. Service worker
     try {
       var reg = await withTimeout(navigator.serviceWorker.register(BASE + 'sw.js', { scope: BASE, updateViaCache: 'none' }), 20000, 'sw register');
       await withTimeout(navigator.serviceWorker.ready, 20000, 'sw ready');
@@ -98,7 +100,7 @@
       else log(status.sj ? 'ok' : 'bad', 'Scramjet loaded in service worker: ' + status.sj + ' (worker build ' + status.build + ')');
     } catch (e) { log('bad', 'Service worker: ' + e.message); }
 
-    // 5. libcurl WebAssembly on the main thread (shows the real load/abort reason)
+    // 6. libcurl WebAssembly on the main thread (shows the real load/abort reason)
     try {
       var evt = new Promise(function (resolve) {
         document.addEventListener('libcurl_load', function () { resolve('loaded'); }, { once: true });
@@ -112,17 +114,14 @@
     } catch (e) { log('bad', 'libcurl wasm on main thread: ' + (e && e.message ? e.message : e)); }
     log('info', 'WebAssembly: ' + (typeof WebAssembly) + ', Tag/exception support: ' + (typeof WebAssembly !== 'undefined' && typeof WebAssembly.Tag === 'function') + ', JIT-less memory limit unknown');
 
-    // 6. Full transports through BareMux, one after the other
-    var BM, conn, client;
-    try {
-      BM = await withTimeout(import(BASE + 'baremux/index.mjs'), 15000, 'baremux import');
-      conn = new BM.BareMuxConnection(BASE + 'baremux/worker.js');
-      client = new BM.BareClient(BASE + 'baremux/worker.js');
-    } catch (e) { log('bad', 'BareMux load: ' + (e && e.message ? e.message : e)); }
+    // 7. End-to-end Wisp + libcurl fetch. The first transport was configured before
+    // serviceWorker.ready above; only switch transports for the optional comparison run.
     var tests = [['libcurl with wait-for-wasm wrapper', 'transports/curl-ready.mjs'], ['plain libcurl', 'curl/index.mjs']];
     for (var k = 0; client && k < tests.length; k++) {
       try {
-        await withTimeout(conn.setTransport(BASE + tests[k][1], [{ wisp: WISP_URL, websocket: WISP_URL }]), 30000, 'setTransport ' + tests[k][0]);
+        if (k > 0) {
+          await withTimeout(conn.setTransport(BASE + tests[k][1], [{ wisp: WISP_URL, websocket: WISP_URL }]), 30000, 'setTransport ' + tests[k][0]);
+        }
         var resp = await withTimeout(client.fetch('https://example.com/'), 45000, tests[k][0] + ' fetch of example.com');
         var body = await resp.text();
         log(resp.status === 200 && /Example Domain/.test(body) ? 'ok' : 'warn', tests[k][0] + ': example.com -> HTTP ' + resp.status + ', ' + body.length + ' chars');
