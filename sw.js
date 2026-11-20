@@ -12,7 +12,7 @@
 const SCOPE_PATH = new URL(self.registration.scope).pathname;
 const SJ_PREFIX = SCOPE_PATH + 'scramjet/';   // must match "prefix" in the applet's ScramjetController
 let sj = null;
-const SW_BUILD = 'proxy-2026-11-20a';   // bump to force browsers to install a fresh copy of this worker
+const SW_BUILD = 'proxy-2026-11-20b';   // bump to force browsers to install a fresh copy of this worker
 
 try {
   importScripts('./scram/scramjet.all.js');
