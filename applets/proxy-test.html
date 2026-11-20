@@ -98,18 +98,36 @@
       else log(status.sj ? 'ok' : 'bad', 'Scramjet loaded in service worker: ' + status.sj + ' (worker build ' + status.build + ')');
     } catch (e) { log('bad', 'Service worker: ' + e.message); }
 
-    // 5. BareMux transport
+    // 5. libcurl WebAssembly on the main thread (shows the real load/abort reason)
     try {
-      var BM = await withTimeout(import(BASE + 'baremux/index.mjs'), 15000, 'baremux import');
-      var conn = new BM.BareMuxConnection(BASE + 'baremux/worker.js');
-      await withTimeout(conn.setTransport(BASE + 'curl/index.mjs', [{ wisp: WISP_URL, websocket: WISP_URL }]), 30000, 'setTransport');
-      log('ok', 'BareMux transport set to libcurl');
-      var BareClient = BM.BareClient;
-      var client = new BareClient(BASE + 'baremux/worker.js');
-      var resp = await withTimeout(client.fetch('https://example.com/'), 60000, 'test fetch of example.com through proxy');
-      var body = await resp.text();
-      log(resp.status === 200 && /Example Domain/.test(body) ? 'ok' : 'warn', 'Proxy fetch of example.com -> HTTP ' + resp.status + ', ' + body.length + ' chars');
-    } catch (e) { log('bad', 'BareMux / transport: ' + (e && e.message ? e.message : e)); }
+      var evt = new Promise(function (resolve) {
+        document.addEventListener('libcurl_load', function () { resolve('loaded'); }, { once: true });
+        document.addEventListener('libcurl_abort', function (e) { resolve('ABORT: ' + (e && e.detail)); }, { once: true });
+        setTimeout(function () { resolve('no load/abort event after 25s'); }, 25000);
+      });
+      window.addEventListener('unhandledrejection', function (e) { lines.push('INFO unhandled rejection: ' + (e.reason && e.reason.message || e.reason)); });
+      await withTimeout(import(BASE + 'curl/index.mjs'), 20000, 'curl module import');
+      var res = await evt;
+      log(res === 'loaded' ? 'ok' : 'bad', 'libcurl wasm on main thread: ' + res);
+    } catch (e) { log('bad', 'libcurl wasm on main thread: ' + (e && e.message ? e.message : e)); }
+    log('info', 'WebAssembly: ' + (typeof WebAssembly) + ', Tag/exception support: ' + (typeof WebAssembly !== 'undefined' && typeof WebAssembly.Tag === 'function') + ', JIT-less memory limit unknown');
+
+    // 6. Full transports through BareMux, one after the other
+    var BM, conn, client;
+    try {
+      BM = await withTimeout(import(BASE + 'baremux/index.mjs'), 15000, 'baremux import');
+      conn = new BM.BareMuxConnection(BASE + 'baremux/worker.js');
+      client = new BM.BareClient(BASE + 'baremux/worker.js');
+    } catch (e) { log('bad', 'BareMux load: ' + (e && e.message ? e.message : e)); }
+    var tests = [['libcurl', 'curl/index.mjs'], ['epoxy', 'epoxy/index.mjs']];
+    for (var k = 0; client && k < tests.length; k++) {
+      try {
+        await withTimeout(conn.setTransport(BASE + tests[k][1], [{ wisp: WISP_URL, websocket: WISP_URL }]), 30000, 'setTransport ' + tests[k][0]);
+        var resp = await withTimeout(client.fetch('https://example.com/'), 45000, tests[k][0] + ' fetch of example.com');
+        var body = await resp.text();
+        log(resp.status === 200 && /Example Domain/.test(body) ? 'ok' : 'warn', tests[k][0] + ': example.com -> HTTP ' + resp.status + ', ' + body.length + ' chars');
+      } catch (e) { log('bad', tests[k][0] + ': ' + (e && e.message ? e.message : e)); }
+    }
 
     log('info', 'Done. Tap "Copy report" and paste it into the chat.');
   }
