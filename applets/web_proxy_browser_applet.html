@@ -1,6 +1,47 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<script>
+/* On-screen debug log (for devices without a console, e.g. iPad). Enabled with ?debug=1 on this page's URL. */
+(function () {
+  var on = /[?&]debug=1/.test(location.search); try { if (on) localStorage.proxyDebug = '1'; on = on || localStorage.proxyDebug === '1'; } catch (_) {}
+  var buf = [], t0 = Date.now(), box = null, pre = null;
+  function fmt(a) { return Array.prototype.map.call(a, function (x) { try { return x instanceof Error ? (x.name + ': ' + x.message) : (typeof x === 'object' ? JSON.stringify(x) : String(x)); } catch (_) { return String(x); } }).join(' '); }
+  function add(level, text) {
+    var line = '[' + ((Date.now() - t0) / 1000).toFixed(1) + 's] ' + level + ' ' + text;
+    buf.push(line); if (buf.length > 400) buf.shift();
+    if (pre) { pre.textContent = buf.join('\n'); pre.scrollTop = pre.scrollHeight; }
+  }
+  window.__dbg = function () { add('DBG', fmt(arguments)); };
+  ['log', 'info', 'warn', 'error', 'debug'].forEach(function (k) {
+    var orig = console[k]; console[k] = function () { add(k.toUpperCase(), fmt(arguments)); return orig.apply(console, arguments); };
+  });
+  addEventListener('error', function (e) { add('ERROR', (e.message || 'error') + ' @' + (e.filename || '') + ':' + (e.lineno || '')); });
+  addEventListener('unhandledrejection', function (e) { add('REJECT', fmt([e.reason])); });
+  if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', function (e) {
+    if (e.data && e.data.type === 'SW_LOG') add('SW-' + e.data.level, e.data.text);
+  });
+  if (!on) return;
+  function build() {
+    box = document.createElement('div');
+    box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;height:42vh;z-index:2147483647;background:#000;color:#0f0;font:11px/1.3 monospace;display:flex;flex-direction:column;border-top:2px solid #0f0';
+    var bar = document.createElement('div'); bar.style.cssText = 'display:flex;gap:8px;padding:4px;background:#111';
+    function btn(label, fn) { var b = document.createElement('button'); b.textContent = label; b.style.cssText = 'font:13px sans-serif;padding:6px 12px'; b.onclick = fn; bar.appendChild(b); }
+    btn('Copy log', function () {
+      var text = buf.join('\n');
+      try { navigator.clipboard.writeText(text).then(function () { add('DBG', 'copied'); }, fallback); } catch (_) { fallback(); }
+      function fallback() { var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); } catch (_) {} ta.remove(); }
+    });
+    btn('Clear', function () { buf = []; pre.textContent = ''; });
+    btn('Hide', function () { box.style.display = 'none'; });
+    pre = document.createElement('pre'); pre.style.cssText = 'flex:1;margin:0;padding:4px;overflow:auto;white-space:pre-wrap;word-break:break-all';
+    pre.textContent = buf.join('\n');
+    box.appendChild(bar); box.appendChild(pre); document.body.appendChild(box);
+  }
+  if (document.body) build(); else addEventListener('DOMContentLoaded', build);
+})();
+</script>
+
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
   <title>Internet Explorer</title>
@@ -619,6 +660,7 @@
           throw new Error('The Scramjet files were not found in ' + BASE + 'scram/. Run "node scripts/setup-proxy.js" (the GitHub Pages workflow does this on deploy).');
         }
 
+        console.info('[proxy] step2 baremux client');
         // 2) BareMux client
         if (!window.BareMux) {
           try { await loadScript(BASE + 'baremux/index.js'); } catch (_) {}
@@ -630,6 +672,7 @@
           throw new Error('The BareMux files were not found in ' + BASE + 'baremux/.');
         }
 
+        console.info('[proxy] step3 service worker');
         // 3) Root service worker (sw.js) - register, then wait until it is active
         let reg = await navigator.serviceWorker.register(BASE + 'sw.js', { scope: BASE, updateViaCache: 'none' });
         await navigator.serviceWorker.ready;
@@ -660,6 +703,7 @@
           }
         }
 
+        console.info('[proxy] step4 scramjet controller');
         // 4) Scramjet controller
         const { ScramjetController } = $scramjetLoadController();
         scramjet = new ScramjetController({
@@ -673,14 +717,34 @@
         });
         await scramjet.init();
 
+        console.info('[proxy] step5 transport');
         // 5) BareMux transport -> external Wisp server
-        const connection = new BareMux.BareMuxConnection(BASE + 'baremux/worker.js');
-        const transportPath = TRANSPORT === 'epoxy' ? BASE + 'epoxy/index.mjs' : BASE + 'transports/curl-ready.mjs';
-        await connection.setTransport(transportPath, [{ wisp: WISP_URL, websocket: WISP_URL }]);
+        // The ?v= suffix gives this build its own SharedWorker, so a stale/zombie worker left over
+        // from an older deploy (or a browser restart) can never be reused.
+        const MUX_VER = '?v=20261120b';
+        const workerPath = BASE + 'baremux/worker.js' + MUX_VER;
+        const connection = new BareMux.BareMuxConnection(workerPath);
+        const transportPath = (TRANSPORT === 'epoxy' ? BASE + 'epoxy/index.mjs' : BASE + 'transports/curl-ready.mjs') + MUX_VER;
+        const transportOpts = [{ wisp: WISP_URL, websocket: WISP_URL }];
+        // KEEP-ALIVE: hold strong references for the life of the page. Previously the connection and
+        // its SharedWorker were locals; once garbage-collected the browser (Safari) terminated the
+        // worker, which dropped the Wisp socket ~10 s later and left the proxy with no transport.
+        window.__bareMuxConnection = connection;
+        try { window.__bareMuxWorker = new SharedWorker(workerPath, 'bare-mux-worker'); window.__bareMuxWorker.port.start(); } catch (_) {}
+        const setTransportChecked = async () => {
+          await connection.setTransport(transportPath, transportOpts);
+          await withTimeout(connection.getTransport(), 20000, 'The proxy transport did not respond after setTransport.');
+        };
+        try { await setTransportChecked(); }
+        catch (err) { console.warn('[proxy] first setTransport failed, retrying once:', err); await setTransportChecked(); }
+        clearInterval(window.__bareMuxPing);
+        window.__bareMuxPing = setInterval(() => { connection.getTransport().catch(() => { connection.setTransport(transportPath, transportOpts).catch(() => {}); }); }, 5000);
 
+        console.info('[proxy] step6 attach frame');
         // 6) Attach Scramjet to the existing iframe
         frameCtl = scramjet.createFrame(proxyFrame);
         frameCtl.addEventListener('urlchange', event => onUrlChange(event && event.url));
+        console.info('[proxy] engine ready, UA=' + navigator.userAgent + ' controller=' + !!navigator.serviceWorker.controller);
       }
 
       const ensureEngine = () => {
