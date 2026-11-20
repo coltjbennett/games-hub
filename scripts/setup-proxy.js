@@ -21,7 +21,7 @@ const PACKAGES = [
   { name: '@mercuryworkshop/bare-mux',          spec: '2.1.9',   out: 'baremux', required: true,  must: ['worker.js', 'index.mjs'] },
   // libcurl.js is a floating (^0.7.4) dependency of the transport; its wasm is copied into curl/.
   // Pin it so a new upstream release can never silently change the wasm between deploys.
-  { name: 'libcurl.js',                        spec: '0.7.4',   out: null,      required: true,  must: [] },
+  { name: 'libcurl.js',                        spec: '0.7.4',   out: null,      required: true,  must: ['libcurl.wasm'] },
   { name: '@mercuryworkshop/libcurl-transport', spec: '1.5.2',   out: 'curl',    required: true,  must: ['index.mjs'] },
   { name: '@mercuryworkshop/epoxy-transport',   spec: '3.0.2',   out: 'epoxy',   required: false, must: ['index.mjs'] }
 ];
@@ -61,14 +61,24 @@ for (const pkg of PACKAGES) {
     npmInstall(pkg.name + '@' + pkg.spec, 3);
     const base = path.join(tmp, 'node_modules', pkg.name);
     const dist = fs.existsSync(path.join(base, 'dist')) ? path.join(base, 'dist') : base;
-    if (!pkg.out) { console.log('  -> pinned (installed for the transport build)'); continue; }
+    if (!pkg.out) {
+      const missing = pkg.must.filter(f => !fs.existsSync(path.join(dist, f)));
+      if (missing.length) throw new Error('expected file(s) missing from package: ' + missing.join(', '));
+      console.log('  -> pinned (installed for the transport build)');
+      continue;
+    }
     const dest = path.join(root, pkg.out);
     fs.rmSync(dest, { recursive: true, force: true });
     copyDir(dist, dest);
     // libcurl.js ships its wasm next to the library; keep a copy beside the transport too.
     if (pkg.out === 'curl') {
-      const lc = path.join(tmp, 'node_modules', 'libcurl.js', 'dist');
-      if (fs.existsSync(lc)) copyDir(lc, dest);
+      const lcBase = path.join(tmp, 'node_modules', 'libcurl.js');
+      const lc = fs.existsSync(path.join(lcBase, 'dist')) ? path.join(lcBase, 'dist') : lcBase;
+      if (!fs.existsSync(lc)) throw new Error('pinned libcurl.js package files were not found');
+      copyDir(lc, dest);
+      if (!fs.existsSync(path.join(dest, 'libcurl.wasm'))) {
+        throw new Error('libcurl.js WebAssembly asset was not copied to curl/libcurl.wasm');
+      }
     }
     const missing = pkg.must.filter(f => !fs.existsSync(path.join(dest, f)));
     if (missing.length) throw new Error('expected file(s) missing after copy: ' + missing.join(', '));
