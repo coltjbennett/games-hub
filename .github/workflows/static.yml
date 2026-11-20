@@ -46,10 +46,11 @@ jobs:
         run: node scripts/setup-proxy.js
       - name: Verify proxy files exist
         run: |
-          for f in scram/scramjet.all.js scram/scramjet.wasm.wasm baremux/worker.js baremux/index.mjs curl/index.mjs; do
+          for f in scram/scramjet.all.js scram/scramjet.wasm.wasm baremux/worker.js baremux/index.mjs curl/index.mjs curl/libcurl.wasm transports/curl-ready.mjs; do
             test -s "$f" || { echo "::error::Missing generated file: $f"; exit 1; }
           done
-          du -sh scram baremux curl epoxy
+          du -sh scram baremux curl
+          if [ -d epoxy ]; then du -sh epoxy; else echo 'epoxy/ not generated (optional transport)'; fi
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
