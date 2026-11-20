@@ -19,6 +19,9 @@ const root = path.join(__dirname, '..');
 const PACKAGES = [
   { name: '@mercuryworkshop/scramjet',          spec: '1.1.0',   out: 'scram',   required: true,  must: ['scramjet.all.js', 'scramjet.wasm.wasm'] },
   { name: '@mercuryworkshop/bare-mux',          spec: '2.1.9',   out: 'baremux', required: true,  must: ['worker.js', 'index.mjs'] },
+  // libcurl.js is a floating (^0.7.4) dependency of the transport; its wasm is copied into curl/.
+  // Pin it so a new upstream release can never silently change the wasm between deploys.
+  { name: 'libcurl.js',                        spec: '0.7.4',   out: null,      required: true,  must: [] },
   { name: '@mercuryworkshop/libcurl-transport', spec: '1.5.2',   out: 'curl',    required: true,  must: ['index.mjs'] },
   { name: '@mercuryworkshop/epoxy-transport',   spec: '3.0.2',   out: 'epoxy',   required: false, must: ['index.mjs'] }
 ];
@@ -58,6 +61,7 @@ for (const pkg of PACKAGES) {
     npmInstall(pkg.name + '@' + pkg.spec, 3);
     const base = path.join(tmp, 'node_modules', pkg.name);
     const dist = fs.existsSync(path.join(base, 'dist')) ? path.join(base, 'dist') : base;
+    if (!pkg.out) { console.log('  -> pinned (installed for the transport build)'); continue; }
     const dest = path.join(root, pkg.out);
     fs.rmSync(dest, { recursive: true, force: true });
     copyDir(dist, dest);
