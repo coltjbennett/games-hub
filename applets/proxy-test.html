@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proxy Test</title>
+<style>
+  body{font:15px/1.4 -apple-system,Segoe UI,sans-serif;margin:0;padding:14px;background:#111;color:#eee}
+  h1{font-size:18px;margin:0 0 8px}
+  button{font-size:16px;padding:10px 16px;margin:6px 6px 10px 0;border-radius:8px;border:0;background:#2a7fd4;color:#fff}
+  .row{padding:6px 8px;margin:4px 0;border-radius:6px;background:#222;word-break:break-word}
+  .ok{border-left:5px solid #3c3}.bad{border-left:5px solid #e44}.info{border-left:5px solid #888}.warn{border-left:5px solid #fb3}
+  pre{white-space:pre-wrap;background:#222;padding:8px;border-radius:6px;font-size:12px}
+</style>
+</head>
+<body>
+<h1>Proxy connection test</h1>
+<div>Taps each stage and shows where it fails. Takes up to about a minute if the server is asleep.</div>
+<button id="go">Run test</button><button id="copy">Copy report</button>
+<div id="out"></div>
+<pre id="report"></pre>
+<script>
+(function () {
+  var WISP_URL = "wss://wisp-server-rk4m.onrender.com/wisp/";
+  var BASE = new URL('../', location.href).pathname;
+  var out = document.getElementById('out'), lines = [];
+  function log(kind, text) {
+    lines.push((kind === 'ok' ? 'PASS ' : kind === 'bad' ? 'FAIL ' : kind === 'warn' ? 'WARN ' : 'INFO ') + text);
+    var d = document.createElement('div'); d.className = 'row ' + kind; d.textContent = text; out.appendChild(d);
+    document.getElementById('report').textContent = lines.join('\n');
+  }
+  function withTimeout(p, ms, label) {
+    return new Promise(function (res, rej) {
+      var t = setTimeout(function () { rej(new Error(label + ' timed out after ' + ms / 1000 + 's')); }, ms);
+      p.then(function (v) { clearTimeout(t); res(v); }, function (e) { clearTimeout(t); rej(e); });
+    });
+  }
+  function probeWs(ms) {
+    return new Promise(function (resolve) {
+      var ws, done = false, t0 = Date.now(), got = [];
+      function fin(r) { if (done) return; done = true; clearTimeout(t); try { ws.close(); } catch (_) {} resolve(r + ' after ' + ((Date.now() - t0) / 1000).toFixed(1) + 's' + (got.length ? ' [' + got.join(', ') + ']' : '')); }
+      var t = setTimeout(function () { fin('TIMEOUT (no open/close)'); }, ms);
+      try {
+        ws = new WebSocket(WISP_URL); ws.binaryType = 'arraybuffer';
+        ws.onopen = function () { got.push('open'); };
+        ws.onmessage = function (e) { got.push('message ' + (e.data.byteLength || e.data.length) + ' bytes'); fin('OK'); };
+        ws.onerror = function () { got.push('error'); };
+        ws.onclose = function (e) { got.push('close code ' + e.code); fin('CLOSED'); };
+      } catch (e) { fin('EXCEPTION ' + e.message); }
+    });
+  }
+  async function run() {
+    out.innerHTML = ''; lines = [];
+    log('info', 'Page: ' + location.href);
+    log('info', 'Base path: ' + BASE + '   Wisp: ' + WISP_URL);
+    log('info', 'Browser: ' + navigator.userAgent);
+    log(('serviceWorker' in navigator) ? 'ok' : 'bad', 'Service workers supported: ' + ('serviceWorker' in navigator));
+    log(typeof SharedWorker !== 'undefined' ? 'ok' : 'warn', 'SharedWorker available: ' + (typeof SharedWorker !== 'undefined') + (typeof SharedWorker === 'undefined' ? ' (BareMux falls back to a slower path)' : ''));
+    log('info', 'Secure context: ' + window.isSecureContext + ', private browsing storage may block workers if tests below fail');
+
+    // 1. Generated files
+    var files = ['sw.js', 'scram/scramjet.all.js', 'scram/scramjet.wasm.wasm', 'baremux/index.mjs', 'baremux/worker.js', 'curl/index.mjs'];
+    for (var i = 0; i < files.length; i++) {
+      try {
+        var r = await withTimeout(fetch(BASE + files[i], { cache: 'no-store' }), 15000, files[i]);
+        var len = r.headers.get('content-length');
+        var ct = r.headers.get('content-type') || '';
+        log(r.ok && !/text\/html/.test(ct) ? 'ok' : 'bad', files[i] + ' -> HTTP ' + r.status + ' ' + ct + (len ? ' (' + len + ' bytes)' : ''));
+      } catch (e) { log('bad', files[i] + ' -> ' + e.message); }
+    }
+
+    // 2. Wisp HTTP
+    try {
+      var h = await withTimeout(fetch(WISP_URL.replace(/^wss/, 'https').replace(/wisp\/$/, ''), { cache: 'no-store' }), 70000, 'Wisp HTTP');
+      var txt = await h.text();
+      log(h.ok && /Wisp server is running/.test(txt) ? 'ok' : 'warn', 'Wisp server HTTP ' + h.status + ': ' + txt.slice(0, 80));
+    } catch (e) { log('bad', 'Wisp server HTTP request failed: ' + e.message + ' (server asleep, wrong address, or blocked)'); }
+
+    // 3. Wisp WebSocket (what the proxy really needs)
+    var a = await probeWs(30000);
+    log(/^OK/.test(a) ? 'ok' : 'bad', 'Wisp WebSocket attempt 1: ' + a);
+    if (!/^OK/.test(a)) {
+      var b = await probeWs(30000);
+      log(/^OK/.test(b) ? 'ok' : 'bad', 'Wisp WebSocket attempt 2: ' + b);
+    }
+
+    // 4. Service worker
+    try {
+      var reg = await withTimeout(navigator.serviceWorker.register(BASE + 'sw.js', { scope: BASE, updateViaCache: 'none' }), 20000, 'sw register');
+      await withTimeout(navigator.serviceWorker.ready, 20000, 'sw ready');
+      log('ok', 'Service worker registered, scope ' + reg.scope);
+      var status = await new Promise(function (resolve) {
+        var ch = new MessageChannel(), t = setTimeout(function () { resolve(null); }, 3000);
+        ch.port1.onmessage = function (e) { clearTimeout(t); resolve(e.data); };
+        try { (reg.active || navigator.serviceWorker.controller).postMessage({ type: 'SJ_STATUS' }, [ch.port2]); } catch (_) { clearTimeout(t); resolve(null); }
+      });
+      if (!status) log('bad', 'Service worker did not answer SJ_STATUS');
+      else log(status.sj ? 'ok' : 'bad', 'Scramjet loaded in service worker: ' + status.sj + ' (worker build ' + status.build + ')');
+    } catch (e) { log('bad', 'Service worker: ' + e.message); }
+
+    // 5. BareMux transport
+    try {
+      var BM = await withTimeout(import(BASE + 'baremux/index.mjs'), 15000, 'baremux import');
+      var conn = new BM.BareMuxConnection(BASE + 'baremux/worker.js');
+      await withTimeout(conn.setTransport(BASE + 'curl/index.mjs', [{ wisp: WISP_URL, websocket: WISP_URL }]), 30000, 'setTransport');
+      log('ok', 'BareMux transport set to libcurl');
+      var BareClient = BM.BareClient;
+      var client = new BareClient(BASE + 'baremux/worker.js');
+      var resp = await withTimeout(client.fetch('https://example.com/'), 60000, 'test fetch of example.com through proxy');
+      var body = await resp.text();
+      log(resp.status === 200 && /Example Domain/.test(body) ? 'ok' : 'warn', 'Proxy fetch of example.com -> HTTP ' + resp.status + ', ' + body.length + ' chars');
+    } catch (e) { log('bad', 'BareMux / transport: ' + (e && e.message ? e.message : e)); }
+
+    log('info', 'Done. Tap "Copy report" and paste it into the chat.');
+  }
+  document.getElementById('go').onclick = run;
+  document.getElementById('copy').onclick = function () {
+    var text = lines.join('\n');
+    if (navigator.clipboard) navigator.clipboard.writeText(text).catch(function () {});
+    var sel = document.getElementById('report'); var r = document.createRange(); r.selectNodeContents(sel);
+    var s = getSelection(); s.removeAllRanges(); s.addRange(r);
+  };
+})();
+</script>
+</body>
+</html>
