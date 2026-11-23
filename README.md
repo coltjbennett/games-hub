@@ -1,5 +1,5 @@
 # Colton's Project Launcher
-
+![Deployment Status](https://github.com/coltjbennett/games-hub/actions/workflows/static.yml/badge.svg)
 **A Windows 95-inspired browser desktop, game launcher, utility suite, and social gaming hub.**
 
 Live site: <https://coltjbennett.github.io/games-hub/>  
