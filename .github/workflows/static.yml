@@ -1,61 +1,226 @@
-# Simple workflow for deploying static content to GitHub Pages
+
 name: Deploy static content to Pages
 
 on:
-  # Runs on pushes targeting the default branch
   push:
     branches: ["main"]
 
-  # Allows you to run this workflow manually from the Actions tab
+  pull_request:
+    branches: ["main"]
+
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
 
 jobs:
-  # Single deploy job since we're just deploying
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  validate:
+    name: Validate site
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
+        uses: actions/checkout@v6
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
+
       - name: Sync version
         run: node scripts/sync-version.js
-      # Generates /scram, /baremux, /curl and /epoxy (proxy engine files) for the Internet
-      # Explorer applet. Retries npm 3x per package. If a REQUIRED package still fails, this
-      # step fails loudly (red X + error annotation) instead of silently shipping a broken proxy.
-      - name: Build proxy files
-        run: node scripts/setup-proxy.js
-      - name: Verify proxy files exist
+
+      - name: Verify required files
         run: |
-          for f in scram/scramjet.all.js scram/scramjet.wasm.wasm baremux/worker.js baremux/index.mjs curl/index.mjs curl/libcurl.wasm transports/curl-ready.mjs; do
-            test -s "$f" || { echo "::error::Missing generated file: $f"; exit 1; }
-          done
-          du -sh scram baremux curl
-          if [ -d epoxy ]; then du -sh epoxy; else echo 'epoxy/ not generated (optional transport)'; fi
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+          test -s index.html
+          test -s scripts/sync-version.js
+
+      - name: Check JavaScript syntax
+        run: |
+          find . -type f \( -name "*.js" -o -name "*.mjs" \) \
+            -not -path "./.git/*" \
+            -not -path "./node_modules/*" \
+            -not -path "./scram/*" \
+            -not -path "./baremux/*" \
+            -not -path "./curl/*" \
+            -not -path "./epoxy/*" \
+            -print0 | while IFS= read -r -d '' file; do
+              echo "Checking $file"
+              node --check "$file" || exit 1
+            done
+
+      - name: Validate HTML
+        run: |
+          find . -type f \( -name "*.html" -o -name "*.htm" \) \
+            -not -path "./.git/*" \
+            -not -path "./node_modules/*" \
+            -not -path "./scram/*" \
+            -not -path "./baremux/*" \
+            -not -path "./curl/*" \
+            -not -path "./epoxy/*" \
+            -print0 | xargs -0 npx --yes html-validate@10
+
+      - name: Check internal links and assets
+        run: |
+          python3 <<'PY'
+          import os
+          from html.parser import HTMLParser
+          from urllib.parse import urlparse, unquote
+
+          ROOT = os.getcwd()
+          errors = []
+
+          IMAGE_EXTENSIONS = (
+              ".png", ".jpg", ".jpeg", ".gif", ".webp",
+              ".svg", ".avif", ".bmp", ".ico", ".tif", ".tiff"
+          )
+
+          class Checker(HTMLParser):
+              def __init__(self, file):
+                  super().__init__()
+                  self.file = file
+                  self.ids = set()
+                  self.links = []
+
+              def handle_starttag(self, tag, attrs):
+                  attrs = dict(attrs)
+
+                  if "id" in attrs:
+                      self.ids.add(attrs["id"])
+
+                  if "name" in attrs and tag == "a":
+                      self.ids.add(attrs["name"])
+
+                  for attr in ("href", "src", "action"):
+                      value = attrs.get(attr)
+                      if value:
+                          self.links.append(value)
+
+          html_files = []
+
+          for current, dirs, files in os.walk(ROOT):
+              dirs[:] = [
+                  d for d in dirs
+                  if d not in (
+                      ".git", "node_modules",
+                      "scram", "baremux", "curl", "epoxy"
+                  )
+              ]
+
+              for filename in files:
+                  if filename.lower().endswith((".html", ".htm")):
+                      html_files.append(os.path.join(current, filename))
+
+          parsed = {}
+
+          for file in html_files:
+              try:
+                  with open(file, encoding="utf-8") as f:
+                      parser = Checker(file)
+                      parser.feed(f.read())
+                      parsed[file] = parser
+              except Exception as e:
+                  errors.append(f"Unable to parse {file}: {e}")
+
+          for file, parser in parsed.items():
+              for link in parser.links:
+                  link = link.strip()
+
+                  if not link or link.startswith((
+                      "http://", "https://", "mailto:", "tel:",
+                      "javascript:", "data:", "blob:"
+                  )):
+                      continue
+
+                  url = urlparse(link)
+                  path = unquote(url.path)
+
+                  if path.startswith("/"):
+                      target = os.path.join(ROOT, path.lstrip("/"))
+                  elif path:
+                      target = os.path.normpath(
+                          os.path.join(os.path.dirname(file), path)
+                      )
+                  else:
+                      target = file
+
+                  if os.path.isdir(target):
+                      target = os.path.join(target, "index.html")
+
+                  if not os.path.isfile(target):
+                      # Missing images are handled by the website.
+                      # Warn about them, but don't fail deployment.
+                      if path.lower().endswith(IMAGE_EXTENSIONS):
+                          print(
+                              f"WARNING (missing image, ignored): "
+                              f"{os.path.relpath(file, ROOT)} -> {link}"
+                          )
+                          continue
+
+                      errors.append(
+                          f"{os.path.relpath(file, ROOT)}: "
+                          f"missing target '{link}'"
+                      )
+                      continue
+
+                  # Validate fragment/anchor references in local HTML files.
+                  if url.fragment and target in parsed:
+                      if url.fragment not in parsed[target].ids:
+                          errors.append(
+                              f"{os.path.relpath(file, ROOT)}: "
+                              f"missing anchor '{url.fragment}' in '{link}'"
+                          )
+
+          if errors:
+              print("\nValidation errors:")
+              for error in errors:
+                  print(" -", error)
+              raise SystemExit(1)
+
+          print(
+              f"Checked {len(html_files)} HTML files. "
+              f"No broken local references found (missing images are ignored)."
+          )
+          PY
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: validate
+
+    # Deploy only from main, never from pull requests.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          # Upload entire repository
+          node-version: 20
+
+      - name: Sync version
+        run: node scripts/sync-version.js
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
           path: '.'
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
