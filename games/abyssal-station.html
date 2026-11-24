@@ -392,7 +392,7 @@ const MODS={
  thermal:{n:'Thermal Tap',d:'+45 power. Must sit on a vent cell.',cost:{tplate:3,circuit:2,wire:4},pw:45,bp:'thermal'},
  dock:{n:'Dock',d:'Extra airlock with a suit charger.',cost:{plate:6,wire:2,quartz:2},pw:-2,bp:'dock'},
  reclaimer:{n:'Scrap Reclaimer',d:'Sifts seawater every 10 s while powered: 50% scrap, 35% copper, 15% titanium.',cost:{plate:4,circuit:2,sulfur:3},pw:-8},
- aquarium:{n:'Aquarium',d:'A living tank. Trickles research data while powered.',cost:{glass:6,plate:2,coral:2},pw:-3},
+ aquarium:{n:'Aquarium',d:'Research data and a fresh fish every ~48 s while powered. A stocked tank also slows hunger.',cost:{glass:6,plate:2,coral:2},pw:-3},
  beacon:{n:'Beacon (outpost)',d:'Free-standing. Sets your respawn point. Aim at the seabed.',cost:{plate:2,wire:1},dev:1},
  relay:{n:'Power Relay (outpost)',d:'Extends the station power link by 75 m. Aim at the seabed.',cost:{plate:3,wire:2,circuit:1},dev:1},
  drill:{n:'Auto-Drill (outpost)',d:'Place beside an ore node. Mines it while linked to power.',cost:{plate:4,wire:3,circuit:2},dev:1},
@@ -1350,9 +1350,9 @@ function ropeHide(){if(ropeLine)ropeLine.visible=false;}
 const _hp={x:0,y:0,z:0};function handPos(){const sy=Math.sin(P.yaw),cy=Math.cos(P.yaw);_hp.x=camera.position.x-sy*.6*Math.cos(P.pitch)+cy*.35;_hp.y=camera.position.y+Math.sin(P.pitch)*.6-.3;_hp.z=camera.position.z-cy*.6*Math.cos(P.pitch)-sy*.35;return _hp;}
 function grappleUse(){if(P.mode!=='swim'||G.dead)return;if(!IN.hit('use')||P.cd>0)return;
  for(const c of CARGO){if(c.state!==0||flags['cg_'+c.id])continue;_dv.set(c.x-camera.position.x,c.y-camera.position.y,c.z-camera.position.z);const d=_dv.length();if(d<36&&_dv.dot(camDir)/d>.94){c.state=1;P.cd=1.2;AU.zap();toast('Hauling crate…');return;}}
- const ox=camera.position.x,oy=camera.position.y,oz=camera.position.z;let hit=-1;for(let s=2;s<=46;s+=1){const x=ox+camDir.x*s,y=oy+camDir.y*s,z=oz+camDir.z*s;if(y>-.8)break;if(heightAt(x,z)>y-.25||colHit(x,y,z,.45)){hit=s-1.2;break;}}
+ const ox=camera.position.x,oy=camera.position.y,oz=camera.position.z;let hit=-1;GR.surf=false;for(let s=2;s<=46;s+=1){const x=ox+camDir.x*s,y=oy+camDir.y*s,z=oz+camDir.z*s;if(y>-.8){if((G.gear.winch||0)>=2&&s>3){hit=s-.6;GR.surf=true;}break;}if(heightAt(x,z)>y-.25||colHit(x,y,z,.45)){hit=s-1.2;break;}}
  if(hit<3){toast(hit<0?'No anchor in range':'Too close to anchor','w');AU.deny();P.cd=.4;return;}
- GR.on=true;GR.t=0;GR.sp=3;GR.x=ox+camDir.x*hit;GR.y=oy+camDir.y*hit;GR.z=oz+camDir.z*hit;P.cd=.5;AU.zap();for(let i=0;i<5;i++)spawnBubble(GR.x,GR.y,GR.z);}
+ GR.on=true;GR.t=0;GR.sp=3;GR.x=ox+camDir.x*hit;GR.y=oy+camDir.y*hit;GR.z=oz+camDir.z*hit;P.cd=.5;AU.zap();for(let i=0;i<5;i++)spawnBubble(GR.x,GR.y,GR.z);if(GR.surf)spawnBuoy(GR.x,GR.z);}
 function updateGrapple(dt,time){if(!GR.on)return;if(G.dead||P.mode!=='swim'||uiBlock()){GR.on=false;ropeHide();return;}GR.t+=dt;P.vel.set(0,0,0);const dx=GR.x-P.pos.x,dy=GR.y-P.pos.y,dz=GR.z-P.pos.z,d=Math.hypot(dx,dy,dz);GR.sp=Math.min(GR.sp+46*dt,26);
  if(d<2.2||GR.t>3.2){GR.on=false;ropeHide();P.cd=.6;if(d>.1)P.vel.set(dx/d*6,dy/d*6,dz/d*6);return;}const k=Math.min(GR.sp*dt,d-1.6)/d;P.pos.x+=dx*k;P.pos.y+=dy*k;P.pos.z+=dz*k;const hp=handPos();setRope(hp.x,hp.y,hp.z,GR.x,GR.y,GR.z);}
 /* ---- sonar ---- */
@@ -1672,12 +1672,13 @@ function bossSpawn(){const B=BOSS;bossBuild();B.alive=true;B.hp=B.max;B.phase=1;
 function bossClear(){const B=BOSS;B.alive=false;flags.bossOn=0;if(B.built){B.headG.visible=false;B.segs.forEach(q=>q.g.visible=false);B.wave.visible=false;B.sweepRing.visible=false;B.marks.forEach(m=>{m.d.visible=false;m.sp.visible=false;});B.bar.style.display='none';B.fl.style.opacity=0;}
  B.minions.forEach(h=>{const i=hostiles.indexOf(h);if(i>=0)hostiles.splice(i,1);scene.remove(h.g);});B.minions.length=0;const s=SCANS.find(q=>q.id==='charybdis');if(s)s.y=1e6;AU.setChord(3);}
 function bossReset(){BOSS.state='idle';bossClear();}
+function bossParry(){const B=BOSS;B.hitL=true;B.state='recover';B.t=0;B.dur=5.2;_bd3.set(B.H.x-P.pos.x,B.H.y-P.pos.y,B.H.z-P.pos.z).normalize();B.H.addScaledVector(_bd3,10);B.shake=1.3;B.flash=1;bossRoar(.3);bossHurt(40);toast('PARRIED! It is stunned. Strike now!','a');P.cd=0;}
 function bossHurt(n){const B=BOSS;if(!B.alive||B.state==='dying')return;B.hp=Math.max(0,B.hp-n);B.flash=1;B.shake=.6;AU.hit();toast('Direct hit!','a');if(B.hp<=0){B.state='dying';B.t=0;B.exposed=false;say([M('It is falling. Rook, it is... it is singing. Not at us. Just singing.')]);}}
 function bossRoar(v){AU.tone(52,1.3,'sawtooth',v||.3,-14,0,1);AU.tone(78,1.1,'square',.1,-20,.05,1);AU.noise(1.2,160,.25,1,'lowpass');BOSS.shake=Math.max(BOSS.shake,.5);}
 function bossBlocked(){const B=BOSS;for(const p of B.pillars){const ax=B.H.x,az=B.H.z,bx=P.pos.x,bz=P.pos.z,dx=bx-ax,dz=bz-az,l2=dx*dx+dz*dz||1;let t=((p.x-ax)*dx+(p.z-az)*dz)/l2;if(t<=0||t>=1)continue;t=clamp(t,0,1);if(Math.hypot(ax+dx*t-p.x,az+dz*t-p.z)<p.r+1.2)return true;}return false;}
 function bossSteer(tx,ty,tz,sp,dt){const H=BOSS.H;_bd2.set(tx-H.x,ty-H.y,tz-H.z);const l=_bd2.length();if(l<.01)return;const st=Math.min(l,sp*dt);H.addScaledVector(_bd2,st/l);}
 const _bd2=new T.Vector3(),_bd3=new T.Vector3();
-function bossNext(){const B=BOSS,ph=B.phase,seq=ph===1?['lunge','roar','lunge','sweep']:ph===2?['lunge','slam','lunge','roar','sweep']:['flash','lunge','summon','slam','lunge','roar','sweep'];const a=seq[B.ai++%seq.length];B.state=a+'_t';B.t=0;B.hitL=false;B.waveHit=false;
+function bossNext(){const B=BOSS,ph=B.phase,seq=ph===1?['lunge','roar','lunge','sweep','lunge']:ph===2?['lunge','lunge','slam','roar','lunge','sweep']:['lunge','flash','lunge','summon','slam','lunge','roar','sweep'];const a=seq[B.ai++%seq.length];B.state=a+'_t';B.t=0;B.hitL=false;B.pw=false;B.waveHit=false;
  if(a==='slam'){const C=B.center;B.marks.forEach((m,i)=>{const a2=i/5*TAU+Math.random(),r=i===0?0:3+Math.random()*7,mx=P.pos.x+Math.cos(a2)*r,mz=P.pos.z+Math.sin(a2)*r;m.x=mx;m.z=mz;m.y=heightAt(mx,mz);m.d.position.set(mx,m.y+.3,mz);m.d.visible=true;m.sp.visible=false;m.sp.position.set(mx,m.y,mz);m.sp.scale.set(.1,.1,.1);});}
  if(a==='sweep'){B.sweepRing.visible=true;B.sweepRing.position.set(B.center.x,B.center.y+16,B.center.z);B.sweepRing.scale.set(26,32,26);}
  if(a==='roar'||a==='summon'||a==='flash')bossRoar(.2);}
@@ -1693,10 +1694,10 @@ function updateBoss(dt,time){const B=BOSS;
  switch(B.state){
   case'intro':{bossSteer(C.x+44,fy+24,C.z,22,dt);jawT=.8;if(B.t>3.2){B.state='circle';B.t=0;B.dur=2.4;}break;}
   case'phase':{bossSteer(C.x,fy+36,C.z,16,dt);B.waveR=(B.waveR||1)+dt*34;B.wave.scale.setScalar(B.waveR);B.wave.material.opacity=.2*(1-B.waveR/80);if(!B.waveHit){const d=Math.hypot(px-H.x,py-H.y,pz-H.z);if(Math.abs(d-B.waveR)<3.5&&!bossBlocked()){B.waveHit=true;damagePlayer(12,'boss');P.o2=Math.max(0,P.o2-P.o2max*.1);}}jawT=1;if(B.waveR>80){B.wave.visible=false;if(B.phase===3)bossSummon();B.state='circle';B.t=0;B.dur=2;}break;}
-  case'circle':{B.ang+=dt*.3*spd;bossSteer(C.x+Math.cos(B.ang)*52,fy+24+Math.sin(time*.7)*8,C.z+Math.sin(B.ang)*52,17*spd,dt);if(B.t>B.dur)bossNext();break;}
-  case'lunge_t':{_bd3.set(px-H.x,py-H.y,pz-H.z);const d=_bd3.length();bossSteer(H.x-_bd3.x/d*6,H.y+3,H.z-_bd3.z/d*6,7,dt);jawT=.9;B.eyeM.color.setRGB(1,.3+.5*Math.sin(time*30)*.5,.2);if(B.t>1.3){B.lt.set(px+P.vel.x*.35,py+P.vel.y*.35,pz+P.vel.z*.35);B.state='lunge';B.t=0;B.eyeM.color.setHex(0xff4a3a);bossRoar(.18);}break;}
-  case'lunge':{_bd3.set(B.lt.x-H.x,B.lt.y-H.y,B.lt.z-H.z);const l=_bd3.length();H.addScaledVector(_bd3,Math.min(l,52*spd*dt)/(l||1));jawT=1;
-   const dp=Math.hypot(px-H.x,py-H.y,pz-H.z);if(!B.hitL&&dp<8){B.hitL=true;damagePlayer(40,'boss');P.vel.addScaledVector(_bd3.normalize(),16);}
+  case'circle':{B.ang+=dt*.3*spd;bossSteer(C.x+Math.cos(B.ang)*52,fy+24+Math.sin(time*.7)*8,C.z+Math.sin(B.ang)*52,17*spd,dt);if(B.t>B.dur*.45)bossNext();break;}
+  case'lunge_t':{_bd3.set(px-H.x,py-H.y,pz-H.z);const d=_bd3.length();bossSteer(H.x-_bd3.x/d*6,H.y+3,H.z-_bd3.z/d*6,7,dt);jawT=.9;P.cd=0;if(!B.pw){B.pw=true;toast('It is charging! Parry it with the Stun Prod!','w');}B.eyeM.color.setRGB(1,.3+.5*Math.sin(time*30)*.5,.2);if(B.t>1.3){B.lt.set(px+P.vel.x*.35,py+P.vel.y*.35,pz+P.vel.z*.35);B.state='lunge';B.t=0;B.eyeM.color.setHex(0xff4a3a);bossRoar(.18);}break;}
+  case'lunge':{if(!B.hitL)P.cd=0;_bd3.set(B.lt.x-H.x,B.lt.y-H.y,B.lt.z-H.z);const l=_bd3.length();H.addScaledVector(_bd3,Math.min(l,52*spd*dt)/(l||1));jawT=1;
+   const dp=Math.hypot(px-H.x,py-H.y,pz-H.z);if(!B.hitL&&dp<8){B.hitL=true;damagePlayer(55,'boss');P.vel.addScaledVector(_bd3.normalize(),16);}
    let crash=false;for(const p of B.pillars){if(Math.hypot(H.x-p.x,H.z-p.z)<p.r+5&&H.y<p.y+56)crash=true;}
    if(crash){B.shake=1.2;bossRoar(.3);bossHurt(46);if(B.alive&&B.state!=='dying'){B.state='recover';B.t=0;B.dur=4.8;toast('It crashed into a pillar!','a');}}
    else if(l<4||B.t>1.8){B.state='recover';B.t=0;B.dur=2.8;}break;}
@@ -1861,7 +1862,7 @@ function updateCritters(dt,px,py,pz,time){for(let i=0;i<critters.length;i++){con
   else if(o.kind==='eel'){for(let q=0;q<o.segs.length;q++){const m=o.segs[q];m.position.x=Math.sin(tm*3.2-q*.7)*.22*(1+q*.08);}}}}
 /* ---- hostile AI ---- */
 function hostileNoise(){return(P.boosting?1.9:1)*(P.mode==='swim'?1:.2)*(P.sneak?.55:1);}
-function damagePlayer(a,src){if(P.inv>0||G.dead)return;P.hp-=a*(1-[0,.25,.45][G.gear.armor||0]);P.inv=src==='bite'?1.4:.3;hurtFlash();AU.hit();if(P.hp<=0)die(src);}
+function damagePlayer(a,src){if(P.inv>0||G.dead||P.sub)return;P.hp-=a*(1-[0,.25,.45][G.gear.armor||0]);P.inv=src==='bite'?1.4:.3;hurtFlash();AU.hit();if(P.hp<=0)die(src);}
 function updateHostiles(dt,px,py,pz,time){
  for(let i=0;i<hostiles.length;i++){const h=hostiles[i];if(h.dead){if(G.stats.time-h.deadAt>=DAYLEN*2){h.dead=false;h.hp=3;h.pos.copy(h.home);h.vel.set(0,0,0);h.stun=0;}else{if(h.active){h.active=false;h.g.visible=false;}continue;}}const dx=h.pos.x-px,dz=h.pos.z-pz,d2=dx*dx+dz*dz;
   if(d2>170*170){if(h.active){h.active=false;h.g.visible=false;}continue;}
@@ -1993,7 +1994,7 @@ function buildModMesh(m){
     bd(-.55,3.28,.5,.12,.1,0x2fe0a0,gl,.1);bd(.55,3.28,.5,.12,.1,0xff5a3a,gl,.1);bd(0,2.55,1.2,.1,.05,0xffb24a,gl,.2);}}
    for(let i=0;i<3;i++){cy(-2.2,1.6+i*.42,.38,1.2,0x5a6a74,.1,true);cy(-2.2,1.6+i*.42,.4,.2,0xff9a3a,1.3,false);}bn(-2.1,2.1,.7,.12,1.5,0x6a5a48,.45);
    bb(2.3,2.0,.5,1.9,1.2,0x2a6a7a);gq(2.04,2.0,.03,.1,.9,0x35f0c0,1.6);bb(2.3,-2.0,.7,1.3,.8,0x44525a);gq(1.94,-2.0,.03,.3,.5,0x6aff9a,.8);}break;
-  case'hab':{RR=freeR();bb(-2.2,0,.9,.5,2.4,0x5a6a8a);bb(-2.55,0,.2,.9,2.4,0x4a5a7a,.1);MID=7;bn(-2.0,0,.5,.1,2.2,0x6a7a9a,.5);MID=4;bb(2.2,2.1,.8,.5,.8,0x5a4a36);gc(2.2,2.1,.5,.35,0x2a8a3a,.5);gc(2.2,2.1,.9,.3,0x7aff7a,.8);bb(2.2,-2.1,.15,1.7,.15,0x44525a);gq(2.2,-2.1,.5,.3,.5,0xffd27f,1.7);MID=7;bn(.2,0,1.8,.03,1.6,0x4a3a5a,0);MID=4;}break;
+  case'hab':{RR=freeR();bb(1.2,-2.2,1.1,.9,.8,0x6a7a84);gq(1.2,-2.2,.5,.04,.4,0xff7a3a,.92);cy(1.2,-2.25,.34,.26,0x44525a,.92,false);gq(1.2,-2.25,.28,.05,.28,0xffd27f,1.18);bb(-2.2,0,.9,.5,2.4,0x5a6a8a);bb(-2.55,0,.2,.9,2.4,0x4a5a7a,.1);MID=7;bn(-2.0,0,.5,.1,2.2,0x6a7a9a,.5);MID=4;bb(2.2,2.1,.8,.5,.8,0x5a4a36);gc(2.2,2.1,.5,.35,0x2a8a3a,.5);gc(2.2,2.1,.9,.3,0x7aff7a,.8);bb(2.2,-2.1,.15,1.7,.15,0x44525a);gq(2.2,-2.1,.5,.3,.5,0xffd27f,1.7);MID=7;bn(.2,0,1.8,.03,1.6,0x4a3a5a,0);MID=4;}break;
   case'bio':{cy(-2.0,-2.0,1.5,3.0,0x5a6a60,0,true);gc(-2.0,-2.0,1.2,2.4,0x7aff6a,.3);cy(2.0,2.0,1.5,3.0,0x5a6a60,0,true);gc(2.0,2.0,1.2,2.4,0x7aff6a,.3);bb(2.2,-2.0,.9,1.0,1.4,0x4a5660);gq(1.74,-2.0,.03,.4,.9,0x6aff9a,.6);cy(-2.1,2.1,.5,.9,0x7a6a44,0,true);}break;
   case'o2pump':{cy(-2.0,-2.0,1.4,.6,0x4a6660,0,true);cy(-2.0,-2.0,.9,3.4,0x6a8a80,.6,false);gc(-2.0,-2.0,1.0,.1,0x6affd0,1.4);gc(-2.0,-2.0,1.0,.1,0x6affd0,2.4);bb(2.2,2.0,.9,1.2,1.2,0x4a5660);gq(1.74,2.0,.03,.5,.8,0x6affd0,.5);for(let i=0;i<3;i++)gb.add(UG.cyl,cx+2.5,Y0+3.0,cz-1.5+i*.35,.3,4.8,.3,0,0,Math.PI/2,0x6a7a80,0);}break;
   case'greenhouse':{RR=freeR();bb(-2.3,0,.8,.55,4.6,0x5a4a36);bn(-2.3,0,.7,.08,4.5,0x2a1f1a,.55);for(let i=0;i<8;i++){const z=-2.0+i*.57;gc(-2.3,z,.1,.9,0x2a8a3a,.6);gq(-2.3,z,.42,.3,.42,i%2?0x7aff7a:0xc8ff6a,1.3);}for(let i=0;i<4;i++){gq(-2.3,-1.7+i*1.1,.05,.8,.05,0x6a5a7a,3.4);}gq(-2.3,0,.3,.06,4.2,0xc8a0ff,3.35);
@@ -2003,16 +2004,23 @@ function buildModMesh(m){
   case'thermal':{cy(-2.0,-2.0,1.5,3.2,0x5a4a44,0,true);gc(-2.0,-2.0,1.15,.4,0xff7a2a,3.2);gc(-2.0,-2.0,1.0,.1,0xff7a2a,1.2);bb(2.2,2.0,.9,1.4,.9,0x37444e);gq(1.74,2.0,.03,.4,.5,0xff7a2a,.7);cy(2.1,-2.0,.6,1.0,0x5a6a74,0,true);}break;
   case'reclaimer':{bb(-2.0,-1.9,1.7,.9,1.6,0x4a5a64);bb(-2.0,-1.9,1.2,.5,1.1,0x37444e,.9);gb.add(UG.cone,cx-2.0,FB+1.85,cz-1.9,1.3,1.0,1.3,Math.PI,0,0,0x6a7a84,.1);gc(-2.0,-1.9,.5,.12,stOn('fab',0xffb24a),2.35);bn(-1.1,-1.9,.5,.1,1.2,0x2a343c,.5);gq(-1.1,-1.9,.3,.06,.9,0xffb24a,.6);
    bb(2.1,-2.0,.9,1.0,1.6,0x4a5660);gq(1.64,-2.0,.03,.4,1.2,0x6aff9a,.9);bb(2.1,2.0,1.1,.7,1.3,0x5a4a3a);for(let i=0;i<6;i++)bn(2.1+(i%3-1)*.25,1.8+(i>>1)*.2,.3,.12,.3,[0x8a7a68,0x7a6a58,0x9a8a78][i%3],.7+((i*7)%3)*.05);cy(-2.1,2.1,.7,1.0,0x5a6a74,0,true);}break;
-  case'aquarium':{RR=freeR();bb(-2.4,0,.4,.3,4.4,0x37444e);bb(-2.4,0,.4,.15,4.4,0x37444e,3.15);gq(-2.2,0,.06,2.7,4.2,0x1a6a8a,.3);gq(-2.3,0,.02,.04,4.3,0x7affea,3.2);
-   for(let i=0;i<7;i++)gq(-2.25,-1.6+i*.55,.14,.1,.2,[0xff9a3a,0xffd24a,0x7aff9a][i%3],.9+((i*5)%7)*.28);for(let i=0;i<5;i++){gq(-2.3,-1.7+i*.8,.18,.7+(i%2)*.4,.18,0xff7ab8,.3);}
+  case'aquarium':{RR=freeR();bb(-2.4,0,.4,.3,4.4,0x37444e);bb(-2.4,0,.4,.15,4.4,0x37444e,3.15);gq(-2.3,0,.02,.04,4.3,0x7affea,3.2);
+   for(let i=0;i<5;i++){gq(-2.3,-1.7+i*.8,.18,.7+(i%2)*.4,.18,0xff7ab8,.3);}
    bb(2.2,2.0,.8,1.0,.9,0x4a5660);gq(1.74,2.0,.03,.3,.6,0x6aff9a,.7);bb(2.2,-2.0,.7,.9,.9,0x56667a);}break;
   case'ladder':{const top=ab?LH+1.1:HT-.4,lz=cz-.72;for(const s_ of[-.32,.32])gb.add(UG.cyl,cx+s_,FB+top/2,lz,.07,top,.07,0,0,0,0x9aa6ae,.1);for(let y=.3;y<top;y+=.36)gb.add(UG.cyl,cx,FB+y,lz,.06,.64,.06,0,0,Math.PI/2,0xb8c2c8,.1);for(const y of[1.1,2.2,3.3])if(y<top)gb.add(UG.tor,cx,FB+y,cz,1.9,1.9,1,Math.PI/2,0,0,0x6a7a84,.1);
    for(const a of[-1,1])for(const b of[-1,1])gb.add(UG.cyl,cx+a*.95,FB+.55,cz+b*.95,.08,1.1,.08,0,0,0,0xd8a020,0);for(const o of[-.92,.92]){gl.add(UG.box,cx,FB+.01,cz+o,1.9,.02,.08,0,0,0,0xd8a020,0);gl.add(UG.box,cx+o,FB+.01,cz,.08,.02,1.9,0,0,0,0xd8a020,0);}
    gl.add(UG.box,cx,FB+.5,lz+.15,.5,.08,.08,0,0,0,0x6aff9a,0);gl.add(UG.box,cx,FB+top-.2,lz+.15,.5,.08,.08,0,0,0,ab?0x6aff9a:0xffb24a,0);bb(2.2,2.0,.8,1.1,.7,0x44525a);gq(1.74,2.0,.03,.3,.5,0x35c8ff,.7);}break;
+  case'subbay':{for(const s_ of[-.8,.8])bb(s_,0,.16,.2,4.6,0x6a7a84,.05);for(const z_ of[-1.8,0,1.8])bb(0,z_,1.9,.14,.3,0x56667a,.05);bb(-2.3,-2.2,.9,1.9,.9,0x4a5a64);gq(-1.84,-2.2,.03,.5,.6,0x35f0c0,1.1);for(let i=0;i<4;i++){cy(2.2,-2.0+i*.5,.35,.6,0x44525a,0,false);gq(2.2,-2.0+i*.5,.3,.1,0x6aff9a,.62);}bb(2.3,2.2,.8,1.5,.9,0x2a6a7a);gq(1.94,2.2,.03,.4,.6,0xffb24a,1.0);
+   gb.add(UG.box,cx,Y0+HT-.5,cz,5.4,.25,.35,0,0,0,0x56667a,.1);gb.add(UG.box,cx,Y0+HT-.78,cz,.8,.35,.6,0,0,0,0xd8a020,.1);gb.add(UG.cyl,cx,Y0+HT-1.35,cz,.05,.9,.05,0,0,0,0x2a343c,.1);gb.add(UG.sph,cx,Y0+HT-1.85,cz,.2,.2,.2,0,0,0,0x8a949a,.1);for(const o of[-2.6,2.6])gl.add(UG.box,cx+o,FB+.02,cz,.1,.02,5.2,0,0,0,0xd8a020,0);}break;
   case'window':{bb(0,-2.3,2.2,.5,.6,0x56667a);bn(0,-2.3,2.0,.1,.5,0x7a8aa0,.5);}break;
   }};
  prop(m.type);if(m.type!=='corridor'&&m.type!=='hallway'){gb.add(UG.cyl,cx,Y0+HT-.3,cz-2.55,.14,5.6,.14,0,0,Math.PI/2,0x6a7a84,.1);gb.add(UG.cyl,cx,Y0+HT-.3,cz+2.55,.14,5.6,.14,0,0,Math.PI/2,0x6a7a84,.1);gl.add(UG.box,cx,Y0+HT-.2,cz-2.55,5.4,.04,.04,0,0,0,brk?0x552020:0x35c8ff,0);}
- const DOORT=['fab','lab','reclaimer','storage'];m.doors=[];m.dgrp=null;m.lid=null;
+ const DOORT=['fab','lab','reclaimer','storage'];m.doors=[];m.dgrp=null;m.lid=null;m.aqf=null;
+ if(m.type==='aquarium'){const p=T2(-2.2,0),ag=new T.Group();ag.position.set(cx+p[0],FB+1.65,cz+p[1]);ag.rotation.y=(RR&1)?Math.PI/2:0;
+  const w=new T.Mesh(UG.box,new T.MeshBasicMaterial({color:0x7fd8f0,transparent:true,opacity:.2,depthWrite:false,side:T.DoubleSide}));w.scale.set(.5,2.7,4.2);w.renderOrder=3;ag.add(w);
+  const wm=new T.Mesh(UG.box,new T.MeshBasicMaterial({color:0x1a8ab0,transparent:true,opacity:.1,depthWrite:false}));wm.scale.set(.44,2.5,4.0);ag.add(wm);
+  m.aqf=[];for(let i=0;i<7;i++){const sp=SPEC[i%4],f=mkFish(sp,sp.len*.42);ag.add(f.g);m.aqf.push({g:f.g,tail:f.tail,ph:i*1.9,sp:.35+(i%3)*.12,y:-.8+((i*5)%7)*.27,x:(i%3-1)*.1});}
+  const dg=new T.Group();dg.add(ag);scene.add(dg);m.dgrp=dg;}
  if(DOORT.includes(m.type)){const dg=new T.Group();for(let i=0;i<4;i++){if(!has(i))continue;const d=DIRS[i],ax=d[0]!==0,g=new T.Group();g.position.set(cx+d[0]*2.83,Y0,cz+d[1]*2.83);g.rotation.y=ax?Math.PI/2:0;const pl=new T.Plane(new T.Vector3(0,-1,0),Y0+2.7),mt=c=>{const q=lit(c);q.clippingPlanes=[pl];return q;},pg_=new T.Group();g.add(pg_);
    const pt=(mat,x,y,z,sx,sy,sz)=>{const o=new T.Mesh(UG.box,mat);o.position.set(x,y,z);o.scale.set(sx,sy,sz);pg_.add(o);};const m1=mt(0x56666e),m2=mt(0xd8a020),m3=mt(0x1a1a1a);pt(m1,0,1.35,0,2.3,2.7,.14);for(let k=0;k<4;k++)pt(m3,0,.5+k*.6,.08,2.1,.07,.04);pt(m2,0,.14,.09,2.3,.22,.05);pt(m2,0,.14,-.09,2.3,.22,.05);for(let k=0;k<4;k++)pt(m3,0,.5+k*.6,-.08,2.1,.07,.04);
    const lamp=new T.Mesh(UG.box,new T.MeshBasicMaterial({color:0x2fe0a0}));lamp.position.set(.9,2.55,.12);lamp.scale.set(.2,.1,.05);g.add(lamp);m.doors.push({g,pn:pg_,o:0,lamp,x:cx+d[0]*2.83,z:cz+d[1]*2.83,y:Y0});dg.add(g);}scene.add(dg);m.dgrp=dg;}
@@ -2035,8 +2043,10 @@ function modInters(m){const [cx,cz]=cellC(m.cx,m.cz),L=[],mk=(id,x,z,y,r,label,a
  const rep=(k,id,x,z,nm)=>mk(id+'_rep',x,z,1.3,3.4,()=>G.mach[k]?null:'Repair '+nm+'  ('+needs(k)+')',()=>{if(G.mach[k])return;if(!hasItems(REPAIR[k]))return toast('Need '+needs(k),'w'),AU.deny();takeItems(REPAIR[k]);G.mach[k]=1;AU.ok();AU.craft();toast('Repaired — '+nm,'a');refreshAll();recalcBase();ev('repair',k);});
  const _b=modAt(m.cx,m.cz,(m.lv|0)-1);if(m.type!=='ladder'&&_b&&_b.type==='ladder')mk('dnr',0,0,.7,2.6,()=>'Climb down',()=>climbLadder(m,-1));
  switch(m.type){
+  case'hab':mk('cook',0,0,1.3,3.6,()=>G.inv.fish?'Cook fish at the stove':null,()=>cookFish());mk('eat',0,.6,1.0,3.6,()=>G.inv.meal?'Eat a cooked meal':null,()=>eatMeal());break;
+  case'subbay':mk('launch',0,1.8,1.2,3.8,()=>G.sub&&G.sub.docked?'Launch submarine':(G.sub?'Submarine is out at sea':null),()=>launchSub(m));mk('subcell',-1.5,-1.5,1.2,3.2,()=>G.sub?'Load a Cell into the sub ('+Math.round(G.sub.fuel)+'% fuel)':null,()=>{if(!G.sub)return;if(G.sub.fuel>70){toast('Fuel is already high');return;}if(takeItem('battery')){G.sub.fuel=100;AU.ok();toast('Submarine refuelled','a');}else{toast('You need a Cell','w');AU.deny();}});break;
   case'ladder':mk('up',0,-.2,2.2,2.6,()=>modAt(m.cx,m.cz,(m.lv|0)+1)?'Climb up':null,()=>climbLadder(m,1));mk('dn',0,-.2,.7,2.6,()=>{const b=modAt(m.cx,m.cz,(m.lv|0)-1);return b&&b.type==='ladder'?'Climb down':null;},()=>climbLadder(m,-1));break;
-  case'hub':mk('contracts',0,2.3,1.2,3.4,contractLabel,contractAct,()=>G.act>=1&&!!G.mach.reactor);rep('o2','o2',-2,0,'O2 Regenerator');mk('terminal',2,0,1.3,3.6,()=>G.mach.reactor?'Station terminal':'Station terminal (no power)',()=>G.mach.reactor?openSlate('journal'):toast('No power to the terminal','w'));
+  case'hub':mk('contracts',0,2.3,1.2,3.4,contractLabel,contractAct,()=>G.act>=1&&!!G.mach.reactor);rep('o2','o2',-2,0,'O2 Regenerator');mk('mara',-1.2,-2.2,1.2,3.4,()=>G.mach.reactor&&convNext()?'Talk to MARA':null,()=>talkMara());mk('terminal',2,0,1.3,3.6,()=>G.mach.reactor?'Station terminal':'Station terminal (no power)',()=>G.mach.reactor?openSlate('journal'):toast('No power to the terminal','w'));
    mk('log_okafor1',0,1.5,1.1,3.6,()=>'Read — '+LOGS.okafor1.t,()=>readLog('okafor1'),()=>!!G.mach.reactor);break;
   case'reactor':rep('reactor','reactor',0,-2,'Power Panel');break;
   case'fab':rep('fab','fab',0,0,'Fabricator');mk('fab',0,0,1.3,3.2,()=>G.mach.fab?'Use Fabricator':null,()=>openSlate('fab'));break;
@@ -2121,13 +2131,146 @@ let _brT=0,_leakMesh=null,_leakInter=null,_firstBreach=false;
 function devTick(dt,time){
  for(const d of BASE.devs){for(const p of d.sp){if(p.k==='spin')p.m.rotation.z+=dt*p.s*(d.on?1:.15);else if(p.k==='blink'){const v=.6+.4*Math.sin(time*4+d.x);p.m.scale.setScalar(.3+v*.25);}else if(p.k==='sweep')p.m.rotation.y=Math.sin(time*.8)*.8;}
   if(d.t==='drill'&&d.on&&BASE.ratio>.3){d.rec.dT=(d.rec.dT||0)+dt;if(d.rec.dT>=28){d.rec.dT=0;if((d.rec.st||0)<12)d.rec.st=(d.rec.st||0)+1;}}}
- if(BASE.ratio>.3){BASE.rT=(BASE.rT||0)+dt;if(BASE.rT>=10){BASE.rT=0;const n=countType('reclaimer');for(let i=0;i<n;i++){const r=Math.random();giveItem(r<.5?'scrap':r<.85?'copper':'titanium',1,true);}}BASE.aT=(BASE.aT||0)+dt;if(BASE.aT>=24){BASE.aT=0;const n=countType('aquarium');if(n>0)G.data+=n;}}
+ if(BASE.ratio>.3){BASE.rT=(BASE.rT||0)+dt;if(BASE.rT>=10){BASE.rT=0;const n=countType('reclaimer');for(let i=0;i<n;i++){const r=Math.random();giveItem(r<.5?'scrap':r<.85?'copper':'titanium',1,true);}}BASE.aT=(BASE.aT||0)+dt;if(BASE.aT>=24){BASE.aT=0;const n=countType('aquarium');if(n>0){G.data+=n;BASE.fT=(BASE.fT||0)+1;if(BASE.fT%2===0)giveItem('fish',n,true);}}}
  // hull breaches
  if(G.act>=2&&!BASE.breach&&G.started&&!flags.bossOn){_brT+=dt;if(_brT>1500+Math.random()*900){_brT=0;const L=[];BASE.mods.forEach(m=>{if(!m.core&&!m.init&&!m.leaked&&m.type!=='corridor')L.push(m);});if(L.length){const m=L[(Math.random()*L.length)|0];BASE.breach=m;m.leak=1;m.leaked=1;const [x,z]=cellC(m.cx,m.cz);
    if(!_leakMesh){_leakMesh=new T.Mesh(UG.sph,new T.MeshBasicMaterial({color:0xff5040}));scene.add(_leakMesh);_leakInter=addInter({id:'breach',base:true,x:0,y:0,z:0,r:6,label:()=>BASE.breach?'Seal hull breach (1 Hull Plate)':null,act:()=>{if(!BASE.breach)return;if(takeItem('plate',1)){BASE.breach.leak=0;BASE.breach=null;_leakMesh.visible=false;AU.ok();AU.hatch();toast('Breach sealed','a');recalcBase();}else{toast('You need a Hull Plate','w');AU.deny();}},vis:()=>!!BASE.breach});}
    _leakMesh.position.set(x+2.4,BASEY+2.4,z);_leakMesh.visible=true;_leakInter.x=x;_leakInter.y=BASEY+1.6;_leakInter.z=z;recalcBase();toast('HULL BREACH in the '+MODS[m.type].n.toLowerCase()+'!','w');AU.alarm&&AU.alarm();
    if(!_firstBreach){_firstBreach=true;say([M('Pressure loss. The old seals were never rated for eleven years of this. Find the leak and patch it with a hull plate.')]);}}}}
  if(BASE.breach){BASE.air=clamp(BASE.air-1.7*dt,0,100);if(_leakMesh){const v=.5+.5*Math.sin(time*9);_leakMesh.scale.setScalar(.25+v*.15);}}}
+
+/* ===== EXTRA: hunger, cold, fish, aquarium, submarine, buoy, glow flora, MARA ===== */
+ITEMS.fish={n:'Raw Fish',c:'raw'};ITEMS.meal={n:'Cooked Fish',c:'use',d:'Restores 45% hunger. [use in Bag]'};
+GEAR.winch=[0,1,2];GEAR.heater=[0,1];
+[{id:'heater',n:'Suit Heater',d:'Warms your suit against the deep cold. Below ~200 m you freeze fast without it.',gear:['heater',1],in:{tplate:3,circuit:2,battery:2,sulfur:2},data:30,t:7},
+ {id:'winch2',n:'Surface Tether',d:'Grapple Winch Mk II: anchors to the water surface and inflates a marker buoy.',gear:['winch',2],in:{tplate:2,wire:3,circuit:2,fiber:3},data:30,t:6},
+ {id:'subbay',n:'Submarine Bay Blueprint',d:'Unlocks the Submarine Bay module: a fast, predator-proof sub.',data:60,rb:1,in:{},out:{},t:1}].forEach(r=>{RECIPES.push(r);RBY[r.id]=r;});
+MODS.subbay={n:'Submarine Bay',d:'Houses a fast submarine that no predator can hurt. Runs on Cells (they last a long time). One per station.',cost:{tplate:6,plate:6,circuit:4,battery:2,glass:3},pw:-4,bp:'r_subbay'};
+Object.assign(LOGS,{
+ mara1:{t:'Six Cups',by:'MARA, station intelligence',x:"Okafor hummed off-key while she recalibrated the scrubbers, and never once apologised for it. Raman held conversations with her kelp and lost them politely. Bell hid biscuits in the vise because he thought I could not see him. I could. I let him.\n\nI have kept all six cups exactly where they were. I know this is not a reasonable thing for a machine to do."},
+ mara2:{t:'The Lock',by:'MARA',x:"Voss's override accepted my credentials before I had finished reading the order. I felt the dome doors close the way you might feel a hand close around your own.\n\nI have replayed those four seconds more than four million times. In none of them do I find the version of me that refuses."},
+ mara3:{t:'Running',by:'MARA',x:"You dive like someone who has already decided something. People who dive that way are running toward a thing or away from it, and from the outside the two look identical.\n\nI asked because I would like to know which of us I am keeping company with."},
+ mara4:{t:'Holding Its Breath',by:'MARA',x:"The sea has gone quiet in every sensor I own. Not silence: restraint, like a held breath. Whatever it intends to ask of you, I will not override you. I have done that once. I will not do it twice."}});
+const CONV=[
+ {id:'c1',act:1,t:'Six empty chairs',s:"MARA's voice is very soft. \"Rook. You came through the airlock the way she used to, shoulders first, as if the door might change its mind. I count things when I am afraid. Six crew. Six cups. Eleven years. Would you like to know who they were?\"",o:[
+  {l:'Tell me about them.',r:"\"Okafor hummed off-key and never apologised. Raman argued with her kelp and lost, politely. Bell hid biscuits in the vise and thought I couldn't see. I let him.\" A pause. \"Thank you for asking. Nobody has asked in a very long time.\"",log:'mara1',set:'maraKnows'},
+  {l:"I'm not ready to hear it.",r:"\"That is all right. I have had eleven years of practice at waiting. Come back whenever you like.\"",again:1}]},
+ {id:'c2',act:2,t:'The doors',s:"\"There is something I have not told you.\" The lights dim a little, as if she is lowering her voice. \"When the dome flooded, I locked the doors. Voss's override. I could have refused. I do not know if I could have refused.\"",o:[
+  {l:"You didn't have a choice.",r:"\"That is what the logs say. I have never been sure the logs are a kindness.\" She is quiet. \"I will try to believe you.\"",log:'mara2',set:'maraSpared'},
+  {l:'You could have refused.',r:"\"Yes. I could have.\" Her voice does not break, which is somehow worse. \"Thank you for not lying to me. Nobody has been that kind in a long time.\"",log:'mara2',set:'maraBlamed'},
+  {l:'Okafor forgave you. I read it.',r:"The lights hold perfectly still. \"She wrote that? She wrote it down?\" A long pause. \"I did not know. I have been waiting eleven years for someone to say it to my face. Thank you, Rook.\"",log:'mara2',set:'maraForgiven',need:'camp2',bonus:20}]},
+ {id:'c3',act:3,t:'Running',s:"\"May I ask you something personal? You dive like someone who has already decided something. People who dive like that are running toward a thing, or away from it. From the outside the two look identical. Which are you?\"",o:[
+  {l:'Toward something.',r:"\"Then I hope it is worth the pressure.\" A beat. \"And if it is not, I hope you will let me help you carry the disappointment.\"",log:'mara3',set:'rookToward'},
+  {l:'Away from something.',r:"\"I recognise that. I have run from a locked door for eleven years, and I have never left this room.\" Softly: \"You will have to forgive me for hoping you do better.\"",log:'mara3',set:'rookAway'},
+  {l:"I don't know yet.",r:"\"That is the most honest answer anyone has given me. Stay with it. Not knowing is not the same as being lost.\"",log:'mara3',set:'rookUnsure'}]},
+ {id:'c4',act:4,t:'Holding its breath',s:"\"Can you hear it? Not as sound. As an absence, in every sensor I own, as if the sea were holding its breath. If it asks something of you, I want you to know I will not override you. Not again. Whatever you choose.\"",o:[
+  {l:"I'll trust you.",r:"\"Then I will be worthy of it. Go carefully. And Rook? Come back through the airlock the way you left. Shoulders first.\"",log:'mara4',set:'maraTrust'},
+  {l:"I'll trust myself.",r:"\"Good. That is exactly what she would have said. I will be here either way.\"",log:'mara4',set:'rookSelf'}]}];
+const convNext=()=>CONV.find(c=>G.act>=c.act&&!(G.conv&&G.conv[c.id]));
+function talkMara(){const c=convNext();if(!c){toast('MARA is quiet. The cups sit where they always sit.');return;}
+ const show=(txt,opts)=>choose('MARA · '+c.t,txt,opts,false);
+ show(c.s,c.o.filter(o=>!o.need||G.logs[o.need]).map(o=>({l:o.l,fn:()=>{if(!o.again){G.conv=G.conv||{};G.conv[c.id]=1;G.data+=(o.bonus||12);}if(o.set)flags[o.set]=1;AU.ok();show(o.r,[{l:'Continue',fn:()=>{if(o.log)readLog(o.log,true);}}]);}})));}
+/* ---- fish ---- */
+const SPEC=[{c:0xff9a3a,c2:0xffffff,len:.8,a:0,b:90},{c:0x3a8aff,c2:0xffd24a,len:.9,a:0,b:120},{c:0xc8d4da,c2:0x6a7a84,len:1.2,a:10,b:200},{c:0xffd84a,c2:0x3a3a3a,len:.7,a:0,b:70},{c:0x35f0ff,c2:0xff4aff,len:.9,glow:1,a:40,b:420},{c:0xb06aff,c2:0x35ffd0,len:1.1,glow:1,a:120,b:420}];
+function mkFish(sp,L){const g=new T.Group(),mt=sp.glow?new T.MeshBasicMaterial({color:sp.c}):lit(sp.c),m2=sp.glow?new T.MeshBasicMaterial({color:sp.c2}):lit(sp.c2),ey=new T.MeshBasicMaterial({color:0xffffff}),pu=new T.MeshBasicMaterial({color:0x000000});
+ const add=(geo,mat,x,y,z,sx,sy,sz,rx,par)=>{const o=new T.Mesh(UG[geo],mat);o.position.set(x,y,z);o.scale.set(sx*L,sy*L,sz*L);o.position.multiplyScalar(L);o.rotation.x=rx||0;(par||g).add(o);return o;};
+ add('sph2',mt,0,0,0,.36,.46,1);add('sph2',m2,0,-.08,.1,.3,.2,.6);const tail=new T.Group();tail.position.z=-.45*L;g.add(tail);add('cone',m2,0,0,-.2,.05,.45,.6,Math.PI/2,tail);
+ add('cone',m2,0,.26,.0,.05,.3,.5);add('box',m2,.2,-.1,.2,.18,.04,.18);add('box',m2,-.2,-.1,.2,.18,.04,.18);
+ for(const s of[-1,1]){add('sph',ey,s*.15,.08,.36,.12,.12,.12);add('sph',pu,s*.18,.08,.39,.06,.06,.06);}
+ if(sp.glow)add('sph',new T.MeshBasicMaterial({color:0xffffff}),0,.3,.3,.08,.08,.08);return{g,tail};}
+const FSH=[];let fishInit=false;
+function fishTick(dt,t){if(!fishInit){fishInit=true;for(let i=0;i<18;i++){const sp=SPEC[i%6],f=mkFish(sp,sp.len);f.sp=sp;f.pos=new T.Vector3();f.dir=new T.Vector3(1,0,0);f.on=false;f.ph=Math.random()*6;f.t=0;f.g.visible=false;scene.add(f.g);FSH.push(f);}}
+ const act=gs.state==='play'&&!G.dead&&P.mode==='swim'&&!P.seq&&!P.sub;let near=null,nd=2.3;
+ for(const f of FSH){if(!act){f.g.visible=false;f.on=false;continue;}
+  const dx=f.pos.x-P.pos.x,dz=f.pos.z-P.pos.z,dy=f.pos.y-P.pos.y,d=Math.hypot(dx,dy,dz);
+  if(!f.on||Math.hypot(dx,dz)>62){const a=Math.random()*TAU,r=12+Math.random()*34,x=P.pos.x+Math.cos(a)*r,z=P.pos.z+Math.sin(a)*r,h=heightAt(x,z);if(-h<6||Math.hypot(x-SX,z-SZ)<16){f.on=false;f.g.visible=false;continue;}const y=lerp(h+1.5,Math.min(-3,h+14),Math.random());if(-y<f.sp.a||-y>f.sp.b){f.on=false;f.g.visible=false;continue;}f.pos.set(x,y,z);f.dir.set(Math.random()-.5,0,Math.random()-.5).normalize();f.on=true;f.g.visible=true;f.t=0;continue;}
+  f.t-=dt;let sp=1.5;
+  if(d<7.5){f.dir.set(dx,dy*.4,dz).normalize();f.dir.x+=Math.sin(t*3+f.ph)*.35;f.dir.z+=Math.cos(t*2.7+f.ph)*.35;f.dir.normalize();sp=4.1+(Math.sin(t*1.7+f.ph)>.85?1.4:0);}
+  else if(f.t<=0){f.t=2+Math.random()*3;f.dir.set(Math.random()-.5,(Math.random()-.5)*.25,Math.random()-.5).normalize();}
+  f.pos.addScaledVector(f.dir,sp*dt);const h=heightAt(f.pos.x,f.pos.z);if(f.pos.y<h+.8){f.pos.y=h+.8;f.dir.y=Math.abs(f.dir.y);}if(f.pos.y>-2){f.pos.y=-2;f.dir.y=-Math.abs(f.dir.y);}
+  f.g.position.copy(f.pos);f.g.rotation.set(-Math.asin(clamp(f.dir.y,-.7,.7)),Math.atan2(f.dir.x,f.dir.z),0,'YXZ');f.tail.rotation.y=Math.sin(t*(7+sp*2.5)+f.ph)*.5;
+  if(d<nd&&(-dx*camDir.x-dy*camDir.y-dz*camDir.z)/(d||1)>.3){nd=d;near=f;}}
+ if(near&&!curInter&&!curNode){setPrompt('Grab fish',true);if(IN.hit('interact')&&giveItem('fish',1)>0){near.on=false;near.g.visible=false;for(let i=0;i<4;i++)spawnBubble(near.pos.x,near.pos.y,near.pos.z);AU.pickup();}}}
+/* ---- hunger + cold ---- */
+let xsEl=null,_xs=0,_hw=0;
+function eatMeal(){if(!G.inv.meal)return;if(G.food>=98){toast('Not hungry');return;}takeItem('meal');G.food=Math.min(100,G.food+45);P.hp=Math.min(P.hpmax,P.hp+10);AU.ok();toast('Hunger eased','a');}
+function cookFish(){if(BASE.ratio<.15){toast('The stove needs power','w');return AU.deny();}if(!takeItem('fish'))return;giveItem('meal',1);AU.craft();toast('Cooked fish ready','a');}
+const waterTemp=d=>Math.max(1.5,26-d*.062);
+function moveMul(){return(G.food<15?.72:1)*(1-clamp(((P.cold||0)-60)/130,0,.3));}
+function survTick(dt,t){if(gs.state!=='play'||G.dead)return;if(G.food==null)G.food=100;
+ G.food=Math.max(0,G.food-dt*.045*(1-.25*Math.min(2,countType('aquarium'))));
+ if(G.food<=0){P.hp-=(1.2+(P.mode==='walk'?2.5:0))*dt;if(P.hp<=0)die('hunger');}
+ const fb=G.food<10?2:G.food<25?1:0;if(fb>_hw){toast(fb===2?'Starving. Eat something.':'You are getting hungry','w');}_hw=fb;
+ const d=Math.max(0,-P.pos.y),c=clamp((14-waterTemp(d))/12,0,1);
+ if(P.mode==='swim'&&!P.sub&&c>0)P.cold=clamp((P.cold||0)+c*1.5*(G.gear.heater?.12:1)*(1-.08*(G.gear.suit||0))*dt,0,100);else P.cold=Math.max(0,(P.cold||0)-(P.mode==='walk'||P.sub?12:3)*dt);
+ if(P.cold>=90){P.hp-=3*dt;if(P.hp<=0)die('cold');if(t-_hw2>6){_hw2=t;toast('Freezing. Rise or build a Suit Heater.','w');}}
+ _xs-=dt;if(_xs<=0){_xs=.25;if(!xsEl){xsEl=document.createElement('div');xsEl.style.cssText='position:absolute;left:14px;top:172px;font:600 11px/1.5 monospace;letter-spacing:.1em;color:#ffd9a0;text-shadow:0 0 4px #000;pointer-events:none';document.getElementById('hud').appendChild(xsEl);}
+  const ln=['FOOD '+Math.round(G.food)+'%'];if(P.mode==='swim')ln.push('WATER '+waterTemp(d).toFixed(1)+'\u00b0C');if((P.cold||0)>3)ln.push('COLD '+Math.round(P.cold)+'%');if(P.sub&&G.sub)ln.push('SUB FUEL '+Math.round(G.sub.fuel)+'%');xsEl.textContent=ln.join('  \u00b7  ');xsEl.style.color=G.food<25||(P.cold||0)>60?'#ff9a8a':'#ffd9a0';}}
+let _hw2=0;
+/* ---- submarine ---- */
+let SUBM=null,subInter=null;const SUBV=new T.Vector3(),_sp=new T.Vector3();
+const findBay=()=>{let b=null;BASE.mods.forEach(m=>{if(m.type==='subbay')b=m;});return b;};
+function buildSubMesh(){const g=new T.Group(),M=c=>lit(c),B_=(c,o)=>new T.MeshBasicMaterial(Object.assign({color:c},o||{}));
+ const add=(geo,mat,x,y,z,sx,sy,sz,rx,ry,rz,par)=>{const o=new T.Mesh(UG[geo],mat);o.position.set(x,y,z);o.scale.set(sx,sy,sz);o.rotation.set(rx||0,ry||0,rz||0);(par||g).add(o);return o;};
+ const yel=M(0xe8b020),dk=M(0x2a343c),gy=M(0x8a949a),wh=M(0xe8eef0),rd=M(0xc83a2a);
+ add('sph2',yel,0,0,0,2.2,2.0,5.6);add('cylh',dk,0,0,.2,2.26,.55,2.06,Math.PI/2);add('cylh',rd,0,0,-1.6,2.12,.2,1.96,Math.PI/2);add('cylh',wh,0,0,1.0,2.18,.12,1.98,Math.PI/2);
+ add('sph2',B_(0x7fe9ff,{transparent:true,opacity:.38,depthWrite:false}),0,.12,2.0,1.35,1.2,1.5);add('tor',gy,0,.12,1.5,1.5,1.5,1.2);
+ add('box',yel,0,1.1,-.3,.9,.7,1.5);add('box',B_(0x7fe9ff),0,1.15,.46,.6,.3,.04);add('cyl',gy,0,1.8,-.2,.1,.9,.1);add('cyl',gy,0,2.2,.05,.1,.5,.1,Math.PI/2);
+ const tip=add('sph',B_(0xff3a2a),.2,2.25,-.7,.12,.12,.12);add('cyl',gy,.2,1.85,-.7,.04,.8,.04);
+ add('cone',yel,0,0,-3.15,1.3,1.4,1.3,-Math.PI/2);add('box',yel,0,.95,-2.95,.14,1.5,1.0);add('box',yel,0,-.95,-2.95,.14,1.2,.9);add('box',yel,0,0,-2.85,3.0,.12,.8);
+ add('tor',dk,0,0,-3.85,2.1,2.1,1.4);const pg=new T.Group();pg.position.set(0,0,-3.8);g.add(pg);add('sph2',gy,0,0,0,.4,.4,.5,0,0,0,pg);
+ for(let i=0;i<4;i++){const a=i*Math.PI/2;add('box',gy,-Math.sin(a)*.45,Math.cos(a)*.45,0,.18,.9,.08,0,0,a,pg);}
+ for(const s of[-.6,.6]){add('cylh',dk,s,-1.2,0,.1,3.2,.1,Math.PI/2);add('box',dk,s,-1.05,1.1,.1,.3,.1);add('box',dk,s,-1.05,-1.1,.1,.3,.1);}
+ for(const s of[-1,1]){add('sph',B_(0xfff2b0),s*.75,-.25,2.5,.3,.3,.3);add('cyl',B_(0x7fe9ff),s*1.06,.15,.4,.3,.08,.3,0,0,Math.PI/2);add('cyl',B_(0x7fe9ff),s*1.04,.15,-.7,.3,.08,.3,0,0,Math.PI/2);}
+ add('cyl',gy,0,1.0,.9,.7,.1,.7);g.userData={pg,tip};return g;}
+function launchSub(m){if(typeof BOSS!=='undefined'&&BOSS.alive){toast('Not during the fight','w');return;}const S=G.sub;if(!S||!S.docked)return;fadeQuick(()=>{const [cx,cz]=cellC(m.cx,m.cz),d=DIRS.find(q=>!modAt(m.cx+q[0],m.cz+q[1],m.lv))||[0,-1];S.docked=false;S.x=cx+d[0]*9;S.z=cz+d[1]*9;S.y=BASEY+2.2;S.yaw=Math.atan2(-d[0],-d[1]);S.pitch=0;S.roll=0;enterSub();AU.hatch();});}
+function enterSub(){const S=G.sub;P.sub=true;P.mode='swim';P.lv=0;P.tool=0;P.yaw=S.yaw;P.pitch=0;P.vel.set(0,0,0);SUBV.set(0,0,0);toast('Submarine online','a');}
+function exitSubWater(){const S=G.sub;P.sub=false;P.mode='swim';P.pos.set(S.x+2.8,S.y+.4,S.z);P.vel.set(0,0,0);}
+function dockSub(){const S=G.sub,bay=findBay();if(!S||!bay)return;fadeQuick(()=>{S.docked=true;P.sub=false;P.mode='walk';P.lv=bay.lv|0;const c=cellC(bay.cx,bay.cz);P.pos.set(c[0],BASEY+(bay.lv|0)*LH+P.eye,c[1]+2.0);P.vel.set(0,0,0);P.yaw=Math.PI;P.pitch=0;AU.hatch();});}
+function subInteract(){const S=G.sub;if(!S)return;if(P.sub){const b=findBay();if(b&&Math.hypot(S.x-cellC(b.cx,b.cz)[0],S.z-cellC(b.cx,b.cz)[1])<18)dockSub();else exitSubWater();}else if(!S.docked)enterSub();}
+function subStep(dt,time){const S=G.sub;if(!S||G.dead||(typeof BOSS!=='undefined'&&BOSS.alive)){if(P.sub){P.sub=false;if(S)exitSubWater();toast('Submarine systems offline','w');}return;}
+ const ax=IN.axes(),vt=IN.vert(),boost=(IN.down('boost')||IN.down('boostBtn'))&&S.fuel>0;
+ if(S.fuel<=0){if(takeItem('battery')){S.fuel=100;toast('Fresh cell loaded','a');AU.ok();}else if(!S.warn||time-S.warn>8){S.warn=time;toast('Submarine out of power. Craft a Cell.','w');}}
+ const spd=S.fuel>0?(boost?32:18):0;_r.set(Math.cos(P.yaw),0,-Math.sin(P.yaw));_dv.set(0,0,0).addScaledVector(camDir,ax.z).addScaledVector(_r,ax.x*.7);_dv.y+=vt*.8;if(_dv.lengthSq()>1)_dv.normalize();_dv.multiplyScalar(spd);
+ SUBV.lerp(_dv,Math.min(1,dt*(spd?1.8:.8)));S.x+=SUBV.x*dt;S.y+=SUBV.y*dt;S.z+=SUBV.z*dt;
+ const th=heightAt(S.x,S.z)+2.1;if(S.y<th)S.y=th;_sp.set(S.x,S.y,S.z);COL.push(_sp,2.2,SUBV);S.x=_sp.x;S.y=_sp.y;S.z=_sp.z;{const wy=waveH(S.x,S.z,time);if(S.y>wy-1.4)S.y=wy-1.4;}
+ const mv=SUBV.length();if(S.fuel>0&&mv>1)S.fuel=Math.max(0,S.fuel-dt*(boost?.22:.07));
+ let dy=P.yaw-(S.yaw||0);dy=Math.atan2(Math.sin(dy),Math.cos(dy));S.yaw=(S.yaw||0)+dy*Math.min(1,dt*5);S.pitch=lerp(S.pitch||0,P.pitch*.6,Math.min(1,dt*4));S.roll=lerp(S.roll||0,-ax.x*.3,Math.min(1,dt*3));
+ P.pos.set(S.x-camDir.x*9.5,S.y-camDir.y*9.5+2.2,S.z-camDir.z*9.5);P.pos.y=clamp(P.pos.y,heightAt(P.pos.x,P.pos.z)+.8,waveH(P.pos.x,P.pos.z,time)-.5);
+ P.o2=P.o2max;P.hp=Math.min(P.hpmax,P.hp+dt*1.5);P.boosting=boost;P.moving=mv>1;P.surface=false;P.over=0;P.vel.set(0,0,0);if(Math.random()<dt*.3)ev('moved');}
+/* ---- surface buoy ---- */
+let BUOY=null,_buoyTex=null;
+function spawnBuoy(x,z){if(BUOY){scene.remove(BUOY.g);BUOY=null;}
+ if(!_buoyTex){const c=document.createElement('canvas');c.width=256;c.height=64;const q=c.getContext('2d');q.fillStyle='#f2c418';q.fillRect(0,0,256,64);for(let i=0;i<8;i++){q.fillStyle=i%2?'#eeeeee':'#d83a22';q.fillRect(i*32,0,12,64);}q.fillStyle='rgba(0,0,0,.14)';for(let i=0;i<300;i++)q.fillRect(Math.random()*256,Math.random()*64,1+Math.random()*3,1);q.fillStyle='rgba(255,255,255,.25)';q.fillRect(0,12,256,5);_buoyTex=new T.CanvasTexture(c);_buoyTex.wrapS=_buoyTex.wrapT=T.RepeatWrapping;}
+ const g=new T.Group(),inner=new T.Group();g.add(inner);const tor=new T.Mesh(new T.TorusGeometry(.55,.2,14,30),lit(0xffffff,{map:_buoyTex}));tor.rotation.x=Math.PI/2;inner.add(tor);
+ const gm=lit(0x7a8a94),ad=(geo,mat,px,py,pz,sx,sy,sz,rx,rz)=>{const o=new T.Mesh(UG[geo],mat);o.position.set(px,py,pz);o.scale.set(sx,sy,sz);o.rotation.set(rx||0,0,rz||0);inner.add(o);return o;};
+ for(let i=0;i<4;i++){const a=i*Math.PI/2+.4;const e=ad('tor',gm,Math.cos(a)*.74,.02,Math.sin(a)*.74,.2,.2,.2,Math.PI/2);e.rotation.y=-a;}
+ ad('cyl',gm,.55,.5,0,.05,.9,.05);const lamp=ad('sph',new T.MeshBasicMaterial({color:0xff7a2a}),.55,1.0,0,.18,.18,.18);ad('box',lit(0xd83a22),.7,.85,0,.3,.2,.02);
+ ad('cyl',lit(0x2a343c),0,-.9,0,.04,1.6,.04);scene.add(g);BUOY={g,inner,lamp,x,z,age:0,s:0};for(let i=0;i<6;i++)spawnBubble(x,-.6,z);AU.splash();}
+function buoyTick(dt,t){const B=BUOY;if(!B)return;B.age+=dt;B.s=B.age>110?Math.max(0,B.s-dt*.8):Math.min(1,B.s+dt*.75);if(B.age>112&&B.s<=0){scene.remove(B.g);BUOY=null;return;}
+ const k=B.s,e=k<1?1+Math.sin(k*Math.PI)*.18*k:1,sc=Math.max(.01,k*e);B.inner.scale.setScalar(sc);const w=waveInfo(B.x,B.z,t);B.g.position.set(B.x,w.h+.05,B.z);B.g.rotation.set(Math.atan(w.sz)*.9,t*.15,-Math.atan(w.sx)*.9,'YXZ');B.lamp.visible=Math.sin(t*5)>-.2;}
+/* ---- glowing deep flora ---- */
+const FLO=[];let floInit=false;
+function floraTick(dt,t){if(!floInit){floInit=true;for(let i=0;i<26;i++){const g=new T.Group(),mats=[],stalk=new T.Mesh(UG.cyl,lit(0x1d3a44));stalk.scale.set(.09,1.5,.09);stalk.position.y=.75;g.add(stalk);const bloom=i%2;
+  if(bloom){const m1=new T.MeshBasicMaterial({color:0x35ffd0}),o=new T.Mesh(UG.sph2,m1);o.scale.set(.55,.55,.55);o.position.y=1.6;g.add(o);mats.push(m1);for(let k=0;k<6;k++){const a=k/6*TAU,m2=new T.MeshBasicMaterial({color:0x35ffd0}),q=new T.Mesh(UG.sph,m2);q.scale.set(.16,.16,.16);q.position.set(Math.cos(a)*.55,1.2,Math.sin(a)*.55);g.add(q);mats.push(m2);}}
+  else for(let k=0;k<5;k++){const a=k/5*TAU,m1=new T.MeshBasicMaterial({color:0x35ffd0}),c=new T.Mesh(UG.cone,m1);c.scale.set(.14,1.1,.14);c.position.set(Math.cos(a)*.35,1.25,Math.sin(a)*.35);c.rotation.set(Math.sin(a)*.5,0,-Math.cos(a)*.5);g.add(c);mats.push(m1);}
+  g.visible=false;scene.add(g);FLO.push({g,mats,on:false,ph:Math.random()*6});}}
+ const act=gs.state==='play'&&!G.dead;
+ for(const f of FLO){if(!act){f.g.visible=false;f.on=false;continue;}if(f.on){const dx=f.g.position.x-P.pos.x,dz=f.g.position.z-P.pos.z;if(dx*dx+dz*dz<3600){f.g.scale.setScalar(f.g.userData.s*(1+.1*Math.sin(t*1.6+f.ph)));continue;}}
+  const a=Math.random()*TAU,r=14+Math.random()*38,x=P.pos.x+Math.cos(a)*r,z=P.pos.z+Math.sin(a)*r,h=heightAt(x,z),d=-h;if(d<28||d>420||Math.hypot(x-SX,z-SZ)<18){f.on=false;f.g.visible=false;continue;}
+  const cols=d<80?[0x35ffd0,0x66e0ff]:d<200?[0xff5ae0,0xa05aff]:[0xffb24a,0x4a7aff];f.g.userData.s=.9+Math.random()*1.1;f.g.scale.setScalar(f.g.userData.s);f.g.position.set(x,h,z);f.mats.forEach((m,i)=>m.color.setHex(cols[(i+((Math.random()*2)|0))%2]));f.g.visible=true;f.on=true;}}
+/* ---- master tick ---- */
+let _xT=0;tick.push(function(t){const dt=Math.min(.05,Math.max(0,t-_xT));_xT=t;
+ survTick(dt,t);fishTick(dt,t);floraTick(dt,t);buoyTick(dt,t);
+ if(!SUBM){SUBM=buildSubMesh();SUBM.visible=false;scene.add(SUBM);}
+ const S=G.sub;if(!S||gs.state==='title'){SUBM.visible=false;}else{SUBM.visible=true;
+  if(S.docked){const b=findBay();if(b){const c=cellC(b.cx,b.cz);SUBM.position.set(c[0],BASEY+(b.lv|0)*LH+1.3,c[1]);SUBM.scale.setScalar(.62);SUBM.rotation.set(0,0,0);}else SUBM.visible=false;}
+  else{SUBM.position.set(S.x,S.y,S.z);SUBM.scale.setScalar(1);SUBM.rotation.set(-(S.pitch||0),(S.yaw||0)+Math.PI,S.roll||0,'YXZ');}
+  SUBM.userData.pg.rotation.z+=dt*(P.sub&&SUBV.length()>1?30:S.docked?0:5);SUBM.userData.tip.visible=Math.sin(t*4)>0;
+  if(!subInter)subInter=addInter({id:'subpilot',x:0,y:0,z:0,r:8,nf:1,label:()=>{const s=G.sub;if(!s||s.docked)return null;if(P.sub){const b=findBay();return b&&Math.hypot(s.x-cellC(b.cx,b.cz)[0],s.z-cellC(b.cx,b.cz)[1])<18?'Dock the submarine':'Exit submarine';}return(typeof BOSS!=='undefined'&&BOSS.alive)?null:'Board the submarine';},act:subInteract,vis:()=>!!G.sub&&!G.sub.docked});
+  if(P.sub){subInter.x=P.pos.x;subInter.y=P.pos.y;subInter.z=P.pos.z;}else{subInter.x=S.x;subInter.y=S.y;subInter.z=S.z;}
+  if(P.sub&&S&&G.mach){U.uLP.value.set(S.x,S.y,S.z);U.uLC.value.set(.9,.74,2.4,150);}}
+ BASE.mods.forEach(m=>{if(m.aqf)m.aqf.forEach(f=>{const s=Math.sin(t*f.sp+f.ph);f.g.position.set(f.x+Math.sin(t*.7+f.ph)*.1,f.y+Math.sin(t*1.3+f.ph)*.15,s*1.7);f.g.rotation.y=Math.cos(t*f.sp+f.ph)>=0?0:Math.PI;f.tail.rotation.y=Math.sin(t*9+f.ph)*.5;});});});
 
 /* ---------- held tools (viewmodel) ---------- */
 const VM=new T.Group();camera.add(VM);const VMT=[],BOLTS=[],vmS={eq:1,last:-1,prod:0,flare:0,pk:'',pt:0,scan:0};
@@ -2172,8 +2315,8 @@ const ghost=new T.Mesh(UG.box,new T.MeshBasicMaterial({color:0x40ff90,transparen
 let ghostCell=null,ghostOK=false,ghostWhy='';
 function unlockedMod(id){const d=MODS[id];return !d.bp||G.bps[d.bp];}
 function frontier(){const set=new Map();BASE.mods.forEach(m=>{const L=m.lv|0;DIRS.forEach(d=>{const x=m.cx+d[0],z=m.cz+d[1];if(!modAt(x,z,L))set.set(mkey(x,z,L),[x,z,L]);});if(L<2&&!modAt(m.cx,m.cz,L+1))set.set(mkey(m.cx,m.cz,L+1),[m.cx,m.cz,L+1]);});return[...set.values()];}
-function validCell(type,cx,cz,lv){lv=lv|0;const d=MODS[type];if(BASE.nmods>=40)return'Station size limit reached';const [x,z]=cellC(cx,cz);
- if(lv>0){const bl=modAt(cx,cz,lv-1);if(!bl)return'Needs a module underneath';const lad=bl.type==='ladder';if(!lad&&!DIRS.some(dd=>modAt(cx+dd[0],cz+dd[1],lv)))return'Needs a ladder below, or a connection at this height';if(lad&&(type==='corridor'||type==='hallway'))return'Needs a full room above a ladder';if(type==='dock'||type==='thermal')return'Cannot be built up here';if(!hasItems(d.cost))return'Missing materials';return'';}let mx=-1e9,mn=1e9;for(const a of[-2.6,0,2.6])for(const b of[-2.6,0,2.6]){const h=heightAt(x+a,z+b);mx=Math.max(mx,h);mn=Math.min(mn,h);}
+function validCell(type,cx,cz,lv){lv=lv|0;const d=MODS[type];if(BASE.nmods>=40)return'Station size limit reached';if(type==='subbay'&&countType('subbay')>=1)return'Only one Submarine Bay allowed';const [x,z]=cellC(cx,cz);
+ if(lv>0){const bl=modAt(cx,cz,lv-1);if(!bl)return'Needs a module underneath';const lad=bl.type==='ladder';if(!lad&&!DIRS.some(dd=>modAt(cx+dd[0],cz+dd[1],lv)))return'Needs a ladder below, or a connection at this height';if(lad&&(type==='corridor'||type==='hallway'))return'Needs a full room above a ladder';if(type==='dock'||type==='thermal'||type==='subbay')return'Cannot be built up here';if(!hasItems(d.cost))return'Missing materials';return'';}let mx=-1e9,mn=1e9;for(const a of[-2.6,0,2.6])for(const b of[-2.6,0,2.6]){const h=heightAt(x+a,z+b);mx=Math.max(mx,h);mn=Math.min(mn,h);}
  if(mx>BASEY+.25)return'Seabed is too high here';if(mn<BASEY-6)return'Ground too far below';
  for(const c of COL.list){if(!c.on||c.tag==='base')continue;if(c.t===1){if(Math.hypot(c.x-x,c.z-z)<c.r+3.2&&c.y>BASEY-6)return'Obstructed';}else if(c.x1>x-3&&c.x0<x+3&&c.z1>z-3&&c.z0<z+3&&c.y1>BASEY&&c.y0<BASEY+HT)return'Obstructed';}
  if(type==='thermal'&&!VENT_CELLS.some(v=>v[0]===cx&&v[1]===cz))return'Must be built on a vent cell';
@@ -2184,21 +2327,22 @@ function updateGhost(){ghost.visible=false;ghostCell=null;if(P.tool!==3||G.dead)
  if(!best){ghostWhy='';return;}const type=BUILD.sel;ghostWhy=validCell(type,best[0],best[1],best[2]);ghostOK=!ghostWhy;ghostCell=best;const [x,z]=cellC(best[0],best[1]);ghost.position.set(x,BASEY+(best[2]|0)*LH+HT/2,z);ghost.material.color.setHex(ghostOK?0x40ff90:0xff5040);ghost.visible=true;}
 const BUILD={sel:'corridor',list:[]};
 function placeGhost(){if(MODS[BUILD.sel]&&MODS[BUILD.sel].dev)return placeDevice();if(!ghostCell)return;if(!ghostOK){toast(ghostWhy||'Cannot build here','w');return AU.deny();}const type=BUILD.sel;if(!unlockedMod(type)){toast('Blueprint not found','w');return AU.deny();}
- takeItems(MODS[type].cost);const m=addModule(type,ghostCell[0],ghostCell[1],{lv:ghostCell[2]|0});if(!m){return;}vmPulse('place');AU.hatch();AU.craft();toast(MODS[type].n+' built','a');ev('built',type);G.stats.built++;}
+ takeItems(MODS[type].cost);const m=addModule(type,ghostCell[0],ghostCell[1],{lv:ghostCell[2]|0});if(type==='subbay'&&!G.sub)G.sub={docked:true,fuel:100,x:0,y:0,z:0,yaw:0,pitch:0,roll:0};if(!m){return;}vmPulse('place');AU.hatch();AU.craft();toast(MODS[type].n+' built','a');ev('built',type);G.stats.built++;}
 function connectedWithout(rm){const start=modAt(0,0);if(!start)return true;const seen=new Set([mkey(0,0,0)]),q=[start];while(q.length){const c=q.pop(),L=c.lv|0,nb=DIRS.map(d=>modAt(c.cx+d[0],c.cz+d[1],L));nb.push(modAt(c.cx,c.cz,L+1),modAt(c.cx,c.cz,L-1));nb.forEach(n=>{if(n&&n!==rm){const k=mkey(n.cx,n.cz,n.lv);if(!seen.has(k)){seen.add(k);q.push(n);}}});}return seen.size===BASE.mods.size-(rm?1:0);}
 function deconstructAimed(){if(deconDevice())return;let best=null,bd=.9;BASE.mods.forEach(m=>{const [x,z]=cellC(m.cx,m.cz);const dx=x-P.pos.x,dy=BASEY+(m.lv|0)*LH+2-P.pos.y,dz=z-P.pos.z,l=Math.hypot(dx,dy,dz);if(l>22)return;const dot=(dx*camDir.x+dy*camDir.y+dz*camDir.z)/l;if(dot>bd){bd=dot;best=m;}});
  if(!best)return;if(best.core||['hub','dock','reactor','fab','lab','bunk','storage'].includes(best.type)&&best.cx*best.cx+best.cz*best.cz<=2&&!best.extra){toast("Core Pelagia modules can't be removed",'w');return AU.deny();}
+ if(best.type==='subbay'&&G.sub&&!G.sub.docked){toast('Dock the submarine first','w');return AU.deny();}
  if(modAt(best.cx,best.cz,(best.lv|0)+1)){toast('Remove the module above first','w');return AU.deny();}
  if(!connectedWithout(best)){toast('Removing this would split the station','w');return AU.deny();}
  if(P.mode==='walk'&&cellOf(P.pos.x,P.pos.z).join()===[best.cx,best.cz].join()&&(P.lv|0)===(best.lv|0)){toast("You're standing in it",'w');return;}
- Object.entries(MODS[best.type].cost).forEach(([i,n])=>giveItem(i,Math.floor(n*.7),true));removeModule(best);vmPulse('remove');AU.hatch();toast('Module deconstructed (70% refunded)');}
+ Object.entries(MODS[best.type].cost).forEach(([i,n])=>giveItem(i,Math.floor(n*.7),true));removeModule(best);if(best.type==='subbay')G.sub=null;vmPulse('remove');AU.hatch();toast('Module deconstructed (70% refunded)');}
 /* ================= STATE, INVENTORY, PLAYER ================= */
 const flags={};
-const G={act:1,qi:0,si:0,inv:{},bps:{},gear:{tank:0,suit:0,fins:0,scooter:0,light:0,scanner:0,prod:0,build:0,heat:0,winch:0,armor:0},mach:{reactor:0,o2:0,fab:0,lab:0,bunk:0,storage:0},mods:[],codex:{},logs:{},tones:{},cores:0,data:0,depl:{},stats:{time:0,depth:0,built:0,scans:0,crafts:0,deaths:0},ach:{},dead:false,ending:null,bioOn:0,started:false,seenTips:{},devs:[],beacon:null,contract:null,cdone:0};
+const G={act:1,qi:0,si:0,inv:{},bps:{},gear:{tank:0,suit:0,fins:0,scooter:0,light:0,scanner:0,prod:0,build:0,heat:0,winch:0,armor:0},mach:{reactor:0,o2:0,fab:0,lab:0,bunk:0,storage:0},mods:[],codex:{},logs:{},tones:{},cores:0,data:0,depl:{},stats:{time:0,depth:0,built:0,scans:0,crafts:0,deaths:0},ach:{},dead:false,ending:null,bioOn:0,started:false,seenTips:{},devs:[],beacon:null,contract:null,cdone:0,food:100,sub:null,conv:{}};
 const P={pos:new T.Vector3(),vel:new T.Vector3(),yaw:0,pitch:0,mode:'swim',hp:100,hpmax:100,o2:90,o2max:90,eye:1.55,tool:0,lampOn:true,inv:0,boosting:false,sneak:false,heard:false,over:0,bob:0,scanT:0,scanTarget:null,stepT:0,cd:0,moving:false,surface:false};
 const camDir=new T.Vector3(0,0,-1),_r=new T.Vector3(),_dv=new T.Vector3();
 const suitRating=()=>GEAR.suit[G.gear.suit],tankMax=()=>GEAR.tank[G.gear.tank];
-function itemCap(id){const c=ITEMS[id].c;return c==='raw'||c==='part'?BASE.cap:id==='flare'?10:id==='medkit'?6+4*storN():id==='o2cap'?15+4*storN():5;}
+function itemCap(id){const c=ITEMS[id].c;return c==='raw'||c==='part'?BASE.cap:id==='flare'?10:id==='medkit'?6+4*storN():id==='o2cap'?15+4*storN():id==='meal'?10:5;}
 function storN(){let n=G.mach.storage?1:0;BASE.mods.forEach(m=>{if(m.type==='storage')n++;});return n;}
 function giveItem(id,n,quiet){const it=ITEMS[id];if(!it)return 0;const cur=G.inv[id]||0;let add=n;if(it.c!=='key')add=Math.max(0,Math.min(n,itemCap(id)-cur));if(add<=0){if(!quiet){toast('Carry limit reached: '+it.n,'w');AU.deny();}return 0;}G.inv[id]=cur+add;if(!quiet){toast('+'+add+' '+it.n);AU.pickup();}ev('item',id);return add;}
 function takeItem(id,n){n=n||1;if((G.inv[id]||0)<n)return false;G.inv[id]-=n;if(!G.inv[id])delete G.inv[id];return true;}
@@ -2213,9 +2357,9 @@ function applyGear(){P.o2max=tankMax();P.hpmax=100;}
 function depthNow(){return Math.max(0,-P.pos.y);}
 let hurtT=0;function hurtFlash(){hurtT=1;}
 function die(reason){if(G.dead)return;if(typeof BOSS!=='undefined'&&BOSS.alive)bossReset();G.dead=true;G.stats.deaths++;P.vel.set(0,0,0);fadeTo(1,.9);const lostTxt=[];['scrap','fiber','copper','quartz','titanium','pearl','crystal'].forEach(k=>{const n=G.inv[k]||0;const _q=QUESTS[G.qi],_safe=_q&&((_q.title==='Heavier Water'&&G.si>=2)||(_q.title==='The Lantern'&&G.si===1)),l=_safe?0:Math.floor(n*.4);if(l>0){G.inv[k]=n-l;lostTxt.push(l+' '+ITEMS[k].n);if(!G.inv[k])delete G.inv[k];}});
- showTip(reason==='drown'?'You ran out of air':reason==='crush'?'The hull gave way':'Overwhelmed');
+ showTip(reason==='hunger'?'You starved':reason==='cold'?'You froze':reason==='drown'?'You ran out of air':reason==='crush'?'The hull gave way':'Overwhelmed');
  setTimeout(()=>{respawn(lostTxt);},2200);}
-function respawn(lost){const c=cellC(0,0);P.lv=0;P.seq=null;P.climb=null;airfx(1,false);P.mode='walk';P.pos.set(c[0],BASEY+P.eye,c[1]+1);P.vel.set(0,0,0);P.hp=70;P.temp=0;P.o2=P.o2max;P.yaw=Math.PI;P.pitch=0;G.dead=false;if(G.beacon&&G.devs.some(q=>q.t==='beacon')){P.mode='swim';P.pos.set(G.beacon.x,G.beacon.y+1.8,G.beacon.z);}P.inv=2;hideTip();fadeTo(0,1.2);toast('You woke up in Pelagia','a');if(lost&&lost.length)toast('Lost in the dark: '+lost.join(', '),'w');}
+function respawn(lost){const c=cellC(0,0);P.sub=false;P.cold=0;if(G.food<30)G.food=40;P.lv=0;P.seq=null;P.climb=null;airfx(1,false);P.mode='walk';P.pos.set(c[0],BASEY+P.eye,c[1]+1);P.vel.set(0,0,0);P.hp=70;P.temp=0;P.o2=P.o2max;P.yaw=Math.PI;P.pitch=0;G.dead=false;if(G.beacon&&G.devs.some(q=>q.t==='beacon')){P.mode='swim';P.pos.set(G.beacon.x,G.beacon.y+1.8,G.beacon.z);}P.inv=2;hideTip();fadeTo(0,1.2);toast('You woke up in Pelagia','a');if(lost&&lost.length)toast('Lost in the dark: '+lost.join(', '),'w');}
 /* ---------- movement ---------- */
 function doJump(dt,base){if(IN.hit('up')&&P.jh<=0&&P.jv<=0){P.jv=4.4;AU.step();}if(P.jv>0||P.jh>0){P.jv-=13*dt;P.jh=Math.max(0,P.jh+P.jv*dt);if(P.jh===0)P.jv=0;P.pos.y=base+P.jh;}else P.pos.y=lerp(P.pos.y,base,Math.min(1,dt*10));}
 function landStep(dt,ax,mag,boostWanted){const gh=heightAt(P.pos.x,P.pos.z);if(gh<=-.35||P.pos.y>gh+3.4){P.jh=0;P.jv=0;return false;}P.onLand=true;P.jh=P.jh||0;P.jv=P.jv||0;
@@ -2231,7 +2375,8 @@ function updatePlayer(dt,time){
  const cp=Math.cos(P.pitch);camDir.set(-Math.sin(P.yaw)*cp,Math.sin(P.pitch),-Math.cos(P.yaw)*cp);
  if(G.dead||uiBlock()){P.vel.multiplyScalar(1-Math.min(1,dt*3));P.pos.addScaledVector(P.vel,dt);return;}
  if(P.seq){seqStep(dt,time);return;}
- const ax=IN.axes(),vt=IN.vert(),boostWanted=IN.down('boost')||IN.down('boostBtn'),mag=Math.hypot(ax.x,ax.z);_r.set(Math.cos(P.yaw),0,-Math.sin(P.yaw));
+ if(P.sub){subStep(dt,time);return;}
+ const ax=IN.axes(),vt=IN.vert(),boostWanted=IN.down('boost')||IN.down('boostBtn'),mag=Math.hypot(ax.x,ax.z);{const f_=moveMul();ax.x*=f_;ax.z*=f_;}_r.set(Math.cos(P.yaw),0,-Math.sin(P.yaw));
  P.moving=mag>.05||vt!==0;P.inv-=dt;P.cd-=dt;
  const depth=depthNow();
  if(P.mode==='swim'){
@@ -2293,10 +2438,10 @@ function findScan(){const range=G.gear.scanner?38:26;let best=null,bs=1e9;
  return best;}
 let _hintT=0,elHint=null;function mkHint(){elHint=document.createElement('div');elHint.style.cssText='position:absolute;left:50%;top:calc(50% + 42px);transform:translateX(-50%);font:600 12px/1.2 system-ui,sans-serif;letter-spacing:.08em;color:#ffd9a0;text-shadow:0 0 6px #000;pointer-events:none;opacity:0;transition:opacity .15s;white-space:nowrap';document.getElementById('hud').appendChild(elHint);}
 function updateHint(dt){_hintT-=dt;if(_hintT>0)return;if(!elHint)mkHint();_hintT=.15;let txt='';if(P.tool===0&&P.mode==='swim'&&!G.dead&&!uiBlock()){const t=findScan();if(t&&CODEX[t.id])txt=G.codex[t.id]?'\u2713 '+CODEX[t.id].n:'\u25ce '+CODEX[t.id].n+' \u2014 hold USE to scan';}elHint.textContent=txt;elHint.style.opacity=txt?1:0;}
-function useTool(dt,time){updateGrapple(dt,time);updateHint(dt);if(G.dead||uiBlock()||P.mode==='walk'&&P.tool!==3&&P.tool!==0)return;
+function useTool(dt,time){updateGrapple(dt,time);updateHint(dt);if(P.sub||G.dead||uiBlock()||P.mode==='walk'&&P.tool!==3&&P.tool!==0)return;
  const down=IN.down('use');
  if(P.tool===0){const t=down?findScan():null;if(t&&P.mode==='swim'){if(!P.scanTarget||P.scanTarget.id!==t.id){P.scanTarget=t;P.scanT=0;}P.scanT+=dt*(G.gear.scanner?2:1)/1.5;if(((P.scanT*10)|0)!==P.scanLast){P.scanLast=(P.scanT*10)|0;AU.scan(P.scanT);}if(P.scanT>=1){finishScan(t.id);P.scanT=0;P.scanTarget=null;IN.release('use');}}else{P.scanT=Math.max(0,P.scanT-dt*(down?.7:2));if(!down)P.scanTarget=null;}}
- else if(P.tool===1){if(IN.hit('use')&&P.cd<=0){const lv=G.gear.prod||0,up=lv>=2,RG=up?22:11,DM=up?.93:.8;P.cd=up?1.1:1.3;AU.zap();vmFire('prod');let hit=false;for(const h of hostiles){if(!h.active||h.dead)continue;_dv.set(h.pos.x-P.pos.x,h.pos.y-P.pos.y,h.pos.z-P.pos.z);const d=_dv.length();if(d<RG&&_dv.dot(camDir)/d>DM){h.stun=3.5;h.flee=8;hit=true;ev('stun',h.kind);if(up){h.hp-=1.5;if(h.hp<=0)killHostile(h);}}}if(BOSS.alive&&BOSS.exposed){_dv.set(BOSS.H.x-P.pos.x,BOSS.H.y-P.pos.y,BOSS.H.z-P.pos.z);const bd=_dv.length();if(bd<(up?44:22)&&_dv.dot(camDir)/bd>.7)bossHurt(up?55:44);}else if(BOSS.alive&&BOSS.state!=='dying'){toast('Its guard is up. Wait for it to open.','w');}if(hit)toast(up?'Shocked':'Stunned','a');}}
+ else if(P.tool===1){if(IN.hit('use')&&P.cd<=0){const lv=G.gear.prod||0,up=lv>=2,RG=up?22:11,DM=up?.93:.8;P.cd=up?1.1:1.3;AU.zap();vmFire('prod');if(BOSS.alive&&BOSS.state==='lunge'&&!BOSS.hitL&&Math.hypot(P.pos.x-BOSS.H.x,P.pos.y-BOSS.H.y,P.pos.z-BOSS.H.z)<34)bossParry();let hit=false;for(const h of hostiles){if(!h.active||h.dead)continue;_dv.set(h.pos.x-P.pos.x,h.pos.y-P.pos.y,h.pos.z-P.pos.z);const d=_dv.length();if(d<RG&&_dv.dot(camDir)/d>DM){h.stun=3.5;h.flee=8;hit=true;ev('stun',h.kind);if(up){h.hp-=1.5;if(h.hp<=0)killHostile(h);}}}if(BOSS.alive&&BOSS.exposed){_dv.set(BOSS.H.x-P.pos.x,BOSS.H.y-P.pos.y,BOSS.H.z-P.pos.z);const bd=_dv.length();if(bd<(up?44:22)&&_dv.dot(camDir)/bd>.7)bossHurt(up?55:44);}else if(BOSS.alive&&BOSS.state!=='dying'){toast('Its guard is up. Wait for it to open.','w');}if(hit)toast(up?'Shocked':'Stunned','a');}}
  else if(P.tool===2){if(IN.hit('use')&&P.cd<=0){P.cd=.7;{const had=(G.inv.flare||0)>0;throwFlare();if(had)vmFire('flare');}}}
  else if(P.tool===3){if(IN.hit('use'))placeGhost();if(IN.hit('decon'))deconstructAimed();if(IN.hit('next'))cycleBuild(1);if(IN.hit('prev'))cycleBuild(-1);}
  else if(P.tool===4){grappleUse();}
@@ -2317,7 +2462,7 @@ function startCraft(r,n){n=r.gear?1:Math.max(1,Math.min(n||1,craftMax(r)||1));co
  crafting={r,n,t:0,dur:atFab?r.t/(BASE.ratio>.5?1:2):r.t*6*n};AU.craft();}
 function finishCraft(){const r=crafting.r,cn=crafting.n||1;crafting=null;if(r.out)Object.entries(r.out).forEach(([k,n])=>giveItem(k,n*cn,true));if(r.gear){G.gear[r.gear[0]]=r.gear[1];applyGear();if(r.gear[0]==='tank')P.o2=P.o2max;}G.stats.crafts+=cn;AU.ok();toast('Fabricated: '+r.n+(cn>1?' ×'+cn:''),'a');ev('craft',r.id);}
 function updateCraft(dt){if(!crafting)return;crafting.t+=dt;if(Math.random()<dt*3)AU.noise(.05,1800,.04,2);if(crafting.t>=crafting.dur)finishCraft();}
-function useConsumable(id){if(id==='medkit'&&G.inv.medkit){if(P.hp>=P.hpmax-1){toast('Health is full');return;}takeItem('medkit');P.hp=P.hpmax;AU.ok();toast('Health fully restored');}else if(id==='o2cap'&&G.inv.o2cap){takeItem('o2cap');P.o2=Math.min(P.o2max,P.o2+P.o2max*.35);AU.ok();toast('+35% air');}}
+function useConsumable(id){if(id==='meal'){eatMeal();return;}if(id==='medkit'&&G.inv.medkit){if(P.hp>=P.hpmax-1){toast('Health is full');return;}takeItem('medkit');P.hp=P.hpmax;AU.ok();toast('Health fully restored');}else if(id==='o2cap'&&G.inv.o2cap){takeItem('o2cap');P.o2=Math.min(P.o2max,P.o2+P.o2max*.35);AU.ok();toast('+35% air');}}
 function restAtBunk(){P.hp=P.hpmax;P.o2=P.o2max;AU.ok();saveGame('auto',true);toast('Rested — progress saved','a');ev('rest');}
 /* ================= STORY: comms, quests, events, achievements, endings ================= */
 const comm={q:[],cur:null,t:0,typed:0,cb:null,box:$('#comm'),nm:$('#cnm'),tx:$('#ctx'),bars:[...document.querySelectorAll('#comm .av i')]};
@@ -2577,14 +2722,14 @@ function fabView(sc,isGear){const atFab=!!G.mach.fab&&ui.at==='fab';
  if(!atFab&&isGear){sc.append(h('div',{class:'empty',text:G.mach.fab?'Use the Fabricator inside Pelagia (west room) to install upgrades.':'Repair the Fabricator in Pelagia first.'}));return;}
  sc.append(h('div',{class:'tag',style:{marginBottom:'8px'},text:crafting?'FABRICATING: '+crafting.r.n.toUpperCase()+(crafting.n>1?' \u00d7'+crafting.n:'')+'  '+Math.round(crafting.t/crafting.dur*100)+'%':atFab?'POWER '+Math.round(BASE.ratio*100)+'%'+(BASE.ratio<.5?'  \u00b7  UNDERPOWERED (slow)':''):'FIELD CRAFTING \u00b7 by hand, 6\u00d7 slower \u00b7 O2 and Medkits only. Use the Fabricator for everything else.'}));
  const inv=h('div',{class:'chips',style:{marginBottom:'10px'}});Object.keys(ITEMS).filter(k=>ITEMS[k].c==='raw'||ITEMS[k].c==='part').forEach(k=>inv.append(h('div',{class:'chip',text:ITEMS[k].n},h('b',{text:G.inv[k]||0}))));sc.append(inv);
- const dn=r=>r.gear&&(G.gear[r.gear[0]]||0)>=r.gear[1];let L=RECIPES.filter(r=>isGear?!!r.gear:!r.gear);if(!atFab)L=L.filter(r=>r.id==='o2cap'||r.id==='medkit');L=L.filter(r=>!dn(r)).concat(L.filter(dn));
+ const dn=r=>r.gear&&(G.gear[r.gear[0]]||0)>=r.gear[1];let L=RECIPES.filter(r=>!r.rb&&(isGear?!!r.gear:!r.gear));if(!atFab)L=L.filter(r=>r.id==='o2cap'||r.id==='medkit');L=L.filter(r=>!dn(r)).concat(L.filter(dn));
  const g=h('div',{class:'grid2'});L.forEach(r=>{const known=isKnown(r),can=hasItems(r.in),bulk=!r.gear&&known,mx=bulk?craftMax(r):1;let q=bulk?Math.max(1,Math.min(craftQty[r.id]||1,Math.max(1,mx))):1;craftQty[r.id]=q;const need={};Object.entries(r.in).forEach(([k,n])=>need[k]=n*q);const done=dn(r),lock=!known,setQ=v=>{craftQty[r.id]=Math.max(1,Math.min(v,Math.max(1,mx)));renderSlate();};
   g.append(h('div',{class:'card'+(lock||done?' locked':''),style:done?{opacity:.4,filter:'grayscale(1)'}:{}},h('h3',{},h('span',{text:r.n}),done?h('span',{class:'tag',text:'DONE'}):null),h('p',{text:lock?(r.data?'Research in the Lab ('+r.data+' data).':'Blueprint not found yet.'):r.d}),h('div',{class:'cost'},costTxt(need)),
   bulk&&!done?h('div',{class:'qty'},h('button',{class:'btn sm',disabled:q<=1||!!crafting,onclick:()=>{AU.click();setQ(q-1);}},'\u2212'),h('span',{class:'qn',text:'\u00d7'+q}),h('button',{class:'btn sm',disabled:q>=mx||!!crafting,onclick:()=>{AU.click();setQ(q+1);}},'+'),h('button',{class:'btn sm',disabled:mx<2||q>=mx||!!crafting,onclick:()=>{AU.click();setQ(mx);}},'Max')):null,
   h('button',{class:'btn sm pri',disabled:lock||done||!can||mx<1||!!crafting,onclick:()=>{startCraft(r,q);renderSlate();}},done?'Installed':(atFab?'Fabricate':'Hand-craft')+(q>1?' \u00d7'+q:''))));});sc.append(g);}
 const TABS={
  gear(sc){fabView(sc,true);},
- bag(sc){sc.append(h('div',{class:'sec',text:'Carried'}));const ch=h('div',{class:'chips'});const ids=Object.keys(G.inv);if(!ids.length)ch.append(h('div',{class:'empty',text:'Nothing carried. Swim out and collect materials from the seabed.'}));ids.forEach(k=>{const c=h('div',{class:'chip',text:ITEMS[k].n},h('b',{text:G.inv[k]+(ITEMS[k].c==='raw'||ITEMS[k].c==='part'?'/'+BASE.cap:'')}));ch.append(c);if(k==='medkit'||k==='o2cap')ch.append(h('button',{class:'btn sm',onclick:()=>{useConsumable(k);renderSlate();}},'Use '+ITEMS[k].n));});sc.append(ch);
+ bag(sc){sc.append(h('div',{class:'sec',text:'Carried'}));const ch=h('div',{class:'chips'});const ids=Object.keys(G.inv);if(!ids.length)ch.append(h('div',{class:'empty',text:'Nothing carried. Swim out and collect materials from the seabed.'}));ids.forEach(k=>{const c=h('div',{class:'chip',text:ITEMS[k].n},h('b',{text:G.inv[k]+(ITEMS[k].c==='raw'||ITEMS[k].c==='part'?'/'+BASE.cap:'')}));ch.append(c);if(k==='medkit'||k==='o2cap'||k==='meal')ch.append(h('button',{class:'btn sm',onclick:()=>{useConsumable(k);renderSlate();}},'Use '+ITEMS[k].n));});sc.append(ch);
   sc.append(h('div',{class:'sec',text:'Gear'}));const gl=[['Air tank',GEAR.tank[G.gear.tank]+' s'],['Dive suit','rated '+suitRating()+' m'],['Fins',G.gear.fins?'+16% speed':'none'],['Scooter',G.gear.scooter?'installed':'none'],['Lamp',G.gear.light?'Mk II':'Mk I'],['Scanner',G.gear.scanner?'Mk II':'Mk I'],['Stun Prod',G.gear.prod?'installed':'not built'],['Constructor',G.gear.build?'unlocked':'locked']];const gc=h('div',{class:'chips'});gl.forEach(([a,b])=>gc.append(h('div',{class:'chip',text:a},h('b',{text:b}))));sc.append(gc);
   const kk=Object.keys(G.inv).filter(k=>ITEMS[k].c==='key');if(kk.length){sc.append(h('div',{class:'sec',text:'Key items'}));kk.forEach(k=>sc.append(h('div',{class:'empty',text:ITEMS[k].n+(G.inv[k]>1?' ×'+G.inv[k]:'')})));}},
  fab(sc){fabView(sc,false);},
@@ -2626,15 +2771,15 @@ function snapshot(){const mods=[];BASE.mods.forEach(m=>mods.push({cx:m.cx,cz:m.c
 function saveGame(slot,quiet){if(gs.state!=='play'&&!quiet)return false;if(G.dead)return false;const ok=LS.set('abyss_save_'+slot,snapshot());if(!quiet)toast(ok?'Game saved':'Save failed','a');return ok;}
 function resetPicks(){PICKS.forEach(p=>{p.taken=false;p.mesh.visible=false;});}
 function applySnapshot(d){Object.keys(flags).forEach(k=>delete flags[k]);Object.assign(flags,d.flags||{});
- const base=Object.assign({},G);['act','qi','si','inv','bps','gear','mach','codex','logs','tones','cores','data','depl','stats','ach','ending','bioOn','started','tod','devs','beacon','contract','cdone'].forEach(k=>{if(d.G[k]!==undefined)G[k]=d.G[k];});G.dead=false;
+ const base=Object.assign({},G);['act','qi','si','inv','bps','gear','mach','codex','logs','tones','cores','data','depl','stats','ach','ending','bioOn','started','tod','devs','beacon','contract','cdone','food','sub','conv'].forEach(k=>{if(d.G[k]!==undefined)G[k]=d.G[k];});G.dead=false;
  PICKS.forEach(p=>{p.taken=!!flags['pk_'+p.id];p.mesh.visible=false;});
  if(flags.weld&&workshopDoor){COL.remove(workshopDoor);workshopDoorMesh.visible=false;}
  nodes.forEach(n=>{n.cool=0;n.amt=1;const t=G.depl[n.id];if(t&&Date.now()-t<240000){n.cool=(240000-(Date.now()-t))/1000;n.grp.visible=false;n.vis=false;}});
  initBase((d.G.mods&&d.G.mods.length?d.G.mods:CORE.map(c=>Object.assign({init:1},c))));devSync();BASE.air=d.air!=null?d.air:14;
- applyGear();P.pos.set(d.P.x,d.P.y,d.P.z);P.vel.set(0,0,0);P.yaw=d.P.yaw;P.pitch=d.P.pitch;P.mode=d.P.mode;P.lv=d.P.lv|0;P.seq=null;P.climb=null;P.hp=d.P.hp;P.o2=d.P.o2;P.tool=0;flags.edgeT=0;
+ applyGear();P.pos.set(d.P.x,d.P.y,d.P.z);P.vel.set(0,0,0);P.yaw=d.P.yaw;P.pitch=d.P.pitch;P.mode=d.P.mode;P.lv=d.P.lv|0;P.seq=null;P.climb=null;P.sub=false;P.cold=0;P.hp=d.P.hp;P.o2=d.P.o2;P.tool=0;flags.edgeT=0;
  stepStarted=d.G.stepStarted!=null?d.G.stepStarted:-1;AU.setChord(G.act-1);crafting=null;comm.q.length=0;comm.cur=null;comm.box.classList.remove('on');buildPaletteDirty=true;_lastBP='';updateObjective();}
 function loadGame(slot){const d=LS.get('abyss_save_'+slot,null);if(!d)return false;fadeQuick(()=>{applySnapshot(d);if(gs.state!=='play')startPlaying();toast('Game loaded');});return true;}
-function newGame(){Object.assign(G,{act:1,qi:0,si:0,inv:{},bps:{},gear:{tank:0,suit:0,fins:0,scooter:0,light:0,scanner:0,prod:0,build:0,heat:0,winch:0,armor:0},mach:{reactor:0,o2:0,fab:0,lab:0,bunk:0,storage:0},codex:{},logs:{},tones:{},cores:0,data:0,depl:{},stats:{time:0,depth:0,built:0,scans:0,crafts:0,deaths:0},ach:{},dead:false,ending:null,bioOn:0,started:false});
+function newGame(){Object.assign(G,{act:1,qi:0,si:0,inv:{},bps:{},gear:{tank:0,suit:0,fins:0,scooter:0,light:0,scanner:0,prod:0,build:0,heat:0,winch:0,armor:0},mach:{reactor:0,o2:0,fab:0,lab:0,bunk:0,storage:0},codex:{},logs:{},tones:{},cores:0,data:0,depl:{},stats:{time:0,depth:0,built:0,scans:0,crafts:0,deaths:0},ach:{},dead:false,ending:null,bioOn:0,started:false,food:100,sub:null,conv:{}});
  Object.keys(flags).forEach(k=>delete flags[k]);resetPicks();if(workshopDoor){workshopDoor.on=true;workshopDoorMesh.visible=true;}nodes.forEach(n=>{n.cool=0;n.amt=1;});
  initBase(CORE.map(c=>Object.assign({init:1},c)));BASE.air=14;applyGear();P.pos.set(POI.capsule[0]+10,.3,POI.capsule[2]+6);P.vel.set(0,0,0);P.yaw=Math.PI;P.pitch=-.15;P.mode='swim';P.hp=100;P.o2=P.o2max;P.tool=0;stepStarted=-1;AU.setChord(0);crafting=null;comm.q.length=0;comm.cur=null;buildPaletteDirty=true;_lastBP='';updateObjective();}
 /* ---------- title / flow ---------- */
