@@ -392,7 +392,7 @@ const MODS={
  thermal:{n:'Thermal Tap',d:'+45 power. Must sit on a vent cell.',cost:{tplate:3,circuit:2,wire:4},pw:45,bp:'thermal'},
  dock:{n:'Dock',d:'Extra airlock with a suit charger.',cost:{plate:6,wire:2,quartz:2},pw:-2,bp:'dock'},
  reclaimer:{n:'Scrap Reclaimer',d:'Sifts seawater every 10 s while powered: 50% scrap, 35% copper, 15% titanium.',cost:{plate:4,circuit:2,sulfur:3},pw:-8},
- aquarium:{n:'Aquarium',d:'Research data and a fresh fish every ~48 s while powered. A stocked tank also slows hunger.',cost:{glass:6,plate:2,coral:2},pw:-3},
+ aquarium:{n:'Aquarium',d:'Slowly breeds fish while powered (about one a minute per tank), plus a trickle of research data. Cook them at the Hab.',cost:{glass:6,plate:2,coral:2},pw:-3},
  beacon:{n:'Beacon (outpost)',d:'Free-standing. Sets your respawn point. Aim at the seabed.',cost:{plate:2,wire:1},dev:1},
  relay:{n:'Power Relay (outpost)',d:'Extends the station power link by 75 m. Aim at the seabed.',cost:{plate:3,wire:2,circuit:1},dev:1},
  drill:{n:'Auto-Drill (outpost)',d:'Place beside an ore node. Mines it while linked to power.',cost:{plate:4,wire:3,circuit:2},dev:1},
@@ -2019,7 +2019,7 @@ function buildModMesh(m){
  if(m.type==='aquarium'){const p=T2(-2.2,0),ag=new T.Group();ag.position.set(cx+p[0],FB+1.65,cz+p[1]);ag.rotation.y=(RR&1)?Math.PI/2:0;
   const w=new T.Mesh(UG.box,new T.MeshBasicMaterial({color:0x7fd8f0,transparent:true,opacity:.2,depthWrite:false,side:T.DoubleSide}));w.scale.set(.5,2.7,4.2);w.renderOrder=3;ag.add(w);
   const wm=new T.Mesh(UG.box,new T.MeshBasicMaterial({color:0x1a8ab0,transparent:true,opacity:.1,depthWrite:false}));wm.scale.set(.44,2.5,4.0);ag.add(wm);
-  m.aqf=[];for(let i=0;i<7;i++){const sp=SPEC[i%4],f=mkFish(sp,sp.len*.42);ag.add(f.g);m.aqf.push({g:f.g,tail:f.tail,ph:i*1.9,sp:.35+(i%3)*.12,y:-.8+((i*5)%7)*.27,x:(i%3-1)*.1});}
+  m.aqf=[];for(let i=0;i<7;i++){const sp=SPEC[i%4],f=mkFishM(sp,sp.len*.42);ag.add(f.g);m.aqf.push({g:f.g,tail:f.tail,ph:i*1.9,sp:.35+(i%3)*.12,y:-.8+((i*5)%7)*.27,x:(i%3-1)*.1});}
   const dg=new T.Group();dg.add(ag);scene.add(dg);m.dgrp=dg;}
  if(DOORT.includes(m.type)){const dg=new T.Group();for(let i=0;i<4;i++){if(!has(i))continue;const d=DIRS[i],ax=d[0]!==0,g=new T.Group();g.position.set(cx+d[0]*2.83,Y0,cz+d[1]*2.83);g.rotation.y=ax?Math.PI/2:0;const pl=new T.Plane(new T.Vector3(0,-1,0),Y0+2.7),mt=c=>{const q=lit(c);q.clippingPlanes=[pl];return q;},pg_=new T.Group();g.add(pg_);
    const pt=(mat,x,y,z,sx,sy,sz)=>{const o=new T.Mesh(UG.box,mat);o.position.set(x,y,z);o.scale.set(sx,sy,sz);pg_.add(o);};const m1=mt(0x56666e),m2=mt(0xd8a020),m3=mt(0x1a1a1a);pt(m1,0,1.35,0,2.3,2.7,.14);for(let k=0;k<4;k++)pt(m3,0,.5+k*.6,.08,2.1,.07,.04);pt(m2,0,.14,.09,2.3,.22,.05);pt(m2,0,.14,-.09,2.3,.22,.05);for(let k=0;k<4;k++)pt(m3,0,.5+k*.6,-.08,2.1,.07,.04);
@@ -2089,17 +2089,24 @@ function ptWalk(x,z){const L=P.lv|0,c=cellOf(x,z),m=modAt(c[0],c[1],L);if(!m)ret
  if(lx>=R&&Math.abs(lz)<1.1&&A(1,0))return true;if(lx<=-R&&Math.abs(lz)<1.1&&A(-1,0))return true;if(lz>=R&&Math.abs(lx)<1.1&&A(0,1))return true;if(lz<=-R&&Math.abs(lx)<1.1&&A(0,-1))return true;return false;}
 function canStand(x,z){const r=.36;return ptWalk(x,z)&&ptWalk(x+r,z)&&ptWalk(x-r,z)&&ptWalk(x,z+r)&&ptWalk(x,z-r);}
 function climbLadder(m,dir){if(P.climb||P.seq)return;P.climb={t:0,dir,m,x0:P.pos.x,z0:P.pos.z,y0:P.pos.y,s:0};AU.hatch();}
-function enterBase(m){if(P.seq)return;if(!m.core&&BASE.ratio<=.05){toast('Airlock has no power','w');return AU.deny();}m.dk=m.dk||{o:0,tg:0};const [cx,cz]=cellC(m.cx,m.cz),hd=m.hatch;P.seq={k:'in',m,t:0,a0:clamp((P.pos.x-cx)*hd[0]+(P.pos.z-cz)*hd[1],4.2,7)};P.yaw=Math.atan2(hd[0],hd[1]);P.pitch=0;P.lv=0;AU.hatch();}
+function enterBase(m){if(P.seq)return;if(!m.core&&BASE.ratio<=.05){toast('Airlock has no power','w');return AU.deny();}m.dk=m.dk||{o:0,tg:0};const [cx,cz]=cellC(m.cx,m.cz),hd=m.hatch;P.seq={k:'in',m,t:0,a0:clamp((P.pos.x-cx)*hd[0]+(P.pos.z-cz)*hd[1],3.6,9)};P.yaw=Math.atan2(hd[0],hd[1]);P.pitch=0;P.lv=0;AU.hatch();}
 function exitBase(m){if(P.seq)return;m.dk=m.dk||{o:0,tg:0};P.seq={k:'out',m,t:0,a0:0};const hd=m.hatch;P.yaw=Math.atan2(-hd[0],-hd[1]);P.pitch=0;AU.hatch();}
 const elAir=h('div',{style:{position:'fixed',inset:0,zIndex:6,pointerEvents:'none',opacity:0,transition:'opacity .4s',background:'linear-gradient(180deg,rgba(190,240,250,.8) 0,rgba(30,120,150,.55) 2.5%,rgba(10,70,95,.5) 100%)'}});document.body.append(elAir);
 function airfx(p,on){elAir.style.opacity=on?1:0;elAir.style.transform='translateY('+(p*100)+'%)';}
 function seqStep(dt,time){const s=P.seq,m=s.m,hd=m.hatch,[cx,cz]=cellC(m.cx,m.cz);s.t+=dt;const t=s.t,ez=k=>{k=clamp(k,0,1);return k*k*(3-2*k);},kk=Math.min(1,dt*10),yw=BASEY+1.45;P.vel.set(0,0,0);
  const put=(a,y)=>{P.pos.x=lerp(P.pos.x,cx+hd[0]*a,kk);P.pos.z=lerp(P.pos.z,cz+hd[1]*a,kk);P.pos.y=lerp(P.pos.y,y,kk);};
- if(s.k==='in'){if(t<.9){m.dk.tg=1;put(lerp(s.a0,4.2,ez(t/.9)),yw);}else if(t<2.9){m.dk.tg=t<2.35?1:0;put(lerp(4.2,1.1,ez((t-.9)/2)),yw);}
-  else{m.dk.tg=0;if(!s.d){s.d=1;P.mode='walk';AU.splash();}const p=ez((t-2.9)/1.5);airfx(p,p<1);put(1.1,BASEY+P.eye);if(t>4.5){airfx(1,false);P.seq=null;P.jh=0;P.jv=0;ev('enter');}}}
- else{if(t<.5){put(1.3,BASEY+P.eye);}else if(t<1.9){if(!s.f){s.f=1;AU.splash();}airfx(1-ez((t-.5)/1.4),true);put(1.3,BASEY+P.eye);}
-  else{if(!s.d){s.d=1;P.mode='swim';P.o2=Math.max(P.o2,P.o2max*.9);airfx(0,false);}if(t<2.4){m.dk.tg=1;put(1.3,yw);}else{const a=lerp(1.3,7,ez((t-2.4)/2.1));m.dk.tg=a<4.1?1:0;put(a,yw);}if(t>4.6){m.dk.tg=0;P.seq=null;ev('exit');}}}}
-let _dkT=0;tick.push(function(t){const dt=Math.min(.05,Math.max(0,t-_dkT));_dkT=t;BASE.mods.forEach(m=>{if(m.lid&&m.dk){const d=m.dk,df=d.tg-d.o,mv=Math.abs(df)>.001;if(mv)d.o=clamp(d.o+Math.sign(df)*dt*.9,0,1);m.lidP.rotation.x=-(d.o*d.o*(3-2*d.o))*1.75;if(m.lidC)m.lidC.on=d.o<.35;m.lamp.material.color.setHex(mv?(Math.sin(t*14)>0?0xff5a3a:0x2a0a05):(d.o>.5?0xffb24a:0x2fe0a0));}
+ if(s.k==='in'){s.p=s.p||0;
+  if(s.p===0){put(lerp(s.a0,7.4,ez(t/.7)),yw);if(t>.7)s.p=1;}
+  else if(s.p===1){m.dk.tg=1;put(7.4,yw);if(m.dk.o>.97){s.p=2;s.g=0;}}
+  else if(s.p===2){s.g+=dt;const a=lerp(7.4,1.1,ez(s.g/1.9));put(a,yw);m.dk.tg=a>2.4?1:0;if(s.g>=1.9){s.p=3;s.q=0;}}
+  else{m.dk.tg=0;if(!s.d){s.d=1;P.mode='walk';AU.splash();}s.q+=dt;const p=ez(s.q/1.5);airfx(p,p<1);put(1.1,BASEY+P.eye);if(s.q>1.6){airfx(1,false);P.seq=null;P.jh=0;P.jv=0;ev('enter');}}}
+ else{if(t<.5){put(1.3,BASEY+P.eye);}
+  else if(t<1.9){if(!s.f){s.f=1;AU.splash();}airfx(1-ez((t-.5)/1.4),true);put(1.3,BASEY+P.eye);}
+  else{if(!s.d){s.d=1;P.mode='swim';P.o2=Math.max(P.o2,P.o2max*.9);airfx(0,false);}
+   if(!s.g&&!(m.dk.o>.97)){m.dk.tg=1;put(1.3,yw);}
+   else{m.dk.tg=1;s.g=(s.g||0)+dt;const a=lerp(1.3,8.4,ez(s.g/2.6));put(a,yw);if(a>6.6)m.dk.tg=0;if(s.g>2.8){m.dk.tg=0;P.seq=null;ev('exit');}}}}
+}
+let _dkT=0;tick.push(function(t){const dt=Math.min(.05,Math.max(0,t-_dkT));_dkT=t;BASE.mods.forEach(m=>{if(m.lid&&m.dk){const d=m.dk,df=d.tg-d.o,mv=Math.abs(df)>.001;if(mv)d.o=clamp(d.o+Math.sign(df)*dt*1.4,0,1);m.lidP.rotation.x=-(d.o*d.o*(3-2*d.o))*1.75;if(m.lidC)m.lidC.on=d.o<.35;m.lamp.material.color.setHex(mv?(Math.sin(t*14)>0?0xff5a3a:0x2a0a05):(d.o>.5?0xffb24a:0x2fe0a0));}
  if(m.doors)m.doors.forEach(D=>{const near=P.mode==='walk'&&Math.abs(P.pos.y-(D.y+1.5))<2.6&&Math.hypot(P.pos.x-D.x,P.pos.z-D.z)<2.7,pre=D.o;D.o=clamp(D.o+(near?1:-1)*dt*2.2,0,1);if((pre===0&&D.o>0)||(pre===1&&D.o<1))AU.noise(.3,420,.1,.9,'lowpass');D.pn.position.y=D.o*2.75;D.lamp.material.color.setHex(D.o>.02&&D.o<.98?0xffb24a:(D.o>=.98?0x2fe0a0:0xff5a3a));});});});
 /* ---------- outposts (free-standing devices) + breach events ---------- */
 BASE.devs=[];
@@ -2131,7 +2138,7 @@ let _brT=0,_leakMesh=null,_leakInter=null,_firstBreach=false;
 function devTick(dt,time){
  for(const d of BASE.devs){for(const p of d.sp){if(p.k==='spin')p.m.rotation.z+=dt*p.s*(d.on?1:.15);else if(p.k==='blink'){const v=.6+.4*Math.sin(time*4+d.x);p.m.scale.setScalar(.3+v*.25);}else if(p.k==='sweep')p.m.rotation.y=Math.sin(time*.8)*.8;}
   if(d.t==='drill'&&d.on&&BASE.ratio>.3){d.rec.dT=(d.rec.dT||0)+dt;if(d.rec.dT>=28){d.rec.dT=0;if((d.rec.st||0)<12)d.rec.st=(d.rec.st||0)+1;}}}
- if(BASE.ratio>.3){BASE.rT=(BASE.rT||0)+dt;if(BASE.rT>=10){BASE.rT=0;const n=countType('reclaimer');for(let i=0;i<n;i++){const r=Math.random();giveItem(r<.5?'scrap':r<.85?'copper':'titanium',1,true);}}BASE.aT=(BASE.aT||0)+dt;if(BASE.aT>=24){BASE.aT=0;const n=countType('aquarium');if(n>0){G.data+=n;BASE.fT=(BASE.fT||0)+1;if(BASE.fT%2===0)giveItem('fish',n,true);}}}
+ if(BASE.ratio>.3){BASE.rT=(BASE.rT||0)+dt;if(BASE.rT>=10){BASE.rT=0;const n=countType('reclaimer');for(let i=0;i<n;i++){const r=Math.random();giveItem(r<.5?'scrap':r<.85?'copper':'titanium',1,true);}}BASE.aT=(BASE.aT||0)+dt;if(BASE.aT>=24){BASE.aT=0;const n=countType('aquarium');if(n>0){G.data+=n;BASE.fT=(BASE.fT||0)+1;if(BASE.fT%3===0)giveItem('fish',n,true);}}}
  // hull breaches
  if(G.act>=2&&!BASE.breach&&G.started&&!flags.bossOn){_brT+=dt;if(_brT>1500+Math.random()*900){_brT=0;const L=[];BASE.mods.forEach(m=>{if(!m.core&&!m.init&&!m.leaked&&m.type!=='corridor')L.push(m);});if(L.length){const m=L[(Math.random()*L.length)|0];BASE.breach=m;m.leak=1;m.leaked=1;const [x,z]=cellC(m.cx,m.cz);
    if(!_leakMesh){_leakMesh=new T.Mesh(UG.sph,new T.MeshBasicMaterial({color:0xff5040}));scene.add(_leakMesh);_leakInter=addInter({id:'breach',base:true,x:0,y:0,z:0,r:6,label:()=>BASE.breach?'Seal hull breach (1 Hull Plate)':null,act:()=>{if(!BASE.breach)return;if(takeItem('plate',1)){BASE.breach.leak=0;BASE.breach=null;_leakMesh.visible=false;AU.ok();AU.hatch();toast('Breach sealed','a');recalcBase();}else{toast('You need a Hull Plate','w');AU.deny();}},vis:()=>!!BASE.breach});}
@@ -2166,20 +2173,20 @@ const CONV=[
  {id:'c4',act:4,t:'Holding its breath',s:"\"Can you hear it? Not as sound. As an absence, in every sensor I own, as if the sea were holding its breath. If it asks something of you, I want you to know I will not override you. Not again. Whatever you choose.\"",o:[
   {l:"I'll trust you.",r:"\"Then I will be worthy of it. Go carefully. And Rook? Come back through the airlock the way you left. Shoulders first.\"",log:'mara4',set:'maraTrust'},
   {l:"I'll trust myself.",r:"\"Good. That is exactly what she would have said. I will be here either way.\"",log:'mara4',set:'rookSelf'}]}];
-const convNext=()=>CONV.find(c=>G.act>=c.act&&!(G.conv&&G.conv[c.id]));
+const convNext=()=>CONV.find(c=>G.act>=c.act&&!(G.conv&&G.conv[c.id])&&(!c.logs||c.logs.every(l=>G.logs[l])));
 function talkMara(){const c=convNext();if(!c){toast('MARA is quiet. The cups sit where they always sit.');return;}
  const show=(txt,opts)=>choose('MARA · '+c.t,txt,opts,false);
  show(c.s,c.o.filter(o=>!o.need||G.logs[o.need]).map(o=>({l:o.l,fn:()=>{if(!o.again){G.conv=G.conv||{};G.conv[c.id]=1;G.data+=(o.bonus||12);}if(o.set)flags[o.set]=1;AU.ok();show(o.r,[{l:'Continue',fn:()=>{if(o.log)readLog(o.log,true);}}]);}})));}
 /* ---- fish ---- */
 const SPEC=[{c:0xff9a3a,c2:0xffffff,len:.8,a:0,b:90},{c:0x3a8aff,c2:0xffd24a,len:.9,a:0,b:120},{c:0xc8d4da,c2:0x6a7a84,len:1.2,a:10,b:200},{c:0xffd84a,c2:0x3a3a3a,len:.7,a:0,b:70},{c:0x35f0ff,c2:0xff4aff,len:.9,glow:1,a:40,b:420},{c:0xb06aff,c2:0x35ffd0,len:1.1,glow:1,a:120,b:420}];
-function mkFish(sp,L){const g=new T.Group(),mt=sp.glow?new T.MeshBasicMaterial({color:sp.c}):lit(sp.c),m2=sp.glow?new T.MeshBasicMaterial({color:sp.c2}):lit(sp.c2),ey=new T.MeshBasicMaterial({color:0xffffff}),pu=new T.MeshBasicMaterial({color:0x000000});
+function mkFishM(sp,L){const g=new T.Group(),mt=sp.glow?new T.MeshBasicMaterial({color:sp.c}):lit(sp.c),m2=sp.glow?new T.MeshBasicMaterial({color:sp.c2}):lit(sp.c2),ey=new T.MeshBasicMaterial({color:0xffffff}),pu=new T.MeshBasicMaterial({color:0x000000});
  const add=(geo,mat,x,y,z,sx,sy,sz,rx,par)=>{const o=new T.Mesh(UG[geo],mat);o.position.set(x,y,z);o.scale.set(sx*L,sy*L,sz*L);o.position.multiplyScalar(L);o.rotation.x=rx||0;(par||g).add(o);return o;};
  add('sph2',mt,0,0,0,.36,.46,1);add('sph2',m2,0,-.08,.1,.3,.2,.6);const tail=new T.Group();tail.position.z=-.45*L;g.add(tail);add('cone',m2,0,0,-.2,.05,.45,.6,Math.PI/2,tail);
  add('cone',m2,0,.26,.0,.05,.3,.5);add('box',m2,.2,-.1,.2,.18,.04,.18);add('box',m2,-.2,-.1,.2,.18,.04,.18);
  for(const s of[-1,1]){add('sph',ey,s*.15,.08,.36,.12,.12,.12);add('sph',pu,s*.18,.08,.39,.06,.06,.06);}
  if(sp.glow)add('sph',new T.MeshBasicMaterial({color:0xffffff}),0,.3,.3,.08,.08,.08);return{g,tail};}
 const FSH=[];let fishInit=false;
-function fishTick(dt,t){if(!fishInit){fishInit=true;for(let i=0;i<18;i++){const sp=SPEC[i%6],f=mkFish(sp,sp.len);f.sp=sp;f.pos=new T.Vector3();f.dir=new T.Vector3(1,0,0);f.on=false;f.ph=Math.random()*6;f.t=0;f.g.visible=false;scene.add(f.g);FSH.push(f);}}
+function fishTick(dt,t){if(!fishInit){fishInit=true;for(let i=0;i<18;i++){const sp=SPEC[i%6],f=mkFishM(sp,sp.len);f.sp=sp;f.pos=new T.Vector3();f.dir=new T.Vector3(1,0,0);f.on=false;f.ph=Math.random()*6;f.t=0;f.g.visible=false;scene.add(f.g);FSH.push(f);}}
  const act=gs.state==='play'&&!G.dead&&P.mode==='swim'&&!P.seq&&!P.sub;let near=null,nd=2.3;
  for(const f of FSH){if(!act){f.g.visible=false;f.on=false;continue;}
   const dx=f.pos.x-P.pos.x,dz=f.pos.z-P.pos.z,dy=f.pos.y-P.pos.y,d=Math.hypot(dx,dy,dz);
@@ -2198,14 +2205,14 @@ function cookFish(){if(BASE.ratio<.15){toast('The stove needs power','w');return
 const waterTemp=d=>Math.max(1.5,26-d*.062);
 function moveMul(){return(G.food<15?.72:1)*(1-clamp(((P.cold||0)-60)/130,0,.3));}
 function survTick(dt,t){if(gs.state!=='play'||G.dead)return;if(G.food==null)G.food=100;
- G.food=Math.max(0,G.food-dt*.045*(1-.25*Math.min(2,countType('aquarium'))));
+ G.food=Math.max(0,G.food-dt*.045);
  if(G.food<=0){P.hp-=(1.2+(P.mode==='walk'?2.5:0))*dt;if(P.hp<=0)die('hunger');}
  const fb=G.food<10?2:G.food<25?1:0;if(fb>_hw){toast(fb===2?'Starving. Eat something.':'You are getting hungry','w');}_hw=fb;
- const d=Math.max(0,-P.pos.y),c=clamp((14-waterTemp(d))/12,0,1);
- if(P.mode==='swim'&&!P.sub&&c>0)P.cold=clamp((P.cold||0)+c*1.5*(G.gear.heater?.12:1)*(1-.08*(G.gear.suit||0))*dt,0,100);else P.cold=Math.max(0,(P.cold||0)-(P.mode==='walk'||P.sub?12:3)*dt);
+ const d=Math.max(0,-P.pos.y),c=clamp((14-waterTemp(d))/12,0,1),ic=iceK(P.pos.x,P.pos.z);
+ if(P.mode==='swim'&&!P.sub&&(c>0||ic>0))P.cold=clamp((P.cold||0)+(c*1.5+ic*3.6)*(G.gear.heater?.12:1)*(1-.08*(G.gear.suit||0))*dt,0,100);else P.cold=Math.max(0,(P.cold||0)-(P.mode==='walk'||P.sub?12:3)*dt);
  if(P.cold>=90){P.hp-=3*dt;if(P.hp<=0)die('cold');if(t-_hw2>6){_hw2=t;toast('Freezing. Rise or build a Suit Heater.','w');}}
  _xs-=dt;if(_xs<=0){_xs=.25;if(!xsEl){xsEl=document.createElement('div');xsEl.style.cssText='position:absolute;left:14px;top:172px;font:600 11px/1.5 monospace;letter-spacing:.1em;color:#ffd9a0;text-shadow:0 0 4px #000;pointer-events:none';document.getElementById('hud').appendChild(xsEl);}
-  const ln=['FOOD '+Math.round(G.food)+'%'];if(P.mode==='swim')ln.push('WATER '+waterTemp(d).toFixed(1)+'\u00b0C');if((P.cold||0)>3)ln.push('COLD '+Math.round(P.cold)+'%');if(P.sub&&G.sub)ln.push('SUB FUEL '+Math.round(G.sub.fuel)+'%');xsEl.textContent=ln.join('  \u00b7  ');xsEl.style.color=G.food<25||(P.cold||0)>60?'#ff9a8a':'#ffd9a0';}}
+  const zl=siteLabel(),ln=['FOOD '+Math.round(G.food)+'%'];if(zl)ln.unshift(zl);if(P.mode==='swim')ln.push('WATER '+(ic>0?Math.min(waterTemp(d),-1.8+(1-ic)*3):waterTemp(d)).toFixed(1)+'\u00b0C');if((P.cold||0)>3)ln.push('COLD '+Math.round(P.cold)+'%');if(P.sub&&G.sub)ln.push('SUB FUEL '+Math.round(G.sub.fuel)+'%');xsEl.textContent=ln.join('  \u00b7  ');xsEl.style.color=G.food<25||(P.cold||0)>60?'#ff9a8a':'#ffd9a0';}}
 let _hw2=0;
 /* ---- submarine ---- */
 let SUBM=null,subInter=null;const SUBV=new T.Vector3(),_sp=new T.Vector3();
@@ -2262,6 +2269,8 @@ function floraTick(dt,t){if(!floInit){floInit=true;for(let i=0;i<26;i++){const g
 /* ---- master tick ---- */
 let _xT=0;tick.push(function(t){const dt=Math.min(.05,Math.max(0,t-_xT));_xT=t;
  survTick(dt,t);fishTick(dt,t);floraTick(dt,t);buoyTick(dt,t);
+ if(!SITEB&&gs.state==='play'){SITEB=true;try{buildSites();}catch(e){console.error('sites',e);IC=null;}}
+ try{siteTick(dt,t);}catch(e){if(!siteTick.er){siteTick.er=1;console.error('siteTick',e);}}
  if(!SUBM){SUBM=buildSubMesh();SUBM.visible=false;scene.add(SUBM);}
  const S=G.sub;if(!S||gs.state==='title'){SUBM.visible=false;}else{SUBM.visible=true;
   if(S.docked){const b=findBay();if(b){const c=cellC(b.cx,b.cz);SUBM.position.set(c[0],BASEY+(b.lv|0)*LH+1.3,c[1]);SUBM.scale.setScalar(.62);SUBM.rotation.set(0,0,0);}else SUBM.visible=false;}
@@ -2271,6 +2280,93 @@ let _xT=0;tick.push(function(t){const dt=Math.min(.05,Math.max(0,t-_xT));_xT=t;
   if(P.sub){subInter.x=P.pos.x;subInter.y=P.pos.y;subInter.z=P.pos.z;}else{subInter.x=S.x;subInter.y=S.y;subInter.z=S.z;}
   if(P.sub&&S&&G.mach){U.uLP.value.set(S.x,S.y,S.z);U.uLC.value.set(.9,.74,2.4,150);}}
  BASE.mods.forEach(m=>{if(m.aqf)m.aqf.forEach(f=>{const s=Math.sin(t*f.sp+f.ph);f.g.position.set(f.x+Math.sin(t*.7+f.ph)*.1,f.y+Math.sin(t*1.3+f.ph)*.15,s*1.7);f.g.rotation.y=Math.cos(t*f.sp+f.ph)>=0?0:Math.PI;f.tail.rotation.y=Math.sin(t*9+f.ph)*.5;});});});
+
+/* ===== EXTRA 2: Glacier Shelf + Caldera ===== */
+ITEMS.frostcry={n:'Frost Crystal',c:'raw'};ITEMS.obsidian={n:'Obsidian',c:'raw'};GEAR.cool=[0,1];
+{const r={id:'cooler',n:'Suit Cooling System',d:'Active coolant loop. Cuts heat build-up by 95%. Required to enter the Caldera.',gear:['cool',1],in:{tplate:4,circuit:3,frostcry:3,obsidian:2},data:45,t:8};RECIPES.push(r);RBY[r.id]=r;}
+Object.assign(LOGS,{
+ ice1:{t:'Ice Core 7',by:'Dr. Hanne Lund, glaciologist',x:"The core is clean to four hundred metres and then, at the bottom, it is not. There is a band of ice with air in it that should not exist. Air older than the shelf. Air that hums when I hold it to my ear.\n\nI said so on the radio and Pelagia went quiet. Then Dr. Okafor said, very gently, 'Hanne, come home.' I said I would, after one more core."},
+ ice2:{t:'For Mira',by:'Hanne Lund',x:"Mira, my love. If the pod ever gets this to you, know that I was not afraid. The ice here makes a sound like someone breathing out, very slowly, and after a few weeks I stopped minding.\n\nI am sorry about the recital. I am sorry about the birthdays. I kept one core aside for you, number nine. Hold it to your ear and you will hear what I heard. It is the most beautiful thing I have ever been wrong about."},
+ vol1:{t:'Caldera Notes',by:'Dr. Teodor Ashby, volcanologist',x:"Day 40. The volcano is not erupting on a schedule. It is erupting on a rhythm. I plotted fifty-one events and the gaps fit a pattern too tidy for rock. Lund's ice hums at the same interval.\n\nI have stopped believing in coincidence. I have started believing in listeners."},
+ vol2:{t:'Last Entry',by:'Dr. Teodor Ashby',x:"Day 63. The sensors say the next event is mine to survive or not. I am staying at the rim to finish the series. Someone should know the pattern.\n\nTell Pelagia the mountain and the ice are counting toward the same number. Tell my sister the coffee here is terrible and I would give anything for a cup. Tell whoever finds this: be braver than I was careful."}});
+CONV.push({id:'c5',act:3,logs:['ice2','vol2'],t:'Two messages',s:"\"You have been reading Lund and Ashby. I knew them. Not well, but I knew them. Lund sent me tea recipes she could never make. Ashby argued with me about whether I could be lonely. I said I did not know. He said that was the most human answer he had heard.\"",o:[
+ {l:'They were both trying to warn us.',r:"\"Yes. And both of them stayed one measurement too long. I think that is what it is to love your work: it is very hard to leave the instrument.\" A pause. \"I do not want that to be you.\"",log:'mara3',set:'maraWorries'},
+ {l:'What do you want me to do with this?',r:"\"Carry it. That is all. Somebody should carry what they found, and I cannot leave this room.\"",log:'mara3',set:'maraAsks'}]});
+{const o=convNext;}
+/* zones */
+let IC=null,VO=null,SITEB=false,SITEC=[],SITEN=[],SHARDS=[],VBOMB=[],AUR=null,VLAV=null,VGLOW=null,VGEY=[],_zn='',_eru=40,_zt=0;
+const ICE_R=95;
+function iceK(x,z){if(!IC)return 0;return clamp(1-Math.hypot(x-IC.x,z-IC.z)/ICE_R,0,1);}
+function siteLabel(){if(!IC)return'';const di=Math.hypot(P.pos.x-IC.x,P.pos.z-IC.z),dv=Math.hypot(P.pos.x-VO.x,P.pos.z-VO.z);const z=di<ICE_R?'GLACIER SHELF':dv<VO.r+60?'THE CALDERA':'';if(z&&z!==_zn)toast(z==='GLACIER SHELF'?'Glacier Shelf: bitter cold. A Suit Heater is strongly advised.':'The Caldera: extreme heat and eruptions. A Suit Cooling System is required.','w');_zn=z;return z;}
+function buildSites(){
+ let sd=11;const rn=()=>(sd=(sd*1664525+1013904223)>>>0)/4294967296;
+ const M=(geo,mat,x,y,z,sx,sy,sz,rx,ry,rz,par)=>{const o=new T.Mesh(geo,mat);o.position.set(x,y,z);o.scale.set(sx,sy,sz);o.rotation.set(rx||0,ry||0,rz||0);(par||scene).add(o);return o;};
+ const ic=pol(255,40),vc=pol(330,195);IC={x:ic[0],z:ic[2],y:heightAt(ic[0],ic[2])};VO={x:vc[0],z:vc[2],y:0,r:46};
+ const HX=new T.CylinderGeometry(.5,.5,1,6),HC=new T.ConeGeometry(.5,1,6);
+ const ICEM=lit(0xbfefff,{transparent:true,opacity:.62,flatShading:true,depthWrite:false,emissive:0x15506a}),ICE2=lit(0x6fc8ee,{transparent:true,opacity:.8,flatShading:true,depthWrite:false,emissive:0x0e3a58}),BONE=lit(0xe6e9e0),RUST=lit(0xa4542a),DARK=lit(0x2a343c);
+ const crystal=(mat,x,y,z,h,w,tx,tz,par)=>{const g=new T.Group();g.position.set(x,y,z);g.rotation.set(tx||0,0,tz||0);M(HX,mat,0,h/2,0,w,h,w,0,0,0,g);M(HC,mat,0,h+h*.22,0,w,h*.44,w,0,0,0,g);(par||scene).add(g);return g;};
+ /* ---- glacier ---- */
+ const GI=new T.Group();scene.add(GI);SITEC.push({g:GI,x:IC.x,z:IC.z,r:300});
+ const hy=(x,z)=>heightAt(x,z);
+ for(let i=0;i<16;i++){const a=rn()*TAU,r=10+rn()*70,x=IC.x+Math.cos(a)*r,z=IC.z+Math.sin(a)*r,y=hy(x,z),h=10+rn()*20;crystal(i%3?ICEM:ICE2,x,y-1,z,h,3+rn()*3,(rn()-.5)*.3,(rn()-.5)*.3,GI);for(let k=0;k<3;k++){const b=rn()*TAU;crystal(ICEM,x+Math.cos(b)*3.5,hy(x+Math.cos(b)*3.5,z+Math.sin(b)*3.5)-1,z+Math.sin(b)*3.5,h*.45,1.6+rn()*1.2,Math.sin(b)*.5,-Math.cos(b)*.5,GI);}COL.sphere(x,y+h*.4,z,3,'rock');}
+ for(let i=0;i<12;i++){const x=IC.x+(rn()-.5)*110,z=IC.z+(rn()-.5)*110,s=M(HX,ICEM,x,hy(x,z)+14+rn()*26,z,1+rn()*1.4,1.6+rn()*2,1+rn()*1.4,rn(),rn(),rn(),GI);s.userData.sp=.1+rn()*.25;SHARDS.push(s);}
+ /* arch cave with aurora */
+ {const ax=IC.x,az=IC.z,ay=hy(ax,az);M(UG.box,ICEM,ax-7,ay+10,az,3.5,24,16,0,0,.38,GI);M(UG.box,ICEM,ax+7,ay+10,az,3.5,24,16,0,0,-.38,GI);M(UG.box,ICE2,ax,ay+21,az,12,3,18,0,0,0,GI);
+  for(let i=0;i<8;i++)M(UG.box,new T.MeshBasicMaterial({color:0x66e0ff}),ax-9+i*2.6,ay+.1,az+8.2,.8,.05,.4,0,0,0,GI);
+  const pg=new T.PlaneGeometry(34,9,28,1),col=new Float32Array(pg.attributes.position.count*3);for(let i=0;i<pg.attributes.position.count;i++){const u=i%29/28,c=new T.Color().setHSL(.46+u*.3,.9,.55);col.set([c.r,c.g,c.b],i*3);}pg.setAttribute('color',new T.BufferAttribute(col,3));
+  AUR=M(pg,new T.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.4,side:T.DoubleSide,depthWrite:false,blending:T.AdditiveBlending}),ax,ay+16,az-1,1,1,1,0,0,0,GI);AUR.userData.base=pg.attributes.position.array.slice();
+  COL.sphere(ax-8,ay+8,az,6,'rock');COL.sphere(ax+8,ay+8,az,6,'rock');}
+ /* whale skeleton in ice */
+ {const wx=IC.x-34,wz=IC.z+22,wy=hy(wx,wz)+9;M(UG.box,lit(0x9fe8ff,{transparent:true,opacity:.28,depthWrite:false,emissive:0x0e4060}),wx,wy,wz,58,17,17,0,.3,0,GI);const cr=new T.Group();cr.position.set(wx,wy,wz);cr.rotation.y=.3;GI.add(cr);
+  for(let i=0;i<22;i++){const t=i/21,x=-24+t*40,s=1.1-t*.55;M(UG.sph,BONE,x,Math.sin(t*3)*.8,0,1.4*s,1.3*s,1.4*s,0,0,0,cr);if(i>2&&i<15)for(const sg of[-1,1]){const rb=M(new T.TorusGeometry(3.4*(1-Math.abs(t-.3)*.9),.22,5,10,Math.PI),BONE,x,-.2,0,1,1,1,0,Math.PI/2,sg>0?Math.PI*.5:-Math.PI*.5,cr);}}
+  M(UG.sph2,BONE,-29,0,0,8,4.6,5.2,0,0,0,cr);M(UG.box,BONE,-32,-2.8,0,6.2,1.1,4,0,0,.1,cr);M(UG.box,BONE,18,1.2,0,3,.5,9,0,0,0,cr);
+  addInter({id:'ice_skull',x:wx-Math.cos(.3)*29,y:wy,z:wz+Math.sin(.3)*29,r:9,label:()=>(G.logs.ice1?'Re-read':'Read')+' - Ice Core 7',act:()=>readLog('ice1')});COL.sphere(wx,wy,wz,9,'rock');}
+ /* Thule-2 pod */
+ {const px=IC.x+36,pz=IC.z-24,py=hy(px,pz)+2;const g=new T.Group();g.position.set(px,py,pz);g.rotation.set(.2,.6,.15);GI.add(g);M(UG.sph2,RUST,0,1.6,0,6,4.6,6,0,0,0,g);M(UG.tor,DARK,0,1.8,3.1,3.2,3.2,1.2,0,0,0,g);M(UG.sph2,new T.MeshBasicMaterial({color:0x2a5a6a,transparent:true,opacity:.6}),0,1.8,2.9,2.4,2,1.2,0,0,0,g);M(UG.cyl,DARK,-1.8,4.6,0,.12,2.6,.12,0,0,.3,g);for(const s of[-1.8,1.8])M(UG.cylh,DARK,s,-.6,0,.2,5,.2,Math.PI/2,0,0,g);
+  for(let i=0;i<7;i++)crystal(ICEM,Math.cos(i)*2.6,1.6+Math.sin(i*1.7)*1.3,Math.sin(i)*2.6,1.2+rn(),.5+rn()*.4,rn(),rn(),g);
+  addInter({id:'ice_pod',x:px,y:py+2,z:pz,r:7,label:()=>(G.logs.ice2?'Re-read':'Read')+' - For Mira',act:()=>readLog('ice2')});COL.sphere(px,py+2,pz,4,'rock');}
+ /* ice-core spots + frost nodes */
+ for(let i=0;i<3;i++){const a=i*2.1+.7,r=30+i*14,x=IC.x+Math.cos(a)*r,z=IC.z+Math.sin(a)*r,y=hy(x,z);const g=new T.Group();g.position.set(x,y,z);GI.add(g);M(UG.cyl,DARK,0,.8,0,.6,1.6,.6,0,0,0,g);M(UG.cyl,ICE2,0,2,0,.34,2,.34,0,0,0,g);M(UG.box,DARK,.9,.5,0,.8,.2,.4,0,0,0,g);const key='core'+i;
+  addInter({id:'icecore'+i,x,y:y+1.5,z,r:5,label:()=>flags[key]?null:'Take an ice core sample',vis:()=>!flags[key],act:()=>{flags[key]=1;G.data+=25;AU.ok();toast('Ancient ice core sealed (+25 data). The air inside hums.','a');g.children[1].visible=false;}});}
+ const fnode=(grp,mat,x,y,z,item,n,id,label,sz)=>{const g=new T.Group();g.position.set(x,y,z);(grp).add(g);crystal(mat,0,0,0,sz*1.2,sz*.5,0,0,g);crystal(mat,.5,0,.2,sz*.8,sz*.35,.3,.3,g);crystal(mat,-.4,0,-.3,sz*.7,sz*.3,-.3,-.2,g);const nd={g,cd:0};SITEN.push(nd);
+  addInter({id,x,y:y+1,z,r:4.5,label:()=>nd.cd>0?null:label,vis:()=>nd.cd<=0,act:()=>{if(nd.cd>0)return;if(giveItem(item,n)>0){nd.cd=240;g.visible=false;AU.pickup();}}});};
+ const FM=new T.MeshBasicMaterial({color:0xaaf4ff,transparent:true,opacity:.85}),OB=lit(0x1b1426,{emissive:0x1a0a38,flatShading:true});
+ for(let i=0;i<9;i++){const a=i*.7+.3,r=18+rn()*55,x=IC.x+Math.cos(a)*r,z=IC.z+Math.sin(a)*r;fnode(GI,FM,x,hy(x,z)-.4,z,'frostcry',2,'frost'+i,'Harvest Frost Crystal',1.4);}
+ /* ---- volcano ---- */
+ {const VG=new T.Group();scene.add(VG);SITEC.push({g:VG,x:VO.x,z:VO.z,r:330});let mn=1e9;for(let i=0;i<12;i++){mn=Math.min(mn,hy(VO.x+Math.cos(i/12*TAU)*46,VO.z+Math.sin(i/12*TAU)*46));}const base=mn-5,H=54,R0=50,rc=10,top=base+H;VO.y=top;VO.base=base;
+  const cg=new T.CylinderGeometry(rc,R0,H,44,14,true),pp=cg.attributes.position,cc=new Float32Array(pp.count*3);for(let i=0;i<pp.count;i++){const x=pp.getX(i),y=pp.getY(i),z=pp.getZ(i),t=(y+H/2)/H,a=Math.atan2(z,x),n=(Math.sin(a*5+y*.25)*.1+Math.sin(a*11+y*.1)*.06)*(1-t*.5),rad=Math.hypot(x,z)*(1+n);pp.setXYZ(i,Math.cos(a)*rad,y+Math.sin(a*7)*.8,Math.sin(a)*rad);const k=.5+.5*Math.sin(a*9+t*14),c=new T.Color().setRGB(.16+.1*k+t*t*.32,.12+.05*k,.1+.03*k);cc.set([c.r,c.g,c.b],i*3);}cg.setAttribute('color',new T.BufferAttribute(cc,3));cg.computeVertexNormals();
+  M(cg,lit(0xffffff,{vertexColors:true,flatShading:true,side:T.DoubleSide}),VO.x,base+H/2,VO.z,1,1,1,0,0,0,VG);
+  for(let h=6;h<=48;h+=10){const rr=lerp(R0,rc,(h)/H)-7;for(let k=0;k<10;k++){const a=k/10*TAU;COL.sphere(VO.x+Math.cos(a)*rr,base+h,VO.z+Math.sin(a)*rr,10,'rock');}}
+  VLAV=M(new T.CircleGeometry(rc*.92,30),new T.MeshBasicMaterial({color:0xff5a1a}),VO.x,top-1.5,VO.z,1,1,1,-Math.PI/2,0,0,VG);M(new T.TorusGeometry(rc,1.4,6,28),lit(0x2a1a16),VO.x,top,VO.z,1,1,1,Math.PI/2,0,0,VG);
+  VGLOW=M(UG.sph2,new T.MeshBasicMaterial({color:0xff7a22,transparent:true,opacity:.28,depthWrite:false,blending:T.AdditiveBlending}),VO.x,top+6,VO.z,34,26,34,0,0,0,VG);
+  const lm=new T.MeshBasicMaterial({color:0xff6a1a});for(let r=0;r<6;r++){const a0=r/6*TAU+.3,pts=[];for(let i=0;i<=8;i++){const t=i/8,rad=lerp(rc,R0*.95,t),a=a0+Math.sin(t*5+r)*.12;pts.push(new T.Vector3(VO.x+Math.cos(a)*rad,top-t*H*.97+.9,VO.z+Math.sin(a)*rad));}M(new T.TubeGeometry(new T.CatmullRomCurve3(pts),28,1.1*(1-.0),6),lm,0,0,0,1,1,1,0,0,0,VG);}
+  HOT.push([VO.x,top,VO.z,2.4,50]);HOT.push([VO.x+16,base+30,VO.z,1.5,34]);HOT.push([VO.x-16,base+30,VO.z+8,1.5,34]);
+  for(let i=0;i<5;i++){const a=i*1.3+.4,x=VO.x+Math.cos(a)*(R0+16),z=VO.z+Math.sin(a)*(R0+16),y=hy(x,z);const g=new T.Group();g.position.set(x,y,z);VG.add(g);M(new T.CylinderGeometry(.9,1.7,9,9),lit(0x1c1618),0,3.5,0,1,1,1,0,0,0,g);M(UG.cyl,new T.MeshBasicMaterial({color:0xff5a1a}),0,8.1,0,1.4,.3,1.4,0,0,0,g);COL.sphere(x,y+4,z,1.8,'rock');HOT.push([x,y+9,z,.9,16]);}
+  for(let i=0;i<3;i++){const a=i*2.1+1,x=VO.x+Math.cos(a)*(R0+44),z=VO.z+Math.sin(a)*(R0+44),y=hy(x,z);const g=new T.Group();g.position.set(x,y,z);VG.add(g);M(new T.ConeGeometry(3,2,10),lit(0x241c1c),0,.5,0,1,1,1,0,0,0,g);const pl=M(new T.CylinderGeometry(1.2,3.2,42,14,1,true),new T.MeshBasicMaterial({color:0xffb070,transparent:true,opacity:.22,depthWrite:false,side:T.DoubleSide,blending:T.AdditiveBlending}),0,21,0,1,1,1,0,0,0,g);VGEY.push({x,y,z,pl});HOT.push([x,y+2,z,.8,10]);}
+  for(let i=0;i<7;i++){const a=i*.9+2.2,r=R0+4+rn()*22,x=VO.x+Math.cos(a)*r,z=VO.z+Math.sin(a)*r;fnode(VG,OB,x,hy(x,z)-.3,z,'obsidian',2,'obs'+i,'Chip Obsidian',1.6);}
+  /* Hephaestus ruin + memorial */
+  {const a=.5,x=VO.x+Math.cos(a)*(R0+28),z=VO.z+Math.sin(a)*(R0+28),y=hy(x,z)+2;const g=new T.Group();g.position.set(x,y,z);g.rotation.y=-a;VG.add(g);M(UG.cylh,lit(0x56666e),0,1,0,5.6,10,5.6,0,0,Math.PI/2,g);M(UG.sph2,lit(0x2a343c),5.5,1,0,3,4.6,4.6,0,0,0,g);for(let k=0;k<3;k++)M(UG.box,new T.MeshBasicMaterial({color:0xffb24a}),-3+k*3,2.4,2.7,1.2,.6,.1,0,0,0,g);M(UG.cyl,DARK,-3,6,0,.15,6,.15,0,0,.2,g);M(UG.box,lit(0x3a1a12),0,4.8,0,9,.3,5.6,0,0,.05,g);
+   addInter({id:'vol_lab',x,y:y+2,z,r:8,label:()=>(G.logs.vol1?'Re-read':'Read')+' - Caldera Notes',act:()=>readLog('vol1')});COL.sphere(x,y+1,z,5,'rock');}
+  {const a=-.9,x=VO.x+Math.cos(a)*(rc+8),z=VO.z+Math.sin(a)*(rc+8),y=top-2;const g=new T.Group();g.position.set(x,y,z);VG.add(g);for(let k=0;k<7;k++)M(UG.sph,OB,Math.cos(k)*.5*(1-k/9),k*.32,Math.sin(k)*.5*(1-k/9),1.1-k*.1,.6,1.1-k*.1,0,0,0,g);M(UG.sph,new T.MeshBasicMaterial({color:0xffd27f}),0,2.5,0,.4,.5,.4,0,0,0,g);
+   addInter({id:'vol_memorial',x,y:y+1.5,z,r:6,label:()=>(G.logs.vol2?'Re-read':'Read')+' - Last Entry',act:()=>readLog('vol2')});}
+  for(let i=0;i<10;i++)VBOMB.push({m:M(UG.sph,new T.MeshBasicMaterial({color:0xff7a22}),0,0,0,1.3,1.3,1.3,0,0,0,VG),on:false,v:new T.Vector3()});VBOMB.forEach(b=>b.m.visible=false);}
+}
+function siteTick(dt,t){if(!IC)return;
+ for(const c of SITEC)c.g.visible=Math.hypot(P.pos.x-c.x,P.pos.z-c.z)<c.r+90;
+ for(const n of SITEN)if(n.cd>0){n.cd-=dt;if(n.cd<=0)n.g.visible=true;}
+ for(const s of SHARDS){s.rotation.y+=dt*s.userData.sp;s.rotation.x+=dt*s.userData.sp*.6;}
+ if(AUR){const a=AUR.geometry.attributes.position,b=AUR.userData.base;for(let i=0;i<a.count;i++){const u=i%29;a.setY(i,b[i*3+1]+Math.sin(t*.9+u*.45)*1.6*(i>28?1:.3));a.setZ(i,Math.sin(t*.6+u*.3)*2.2);}a.needsUpdate=true;AUR.material.opacity=.32+.1*Math.sin(t*.7);}
+ if(VLAV){VLAV.material.color.setHex(Math.sin(t*2.2)>0?0xff5a1a:0xff8a2a);VGLOW.material.opacity=.22+.08*Math.sin(t*1.7);for(const g of VGEY){g.pl.rotation.y+=dt*.6;g.pl.scale.set(1+.08*Math.sin(t*3+g.x),1,1);}}
+ if(gs.state!=='play'||G.dead||P.sub&&0)return;
+ const dx=P.pos.x-VO.x,dz=P.pos.z-VO.z,dv=Math.hypot(dx,dz);
+ if(P.mode==='swim'&&dv<VO.r+120){
+  for(const g of VGEY){if(Math.hypot(P.pos.x-g.x,P.pos.z-g.z)<4.5&&P.pos.y<g.y+40&&!P.sub){P.vel.y=Math.min(P.vel.y+16*dt,9);}}
+  if(dv<10&&P.pos.y<VO.y+3&&P.pos.y>VO.y-4&&!P.sub){damagePlayer(15,'lava');if(!flags.lavaW||t-flags.lavaW>4){flags.lavaW=t;toast('LAVA! Get out of the crater!','w');}}
+  _eru-=dt;if(_eru<8&&!_zt){_zt=1;AU.tone(46,2.6,'sawtooth',.2,30,0,1);toast('The mountain rumbles. Eruption imminent.','w');}
+  if(_eru<=0){_eru=70+Math.random()*50;_zt=0;AU.tone(70,1.6,'square',.25,25,0,1);const near=dv<VO.r+70;for(let i=0;i<34;i++)spawnBubble(VO.x+(Math.random()-.5)*14,VO.y+Math.random()*6,VO.z+(Math.random()-.5)*14);
+   if(near&&!P.sub){_dv.set(dx,0,dz).normalize();P.vel.addScaledVector(_dv,16);damagePlayer(6,'lava');}
+   VBOMB.forEach(b=>{b.on=true;b.m.visible=true;b.m.position.set(VO.x,VO.y+2,VO.z);const a=Math.random()*TAU,s=14+Math.random()*16;b.v.set(Math.cos(a)*s,22+Math.random()*14,Math.sin(a)*s);});}}
+ for(const b of VBOMB){if(!b.on)continue;b.v.y-=18*dt;b.m.position.addScaledVector(b.v,dt);const h=heightAt(b.m.position.x,b.m.position.z);if(b.m.position.y<h){b.on=false;b.m.visible=false;}else if(P.mode==='swim'&&!P.sub&&Math.hypot(P.pos.x-b.m.position.x,P.pos.y-b.m.position.y,P.pos.z-b.m.position.z)<2){b.on=false;b.m.visible=false;damagePlayer(10,'lava');}}}
 
 /* ---------- held tools (viewmodel) ---------- */
 const VM=new T.Group();camera.add(VM);const VMT=[],BOLTS=[],vmS={eq:1,last:-1,prod:0,flare:0,pk:'',pt:0,scan:0};
@@ -2397,8 +2493,8 @@ function updatePlayer(dt,time){
   if(!P.surface&&Math.random()<dt*.35){spawnBubble(P.pos.x+camDir.x*.5,P.pos.y-.1,P.pos.z+camDir.z*.5);if(Math.random()<.3)AU.bubble();}
   // suit pressure
   const rt=suitRating();P.over=Math.max(0,depth-rt);if(P.over>0){const dmg=(1.8+P.over*.07)*dt;P.hp-=dmg;if(P.hp<=0)die('crush');if(!flags.stressT||time-flags.stressT>5){flags.stressT=time;toast('HULL STRESS — suit rated to '+rt+' m','w');}}
-  {let hh=0;for(const v of HOT){const dx=P.pos.x-v[0],dy=(P.pos.y-(v[1]+4))*.5,dz=P.pos.z-v[2],d=Math.hypot(dx,dy,dz);if(d<18)hh=Math.max(hh,Math.pow(1-d/18,1.4));}
-  const res=G.gear.heat?.7:0;P.temp=clamp((P.temp||0)+(hh*34*(1-res)-(hh>0?3:6))*dt,0,100);
+  {let hh=0;for(const v of HOT){const dx=P.pos.x-v[0],dy=(P.pos.y-(v[1]+4))*.5,dz=P.pos.z-v[2],d=Math.hypot(dx,dy,dz);const rr_=v[4]||18;if(d<rr_)hh=Math.max(hh,Math.pow(1-d/rr_,1.4)*(v[3]||1));}
+  const res=G.gear.cool?.95:G.gear.heat?.7:0;P.temp=clamp((P.temp||0)+(hh*34*(1-res)-(hh>0?3:6))*dt,0,100);
   if(P.temp>78){const kk=(P.temp-78)/22;P.hp-=kk*4.5*dt;if(P.hp<=0)die('crush');if(!flags.heatW||time-flags.heatW>6){flags.heatW=time;toast('Suit overheating. Get out of the hot water!','w');}}}
   for(const v of HOT){const dx=P.pos.x-v[0],dz=P.pos.z-v[2];if(dx*dx+dz*dz<10&&P.pos.y>v[1]-1&&P.pos.y<v[1]+11){P.hp-=7*(G.gear.heat?.4:1)*dt;if(P.hp<=0)die('crush');if(!flags.hotT||time-flags.hotT>2.5){flags.hotT=time;toast('Scalding vent water!','w');}}}
   if(P.moving&&Math.random()<dt*.5)ev('moved');
